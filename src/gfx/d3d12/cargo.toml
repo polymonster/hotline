@@ -1,0 +1,11 @@
+[package]
+name = "d3d12"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "d3d12"
+path = "d3d12.rs"
+
+[dependencies]
+gfx = { path = "..", package = "gfx" }

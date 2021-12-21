@@ -1,0 +1,8 @@
+[package]
+name = "gfx"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "gfx"
+path = "gfx.rs"
