@@ -1,7 +1,10 @@
-gfx::
-- create window
-    - win32
+os::
+x create instance
+x create window
+    x win32
     - ns
+    
+gfx::
 - device
 - context
 - cmd buffer
