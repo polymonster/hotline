@@ -1,24 +1,17 @@
 use windows::{
-    core::*, Win32::Foundation::*, 
-    Win32::Graphics::Direct3D::Fxc::*, 
-    Win32::Graphics::Direct3D::*,
-    Win32::Graphics::Direct3D12::*, 
-    Win32::Graphics::Dxgi::Common::*, 
-    Win32::Graphics::Dxgi::*,
+    Win32::Foundation::*, 
     Win32::System::LibraryLoader::*, 
-    Win32::System::Threading::*,
-    Win32::System::WindowsProgramming::*, 
     Win32::UI::WindowsAndMessaging::*,
     Win32::Graphics::Gdi::ValidateRect
 };
 
 pub struct Instance {
     window_class: String,
-    wc: WNDCLASSA,
-    hinstance: HINSTANCE,
+    hinstance: HINSTANCE
 }
 
 pub struct Window {
+    info: os::WindowInfo,
     hwnd : HWND
 }
 
@@ -43,7 +36,6 @@ impl os::Instance<Platform> for Instance {
     
             Instance {
                 window_class: String::from(window_class),
-                wc: wc,
                 hinstance: instance
             }
         }
@@ -64,8 +56,10 @@ impl os::Instance<Platform> for Instance {
                 self.hinstance,
                 std::ptr::null_mut(),
             );
+            println!("creating window {}", self.window_class);
             Window {
-                hwnd: hwnd
+                hwnd: hwnd,
+                info: info
             }
         }
     }
@@ -94,16 +88,35 @@ impl os::Instance<Platform> for Instance {
 }
 
 impl os::Window<Platform> for Window {
-    fn set_rect(&self, rect : os::Rect<i32>) {
-        println!("setting rect on win32 window {} {} {} {}", rect.x, rect.y, rect.width, rect.height);
+    fn set_rect(&mut self, rect : os::Rect<i32>) {
+        unsafe {
+            SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);
+        }
+        self.info.rect = rect;
     }
 
-    fn resize(&self, width : i32, height : i32) {
-
+    fn get_rect(&self) -> os::Rect<i32> {
+        self.info.rect
     }
 
-    fn close(&self) {
+    fn set_size(&mut self, width : i32, height : i32) {
+        let mut rect = self.info.rect;
+        rect.width = width;
+        rect.height = height;
+        unsafe {
+            SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);
+        }
+        self.info.rect = rect;
+    }
 
+    fn get_size(&self) -> (i32, i32) {
+        (self.info.rect.width, self.info.rect.height)
+    }
+
+    fn close(&mut self) {
+        unsafe {
+            DestroyWindow(self.hwnd);
+        }
     }
 }
 

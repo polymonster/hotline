@@ -1,9 +1,11 @@
 os::
-x create instance
-x create window
-    x win32
+- create instance
+- create window
+    - win32
     - ns
-    
+    - create multiple
+    - create multi threaded
+
 gfx::
 - device
 - context

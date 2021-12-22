@@ -5,12 +5,13 @@ pub trait Platform: 'static + Sized + Any + Send + Sync {
     type Window: Window<Self>;
 }
 
-pub trait Instance<P: Platform>: Any + Sized {
+pub trait Instance<P: Platform>: 'static + Any + Sized + Send + Sync {
     fn create() -> Self;
     fn create_window(&self, info: WindowInfo) -> P::Window;
     fn run(&self) -> bool;
 }
 
+#[derive(Copy, Clone)]
 pub struct Rect<T> {
     pub x: T,
     pub y: T,
@@ -23,8 +24,10 @@ pub struct WindowInfo {
     pub rect : Rect<i32>,
 }
 
-pub trait Window<P: Platform>: Any + Sized {
-    fn set_rect(&self, rect : Rect<i32>);
-    fn resize(&self, width : i32, height : i32);
-    fn close(&self);
+pub trait Window<P: Platform>: Any + Sized + Send + Sync {
+    fn set_rect(&mut self, rect : Rect<i32>);
+    fn get_rect(&self) -> Rect<i32>;
+    fn set_size(&mut self, width : i32, height : i32);
+    fn get_size(&self) -> (i32, i32);
+    fn close(&mut self);
 }
