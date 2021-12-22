@@ -15,6 +15,12 @@ pub struct Window {
     hwnd : HWND
 }
 
+impl Window {
+    pub fn get_native_handle(&self) -> HWND {
+        self.hwnd
+    }
+}
+
 impl os::Instance<Platform> for Instance {
     fn create() -> Self {
         unsafe {

@@ -1,11 +1,11 @@
 use std::{any::Any};
 
-pub trait Platform: 'static + Sized + Any + Send + Sync {
+pub trait Platform: 'static + Sized + Any {
     type Instance: Instance<Self>;
     type Window: Window<Self>;
 }
 
-pub trait Instance<P: Platform>: 'static + Any + Sized + Send + Sync {
+pub trait Instance<P: Platform>: 'static + Any + Sized {
     fn create() -> Self;
     fn create_window(&self, info: WindowInfo) -> P::Window;
     fn run(&self) -> bool;
@@ -24,7 +24,7 @@ pub struct WindowInfo {
     pub rect : Rect<i32>,
 }
 
-pub trait Window<P: Platform>: Any + Sized + Send + Sync {
+pub trait Window<P: Platform>: Any + Sized {
     fn set_rect(&mut self, rect : Rect<i32>);
     fn get_rect(&self) -> Rect<i32>;
     fn set_size(&mut self, width : i32, height : i32);

@@ -2,6 +2,7 @@ use os::Instance;
 use os::Window;
 
 use gfx::Device;
+use gfx::Queue;
 
 use std::sync::Arc;
 
@@ -13,7 +14,8 @@ pub struct Test {
 }
 
 fn main() {
-    let instarc = Arc::new(platform::Instance::create());
+    let instarc = platform::Instance::create();
+    let dev = d3d12::Device::create();
 
     let mut win = instarc.create_window(os::WindowInfo { 
         title : String::from("hello world!"),
@@ -25,28 +27,8 @@ fn main() {
         }
     });
 
-    win.set_rect(os::Rect {
-        x : 200,
-        y : 0,
-        width : 1280,
-        height : 720
-    });
-
-    win.set_size(1280, 400);
-
-    let winrect = win.get_rect();
-    println!("winrect = x = {}, y = {}, width = {}, height = {}", 
-        winrect.x, 
-        winrect.y, 
-        winrect.width, 
-        winrect.height
-    );
-
-    let winsize = win.get_size();
-    println!("winsize = width = {}, height = {}", 
-        winsize.0, 
-        winsize.1
-    );
+    let queue = dev.create_queue();
+    queue.create_swap_chain(dev, win);
 
     while instarc.run() {
         // println!("I am Running!");

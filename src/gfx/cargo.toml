@@ -6,3 +6,7 @@ edition = "2018"
 [lib]
 name = "gfx"
 path = "gfx.rs"
+
+[dependencies]
+os = { path = "../os", package = "os" }
+win32 = { path = "../os/win32", package = "win32" }

@@ -9,6 +9,8 @@ path = "d3d12.rs"
 
 [dependencies]
 gfx = { path = "..", package = "gfx" }
+os = { path = "../../os", package = "os" }
+win32 = { path = "../../os/win32", package = "win32" }
 
 [dependencies.windows]
 version = "0.27"
