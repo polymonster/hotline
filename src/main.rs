@@ -8,7 +8,6 @@ use std::sync::Arc;
 use std::thread;
 use std::time;
 use std::sync::Mutex;
-use std::ops::{Deref, DerefMut};
 
 #[cfg(target_os = "windows")]
 use win32 as platform;
@@ -19,12 +18,31 @@ pub struct Toot {
 
 fn main() {
     let instarc = platform::Instance::create();
+    let dev = d3d12::Device::create();
+
+    let win = instarc.create_window(os::WindowInfo { 
+        title : String::from("hello world!"),
+        rect : os::Rect {
+            x : 0,
+            y : 0,
+            width : 1280,
+            height : 720
+        }
+    });
+
+    let mut queue = dev.create_queue();
+    queue.create_swap_chain(dev, win);
+}
+
+#[test]
+fn aync_mut_device_test() {
+    let instarc = platform::Instance::create();
     let dev = Arc::new(Mutex::new(d3d12::Device::create()));
     let ten_millis = time::Duration::from_millis(10);
     let d2 = dev.clone();
     thread::spawn(move || {
         {
-            let mut dd = d2.lock().unwrap();
+            let dd = d2.lock().unwrap();
             dd.create_queue();
         }
         loop {

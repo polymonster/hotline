@@ -20,7 +20,7 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
 
 // needs? + Send + Sync
 pub trait Queue <G: Graphics>: 'static + Sized + Any {
-    fn create_swap_chain(&self, device: G::Device, window: platform::Window);
+    fn create_swap_chain(&mut self, device: G::Device, window: platform::Window);
     //fn execute(&self, cmd: G::CmdBuf);
 }
 

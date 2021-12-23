@@ -23,8 +23,9 @@ pub struct InternalDevice {
 
 pub struct Device {
     name: String,
-    device: ID3D12Device,
+    adapter: IDXGIAdapter1,
     dxgi_factory: IDXGIFactory4,
+    device: ID3D12Device,
     val: i32
 }
 
@@ -35,7 +36,9 @@ pub struct Queue {
     name: String,
     command_queue: ID3D12CommandQueue,
     fence: ID3D12Fence,
-    fence_value: i32
+    fence_value: i32,
+    swap_chain: Option<IDXGISwapChain1>,
+    rtv_heap: Option<ID3D12DescriptorHeap>,
 }
 
 pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
@@ -70,27 +73,43 @@ pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
 impl gfx::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
+            // enable debug layer
+            let mut dxgi_factory_flags : u32 = 0;
             if cfg!(debug_assertions) {
                 let mut debug: Option<ID3D12Debug> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
                     debug.EnableDebugLayer();
                 }
+                dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
             }
-    
-            let dxgi_factory_flags = if cfg!(debug_assertions) {
-                DXGI_CREATE_FACTORY_DEBUG
-            } else {
-                0
-            };
-    
-            let dxgi_factory: IDXGIFactory4 = CreateDXGIFactory2(dxgi_factory_flags).unwrap();
-            let adapter = get_hardware_adapter(&dxgi_factory).unwrap();
-            
+        
+            // create dxgi factory
+            let dxgi_factory_result = CreateDXGIFactory2(dxgi_factory_flags);
+            if !dxgi_factory_result.is_ok() {
+                panic!("failed to create dxgi factory");
+            }
+
+            // create adapter
+            let dxgi_factory = dxgi_factory_result.unwrap();
+            let adapter_result = get_hardware_adapter(&dxgi_factory);
+            if !adapter_result.is_ok() {
+                panic!("failed to get hardware adapter");
+            }
+
+            // create device
+            let adapter = adapter_result.unwrap();
             let mut d3d12_device: Option<ID3D12Device> = None;
-            D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
+            let device_result = D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
+            if !device_result.is_ok() {
+                panic!("failed to create d3d12 device");
+            }
+            let device = d3d12_device.unwrap();
+
+            // construct device and return
             Device {
                 name: String::from("d3d12 device"),
-                device: d3d12_device.unwrap(),
+                adapter: adapter,
+                device: device,
                 dxgi_factory: dxgi_factory,
                 val: 69
             }
@@ -109,7 +128,9 @@ impl gfx::Device<Graphics> for Device {
                 name: String::from("d3d12 queue"),
                 command_queue: command_queue,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
-                fence_value: 1
+                fence_value: 1,
+                swap_chain: None,
+                rtv_heap: None,
             }
         }
     }
@@ -122,8 +143,9 @@ impl gfx::Device<Graphics> for Device {
 }
 
 impl gfx::Queue<Graphics> for Queue {
-    fn create_swap_chain(&self, device: Device, win: win32::Window) {
+    fn create_swap_chain(&mut self, device: Device, win: win32::Window) {
         unsafe { 
+            // create swap chain desc
             let rect = win.get_rect();
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
                 BufferCount: FRAME_COUNT,
@@ -138,14 +160,52 @@ impl gfx::Queue<Graphics> for Queue {
                 },
                 ..Default::default()
             };
-            let swap_chain: IDXGISwapChain1 =
+
+            // create swap chain itself
+            let swap_chain_result =
             device.dxgi_factory.CreateSwapChainForHwnd(
                 &self.command_queue,
                 win.get_native_handle(),
                 &swap_chain_desc,
                 std::ptr::null(),
                 None,
-            ).unwrap();
+            );
+            if !swap_chain_result.is_ok() {
+                panic!("failed to create swap chain for window");
+            }
+            let swap_chain = swap_chain_result.unwrap();
+
+            // create rtv heap
+            let rtv_heap_result =
+                device.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                NumDescriptors: FRAME_COUNT,
+                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                ..Default::default()
+            });
+            if !rtv_heap_result.is_ok() {
+                panic!("failed to create rtv heap for swap chain");
+            }
+
+            let rtv_heap : ID3D12DescriptorHeap = rtv_heap_result.unwrap();
+            let rtv_descriptor_size = device.device.GetDescriptorHandleIncrementSize(
+                D3D12_DESCRIPTOR_HEAP_TYPE_RTV
+            ) as usize;
+            let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
+
+            // render targets for the swap chain
+            for i in 0..FRAME_COUNT {
+                let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
+                device.device.CreateRenderTargetView(
+                    &render_target,
+                    std::ptr::null_mut(),
+                    &D3D12_CPU_DESCRIPTOR_HANDLE {
+                        ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
+                    }
+                );
+            }
+
+            self.swap_chain = Some(swap_chain);
+            self.rtv_heap = Some(rtv_heap);
         }
     }
 }
@@ -155,58 +215,3 @@ impl gfx::Graphics for Graphics {
     type Device = Device;
     type Queue = Queue;
 }
-
-/*
-            if (d3d12_device->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&ctx->fence)) != S_OK)
-                return nullptr;
-
-            ctx->fence_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-            if (ctx->fence_event == NULL)
-                return nullptr;
-
-            // swap chain
-            {
-                DXGI_SWAP_CHAIN_DESC1 sd;
-                ZeroMemory(&sd, sizeof(sd));
-                sd.BufferCount = 3;
-                sd.Width = 0;
-                sd.Height = 0;
-                sd.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
-                sd.Flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
-                sd.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-                sd.SampleDesc.Count = 1;
-                sd.SampleDesc.Quality = 0;
-                sd.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
-                sd.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-                sd.Scaling = DXGI_SCALING_STRETCH;
-                sd.Stereo = FALSE;
-
-                IDXGIFactory4* dxgi_factory = NULL;
-                IDXGISwapChain1* swap_chain1 = NULL;
-
-                if (CreateDXGIFactory1(IID_PPV_ARGS(&dxgi_factory)) != S_OK)
-                    return nullptr;
-
-                if (dxgi_factory->CreateSwapChainForHwnd(ctx->command_queue, win32_window->hwnd, &sd, NULL, NULL, &swap_chain1) != S_OK)
-                    return nullptr;
-
-                if (swap_chain1->QueryInterface(IID_PPV_ARGS(&ctx->swap_chain)) != S_OK)
-                    return nullptr;
-
-                swap_chain1->Release();
-                dxgi_factory->Release();
-
-                ctx->swap_chain->SetMaximumFrameLatency(3);
-                ctx->swap_chain_wait = ctx->swap_chain->GetFrameLatencyWaitableObject();
-            }
-
-            // create backbuffer resources
-            for (UINT i = 0; i < 3; i++)
-            {
-                ID3D12Resource* bb = NULL;
-                ctx->swap_chain->GetBuffer(i, IID_PPV_ARGS(&bb));
-                d3d12_device->CreateRenderTargetView(bb, NULL, ctx->backbuffer_descriptor[i]);
-                ctx->backbuffer[i] = bb;
-            }
-
-*/
