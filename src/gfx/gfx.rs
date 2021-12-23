@@ -13,6 +13,8 @@ pub trait Graphics: 'static + Sized + Any + Send + Sync {
 pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
     fn create_queue(&self) -> G::Queue;
+    fn test_mutate(&mut self);
+    fn print_mutate(&self);
     // fn create_cmd_buf(&self) -> G::CmdBuf;
 }
 

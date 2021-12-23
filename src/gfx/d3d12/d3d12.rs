@@ -24,8 +24,12 @@ pub struct InternalDevice {
 pub struct Device {
     name: String,
     device: ID3D12Device,
-    dxgi_factory: IDXGIFactory4
+    dxgi_factory: IDXGIFactory4,
+    val: i32
 }
+
+unsafe impl Send for Device {}
+unsafe impl Sync for Device {}
 
 pub struct Queue {
     name: String,
@@ -87,11 +91,13 @@ impl gfx::Device<Graphics> for Device {
             Device {
                 name: String::from("d3d12 device"),
                 device: d3d12_device.unwrap(),
-                dxgi_factory: dxgi_factory
+                dxgi_factory: dxgi_factory,
+                val: 69
             }
         }
     }
     fn create_queue(&self) -> Queue {
+        println!("creating queue");
         unsafe {
             let desc = D3D12_COMMAND_QUEUE_DESC {
                 Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -106,6 +112,12 @@ impl gfx::Device<Graphics> for Device {
                 fence_value: 1
             }
         }
+    }
+    fn test_mutate(&mut self) {
+        self.val += 1
+    }
+    fn print_mutate(&self) {
+        println!("mutated value {}", self.val);
     }
 }
 
