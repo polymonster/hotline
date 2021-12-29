@@ -29,6 +29,13 @@ pub struct Device {
 unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
+pub struct Sample {
+    vertex_buffer: ID3D12Resource,
+    root_signature: ID3D12RootSignature,
+    pso: ID3D12PipelineState,
+    vbv: D3D12_VERTEX_BUFFER_VIEW,
+}
+
 pub struct SwapChain {
     name: String,
     cur_frame_ctx: i32,
@@ -46,7 +53,8 @@ pub struct SwapChain {
 pub struct CmdBuf {
     cur_frame_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
-    command_list: Vec<ID3D12GraphicsCommandList>
+    command_list: Vec<ID3D12GraphicsCommandList>,
+    sample: Sample
 }
 
 fn transition_barrier(
@@ -68,7 +76,7 @@ fn transition_barrier(
     }
 }
 
-pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
+fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
     unsafe {
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i)?;
@@ -95,6 +103,237 @@ pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         }
     }
     unreachable!()
+}
+
+fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
+    let desc = D3D12_ROOT_SIGNATURE_DESC {
+        Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+        ..Default::default()
+    };
+
+    let mut signature = None;
+
+    let signature = unsafe {
+        D3D12SerializeRootSignature(
+            &desc,
+            D3D_ROOT_SIGNATURE_VERSION_1,
+            &mut signature,
+            std::ptr::null_mut(),
+        )
+    }
+    .map(|()| signature.unwrap())?;
+
+    unsafe {
+        device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
+    }
+}
+
+fn create_pipeline_state(
+    device: &ID3D12Device,
+    root_signature: &ID3D12RootSignature,
+) -> Result<ID3D12PipelineState> {
+    let compile_flags = if cfg!(debug_assertions) {
+        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
+    } else {
+        0
+    };
+
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+    let shaders_hlsl_path = asset_path.join("..\\..\\src\\shaders.hlsl");
+    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+
+    println!("shaders: {}", shaders_hlsl);
+
+    let mut vertex_shader = None;
+    let vertex_shader = unsafe {
+        D3DCompileFromFile(
+            shaders_hlsl,
+            std::ptr::null_mut(),
+            None,
+            "VSMain",
+            "vs_5_0",
+            compile_flags,
+            0,
+            &mut vertex_shader,
+            std::ptr::null_mut(),
+        )
+    }
+    .map(|()| vertex_shader.unwrap())?;
+
+    let mut pixel_shader = None;
+    let pixel_shader = unsafe {
+        D3DCompileFromFile(
+            shaders_hlsl,
+            std::ptr::null_mut(),
+            None,
+            "PSMain",
+            "ps_5_0",
+            compile_flags,
+            0,
+            &mut pixel_shader,
+            std::ptr::null_mut(),
+        )
+    }
+    .map(|()| pixel_shader.unwrap())?;
+
+    let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 0,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 12,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+    ];
+
+    let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
+        InputLayout: D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: input_element_descs.as_mut_ptr(),
+            NumElements: input_element_descs.len() as u32,
+        },
+        pRootSignature: Some(root_signature.clone()), // << https://github.com/microsoft/windows-rs/discussions/623
+        VS: D3D12_SHADER_BYTECODE {
+            pShaderBytecode: unsafe { vertex_shader.GetBufferPointer() },
+            BytecodeLength: unsafe { vertex_shader.GetBufferSize() },
+        },
+        PS: D3D12_SHADER_BYTECODE {
+            pShaderBytecode: unsafe { pixel_shader.GetBufferPointer() },
+            BytecodeLength: unsafe { pixel_shader.GetBufferSize() },
+        },
+        RasterizerState: D3D12_RASTERIZER_DESC {
+            FillMode: D3D12_FILL_MODE_SOLID,
+            CullMode: D3D12_CULL_MODE_NONE,
+            ..Default::default()
+        },
+        BlendState: D3D12_BLEND_DESC {
+            AlphaToCoverageEnable: false.into(),
+            IndependentBlendEnable: false.into(),
+            RenderTarget: [
+                D3D12_RENDER_TARGET_BLEND_DESC {
+                    BlendEnable: false.into(),
+                    LogicOpEnable: false.into(),
+                    SrcBlend: D3D12_BLEND_ONE,
+                    DestBlend: D3D12_BLEND_ZERO,
+                    BlendOp: D3D12_BLEND_OP_ADD,
+                    SrcBlendAlpha: D3D12_BLEND_ONE,
+                    DestBlendAlpha: D3D12_BLEND_ZERO,
+                    BlendOpAlpha: D3D12_BLEND_OP_ADD,
+                    LogicOp: D3D12_LOGIC_OP_NOOP,
+                    RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                },
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                D3D12_RENDER_TARGET_BLEND_DESC::default(),
+            ],
+        },
+        DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
+        SampleMask: u32::max_value(),
+        PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        NumRenderTargets: 1,
+        SampleDesc: DXGI_SAMPLE_DESC {
+            Count: 1,
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+    unsafe { device.CreateGraphicsPipelineState(&desc) }
+}
+
+#[repr(C)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
+}
+
+fn create_vertex_buffer(
+    device: &ID3D12Device,
+    aspect_ratio: f32,
+) -> Result<(ID3D12Resource, D3D12_VERTEX_BUFFER_VIEW)> {
+    let vertices = [
+        Vertex {
+            position: [0.0, 0.25 * aspect_ratio, 0.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [0.25, -0.25 * aspect_ratio, 0.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-0.25, -0.25 * aspect_ratio, 0.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
+    ];
+
+    // Note: using upload heaps to transfer static data like vert buffers is
+    // not recommended. Every time the GPU needs it, the upload heap will be
+    // marshalled over. Please read up on Default Heap usage. An upload heap
+    // is used here for code simplicity and because there are very few verts
+    // to actually transfer.
+    let mut vertex_buffer: Option<ID3D12Resource> = None;
+    unsafe {
+        device.CreateCommittedResource(
+            &D3D12_HEAP_PROPERTIES {
+                Type: D3D12_HEAP_TYPE_UPLOAD,
+                ..Default::default()
+            },
+            D3D12_HEAP_FLAG_NONE,
+            &D3D12_RESOURCE_DESC {
+                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                Width: std::mem::size_of_val(&vertices) as u64,
+                Height: 1,
+                DepthOrArraySize: 1,
+                MipLevels: 1,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                ..Default::default()
+            },
+            D3D12_RESOURCE_STATE_GENERIC_READ,
+            std::ptr::null(),
+            &mut vertex_buffer,
+        )?
+    };
+    let vertex_buffer = vertex_buffer.unwrap();
+
+    // Copy the triangle data to the vertex buffer.
+    unsafe {
+        let mut data = std::ptr::null_mut();
+        vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
+        std::ptr::copy_nonoverlapping(
+            vertices.as_ptr(),
+            data as *mut Vertex,
+            std::mem::size_of_val(&vertices),
+        );
+        vertex_buffer.Unmap(0, std::ptr::null());
+    }
+
+    let vbv = D3D12_VERTEX_BUFFER_VIEW {
+        BufferLocation: unsafe { vertex_buffer.GetGPUVirtualAddress() },
+        StrideInBytes: std::mem::size_of::<Vertex>() as u32,
+        SizeInBytes: std::mem::size_of_val(&vertices) as u32,
+    };
+
+    Ok((vertex_buffer, vbv))
 }
 
 impl gfx::Device<Graphics> for Device {
@@ -275,11 +514,23 @@ impl gfx::Device<Graphics> for Device {
                 command_lists.push(command_list);
             }
 
+            let root_signature = create_root_signature(&self.device).unwrap();
+            let pso = create_pipeline_state(&self.device, &root_signature).unwrap();
+            let (vertex_buffer, vbv) = create_vertex_buffer(&self.device, 16.0/9.0).unwrap();
+
+            let sample = Sample {
+                root_signature: root_signature,
+                pso: pso,
+                vertex_buffer: vertex_buffer,
+                vbv: vbv
+            };
+
             // assign struct
             CmdBuf {
                 cur_frame_index: 1,
                 command_allocator: command_allocators,
-                command_list: command_lists
+                command_list: command_lists,
+                sample: sample
             }
         }
     }
@@ -369,6 +620,35 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             self.command_list[bb].ClearRenderTargetView(
                 queue.rtv_handles[bb], [r, g, b, a].as_ptr(), 0, std::ptr::null());
         }
+
+        // test
+        let viewport = D3D12_VIEWPORT {
+            TopLeftX: 0.0,
+            TopLeftY: 0.0,
+            Width: 1280.0 as f32,
+            Height: 720.0 as f32,
+            MinDepth: D3D12_MIN_DEPTH,
+            MaxDepth: D3D12_MAX_DEPTH,
+        };
+
+        let scissor_rect = RECT {
+            left: 0,
+            top: 0,
+            right: 1280,
+            bottom: 720,
+        };
+
+        unsafe { 
+            self.command_list[bb].SetGraphicsRootSignature(&self.sample.root_signature);
+            self.command_list[bb].SetPipelineState(&self.sample.pso);
+            self.command_list[bb].RSSetViewports(1, &viewport);
+            self.command_list[bb].RSSetScissorRects(1, &scissor_rect);
+            self.command_list[bb].OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
+
+            self.command_list[bb].IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            self.command_list[bb].IASetVertexBuffers(0, 1, &self.sample.vbv);
+            self.command_list[bb].DrawInstanced(3, 1, 0, 0);
+        };
 
         // Indicate that the back buffer will now be used to present.
         unsafe {
