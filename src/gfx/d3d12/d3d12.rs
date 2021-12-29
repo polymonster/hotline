@@ -354,7 +354,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
         self.cur_frame_index = bb;
         println!("reset {}", self.cur_frame_index);
     }
-    fn clear_debug(&self, queue: &SwapChain) {
+    fn clear_debug(&self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
 
         // Indicate that the back buffer will be used as a render target.
@@ -367,7 +367,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
 
         unsafe {
             self.command_list[bb].ClearRenderTargetView(
-                queue.rtv_handles[bb], [0.0, 1.0, 0.0, 1.0].as_ptr(), 0, std::ptr::null());
+                queue.rtv_handles[bb], [r, g, b, a].as_ptr(), 0, std::ptr::null());
         }
 
         // Indicate that the back buffer will now be used to present.

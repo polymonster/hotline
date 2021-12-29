@@ -30,5 +30,5 @@ pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
 
 pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &G::SwapChain);
-    fn clear_debug(&self, swap_chain: &G::SwapChain);
+    fn clear_debug(&self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
 }

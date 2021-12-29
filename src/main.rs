@@ -17,6 +17,13 @@ pub struct Toot {
     value: Mutex<i32>
 }
 
+pub struct ClearCol {
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32
+}
+
 fn main() {
     let instarc = platform::Instance::create();
     let dev = d3d12::Device::create();
@@ -35,14 +42,53 @@ fn main() {
     let mut swap_chain = dev.create_swap_chain(&win);
     let mut cmdbuffer = dev.create_cmd_buf();
 
+    let magenta = ClearCol {
+        r: 1.0,
+        g: 0.0, 
+        b: 1.0,
+        a: 1.0
+    };
+
+    let yellow = ClearCol {
+        r: 1.0,
+        g: 1.0, 
+        b: 0.0,
+        a: 1.0
+    };
+
+    let cyan = ClearCol {
+        r: 0.0,
+        g: 1.0, 
+        b: 1.0,
+        a: 1.0
+    };
+
+    let green = ClearCol {
+        r: 0.0,
+        g: 1.0, 
+        b: 0.0,
+        a: 1.0
+    };
+
+    let mut clears : [ClearCol; 4] = [
+        magenta, yellow, cyan, green
+    ];
+
+    let mut ci = 0;
+
     while instarc.run() {
         swap_chain.new_frame();
         
         cmdbuffer.reset(&swap_chain);
-        cmdbuffer.clear_debug(&swap_chain);
+
+        let col = &clears[ci];
+        cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a);
 
         dev.execute(&cmdbuffer);
+
+        std::thread::sleep_ms(1000);
         swap_chain.swap(&dev);
+        ci = (ci + 1) % 4;
     }
 
 }
