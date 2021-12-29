@@ -17,6 +17,7 @@ version = "0.27"
 features = [
     "alloc",
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D12",

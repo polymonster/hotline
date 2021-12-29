@@ -17,28 +17,34 @@ const FRAME_COUNT: u32 = 2;
 
 use os::Window;
 
-pub struct InternalDevice {
-    device: ID3D12Device
-}
-
 pub struct Device {
     name: String,
     adapter: IDXGIAdapter1,
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
+    command_queue: ID3D12CommandQueue,
     val: i32
 }
 
 unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
-pub struct Queue {
+pub struct SwapChain {
     name: String,
-    command_queue: ID3D12CommandQueue,
+    cur_frame_ctx: i32,
     fence: ID3D12Fence,
-    fence_value: i32,
-    swap_chain: Option<IDXGISwapChain1>,
-    rtv_heap: Option<ID3D12DescriptorHeap>,
+    fence_last_signalled_value: i32,
+    fence_event: HANDLE,
+    swap_chain: IDXGISwapChain3,
+    rtv_heap: ID3D12DescriptorHeap,
+    rtv_handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    frame_index: i32,
+    frame_fence_value: [i32; FRAME_COUNT as usize]
+}
+
+pub struct CmdBuf {
+    command_allocator: ID3D12CommandAllocator,
+    command_list: ID3D12CommandList
 }
 
 pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
@@ -105,45 +111,31 @@ impl gfx::Device<Graphics> for Device {
             }
             let device = d3d12_device.unwrap();
 
+            // create queue
+            let desc = D3D12_COMMAND_QUEUE_DESC {
+                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
+                NodeMask: 1, 
+                ..Default::default()
+            };
+            let command_queue_result = device.CreateCommandQueue(&desc);
+            if !command_queue_result.is_ok() {
+                println!("failed to create command queue");
+            }
+            let command_queue = command_queue_result.unwrap();
+
             // construct device and return
             Device {
                 name: String::from("d3d12 device"),
                 adapter: adapter,
                 device: device,
                 dxgi_factory: dxgi_factory,
+                command_queue: command_queue,
                 val: 69
             }
         }
     }
-    fn create_queue(&self) -> Queue {
-        println!("creating queue");
-        unsafe {
-            let desc = D3D12_COMMAND_QUEUE_DESC {
-                Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-                NodeMask: 1, 
-                ..Default::default()
-            };
-            let command_queue = self.device.CreateCommandQueue(&desc).unwrap();
-            Queue {
-                name: String::from("d3d12 queue"),
-                command_queue: command_queue,
-                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
-                fence_value: 1,
-                swap_chain: None,
-                rtv_heap: None,
-            }
-        }
-    }
-    fn test_mutate(&mut self) {
-        self.val += 1
-    }
-    fn print_mutate(&self) {
-        println!("mutated value {}", self.val);
-    }
-}
 
-impl gfx::Queue<Graphics> for Queue {
-    fn create_swap_chain(&mut self, device: Device, win: win32::Window) {
+    fn create_swap_chain(&self, win: win32::Window) -> SwapChain {
         unsafe { 
             // create swap chain desc
             let rect = win.get_rect();
@@ -163,7 +155,7 @@ impl gfx::Queue<Graphics> for Queue {
 
             // create swap chain itself
             let swap_chain_result =
-            device.dxgi_factory.CreateSwapChainForHwnd(
+            self.dxgi_factory.CreateSwapChainForHwnd(
                 &self.command_queue,
                 win.get_native_handle(),
                 &swap_chain_desc,
@@ -173,11 +165,11 @@ impl gfx::Queue<Graphics> for Queue {
             if !swap_chain_result.is_ok() {
                 panic!("failed to create swap chain for window");
             }
-            let swap_chain = swap_chain_result.unwrap();
+            let swap_chain : IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
             // create rtv heap
             let rtv_heap_result =
-                device.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                self.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 NumDescriptors: FRAME_COUNT,
                 Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
                 ..Default::default()
@@ -187,31 +179,133 @@ impl gfx::Queue<Graphics> for Queue {
             }
 
             let rtv_heap : ID3D12DescriptorHeap = rtv_heap_result.unwrap();
-            let rtv_descriptor_size = device.device.GetDescriptorHandleIncrementSize(
+            let rtv_descriptor_size = self.device.GetDescriptorHandleIncrementSize(
                 D3D12_DESCRIPTOR_HEAP_TYPE_RTV
             ) as usize;
             let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
 
             // render targets for the swap chain
+            let mut handles : Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+            
             for i in 0..FRAME_COUNT {
                 let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
-                device.device.CreateRenderTargetView(
+                let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
+                    ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
+                };
+                self.device.CreateRenderTargetView(
                     &render_target,
                     std::ptr::null_mut(),
-                    &D3D12_CPU_DESCRIPTOR_HANDLE {
-                        ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
-                    }
+                    &sub_handle
                 );
+                handles.push(sub_handle);
             }
 
-            self.swap_chain = Some(swap_chain);
-            self.rtv_heap = Some(rtv_heap);
+            let fence_event = CreateEventA(std::ptr::null_mut(), false, false, None);
+
+            // initialise struct
+            SwapChain {
+                name: String::from("d3d12 queue"),
+                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
+                cur_frame_ctx: 0,
+                fence_last_signalled_value: 0,
+                fence_event: fence_event,
+                swap_chain: swap_chain,
+                rtv_heap: rtv_heap,
+                rtv_handles: handles,
+                frame_index: 0,
+                frame_fence_value: [0, 0]
+            }
         }
+    }
+
+    fn create_cmd_buf(&self) -> CmdBuf {
+        unsafe {
+            // create command allocator
+            let command_allocator = self.device
+                .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
+            if !command_allocator.is_ok() {
+                panic!("failed to create command allocator");
+            }
+            let command_allocator = command_allocator.unwrap();
+
+            // create command list
+            let command_list =
+                self.device.CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    &command_allocator,
+                    None,
+                );
+            if !command_list.is_ok() {
+                panic!("failed to create command list");
+            }
+            let command_list = command_list.unwrap();
+
+            // assign struct
+            CmdBuf {
+                command_allocator: command_allocator,
+                command_list: command_list
+            }
+        }
+    }
+
+    fn execute(&self, cmd: CmdBuf) {
+
+    }
+
+    // tests
+    fn test_mutate(&mut self) {
+        self.val += 1
+    }
+
+    fn print_mutate(&self) {
+        println!("mutated value {}", self.val);
+    }
+}
+
+impl gfx::SwapChain<Graphics> for SwapChain {
+    fn new_frame(&mut self) {
+        let next_frame_index = self.frame_index + 1;
+        self.frame_index = next_frame_index;
+        self.cur_frame_ctx = next_frame_index % FRAME_COUNT as i32;
+        unsafe {
+            let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+            let mut num_waitable = 1;
+
+            let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
+            if fv != 0 // means no fence was signaled
+            {
+                fv = 0;
+                self.fence.SetEventOnCompletion(fv as u64, self.fence_event);
+                waitable[1] = self.fence_event;
+                num_waitable = 2;
+            }
+            
+            WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
+        }
+        println!("new_frame");
+    }
+    fn swap(&mut self, device: &Device) {
+        unsafe {
+            self.swap_chain.Present(1, 0);
+            let fv = self.fence_last_signalled_value + 1;
+            device.command_queue.Signal(&self.fence, fv as u64);
+            self.fence_last_signalled_value = fv;
+            self.frame_fence_value[self.cur_frame_ctx as usize] = fv;
+        }
+        println!("swap");
+    }
+}
+
+impl gfx::CmdBuf<Graphics> for CmdBuf {
+    fn clear_debug(&self, queue: SwapChain) {
+
     }
 }
 
 pub enum Graphics {}
 impl gfx::Graphics for Graphics {
     type Device = Device;
-    type Queue = Queue;
+    type SwapChain = SwapChain;
+    type CmdBuf = CmdBuf;
 }

@@ -2,7 +2,7 @@ use os::Instance;
 use os::Window;
 
 use gfx::Device;
-use gfx::Queue;
+use gfx::SwapChain;
 
 use std::sync::Arc;
 use std::thread;
@@ -30,8 +30,15 @@ fn main() {
         }
     });
 
-    let mut queue = dev.create_queue();
-    queue.create_swap_chain(dev, win);
+
+    let mut swap_chain = dev.create_swap_chain(win);
+    let cmdbuffer = dev.create_cmd_buf();
+
+    while instarc.run() {
+        swap_chain.new_frame();
+        swap_chain.swap(&dev);
+    }
+
 }
 
 #[test]
@@ -43,7 +50,7 @@ fn aync_mut_device_test() {
     thread::spawn(move || {
         {
             let dd = d2.lock().unwrap();
-            dd.create_queue();
+            //dd.create_queue();
         }
         loop {
             {
@@ -97,8 +104,8 @@ fn create_queue() {
         }
     });
 
-    let queue = dev.create_queue();
-    queue.create_swap_chain(dev, win);
+    //let mut queue = dev.create_queue();
+    //queue.create_swap_chain(dev, win);
 }
 
 #[test]
