@@ -12,9 +12,9 @@ pub trait Graphics: 'static + Sized + Any + Send + Sync {
 // needs? + Send + Sync
 pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
-    fn create_swap_chain(&self, window: platform::Window) -> G::SwapChain;
+    fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
     fn create_cmd_buf(&self) -> G::CmdBuf;
-    fn execute(&self, cmd: G::CmdBuf);
+    fn execute(&self, cmd: &G::CmdBuf);
 
     // tests
     fn test_mutate(&mut self);
@@ -24,9 +24,11 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
 // needs? + Send + Sync
 pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
+    fn get_frame_index(&self) -> i32;
     fn swap(&mut self, device: &G::Device);
 }
 
 pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
-    fn clear_debug(&self, queue: G::SwapChain);
+    fn reset(&mut self, swap_chain: &G::SwapChain);
+    fn clear_debug(&self, swap_chain: &G::SwapChain);
 }

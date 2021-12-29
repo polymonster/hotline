@@ -38,13 +38,34 @@ pub struct SwapChain {
     swap_chain: IDXGISwapChain3,
     rtv_heap: ID3D12DescriptorHeap,
     rtv_handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    render_targets: Vec<ID3D12Resource>,
     frame_index: i32,
     frame_fence_value: [i32; FRAME_COUNT as usize]
 }
 
 pub struct CmdBuf {
-    command_allocator: ID3D12CommandAllocator,
-    command_list: ID3D12CommandList
+    cur_frame_index: usize,
+    command_allocator: Vec<ID3D12CommandAllocator>,
+    command_list: Vec<ID3D12GraphicsCommandList>
+}
+
+fn transition_barrier(
+    resource: &ID3D12Resource,
+    state_before: D3D12_RESOURCE_STATES,
+    state_after: D3D12_RESOURCE_STATES,
+) -> D3D12_RESOURCE_BARRIER {
+    D3D12_RESOURCE_BARRIER {
+        Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
+        Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+        Anonymous: D3D12_RESOURCE_BARRIER_0 {
+            Transition: std::mem::ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
+                pResource: Some(resource.clone()),
+                StateBefore: state_before,
+                StateAfter: state_after,
+                Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
+            }),
+        },
+    }
 }
 
 pub fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
@@ -101,6 +122,7 @@ impl gfx::Device<Graphics> for Device {
             if !adapter_result.is_ok() {
                 panic!("failed to get hardware adapter");
             }
+            
 
             // create device
             let adapter = adapter_result.unwrap();
@@ -135,7 +157,7 @@ impl gfx::Device<Graphics> for Device {
         }
     }
 
-    fn create_swap_chain(&self, win: win32::Window) -> SwapChain {
+    fn create_swap_chain(&self, win: &win32::Window) -> SwapChain {
         unsafe { 
             // create swap chain desc
             let rect = win.get_rect();
@@ -186,6 +208,7 @@ impl gfx::Device<Graphics> for Device {
 
             // render targets for the swap chain
             let mut handles : Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+            let mut render_targets : Vec<ID3D12Resource> = Vec::new();
             
             for i in 0..FRAME_COUNT {
                 let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
@@ -198,6 +221,7 @@ impl gfx::Device<Graphics> for Device {
                     &sub_handle
                 );
                 handles.push(sub_handle);
+                render_targets.push(render_target);
             }
 
             let fence_event = CreateEventA(std::ptr::null_mut(), false, false, None);
@@ -212,6 +236,7 @@ impl gfx::Device<Graphics> for Device {
                 swap_chain: swap_chain,
                 rtv_heap: rtv_heap,
                 rtv_handles: handles,
+                render_targets: render_targets,
                 frame_index: 0,
                 frame_fence_value: [0, 0]
             }
@@ -220,37 +245,52 @@ impl gfx::Device<Graphics> for Device {
 
     fn create_cmd_buf(&self) -> CmdBuf {
         unsafe {
-            // create command allocator
-            let command_allocator = self.device
-                .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
-            if !command_allocator.is_ok() {
-                panic!("failed to create command allocator");
-            }
-            let command_allocator = command_allocator.unwrap();
+            
+            let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
+            let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
 
-            // create command list
-            let command_list =
-                self.device.CreateCommandList(
-                    0,
-                    D3D12_COMMAND_LIST_TYPE_DIRECT,
-                    &command_allocator,
-                    None,
-                );
-            if !command_list.is_ok() {
-                panic!("failed to create command list");
+            for _ in 0..FRAME_COUNT as usize {
+                // create command allocator
+                let command_allocator = self.device
+                    .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
+                if !command_allocator.is_ok() {
+                    panic!("failed to create command allocator");
+                }
+                let command_allocator = command_allocator.unwrap();
+
+                // create command list
+                let command_list =
+                    self.device.CreateCommandList(
+                        0,
+                        D3D12_COMMAND_LIST_TYPE_DIRECT,
+                        &command_allocator,
+                        None,
+                    );
+                if !command_list.is_ok() {
+                    panic!("failed to create command list");
+                }
+                let command_list = command_list.unwrap();
+
+                command_allocators.push(command_allocator);
+                command_lists.push(command_list);
             }
-            let command_list = command_list.unwrap();
 
             // assign struct
             CmdBuf {
-                command_allocator: command_allocator,
-                command_list: command_list
+                cur_frame_index: 1,
+                command_allocator: command_allocators,
+                command_list: command_lists
             }
         }
     }
 
-    fn execute(&self, cmd: CmdBuf) {
-
+    fn execute(&self, cmd: &CmdBuf) {
+        unsafe {
+            let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.cur_frame_index]);
+            self.command_queue.ExecuteCommandLists(
+                1, &mut Some(command_list));
+            println!("exec {}", cmd.cur_frame_index);
+        }
     }
 
     // tests
@@ -273,6 +313,8 @@ impl gfx::SwapChain<Graphics> for SwapChain {
             let mut num_waitable = 1;
 
             let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
+            println!("waiting {} {}", self.cur_frame_ctx, fv);
+
             if fv != 0 // means no fence was signaled
             {
                 fv = 0;
@@ -281,25 +323,67 @@ impl gfx::SwapChain<Graphics> for SwapChain {
                 num_waitable = 2;
             }
             
+            
             WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
         }
         println!("new_frame");
+    }
+    fn get_frame_index(&self) -> i32 {
+        self.cur_frame_ctx
     }
     fn swap(&mut self, device: &Device) {
         unsafe {
             self.swap_chain.Present(1, 0);
             let fv = self.fence_last_signalled_value + 1;
+            println!("signal {}", fv);
             device.command_queue.Signal(&self.fence, fv as u64);
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.cur_frame_ctx as usize] = fv;
         }
-        println!("swap");
+        
     }
 }
 
 impl gfx::CmdBuf<Graphics> for CmdBuf {
-    fn clear_debug(&self, queue: SwapChain) {
+    fn reset(&mut self, queue: &SwapChain) {
+        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
+        unsafe { 
+            self.command_allocator[bb].Reset();
+            self.command_list[bb].Reset(&self.command_allocator[bb], None);
+        }
+        self.cur_frame_index = bb;
+        println!("reset {}", self.cur_frame_index);
+    }
+    fn clear_debug(&self, queue: &SwapChain) {
+        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
 
+        // Indicate that the back buffer will be used as a render target.
+        let barrier = transition_barrier(
+            &queue.render_targets[bb],
+            D3D12_RESOURCE_STATE_PRESENT,
+            D3D12_RESOURCE_STATE_RENDER_TARGET,
+        );
+        unsafe { self.command_list[bb].ResourceBarrier(1, &barrier) };
+
+        unsafe {
+            self.command_list[bb].ClearRenderTargetView(
+                queue.rtv_handles[bb], [0.0, 1.0, 0.0, 1.0].as_ptr(), 0, std::ptr::null());
+        }
+
+        // Indicate that the back buffer will now be used to present.
+        unsafe {
+            self.command_list[bb].ResourceBarrier(
+                1,
+                &transition_barrier(
+                    &queue.render_targets[bb],
+                    D3D12_RESOURCE_STATE_RENDER_TARGET,
+                    D3D12_RESOURCE_STATE_PRESENT,
+                ),
+            );
+
+            self.command_list[bb].Close();
+        }
+        println!("clear {}", bb);
     }
 }
 

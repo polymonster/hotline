@@ -3,6 +3,7 @@ use os::Window;
 
 use gfx::Device;
 use gfx::SwapChain;
+use gfx::CmdBuf;
 
 use std::sync::Arc;
 use std::thread;
@@ -31,11 +32,16 @@ fn main() {
     });
 
 
-    let mut swap_chain = dev.create_swap_chain(win);
-    let cmdbuffer = dev.create_cmd_buf();
+    let mut swap_chain = dev.create_swap_chain(&win);
+    let mut cmdbuffer = dev.create_cmd_buf();
 
     while instarc.run() {
         swap_chain.new_frame();
+        
+        cmdbuffer.reset(&swap_chain);
+        cmdbuffer.clear_debug(&swap_chain);
+
+        dev.execute(&cmdbuffer);
         swap_chain.swap(&dev);
     }
 

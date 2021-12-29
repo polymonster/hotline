@@ -74,7 +74,7 @@ impl os::Instance<Platform> for Instance {
             let mut msg = MSG::default();
             let mut quit = false;
             loop {
-                if PeekMessageA(&mut msg, HWND(0), 0, 0, PM_REMOVE).into() {
+                if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
                     DispatchMessageA(&mut msg);
 
