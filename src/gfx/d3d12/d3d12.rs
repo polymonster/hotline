@@ -39,6 +39,8 @@ pub struct Sample {
 pub struct SwapChain {
     name: String,
     cur_frame_ctx: i32,
+    width: i32,
+    height: i32,
     fence: ID3D12Fence,
     fence_last_signalled_value: i32,
     fence_event: HANDLE,
@@ -469,6 +471,8 @@ impl gfx::Device<Graphics> for Device {
             SwapChain {
                 name: String::from("d3d12 queue"),
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
+                width: rect.width,
+                height: rect.height,
                 cur_frame_ctx: 0,
                 fence_last_signalled_value: 0,
                 fence_event: fence_event,
@@ -540,7 +544,7 @@ impl gfx::Device<Graphics> for Device {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.cur_frame_index]);
             self.command_queue.ExecuteCommandLists(
                 1, &mut Some(command_list));
-            println!("exec {}", cmd.cur_frame_index);
+            // println!("exec {}", cmd.cur_frame_index);
         }
     }
 
@@ -564,7 +568,7 @@ impl gfx::SwapChain<Graphics> for SwapChain {
             let mut num_waitable = 1;
 
             let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
-            println!("waiting {} {}", self.cur_frame_ctx, fv);
+            //println!("waiting {} {}", self.cur_frame_ctx, fv);
 
             if fv != 0 // means no fence was signaled
             {
@@ -573,25 +577,99 @@ impl gfx::SwapChain<Graphics> for SwapChain {
                 waitable[1] = self.fence_event;
                 num_waitable = 2;
             }
-            
-            
+
             WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
         }
-        println!("new_frame");
     }
+
+    fn update(&mut self, device: &Device, window: &win32::Window) {
+        let wh = window.get_size();
+        if wh.0 != self.width || wh.1 != self.height {
+            println!("swap chain resize required!");
+            let mut handles : Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+            let mut render_targets : Vec<ID3D12Resource> = Vec::new();
+
+            self.render_targets.clear();
+            self.rtv_handles.clear();
+
+            //self.render_targets[0].into_param()
+
+            std::thread::sleep_ms(1000);
+
+            unsafe {
+                let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+                let mut num_waitable = 1;
+    
+                let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
+                //println!("waiting {} {}", self.cur_frame_ctx, fv);
+    
+                if fv != 0 // means no fence was signaled
+                {
+                    fv = 0;
+                    self.fence.SetEventOnCompletion(fv as u64, self.fence_event);
+                    waitable[1] = self.fence_event;
+                    num_waitable = 2;
+                }
+    
+                WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
+            }
+
+            unsafe {
+                let res = self.swap_chain.ResizeBuffers(FRAME_COUNT, wh.0 as u32, wh.1 as u32, DXGI_FORMAT_UNKNOWN, 0);
+                if !res.is_ok() {
+                    let err = res.err();
+                    if err.is_some() {
+                        let eee = err.unwrap();
+                        println!("swap chain resize failed {}", eee);
+                    }
+                }
+                
+                let rtv_descriptor_size = device.device.GetDescriptorHandleIncrementSize(
+                    D3D12_DESCRIPTOR_HEAP_TYPE_RTV
+                ) as usize;
+                let rtv_handle = self.rtv_heap.GetCPUDescriptorHandleForHeapStart();
+                
+                for i in 0..FRAME_COUNT {
+                    let render_target: ID3D12Resource = self.swap_chain.GetBuffer(i).unwrap();
+                    let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
+                        ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
+                    };
+                    device.device.CreateRenderTargetView(
+                        &render_target,
+                        std::ptr::null_mut(),
+                        &sub_handle
+                    );
+                    handles.push(sub_handle);
+                    render_targets.push(render_target);
+                }
+            }
+
+            self.rtv_handles = handles;
+            self.render_targets = render_targets;
+            self.width = wh.0;
+            self.height = wh.1;
+        }
+    }
+
     fn get_frame_index(&self) -> i32 {
         self.cur_frame_ctx
     }
+
     fn swap(&mut self, device: &Device) {
         unsafe {
             self.swap_chain.Present(1, 0);
             let fv = self.fence_last_signalled_value + 1;
-            println!("signal {}", fv);
+            // println!("signal {}", fv);
             device.command_queue.Signal(&self.fence, fv as u64);
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.cur_frame_ctx as usize] = fv;
         }
-        
+    }
+}
+
+impl CmdBuf {
+    fn cmd(&self) -> &ID3D12GraphicsCommandList {
+        &self.command_list[self.cur_frame_index]
     }
 }
 
@@ -603,7 +681,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             self.command_list[bb].Reset(&self.command_allocator[bb], None);
         }
         self.cur_frame_index = bb;
-        println!("reset {}", self.cur_frame_index);
+        // println!("reset {}", self.cur_frame_index);
     }
     fn clear_debug(&self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
@@ -614,45 +692,60 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             D3D12_RESOURCE_STATE_PRESENT,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
         );
-        unsafe { self.command_list[bb].ResourceBarrier(1, &barrier) };
 
-        unsafe {
+        unsafe 
+        {
+            self.command_list[bb].ResourceBarrier(1, &barrier);
             self.command_list[bb].ClearRenderTargetView(
                 queue.rtv_handles[bb], [r, g, b, a].as_ptr(), 0, std::ptr::null());
+            self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
         }
-
-        // test
-        let viewport = D3D12_VIEWPORT {
-            TopLeftX: 0.0,
-            TopLeftY: 0.0,
-            Width: 1280.0 as f32,
-            Height: 720.0 as f32,
-            MinDepth: D3D12_MIN_DEPTH,
-            MaxDepth: D3D12_MAX_DEPTH,
-        };
-
-        let scissor_rect = RECT {
-            left: 0,
-            top: 0,
-            right: 1280,
-            bottom: 720,
-        };
-
+    }
+    fn set_state_debug(&self) {
+        let cmd = self.cmd();
         unsafe { 
-            self.command_list[bb].SetGraphicsRootSignature(&self.sample.root_signature);
-            self.command_list[bb].SetPipelineState(&self.sample.pso);
-            self.command_list[bb].RSSetViewports(1, &viewport);
-            self.command_list[bb].RSSetScissorRects(1, &scissor_rect);
-            self.command_list[bb].OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
-
-            self.command_list[bb].IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            self.command_list[bb].IASetVertexBuffers(0, 1, &self.sample.vbv);
-            self.command_list[bb].DrawInstanced(3, 1, 0, 0);
+            cmd.SetGraphicsRootSignature(&self.sample.root_signature);
+            cmd.SetPipelineState(&self.sample.pso);
+            cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmd.IASetVertexBuffers(0, 1, &self.sample.vbv);
+            cmd.DrawInstanced(3, 1, 0, 0);
         };
-
+    }
+    fn set_viewport(&self, viewport: &gfx::Viewport) {
+        let d3d12_vp = D3D12_VIEWPORT {
+            TopLeftX: viewport.x,
+            TopLeftY: viewport.y,
+            Width: viewport.width,
+            Height: viewport.height,
+            MinDepth: viewport.min_depth,
+            MaxDepth: viewport.max_depth
+        };
+        unsafe {
+            self.cmd().RSSetViewports(1, &d3d12_vp);
+        }     
+    }
+    fn set_scissor_rect(&self, scissor_rect: &gfx::ScissorRect) {
+        let d3d12_sr = RECT {
+            left: scissor_rect.left,
+            top: scissor_rect.top,
+            right: scissor_rect.right,
+            bottom: scissor_rect.bottom
+        };
+        unsafe {
+            self.cmd().RSSetScissorRects(1, &d3d12_sr);
+        }
+    }
+    fn draw_instanced(&self, vertex_count: u32, instance_count: u32, start_vertex: u32, start_instance: u32) {
+        unsafe {
+            self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
+        }
+    }
+    fn close_debug(&self, queue: &SwapChain) {
+        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
+        let cmd = self.cmd();
         // Indicate that the back buffer will now be used to present.
         unsafe {
-            self.command_list[bb].ResourceBarrier(
+            cmd.ResourceBarrier(
                 1,
                 &transition_barrier(
                     &queue.render_targets[bb],
@@ -660,10 +753,8 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
                     D3D12_RESOURCE_STATE_PRESENT,
                 ),
             );
-
-            self.command_list[bb].Close();
+            cmd.Close();
         }
-        println!("clear {}", bb);
     }
 }
 

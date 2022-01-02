@@ -46,6 +46,7 @@ impl os::Instance<Platform> for Instance {
             }
         }
     }
+
     fn create_window(&self, info: os::WindowInfo) -> Window {
         unsafe {
             let hwnd = CreateWindowExA(
@@ -69,6 +70,7 @@ impl os::Instance<Platform> for Instance {
             }
         }
     }
+
     fn run(&self) -> bool {
         unsafe {
             let mut msg = MSG::default();
@@ -124,18 +126,27 @@ impl os::Window<Platform> for Window {
             DestroyWindow(self.hwnd);
         }
     }
+
+    fn update(&mut self) {
+        unsafe {
+            let mut win_rect = RECT::default();
+            GetWindowRect(self.hwnd, &mut win_rect);
+            self.info.rect.width = win_rect.right - win_rect.left;
+            self.info.rect.height = win_rect.bottom - win_rect.top;
+            self.info.rect.x = win_rect.left;
+            self.info.rect.y = win_rect.top;
+        }
+    }
 }
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match message as u32 {
             WM_PAINT => {
-                println!("WM_PAINT");
                 ValidateRect(window, std::ptr::null());
                 LRESULT(0)
             }
             WM_DESTROY => {
-                println!("WM_DESTROY");
                 PostQuitMessage(0);
                 LRESULT(0)
             }

@@ -28,7 +28,7 @@ fn main() {
     let instarc = platform::Instance::create();
     let dev = d3d12::Device::create();
 
-    let win = instarc.create_window(os::WindowInfo { 
+    let mut win = instarc.create_window(os::WindowInfo { 
         title : String::from("hello world!"),
         rect : os::Rect {
             x : 0,
@@ -77,20 +77,48 @@ fn main() {
     let mut ci = 0;
 
     while instarc.run() {
+        win.update();
+        swap_chain.update(&dev, &win);
+
         swap_chain.new_frame();
+        
+        let window_rect = win.get_rect();
+
+        // TODO: utility func?
+        let viewport = gfx::Viewport {
+            x: window_rect.x as f32,
+            y: window_rect.y as f32,
+            width: window_rect.width as f32,
+            height: window_rect.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0
+        };
+
+        let scissor = gfx::ScissorRect {
+            left: window_rect.x,
+            top: window_rect.y,
+            right: window_rect.width,
+            bottom: window_rect.height
+        };
         
         cmdbuffer.reset(&swap_chain);
 
         let col = &clears[ci];
-        cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a);
+        cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a); //
+
+        cmdbuffer.set_viewport(&viewport);
+        cmdbuffer.set_scissor_rect(&scissor);
+
+        cmdbuffer.set_state_debug(); //
+        cmdbuffer.draw_instanced(3, 1, 0, 0);
+        cmdbuffer.close_debug(&swap_chain); //
 
         dev.execute(&cmdbuffer);
-
-        std::thread::sleep_ms(1000);
         swap_chain.swap(&dev);
+
+        std::thread::sleep_ms(32);
         ci = (ci + 1) % 4;
     }
-
 }
 
 #[test]

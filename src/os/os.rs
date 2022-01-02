@@ -29,5 +29,6 @@ pub trait Window<P: Platform>: Any + Sized {
     fn get_rect(&self) -> Rect<i32>;
     fn set_size(&mut self, width : i32, height : i32);
     fn get_size(&self) -> (i32, i32);
+    fn update(&mut self);
     fn close(&mut self);
 }
