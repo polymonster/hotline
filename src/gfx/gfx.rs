@@ -40,19 +40,21 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
 // TODO: needs? + Send + Sync
 pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &G::Device, window: &platform::Window);
+    fn update(&mut self, device: &G::Device, window: &platform::Window) -> bool;
+    fn needs_update(&mut self, device: &G::Device, window: &platform::Window) -> bool;
     fn get_frame_index(&self) -> i32;
     fn swap(&mut self, device: &G::Device);
 }
 
 pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &G::SwapChain);
+    fn reset_all(&mut self);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn draw_instanced(&self, vertex_count: u32, instance_count: u32, start_vertex: u32, start_instance: u32);
 
     // debug funcs 
-    fn clear_debug(&self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
+    fn clear_debug(&mut self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
     fn set_state_debug(&self);
     fn close_debug(&self, swap_chain: &G::SwapChain);
 }

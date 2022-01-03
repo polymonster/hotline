@@ -40,6 +40,7 @@ fn main() {
 
 
     let mut swap_chain = dev.create_swap_chain(&win);
+    
     let mut cmdbuffer = dev.create_cmd_buf();
 
     let magenta = ClearCol {
@@ -75,12 +76,20 @@ fn main() {
     ];
 
     let mut ci = 0;
+    let mut incr = 0;
 
     while instarc.run() {
         win.update();
-        swap_chain.update(&dev, &win);
-
-        swap_chain.new_frame();
+        
+        if swap_chain.needs_update(&dev, &win) 
+        {
+            cmdbuffer.reset_all();
+            swap_chain.update(&dev, &win);
+        }
+        else
+        {
+            swap_chain.new_frame();
+        }
         
         let window_rect = win.get_rect();
 
@@ -111,13 +120,15 @@ fn main() {
 
         cmdbuffer.set_state_debug(); //
         cmdbuffer.draw_instanced(3, 1, 0, 0);
-        cmdbuffer.close_debug(&swap_chain); //
+
+        cmdbuffer.close_debug(&swap_chain);
 
         dev.execute(&cmdbuffer);
         swap_chain.swap(&dev);
 
-        std::thread::sleep_ms(32);
+        std::thread::sleep_ms(128);
         ci = (ci + 1) % 4;
+        incr = incr + 1;
     }
 }
 
