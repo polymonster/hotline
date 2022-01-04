@@ -19,10 +19,16 @@ pub struct ScissorRect {
     pub bottom: i32
 }
 
+pub struct BufferInfo {
+    pub data: *const char,
+    pub data_size_bytes: usize
+}
+
 pub trait Graphics: 'static + Sized + Any + Send + Sync {
     type Device: Device<Self>;
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
+    type Buffer: Buffer<Self>;
 }
 
 // TODO: needs? + Send + Sync
@@ -30,6 +36,7 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
     fn create_cmd_buf(&self) -> G::CmdBuf;
+    fn create_buffer(&self, info: BufferInfo) -> G::Buffer;
     fn execute(&self, cmd: &G::CmdBuf);
 
     // tests
@@ -51,12 +58,17 @@ pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
     fn reset_all(&mut self);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
+    fn set_vertex_buffer(&self, buffer: &G::Buffer, slot: u32);
     fn draw_instanced(&self, vertex_count: u32, instance_count: u32, start_vertex: u32, start_instance: u32);
 
     // debug funcs 
     fn clear_debug(&mut self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
     fn set_state_debug(&self);
     fn close_debug(&self, swap_chain: &G::SwapChain);
+}
+
+pub trait Buffer <G: Graphics>: 'static + Sized + Any {
+
 }
 
 // TODO:

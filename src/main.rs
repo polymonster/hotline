@@ -24,6 +24,12 @@ pub struct ClearCol {
     a: f32
 }
 
+#[repr(C)]
+struct Vertex {
+    position: [f32; 3],
+    color: [f32; 4],
+}
+
 fn main() {
     let instarc = platform::Instance::create();
     let dev = d3d12::Device::create();
@@ -75,6 +81,26 @@ fn main() {
         magenta, yellow, cyan, green
     ];
 
+    let vertices = [
+        Vertex {
+            position: [0.0, 0.25, 0.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [0.25, -0.25, 0.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-0.25, -0.25, 0.0],
+            color: [0.0, 0.0, 1.0, 1.0],
+        },
+    ];
+
+    let vertex_buffer = dev.create_buffer(gfx::BufferInfo {
+        data: vertices.as_ptr() as *const char,
+        data_size_bytes: std::mem::size_of_val(&vertices) 
+    });
+
     let mut ci = 0;
     let mut incr = 0;
 
@@ -119,6 +145,7 @@ fn main() {
         cmdbuffer.set_scissor_rect(&scissor);
 
         cmdbuffer.set_state_debug(); //
+        cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
 
         cmdbuffer.close_debug(&swap_chain);

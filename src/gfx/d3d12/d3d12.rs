@@ -59,6 +59,13 @@ pub struct CmdBuf {
     sample: Sample
 }
 
+pub struct Buffer {
+    resource: ID3D12Resource,
+    vbv: D3D12_VERTEX_BUFFER_VIEW
+}
+
+impl gfx::Buffer<Graphics> for Buffer { }
+
 fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,
@@ -539,6 +546,63 @@ impl gfx::Device<Graphics> for Device {
         }
     }
 
+    fn create_buffer(&self, info: gfx::BufferInfo) -> Buffer {
+        let mut buf: Option<ID3D12Resource> = None;
+        unsafe {
+            if !self.device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Width: info.data_size_bytes as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    ..Default::default()
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                std::ptr::null(),
+                &mut buf,
+            ).is_ok() {
+                panic!("failed to create buffer");
+            };
+        };
+        let buf = buf.unwrap();
+        
+        // Copy the triangle data to the vertex buffer.
+        unsafe {
+            let mut data = std::ptr::null_mut();
+            buf.Map(0, std::ptr::null(), &mut data);
+            std::ptr::copy_nonoverlapping(
+                info.data,
+                info.data as *mut char,
+                info.data_size_bytes,
+            );
+            buf.Unmap(0, std::ptr::null());
+        }
+
+        println!("create buffer: {}", info.data_size_bytes);
+
+        let vbv = D3D12_VERTEX_BUFFER_VIEW {
+            BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
+            StrideInBytes: std::mem::size_of::<Vertex>() as u32,
+            SizeInBytes: info.data_size_bytes as u32,
+        };
+
+        Buffer {
+            resource: buf,
+            vbv: vbv
+        }
+    }
+
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.cur_frame_index]);
@@ -724,6 +788,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             }
         }
     }
+
     fn clear_debug(&mut self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
 
@@ -743,15 +808,16 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
         }
     }
+
     fn set_state_debug(&self) {
         let cmd = self.cmd();
         unsafe { 
             cmd.SetGraphicsRootSignature(&self.sample.root_signature);
             cmd.SetPipelineState(&self.sample.pso);
             cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            cmd.IASetVertexBuffers(0, 1, &self.sample.vbv);
         };
     }
+
     fn set_viewport(&self, viewport: &gfx::Viewport) {
         let d3d12_vp = D3D12_VIEWPORT {
             TopLeftX: viewport.x,
@@ -765,6 +831,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             self.cmd().RSSetViewports(1, &d3d12_vp);
         }     
     }
+
     fn set_scissor_rect(&self, scissor_rect: &gfx::ScissorRect) {
         let d3d12_sr = RECT {
             left: scissor_rect.left,
@@ -776,11 +843,20 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
             self.cmd().RSSetScissorRects(1, &d3d12_sr);
         }
     }
+
+    fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
+        let cmd = self.cmd();
+        unsafe { 
+            cmd.IASetVertexBuffers(slot, 1, &self.sample.vbv);
+        };
+    }
+
     fn draw_instanced(&self, vertex_count: u32, instance_count: u32, start_vertex: u32, start_instance: u32) {
         unsafe {
             self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
         }
     }
+
     fn close_debug(&self, queue: &SwapChain) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
         let cmd = self.cmd();
@@ -804,4 +880,5 @@ impl gfx::Graphics for Graphics {
     type Device = Device;
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
+    type Buffer = Buffer;
 }
