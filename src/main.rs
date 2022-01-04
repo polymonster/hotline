@@ -97,7 +97,7 @@ fn main() {
     ];
 
     let vertex_buffer = dev.create_buffer(gfx::BufferInfo {
-        data: vertices.as_ptr() as *const char,
+        data: vertices.as_ptr() as *const u8,
         data_size_bytes: std::mem::size_of_val(&vertices) 
     });
 

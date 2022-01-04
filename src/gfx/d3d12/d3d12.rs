@@ -30,10 +30,8 @@ unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
 
 pub struct Sample {
-    vertex_buffer: ID3D12Resource,
     root_signature: ID3D12RootSignature,
     pso: ID3D12PipelineState,
-    vbv: D3D12_VERTEX_BUFFER_VIEW,
 }
 
 pub struct SwapChain {
@@ -65,6 +63,15 @@ pub struct Buffer {
 }
 
 impl gfx::Buffer<Graphics> for Buffer { }
+
+fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    unsafe {
+        ::std::slice::from_raw_parts(
+            (p as *const T) as *const u8,
+            ::std::mem::size_of::<T>(),
+        )
+    }
+}
 
 fn transition_barrier(
     resource: &ID3D12Resource,
@@ -273,79 +280,6 @@ struct Vertex {
     color: [f32; 4],
 }
 
-fn create_vertex_buffer(
-    device: &ID3D12Device,
-    aspect_ratio: f32,
-) -> Result<(ID3D12Resource, D3D12_VERTEX_BUFFER_VIEW)> {
-    let vertices = [
-        Vertex {
-            position: [0.0, 0.25 * aspect_ratio, 0.0],
-            color: [1.0, 0.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [0.25, -0.25 * aspect_ratio, 0.0],
-            color: [0.0, 1.0, 0.0, 1.0],
-        },
-        Vertex {
-            position: [-0.25, -0.25 * aspect_ratio, 0.0],
-            color: [0.0, 0.0, 1.0, 1.0],
-        },
-    ];
-
-    // Note: using upload heaps to transfer static data like vert buffers is
-    // not recommended. Every time the GPU needs it, the upload heap will be
-    // marshalled over. Please read up on Default Heap usage. An upload heap
-    // is used here for code simplicity and because there are very few verts
-    // to actually transfer.
-    let mut vertex_buffer: Option<ID3D12Resource> = None;
-    unsafe {
-        device.CreateCommittedResource(
-            &D3D12_HEAP_PROPERTIES {
-                Type: D3D12_HEAP_TYPE_UPLOAD,
-                ..Default::default()
-            },
-            D3D12_HEAP_FLAG_NONE,
-            &D3D12_RESOURCE_DESC {
-                Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                Width: std::mem::size_of_val(&vertices) as u64,
-                Height: 1,
-                DepthOrArraySize: 1,
-                MipLevels: 1,
-                SampleDesc: DXGI_SAMPLE_DESC {
-                    Count: 1,
-                    Quality: 0,
-                },
-                Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                ..Default::default()
-            },
-            D3D12_RESOURCE_STATE_GENERIC_READ,
-            std::ptr::null(),
-            &mut vertex_buffer,
-        )?
-    };
-    let vertex_buffer = vertex_buffer.unwrap();
-
-    // Copy the triangle data to the vertex buffer.
-    unsafe {
-        let mut data = std::ptr::null_mut();
-        vertex_buffer.Map(0, std::ptr::null(), &mut data)?;
-        std::ptr::copy_nonoverlapping(
-            vertices.as_ptr(),
-            data as *mut Vertex,
-            std::mem::size_of_val(&vertices),
-        );
-        vertex_buffer.Unmap(0, std::ptr::null());
-    }
-
-    let vbv = D3D12_VERTEX_BUFFER_VIEW {
-        BufferLocation: unsafe { vertex_buffer.GetGPUVirtualAddress() },
-        StrideInBytes: std::mem::size_of::<Vertex>() as u32,
-        SizeInBytes: std::mem::size_of_val(&vertices) as u32,
-    };
-
-    Ok((vertex_buffer, vbv))
-}
-
 impl gfx::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
@@ -526,13 +460,10 @@ impl gfx::Device<Graphics> for Device {
 
             let root_signature = create_root_signature(&self.device).unwrap();
             let pso = create_pipeline_state(&self.device, &root_signature).unwrap();
-            let (vertex_buffer, vbv) = create_vertex_buffer(&self.device, 16.0/9.0).unwrap();
 
             let sample = Sample {
                 root_signature: root_signature,
-                pso: pso,
-                vertex_buffer: vertex_buffer,
-                vbv: vbv
+                pso: pso
             };
 
             // assign struct
@@ -583,7 +514,7 @@ impl gfx::Device<Graphics> for Device {
             buf.Map(0, std::ptr::null(), &mut data);
             std::ptr::copy_nonoverlapping(
                 info.data,
-                info.data as *mut char,
+                data as *mut u8,
                 info.data_size_bytes,
             );
             buf.Unmap(0, std::ptr::null());
@@ -847,7 +778,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
         unsafe { 
-            cmd.IASetVertexBuffers(slot, 1, &self.sample.vbv);
+            cmd.IASetVertexBuffers(slot, 1, &buffer.vbv);
         };
     }
 

@@ -20,7 +20,8 @@ pub struct ScissorRect {
 }
 
 pub struct BufferInfo {
-    pub data: *const char,
+    //pub data_u8: &[u8],
+    pub data: *const u8,
     pub data_size_bytes: usize
 }
 
