@@ -59,7 +59,8 @@ pub struct CmdBuf {
 
 pub struct Buffer {
     resource: ID3D12Resource,
-    vbv: D3D12_VERTEX_BUFFER_VIEW
+    vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
+    ibv: Option<D3D12_INDEX_BUFFER_VIEW>
 }
 
 impl gfx::Buffer<Graphics> for Buffer { }
@@ -274,12 +275,6 @@ fn create_pipeline_state(
     unsafe { device.CreateGraphicsPipelineState(&desc) }
 }
 
-#[repr(C)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 4],
-}
-
 impl gfx::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
@@ -477,7 +472,7 @@ impl gfx::Device<Graphics> for Device {
         }
     }
 
-    fn create_buffer(&self, info: gfx::BufferInfo) -> Buffer {
+    fn create_buffer(&self, info: gfx::BufferInfo, data: &[u8]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
             if !self.device.CreateCommittedResource(
@@ -488,7 +483,7 @@ impl gfx::Device<Graphics> for Device {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC {
                     Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Width: info.data_size_bytes as u64,
+                    Width: data.len() as u64,
                     Height: 1,
                     DepthOrArraySize: 1,
                     MipLevels: 1,
@@ -510,27 +505,42 @@ impl gfx::Device<Graphics> for Device {
         
         // Copy the triangle data to the vertex buffer.
         unsafe {
-            let mut data = std::ptr::null_mut();
-            buf.Map(0, std::ptr::null(), &mut data);
+            let mut map_data = std::ptr::null_mut();
+            buf.Map(0, std::ptr::null(), &mut map_data);
             std::ptr::copy_nonoverlapping(
-                info.data,
-                data as *mut u8,
-                info.data_size_bytes,
+                data.as_ptr(),
+                map_data as *mut u8,
+                data.len(),
             );
             buf.Unmap(0, std::ptr::null());
         }
 
-        println!("create buffer: {}", info.data_size_bytes);
+        println!("create buffer: {}", data.len());
 
-        let vbv = D3D12_VERTEX_BUFFER_VIEW {
-            BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
-            StrideInBytes: std::mem::size_of::<Vertex>() as u32,
-            SizeInBytes: info.data_size_bytes as u32,
-        };
+        let mut vbv : Option<D3D12_VERTEX_BUFFER_VIEW> = None;
+        let mut ibv : Option<D3D12_INDEX_BUFFER_VIEW> = None;
+
+        match info.usage {
+            gfx::BufferUsage::Vertex => {
+                vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
+                    BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
+                    StrideInBytes: info.stride as u32,
+                    SizeInBytes: data.len() as u32,
+                });
+            }
+            gfx::BufferUsage::Index => {
+                ibv = Some(D3D12_INDEX_BUFFER_VIEW {
+                    BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
+                    SizeInBytes: data.len() as u32,
+                    Format: DXGI_FORMAT_R16_UNORM
+                })
+            }
+        }
 
         Buffer {
             resource: buf,
-            vbv: vbv
+            vbv: vbv,
+            ibv: ibv
         }
     }
 
@@ -778,7 +788,10 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
         unsafe { 
-            cmd.IASetVertexBuffers(slot, 1, &buffer.vbv);
+            if buffer.vbv.is_some() {
+                cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap());
+            }
+            
         };
     }
 

@@ -1,5 +1,8 @@
 use std::{any::Any};
 
+#[macro_use]
+extern crate bitmask;
+
 #[cfg(target_os = "windows")]
 use win32 as platform;
 
@@ -19,10 +22,22 @@ pub struct ScissorRect {
     pub bottom: i32
 }
 
+bitmask! {
+    pub mask CpuAccessFlags: u8 where flags Access {
+        none = 0b00000000,
+        read = 0b00000001,
+        write = 0b00000010
+    }
+}
+
+pub enum BufferUsage {
+    Vertex,
+    Index
+}
+
 pub struct BufferInfo {
-    //pub data_u8: &[u8],
-    pub data: *const u8,
-    pub data_size_bytes: usize
+    pub usage: BufferUsage,
+    pub stride: usize
 }
 
 pub trait Graphics: 'static + Sized + Any + Send + Sync {
@@ -32,12 +47,11 @@ pub trait Graphics: 'static + Sized + Any + Send + Sync {
     type Buffer: Buffer<Self>;
 }
 
-// TODO: needs? + Send + Sync
 pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
     fn create_cmd_buf(&self) -> G::CmdBuf;
-    fn create_buffer(&self, info: BufferInfo) -> G::Buffer;
+    fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> G::Buffer;
     fn execute(&self, cmd: &G::CmdBuf);
 
     // tests
@@ -45,7 +59,6 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn print_mutate(&self);
 }
 
-// TODO: needs? + Send + Sync
 pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &G::Device, window: &platform::Window) -> bool;

@@ -30,6 +30,15 @@ struct Vertex {
     color: [f32; 4],
 }
 
+fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    unsafe {
+        ::std::slice::from_raw_parts(
+            (p as *const T) as *const u8,
+            ::std::mem::size_of::<T>(),
+        )
+    }
+}
+
 fn main() {
     let instarc = platform::Instance::create();
     let dev = d3d12::Device::create();
@@ -44,9 +53,7 @@ fn main() {
         }
     });
 
-
     let mut swap_chain = dev.create_swap_chain(&win);
-    
     let mut cmdbuffer = dev.create_cmd_buf();
 
     let magenta = ClearCol {
@@ -77,7 +84,7 @@ fn main() {
         a: 1.0
     };
 
-    let mut clears : [ClearCol; 4] = [
+    let clears : [ClearCol; 4] = [
         magenta, yellow, cyan, green
     ];
 
@@ -96,10 +103,15 @@ fn main() {
         },
     ];
 
-    let vertex_buffer = dev.create_buffer(gfx::BufferInfo {
-        data: vertices.as_ptr() as *const u8,
-        data_size_bytes: std::mem::size_of_val(&vertices) 
-    });
+    let info = gfx::BufferInfo {
+        usage: gfx::BufferUsage::Vertex,
+        stride: std::mem::size_of::<Vertex>()
+    };
+
+    let vertex_buffer = dev.create_buffer(
+        info, 
+        any_as_u8_slice(&vertices)
+    );
 
     let mut ci = 0;
     let mut incr = 0;
