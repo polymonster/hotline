@@ -53,8 +53,7 @@ pub struct CmdBuf {
     cur_frame_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
-    barry: Vec<D3D12_RESOURCE_BARRIER>,
-    sample: Sample
+    sample: Option<Sample>
 }
 
 pub struct Buffer {
@@ -453,6 +452,7 @@ impl gfx::Device<Graphics> for Device {
                 command_lists.push(command_list);
             }
 
+            /*
             let root_signature = create_root_signature(&self.device).unwrap();
             let pso = create_pipeline_state(&self.device, &root_signature).unwrap();
 
@@ -460,14 +460,14 @@ impl gfx::Device<Graphics> for Device {
                 root_signature: root_signature,
                 pso: pso
             };
+            */
 
             // assign struct
             CmdBuf {
                 cur_frame_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
-                sample: sample,
-                barry: Vec::new()
+                sample: None,
             }
         }
     }
@@ -564,6 +564,28 @@ impl gfx::Device<Graphics> for Device {
 }
 
 impl SwapChain {
+    fn wait_for_frame(&mut self, frame_index: usize) {
+        unsafe {
+            let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+            let mut num_waitable = 1;
+
+            let mut fv = self.frame_fence_value[frame_index as usize];
+            println!("waiting {} {}", frame_index, fv);
+
+            if fv != 0 // means no fence was signaled
+            {
+                fv = 0;
+                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
+                    panic!("failed to set on completion event!");
+                }
+                waitable[1] = self.fence_event;
+                num_waitable = 2;
+            }
+
+            WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
+        }
+    }
+
     fn wait_for_last_frame(&mut self) {
         unsafe {
             let mut num_waitable = 1;
@@ -576,7 +598,9 @@ impl SwapChain {
             if fv != 0 // means no fence was signaled
             {
                 fv = 0;
-                self.fence.SetEventOnCompletion(fv as u64, self.fence_event);
+                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
+                    panic!("failed to set on completion event!");
+                }
                 waitable[1] = self.fence_event;
                 num_waitable = 2;
             }
@@ -597,53 +621,19 @@ impl gfx::SwapChain<Graphics> for SwapChain {
         let next_frame_index = self.frame_index + 1;
         self.frame_index = next_frame_index;
         self.cur_frame_ctx = next_frame_index % FRAME_COUNT as i32;
-        unsafe {
-            let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
-            let mut num_waitable = 1;
-
-            let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
-            println!("waiting {} {}", self.cur_frame_ctx, fv);
-
-            if fv != 0 // means no fence was signaled
-            {
-                fv = 0;
-                self.fence.SetEventOnCompletion(fv as u64, self.fence_event);
-                waitable[1] = self.fence_event;
-                num_waitable = 2;
-            }
-
-            WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
-        }
+        self.wait_for_frame(self.cur_frame_ctx as usize);
     }
 
-    fn needs_update(&mut self, device: &Device, window: &win32::Window) -> bool {
+    fn update(&mut self, device: &Device, window: &win32::Window) {
         let wh = window.get_size();
-        let mut rv = false;
         if wh.0 != self.width || wh.1 != self.height {
-            rv = true;
-            self.wait_for_last_frame();
-        }
-        rv
-    }
-
-    fn update(&mut self, device: &Device, window: &win32::Window) -> bool {
-        let wh = window.get_size();
-        let mut rv = false;
-        if wh.0 != self.width || wh.1 != self.height {
-            rv = true;
             unsafe {
+                self.wait_for_frame(self.cur_frame_ctx as usize);
 
-                //self.wait_for_last_frame();
-
-                for i in 0..FRAME_COUNT {
-                    let render_target: IUnknown = self.swap_chain.GetBuffer(i).unwrap();
-                    drop(render_target);
-                    drop(self.rtv_handles[i as usize]);
-                }
-                self.rtv_handles.clear();
-
+                // TODO: how to properly use flags
                 let flags = 64;
                 let res = self.swap_chain.ResizeBuffers(FRAME_COUNT, wh.0 as u32, wh.1 as u32, DXGI_FORMAT_UNKNOWN, flags);
+
                 if !res.is_ok() {
                     let err = res.err();
                     if err.is_some() {
@@ -655,6 +645,7 @@ impl gfx::SwapChain<Graphics> for SwapChain {
                     println!("resize success!");
                 }
 
+                // TODO: move into shared function
                 let rtv_descriptor_size = device.device.GetDescriptorHandleIncrementSize(
                     D3D12_DESCRIPTOR_HEAP_TYPE_RTV
                 ) as usize;
@@ -680,8 +671,10 @@ impl gfx::SwapChain<Graphics> for SwapChain {
                 self.width = wh.0;
                 self.height = wh.1;
             }
+        } 
+        else {
+            self.new_frame();
         }
-        rv
     }
 
     fn get_frame_index(&self) -> i32 {
@@ -716,16 +709,12 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
         self.cur_frame_index = bb;
         // println!("reset {}", self.cur_frame_index);
     }
+
     fn reset_all(&mut self) {
         for i in 0..FRAME_COUNT as usize {
             unsafe { 
                 self.command_allocator[i].Reset();
                 self.command_list[i].Reset(&self.command_allocator[i], None);
-            }
-        }
-        for b in &mut self.barry {
-            unsafe {
-                drop(&b.Anonymous.Transition);
             }
         }
     }
@@ -753,9 +742,13 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
     fn set_state_debug(&self) {
         let cmd = self.cmd();
         unsafe { 
-            cmd.SetGraphicsRootSignature(&self.sample.root_signature);
-            cmd.SetPipelineState(&self.sample.pso);
-            cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            if self.sample.is_some() {
+                let sss = self.sample.as_ref().unwrap();
+                cmd.SetGraphicsRootSignature(&sss.root_signature);
+                cmd.SetPipelineState(&sss.pso);
+                cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            }
+
         };
     }
 

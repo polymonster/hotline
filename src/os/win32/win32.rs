@@ -38,7 +38,7 @@ impl os::Instance<Platform> for Instance {
             };
     
             let atom = RegisterClassA(&wc);
-            debug_assert!(atom != 0);
+            //debug_assert!(atom != 0);
     
             Instance {
                 window_class: String::from(window_class),

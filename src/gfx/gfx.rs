@@ -61,8 +61,7 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
 
 pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &G::Device, window: &platform::Window) -> bool;
-    fn needs_update(&mut self, device: &G::Device, window: &platform::Window) -> bool;
+    fn update(&mut self, device: &G::Device, window: &platform::Window);
     fn get_frame_index(&self) -> i32;
     fn swap(&mut self, device: &G::Device);
 }
@@ -85,19 +84,25 @@ pub trait Buffer <G: Graphics>: 'static + Sized + Any {
 
 }
 
-// TODO:
-// x Viewport
-// x Scissor
-// x Bind Viewport
-// x Bind Scissor
-// x Draw Call
-// - Resize Swap Chain
-// - Vsync not working?
+pub fn create_viewporti(rect: os::Rect<i32>, min_depth: f32, max_depth: f32 ) -> Viewport {
+    Viewport {
+        x: rect.x as f32,
+        y: rect.y as f32,
+        width: rect.width as f32,
+        height: rect.height as f32,
+        min_depth: min_depth,
+        max_depth: max_depth
+    }
+}
 
-// TODO:
-// - Buffer
-// - Create Buffer
-// - Bind Vertex Buffer
+pub fn create_scissor_rect(rect: os::Rect<i32>) -> ScissorRect {
+    ScissorRect {
+        left: rect.x,
+        top: rect.y,
+        right: rect.width,
+        bottom: rect.height
+    }
+}
 
 // TODO:
 // - PSO
@@ -112,3 +117,16 @@ pub trait Buffer <G: Graphics>: 'static + Sized + Any {
 // TODO:
 // - pmfx Shaders
 // - pmfx Input Layout
+
+// TODO:
+// x Viewport
+// x Scissor
+// x Bind Viewport
+// x Bind Scissor
+// x Draw Call
+// x Resize Swap Chain
+// x Vsync not working?
+// x Buffer
+// x Create Buffer
+// x Bind Vertex Buffer
+
