@@ -1,0 +1,14 @@
+[package]
+name = "app"
+version = "0.1.0"
+edition = "2018"
+
+[lib]
+name = "app"
+path = "app.rs"
+
+[dependencies]
+win32 = { path = "../os/win32", package = "win32" }
+d3d12 = { path = "../gfx/d3d12", package = "d3d12" }
+os = { path = "../os", package = "os" }
+gfx = { path = "../gfx", package = "gfx" }

@@ -22,6 +22,7 @@ pub struct ScissorRect {
     pub bottom: i32
 }
 
+/*
 bitmask! {
     pub mask CpuAccessFlags: u8 where flags Access {
         none = 0b00000000,
@@ -29,6 +30,7 @@ bitmask! {
         write = 0b00000010
     }
 }
+*/
 
 pub enum BufferUsage {
     Vertex,
@@ -84,39 +86,59 @@ pub trait Buffer <G: Graphics>: 'static + Sized + Any {
 
 }
 
-pub fn create_viewporti(rect: os::Rect<i32>, min_depth: f32, max_depth: f32 ) -> Viewport {
-    Viewport {
-        x: rect.x as f32,
-        y: rect.y as f32,
-        width: rect.width as f32,
-        height: rect.height as f32,
-        min_depth: min_depth,
-        max_depth: max_depth
+impl From<os::Rect<i32>> for Viewport {
+    fn from(rect: os::Rect<i32>) -> Viewport{
+        Viewport {
+            x: rect.x as f32,
+            y: rect.y as f32,
+            width: rect.width as f32,
+            height: rect.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0
+        } 
     }
 }
 
-pub fn create_scissor_rect(rect: os::Rect<i32>) -> ScissorRect {
-    ScissorRect {
-        left: rect.x,
-        top: rect.y,
-        right: rect.width,
-        bottom: rect.height
+impl From<os::Rect<i32>> for ScissorRect {
+    fn from(rect: os::Rect<i32>) -> ScissorRect{
+        ScissorRect {
+            left: rect.x,
+            top: rect.y,
+            right: rect.width,
+            bottom: rect.height
+        }
     }
 }
+
+pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
+    unsafe {
+        ::std::slice::from_raw_parts(
+            (p as *const T) as *const u8,
+            ::std::mem::size_of::<T>(),
+        )
+    }
+}
+
 
 // TODO:
-// - PSO
+// x move to crates
+// - rust fmt
+
+// TODO:
 // - Shaders
 // - Input Layout
 // - Raster State
 // - Depth Stencil State
 // - Blend State
 // - Topology
-// - Sample
+// - PSO
 
 // TODO:
 // - pmfx Shaders
 // - pmfx Input Layout
+
+// TODO:
+// - samples 
 
 // TODO:
 // x Viewport
@@ -129,4 +151,5 @@ pub fn create_scissor_rect(rect: os::Rect<i32>) -> ScissorRect {
 // x Buffer
 // x Create Buffer
 // x Bind Vertex Buffer
+// x move tests
 

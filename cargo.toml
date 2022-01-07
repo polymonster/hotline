@@ -1,5 +1,5 @@
 [package]
-name = "hello-world"
+name = "hotline"
 version = "0.1.0"
 edition = "2018"
 
@@ -7,7 +7,8 @@ edition = "2018"
 version = "0.8.0"
 
 [dependencies]
-os = { path = "src/os", package = "os" }
-gfx = { path = "src/gfx", package = "gfx" }
-win32 = { path = "src/os/win32", package = "win32" }
-d3d12 = { path = "src/gfx/d3d12", package = "d3d12" }
+app = { path = "crates/app", package = "app" }
+os = { path = "crates/os", package = "os" }
+gfx = { path = "crates/gfx", package = "gfx" }
+win32 = { path = "crates/os/win32", package = "win32" }
+d3d12 = { path = "crates/gfx/d3d12", package = "d3d12" }

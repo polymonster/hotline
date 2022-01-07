@@ -26,7 +26,7 @@ fn main() {
     let dev = d3d12::Device::create();
 
     let mut win = instarc.create_window(os::WindowInfo { 
-        title : String::from("hello world!"),
+        title : String::from("helloworld!"),
         rect : os::Rect {
             x : 0,
             y : 0,
