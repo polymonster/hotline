@@ -49,9 +49,30 @@ pub struct BufferInfo {
     pub stride: usize
 }
 
+/// The stage to which a shader will bind itself
+pub enum ShaderType {
+    Vertex,
+    Fragment,
+    Compute
+}
+
+/// Flags for shaders compiled at run time
+pub enum ShaderCompileFlags {
+    Debug,
+    SkipOptimization
+}
+
+/// 
+pub struct ShaderCompilationInfo {
+    entry_point: String,
+    shader_model: String,
+    flags: ShaderCompileFlags
+}
+
 /// Information to create a shader through `Device::create_shader`
 pub struct ShaderInfo {
-
+    shader_type: ShaderType,
+    compile_info: Option<ShaderCompilationInfo>
 }
 
 /// Graphics backends are required to implement these concrete types 
