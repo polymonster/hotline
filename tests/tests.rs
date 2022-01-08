@@ -1,6 +1,7 @@
+use hotline::*;
+
 use os::Instance;
 use os::Window;
-
 use gfx::Device;
 use gfx::SwapChain;
 use gfx::CmdBuf;
@@ -39,6 +40,7 @@ fn create_window() {
             height : 720
         }
     });
+    win.bring_to_front();
     let winrect = win.get_rect();
     assert_eq!(winrect.x, 0);
     assert_eq!(winrect.y, 0);
@@ -64,6 +66,7 @@ fn window_set_rect() {
         width : 1280,
         height : 720
     });
+    win.bring_to_front();
     let winrect = win.get_rect();
     assert_eq!(winrect.x, 200);
     assert_eq!(winrect.y, 0);
@@ -84,6 +87,7 @@ fn swap_chain_buffer() {
             height : 720
         }
     });
+    win.bring_to_front();
 
     let mut swap_chain = dev.create_swap_chain(&win);
     let mut cmdbuffer = dev.create_cmd_buf();

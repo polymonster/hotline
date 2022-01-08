@@ -2,7 +2,8 @@ use windows::{
     Win32::Foundation::*, 
     Win32::System::LibraryLoader::*, 
     Win32::UI::WindowsAndMessaging::*,
-    Win32::Graphics::Gdi::ValidateRect
+    Win32::Graphics::Gdi::ValidateRect,
+    Win32::UI::Input::KeyboardAndMouse
 };
 
 pub struct Instance {
@@ -96,6 +97,15 @@ impl super::Instance<Platform> for Instance {
 }
 
 impl super::Window<Platform> for Window {
+    fn bring_to_front(&self) {
+        unsafe {
+            SetForegroundWindow(self.hwnd);
+            KeyboardAndMouse::SetFocus(self.hwnd);
+            KeyboardAndMouse::SetActiveWindow(self.hwnd);
+            BringWindowToTop(self.hwnd);
+        }
+    }
+
     fn set_rect(&mut self, rect : super::Rect<i32>) {
         unsafe {
             SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);

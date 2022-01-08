@@ -123,8 +123,8 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 
 // TODO:
-//  move to crates
 // - rust fmt
+// - window bring to front
 
 // TODO:
 // - Shaders
@@ -154,4 +154,5 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // x Create Buffer
 // x Bind Vertex Buffer
 // x move tests
+// x move files / modules / libs
 

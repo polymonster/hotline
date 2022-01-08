@@ -27,6 +27,7 @@ pub struct WindowInfo {
 }
 
 pub trait Window<P: Platform>: Any + Sized {
+    fn bring_to_front(&self);
     fn set_rect(&mut self, rect : Rect<i32>);
     fn get_rect(&self) -> Rect<i32>;
     fn set_size(&mut self, width : i32, height : i32);
