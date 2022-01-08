@@ -103,6 +103,7 @@ impl super::Window<Platform> for Window {
             KeyboardAndMouse::SetFocus(self.hwnd);
             KeyboardAndMouse::SetActiveWindow(self.hwnd);
             BringWindowToTop(self.hwnd);
+            ShowWindow(self.hwnd, SW_RESTORE);
         }
     }
 

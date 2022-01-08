@@ -1,3 +1,4 @@
+/// Implemets this interface with Direct3d12 backend
 pub mod d3d12;
 
 use std::{any::Any};
@@ -6,6 +7,7 @@ use crate::os;
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
 
+/// Structure to specify viewport coordinates on a `CmdBuf`
 pub struct Viewport {
     pub x : f32,
     pub y : f32,
@@ -15,6 +17,7 @@ pub struct Viewport {
     pub max_depth : f32
 }
 
+/// Structure to specify scissor rect coordinates on a `CmdBuf`
 pub struct ScissorRect {
     pub left: i32,
     pub top: i32,
@@ -34,28 +37,41 @@ bitmask! {
 }
 */
 
+/// Signifies how this buffer will be used on the GPU
 pub enum BufferUsage {
     Vertex,
     Index
 }
 
+/// Information to create a buffer through `Device::create_buffer`
 pub struct BufferInfo {
     pub usage: BufferUsage,
     pub stride: usize
 }
 
+/// Information to create a shader through `Device::create_shader`
+pub struct ShaderInfo {
+
+}
+
+/// Graphics backends are required to implement these concrete types 
 pub trait Graphics: 'static + Sized + Any + Send + Sync {
     type Device: Device<Self>;
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
+    type Shader: Shader<Self>;
 }
 
+/// A GPU device is used to create GPU resources, the device also 
+/// contains a single a single command queue to which all command buffers will
+/// submitted and executed each frame
 pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
     fn create_cmd_buf(&self) -> G::CmdBuf;
     fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> G::Buffer;
+    fn create_shader(&self, info: ShaderInfo, data: &[u8]) -> G::Shader;
     fn execute(&self, cmd: &G::CmdBuf);
 
     // tests
@@ -63,6 +79,8 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn print_mutate(&self);
 }
 
+/// A swap chain is connected to a window and controls fences and signals
+/// as we swap buffers
 pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &G::Device, window: &platform::Window);
@@ -70,6 +88,11 @@ pub trait SwapChain <G: Graphics>: 'static + Sized + Any {
     fn swap(&mut self, device: &G::Device);
 }
 
+/// Responsible for buffering graphics commands. Internally it will contain a platform specific
+/// command list for each buffer in the associated swap chain.
+/// At the start of each frame `reset` must be called with an associated swap chain to internally switch
+/// which buffer we are writing to. At the end of each frame `close` must be called
+/// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &G::SwapChain);
     fn reset_all(&mut self);
@@ -84,7 +107,13 @@ pub trait CmdBuf <G: Graphics>: 'static + Sized + Any {
     fn close_debug(&self, swap_chain: &G::SwapChain);
 }
 
+/// A GPU buffer (Vertex, Index, Constant, etc...)
 pub trait Buffer <G: Graphics>: 'static + Sized + Any {
+
+}
+
+/// A Generic GPU Shader (Vertex, Fragment, Compute, etc...) 
+pub trait Shader <G: Graphics>: 'static + Sized + Any {
 
 }
 
@@ -112,6 +141,8 @@ impl From<os::Rect<i32>> for ScissorRect {
     }
 }
 
+/// Utility function to take any sized type and return a u8 slice.
+/// This can be useful to pass `data` to `Device::create_buffer`
 pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
         ::std::slice::from_raw_parts(
@@ -124,9 +155,8 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 // TODO:
 // - rust fmt
+// - docs
 // - window bring to front
-
-// TODO:
 // - Shaders
 // - Input Layout
 // - Raster State

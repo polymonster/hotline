@@ -29,9 +29,6 @@ pub struct Device {
     val: i32
 }
 
-unsafe impl Send for Device {}
-unsafe impl Sync for Device {}
-
 pub struct Sample {
     root_signature: ID3D12RootSignature,
     pso: ID3D12PipelineState,
@@ -65,7 +62,13 @@ pub struct Buffer {
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>
 }
 
+pub struct Shader {
+
+}
+
 impl super::Buffer<Graphics> for Buffer { }
+
+impl super::Shader<Graphics> for Shader { }
 
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
@@ -475,6 +478,12 @@ impl super::Device<Graphics> for Device {
         }
     }
 
+    fn create_shader(&self, info: super::ShaderInfo, data: &[u8]) -> Shader {
+        Shader {
+
+        }
+    }
+
     fn create_buffer(&self, info: super::BufferInfo, data: &[u8]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
@@ -821,4 +830,5 @@ impl super::Graphics for Graphics {
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
     type Buffer = Buffer;
+    type Shader = Shader;
 }
