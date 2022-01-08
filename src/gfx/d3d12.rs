@@ -1,3 +1,6 @@
+#[cfg(target_os = "windows")]
+use crate::os::win32 as platform;
+
 use windows::{
     core::*, 
     Win32::Foundation::*, 
@@ -15,7 +18,7 @@ use windows::{
 
 const FRAME_COUNT: u32 = 2;
 
-use os::Window;
+use crate::os::Window;
 
 pub struct Device {
     name: String,
@@ -62,7 +65,7 @@ pub struct Buffer {
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>
 }
 
-impl gfx::Buffer<Graphics> for Buffer { }
+impl super::Buffer<Graphics> for Buffer { }
 
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
@@ -274,7 +277,7 @@ fn create_pipeline_state(
     unsafe { device.CreateGraphicsPipelineState(&desc) }
 }
 
-impl gfx::Device<Graphics> for Device {
+impl super::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
             // enable debug layer
@@ -334,7 +337,7 @@ impl gfx::Device<Graphics> for Device {
         }
     }
 
-    fn create_swap_chain(&self, win: &win32::Window) -> SwapChain {
+    fn create_swap_chain(&self, win: &platform::Window) -> SwapChain {
         unsafe { 
             // create swap chain desc
             let rect = win.get_rect();
@@ -472,7 +475,7 @@ impl gfx::Device<Graphics> for Device {
         }
     }
 
-    fn create_buffer(&self, info: gfx::BufferInfo, data: &[u8]) -> Buffer {
+    fn create_buffer(&self, info: super::BufferInfo, data: &[u8]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
             if !self.device.CreateCommittedResource(
@@ -521,14 +524,14 @@ impl gfx::Device<Graphics> for Device {
         let mut ibv : Option<D3D12_INDEX_BUFFER_VIEW> = None;
 
         match info.usage {
-            gfx::BufferUsage::Vertex => {
+            super::BufferUsage::Vertex => {
                 vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     StrideInBytes: info.stride as u32,
                     SizeInBytes: data.len() as u32,
                 });
             }
-            gfx::BufferUsage::Index => {
+            super::BufferUsage::Index => {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
@@ -616,7 +619,7 @@ impl SwapChain {
     }
 }
 
-impl gfx::SwapChain<Graphics> for SwapChain {
+impl super::SwapChain<Graphics> for SwapChain {
     fn new_frame(&mut self) {
         let next_frame_index = self.frame_index + 1;
         self.frame_index = next_frame_index;
@@ -624,7 +627,7 @@ impl gfx::SwapChain<Graphics> for SwapChain {
         self.wait_for_frame(self.cur_frame_ctx as usize);
     }
 
-    fn update(&mut self, device: &Device, window: &win32::Window) {
+    fn update(&mut self, device: &Device, window: &platform::Window) {
         let wh = window.get_size();
         if wh.0 != self.width || wh.1 != self.height {
             unsafe {
@@ -699,7 +702,7 @@ impl CmdBuf {
     }
 }
 
-impl gfx::CmdBuf<Graphics> for CmdBuf {
+impl super::CmdBuf<Graphics> for CmdBuf {
     fn reset(&mut self, queue: &SwapChain) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
         unsafe { 
@@ -752,7 +755,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
         };
     }
 
-    fn set_viewport(&self, viewport: &gfx::Viewport) {
+    fn set_viewport(&self, viewport: &super::Viewport) {
         let d3d12_vp = D3D12_VIEWPORT {
             TopLeftX: viewport.x,
             TopLeftY: viewport.y,
@@ -766,7 +769,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
         }     
     }
 
-    fn set_scissor_rect(&self, scissor_rect: &gfx::ScissorRect) {
+    fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
         let d3d12_sr = RECT {
             left: scissor_rect.left,
             top: scissor_rect.top,
@@ -813,7 +816,7 @@ impl gfx::CmdBuf<Graphics> for CmdBuf {
 }
 
 pub enum Graphics {}
-impl gfx::Graphics for Graphics {
+impl super::Graphics for Graphics {
     type Device = Device;
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;

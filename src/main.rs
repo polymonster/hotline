@@ -1,12 +1,17 @@
+mod os;
+mod gfx;
+
+pub fn main() {
+    println!("poops");
+}
+
+/*
 use os::Instance;
 use os::Window;
 
 use gfx::Device;
 use gfx::SwapChain;
 use gfx::CmdBuf;
-
-#[cfg(target_os = "windows")]
-use win32 as platform;
 
 pub struct ClearCol {
     r: f32,
@@ -22,8 +27,8 @@ struct Vertex {
 }
 
 fn main() {
-    let instarc = platform::Instance::create();
-    let dev = d3d12::Device::create();
+    let instarc = os::win32::Instance::create();
+    let dev = gfx::d3d12::Device::create();
 
     let mut win = instarc.create_window(os::WindowInfo { 
         title : String::from("hello world!"),
@@ -129,3 +134,4 @@ fn main() {
         incr = incr + 1;
     }
 }
+*/

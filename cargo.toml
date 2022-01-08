@@ -7,8 +7,20 @@ edition = "2018"
 version = "0.8.0"
 
 [dependencies]
-app = { path = "crates/app", package = "app" }
-os = { path = "crates/os", package = "os" }
-gfx = { path = "crates/gfx", package = "gfx" }
-win32 = { path = "crates/os/win32", package = "win32" }
-d3d12 = { path = "crates/gfx/d3d12", package = "d3d12" }
+bitmask = "^0.5.0"
+
+[dependencies.windows]
+version = "0.27"
+features = [
+    "alloc",
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Direct3D_Fxc",
+    "Win32_Graphics_Direct3D12",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_WindowsProgramming",
+]

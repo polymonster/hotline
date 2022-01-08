@@ -1,10 +1,10 @@
-use std::{any::Any};
+pub mod d3d12;
 
-#[macro_use]
-extern crate bitmask;
+use std::{any::Any};
+use crate::os;
 
 #[cfg(target_os = "windows")]
-use win32 as platform;
+use os::win32 as platform;
 
 pub struct Viewport {
     pub x : f32,
@@ -23,6 +23,8 @@ pub struct ScissorRect {
 }
 
 /*
+#[macro_use]
+extern crate bitmask;
 bitmask! {
     pub mask CpuAccessFlags: u8 where flags Access {
         none = 0b00000000,
@@ -121,7 +123,7 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 
 // TODO:
-// x move to crates
+//  move to crates
 // - rust fmt
 
 // TODO:

@@ -1,3 +1,5 @@
+pub mod win32;
+
 use std::{any::Any};
 
 pub trait Platform: 'static + Sized + Any {

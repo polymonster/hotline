@@ -11,7 +11,7 @@ pub struct Instance {
 }
 
 pub struct Window {
-    info: os::WindowInfo,
+    info: super::WindowInfo,
     hwnd : HWND
 }
 
@@ -21,7 +21,7 @@ impl Window {
     }
 }
 
-impl os::Instance<Platform> for Instance {
+impl super::Instance<Platform> for Instance {
     fn create() -> Self {
         unsafe {
             let window_class = "window";
@@ -47,7 +47,7 @@ impl os::Instance<Platform> for Instance {
         }
     }
 
-    fn create_window(&self, info: os::WindowInfo) -> Window {
+    fn create_window(&self, info: super::WindowInfo) -> Window {
         unsafe {
             let hwnd = CreateWindowExA(
                 Default::default(),
@@ -95,15 +95,15 @@ impl os::Instance<Platform> for Instance {
     }
 }
 
-impl os::Window<Platform> for Window {
-    fn set_rect(&mut self, rect : os::Rect<i32>) {
+impl super::Window<Platform> for Window {
+    fn set_rect(&mut self, rect : super::Rect<i32>) {
         unsafe {
             SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);
         }
         self.info.rect = rect;
     }
 
-    fn get_rect(&self) -> os::Rect<i32> {
+    fn get_rect(&self) -> super::Rect<i32> {
         self.info.rect
     }
 
@@ -156,7 +156,7 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
 }
 
 pub enum Platform {}
-impl os::Platform for Platform {
+impl super::Platform for Platform {
     type Instance = Instance;
     type Window = Window;
 }
