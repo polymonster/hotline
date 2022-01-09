@@ -1,6 +1,6 @@
 # Hotline
 
-Hotline aims to be:
+## Design Goals
 - an easy to use cross platform graphics/os api for rapid development
 - a focus on modern rendering strategies (gpu-driven, multi-threaded, bindless, ray-tracing)
 - fibre based, multi-threaded, everything async
