@@ -2,18 +2,11 @@
 use crate::os::win32 as platform;
 
 use windows::{
-    core::*, 
-    Win32::Foundation::*, 
-    Win32::Graphics::Direct3D::Fxc::*, 
-    Win32::Graphics::Direct3D::*,
-    Win32::Graphics::Direct3D12::*, 
-    Win32::Graphics::Dxgi::Common::*, 
-    Win32::Graphics::Dxgi::*,
-    Win32::System::LibraryLoader::*, 
-    Win32::System::Threading::*,
-    Win32::System::WindowsProgramming::*, 
+    core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
+    Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
+    Win32::Graphics::Gdi::ValidateRect, Win32::System::LibraryLoader::*,
+    Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
     Win32::UI::WindowsAndMessaging::*,
-    Win32::Graphics::Gdi::ValidateRect
 };
 
 const FRAME_COUNT: u32 = 2;
@@ -26,7 +19,7 @@ pub struct Device {
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
     command_queue: ID3D12CommandQueue,
-    val: i32
+    val: i32,
 }
 
 pub struct Sample {
@@ -35,47 +28,41 @@ pub struct Sample {
 }
 
 pub struct SwapChain {
-    name: String,
-    cur_frame_ctx: i32,
     width: i32,
     height: i32,
-    fence: ID3D12Fence,
-    fence_last_signalled_value: i32,
-    fence_event: HANDLE,
+    frame_index: i32,
+    bb_index: i32,
     swap_chain: IDXGISwapChain3,
     rtv_heap: ID3D12DescriptorHeap,
     rtv_handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    frame_index: i32,
-    frame_fence_value: [i32; FRAME_COUNT as usize]
+    fence: ID3D12Fence,
+    fence_last_signalled_value: u64,
+    fence_event: HANDLE,
+    frame_fence_value: [u64; FRAME_COUNT as usize],
 }
 
 pub struct CmdBuf {
-    cur_frame_index: usize,
+    bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
-    sample: Option<Sample>
+    sample: Option<Sample>,
 }
 
 pub struct Buffer {
     resource: ID3D12Resource,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
-    ibv: Option<D3D12_INDEX_BUFFER_VIEW>
+    ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
 }
 
-pub struct Shader {
+pub struct Shader {}
 
-}
+impl super::Buffer<Graphics> for Buffer {}
 
-impl super::Buffer<Graphics> for Buffer { }
-
-impl super::Shader<Graphics> for Shader { }
+impl super::Shader<Graphics> for Shader {}
 
 fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
-        ::std::slice::from_raw_parts(
-            (p as *const T) as *const u8,
-            ::std::mem::size_of::<T>(),
-        )
+        ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
     }
 }
 
@@ -93,9 +80,7 @@ fn transition_barrier(
     D3D12_RESOURCE_BARRIER {
         Type: D3D12_RESOURCE_BARRIER_TYPE_TRANSITION,
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
-        Anonymous: D3D12_RESOURCE_BARRIER_0 {
-            Transition: trans,
-            },
+        Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: trans },
     }
 }
 
@@ -104,7 +89,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i)?;
             let desc = adapter.GetDesc1()?;
-    
+
             if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
                 != DXGI_ADAPTER_FLAG_NONE
             {
@@ -112,14 +97,15 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
                 // software adapter, pass in "/warp" on the command line.
                 continue;
             }
-    
+
             // Check to see whether the adapter supports Direct3D 12, but don't
             // create the actual device yet.
             if D3D12CreateDevice(
-                    &adapter,
-                    D3D_FEATURE_LEVEL_11_0,
-                    std::ptr::null_mut::<Option<ID3D12Device>>(),
-            ).is_ok()
+                &adapter,
+                D3D_FEATURE_LEVEL_11_0,
+                std::ptr::null_mut::<Option<ID3D12Device>>(),
+            )
+            .is_ok()
             {
                 return Ok(adapter);
             }
@@ -284,7 +270,7 @@ impl super::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
             // enable debug layer
-            let mut dxgi_factory_flags : u32 = 0;
+            let mut dxgi_factory_flags: u32 = 0;
             if cfg!(debug_assertions) {
                 let mut debug: Option<ID3D12Debug> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
@@ -293,7 +279,7 @@ impl super::Device<Graphics> for Device {
                 }
                 dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
             }
-        
+
             // create dxgi factory
             let dxgi_factory_result = CreateDXGIFactory2(dxgi_factory_flags);
             if !dxgi_factory_result.is_ok() {
@@ -310,7 +296,8 @@ impl super::Device<Graphics> for Device {
             // create device
             let adapter = adapter_result.unwrap();
             let mut d3d12_device: Option<ID3D12Device> = None;
-            let device_result = D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
+            let device_result =
+                D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
             if !device_result.is_ok() {
                 panic!("failed to create d3d12 device");
             }
@@ -319,7 +306,7 @@ impl super::Device<Graphics> for Device {
             // create queue
             let desc = D3D12_COMMAND_QUEUE_DESC {
                 Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
-                NodeMask: 1, 
+                NodeMask: 1,
                 ..Default::default()
             };
             let command_queue_result = device.CreateCommandQueue(&desc);
@@ -335,13 +322,13 @@ impl super::Device<Graphics> for Device {
                 device: device,
                 dxgi_factory: dxgi_factory,
                 command_queue: command_queue,
-                val: 69
+                val: 69,
             }
         }
     }
 
     fn create_swap_chain(&self, win: &platform::Window) -> SwapChain {
-        unsafe { 
+        unsafe {
             // create swap chain desc
             let rect = win.get_rect();
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
@@ -360,8 +347,7 @@ impl super::Device<Graphics> for Device {
             };
 
             // create swap chain itself
-            let swap_chain_result =
-            self.dxgi_factory.CreateSwapChainForHwnd(
+            let swap_chain_result = self.dxgi_factory.CreateSwapChainForHwnd(
                 &self.command_queue,
                 win.get_native_handle(),
                 &swap_chain_desc,
@@ -371,28 +357,30 @@ impl super::Device<Graphics> for Device {
             if !swap_chain_result.is_ok() {
                 panic!("failed to create swap chain for window");
             }
-            let swap_chain : IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
+            let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
             // create rtv heap
-            let rtv_heap_result =
-                self.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                NumDescriptors: FRAME_COUNT,
-                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                ..Default::default()
-            });
+            let rtv_heap_result = self
+                .device
+                .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                    NumDescriptors: FRAME_COUNT,
+                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                    ..Default::default()
+                });
             if !rtv_heap_result.is_ok() {
                 panic!("failed to create rtv heap for swap chain");
             }
 
-            let rtv_heap : ID3D12DescriptorHeap = rtv_heap_result.unwrap();
-            let rtv_descriptor_size = self.device.GetDescriptorHandleIncrementSize(
-                D3D12_DESCRIPTOR_HEAP_TYPE_RTV
-            ) as usize;
+            let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
+            let rtv_descriptor_size = self
+                .device
+                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
+                as usize;
             let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
 
             // render targets for the swap chain
-            let mut handles : Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
-            
+            let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+
             for i in 0..FRAME_COUNT {
                 let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
                 let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -401,7 +389,7 @@ impl super::Device<Graphics> for Device {
                 self.device.CreateRenderTargetView(
                     &render_target,
                     std::ptr::null_mut(),
-                    &sub_handle
+                    &sub_handle,
                 );
                 handles.push(sub_handle);
             }
@@ -410,31 +398,30 @@ impl super::Device<Graphics> for Device {
 
             // initialise struct
             SwapChain {
-                name: String::from("d3d12 queue"),
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                 width: rect.width,
                 height: rect.height,
-                cur_frame_ctx: 0,
+                bb_index: 0,
                 fence_last_signalled_value: 0,
                 fence_event: fence_event,
                 swap_chain: swap_chain,
                 rtv_heap: rtv_heap,
                 rtv_handles: handles,
                 frame_index: 0,
-                frame_fence_value: [0, 0]
+                frame_fence_value: [0, 0],
             }
         }
     }
 
     fn create_cmd_buf(&self) -> CmdBuf {
         unsafe {
-            
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
 
             for _ in 0..FRAME_COUNT as usize {
                 // create command allocator
-                let command_allocator = self.device
+                let command_allocator = self
+                    .device
                     .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
                 if !command_allocator.is_ok() {
                     panic!("failed to create command allocator");
@@ -442,13 +429,12 @@ impl super::Device<Graphics> for Device {
                 let command_allocator = command_allocator.unwrap();
 
                 // create command list
-                let command_list =
-                    self.device.CreateCommandList(
-                        0,
-                        D3D12_COMMAND_LIST_TYPE_DIRECT,
-                        &command_allocator,
-                        None,
-                    );
+                let command_list = self.device.CreateCommandList(
+                    0,
+                    D3D12_COMMAND_LIST_TYPE_DIRECT,
+                    &command_allocator,
+                    None,
+                );
                 if !command_list.is_ok() {
                     panic!("failed to create command list");
                 }
@@ -470,7 +456,7 @@ impl super::Device<Graphics> for Device {
 
             // assign struct
             CmdBuf {
-                cur_frame_index: 1,
+                bb_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
                 sample: None,
@@ -479,58 +465,82 @@ impl super::Device<Graphics> for Device {
     }
 
     fn create_shader(&self, info: super::ShaderInfo, data: &[u8]) -> Shader {
-        Shader {
-
+        if info.compile_info.is_some() {
+            let compile_flags = if cfg!(debug_assertions) {
+                D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
+            } else {
+                0
+            };
+            let compile_info = info.compile_info.unwrap();
+            unsafe {
+                let mut shader = None;
+                let mut errors = None;
+                let result = D3DCompile(
+                    data.as_ptr() as *const core::ffi::c_void,
+                    data.len(), 
+                    PSTR(std::ptr::null_mut() as _), 
+                    std::ptr::null(), 
+                    None,
+                    PSTR(compile_info.entry_point.as_ptr() as _),
+                    PSTR(compile_info.target.as_ptr() as _),
+                    compile_flags, 
+                    0, 
+                    &mut shader,
+                    &mut errors,
+                );
+                if !result.is_ok() {
+                    println!("shader compile failed!");
+                }
+            }
         }
+        Shader {}
     }
 
     fn create_buffer(&self, info: super::BufferInfo, data: &[u8]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
-            if !self.device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_UPLOAD,
-                    ..Default::default()
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Width: data.len() as u64,
-                    Height: 1,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
+            if !self
+                .device
+                .CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_UPLOAD,
+                        ..Default::default()
                     },
-                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                    ..Default::default()
-                },
-                D3D12_RESOURCE_STATE_GENERIC_READ,
-                std::ptr::null(),
-                &mut buf,
-            ).is_ok() {
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Width: data.len() as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        ..Default::default()
+                    },
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    std::ptr::null(),
+                    &mut buf,
+                )
+                .is_ok()
+            {
                 panic!("failed to create buffer");
             };
         };
         let buf = buf.unwrap();
-        
+
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut map_data = std::ptr::null_mut();
             buf.Map(0, std::ptr::null(), &mut map_data);
-            std::ptr::copy_nonoverlapping(
-                data.as_ptr(),
-                map_data as *mut u8,
-                data.len(),
-            );
+            std::ptr::copy_nonoverlapping(data.as_ptr(), map_data as *mut u8, data.len());
             buf.Unmap(0, std::ptr::null());
         }
 
-        println!("create buffer: {}", data.len());
-
-        let mut vbv : Option<D3D12_VERTEX_BUFFER_VIEW> = None;
-        let mut ibv : Option<D3D12_INDEX_BUFFER_VIEW> = None;
+        let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
+        let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
 
         match info.usage {
             super::BufferUsage::Vertex => {
@@ -544,7 +554,7 @@ impl super::Device<Graphics> for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: DXGI_FORMAT_R16_UNORM
+                    Format: DXGI_FORMAT_R16_UNORM,
                 })
             }
         }
@@ -552,16 +562,15 @@ impl super::Device<Graphics> for Device {
         Buffer {
             resource: buf,
             vbv: vbv,
-            ibv: ibv
+            ibv: ibv,
         }
     }
 
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
-            let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.cur_frame_index]);
-            self.command_queue.ExecuteCommandLists(
-                1, &mut Some(command_list));
-             //println!("exec {}", cmd.cur_frame_index);
+            let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
+            self.command_queue
+                .ExecuteCommandLists(1, &mut Some(command_list));
         }
     }
 
@@ -578,16 +587,20 @@ impl super::Device<Graphics> for Device {
 impl SwapChain {
     fn wait_for_frame(&mut self, frame_index: usize) {
         unsafe {
-            let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+            let mut waitable: [HANDLE; 2] =
+                [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
             let mut num_waitable = 1;
-
             let mut fv = self.frame_fence_value[frame_index as usize];
-            println!("waiting {} {}", frame_index, fv);
 
-            if fv != 0 // means no fence was signaled
+            if fv != 0
+            // means no fence was signaled
             {
                 fv = 0;
-                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
+                if !self
+                    .fence
+                    .SetEventOnCompletion(fv as u64, self.fence_event)
+                    .is_ok()
+                {
                     panic!("failed to set on completion event!");
                 }
                 waitable[1] = self.fence_event;
@@ -595,56 +608,30 @@ impl SwapChain {
             }
 
             WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
-        }
-    }
-
-    fn wait_for_last_frame(&mut self) {
-        unsafe {
-            let mut num_waitable = 1;
-            let mut waitable : [HANDLE; 2] = [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
-            //let mut fv = self.fence_last_signalled_value;
-
-            let mut fv = self.frame_fence_value[self.cur_frame_ctx as usize];
-            println!("waited {}", fv);
-    
-            if fv != 0 // means no fence was signaled
-            {
-                fv = 0;
-                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
-                    panic!("failed to set on completion event!");
-                }
-                waitable[1] = self.fence_event;
-                num_waitable = 2;
-            }
-
-            WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
-
-            for i in 0..FRAME_COUNT {
-                self.frame_fence_value[i as usize] = 0;
-            }
-            
-            self.fence_last_signalled_value = 0;
         }
     }
 }
 
 impl super::SwapChain<Graphics> for SwapChain {
     fn new_frame(&mut self) {
-        let next_frame_index = self.frame_index + 1;
-        self.frame_index = next_frame_index;
-        self.cur_frame_ctx = next_frame_index % FRAME_COUNT as i32;
-        self.wait_for_frame(self.cur_frame_ctx as usize);
+        self.wait_for_frame(self.bb_index as usize);
     }
 
     fn update(&mut self, device: &Device, window: &platform::Window) {
         let wh = window.get_size();
         if wh.0 != self.width || wh.1 != self.height {
             unsafe {
-                self.wait_for_frame(self.cur_frame_ctx as usize);
+                self.wait_for_frame(self.bb_index as usize);
 
                 // TODO: how to properly use flags
                 let flags = 64;
-                let res = self.swap_chain.ResizeBuffers(FRAME_COUNT, wh.0 as u32, wh.1 as u32, DXGI_FORMAT_UNKNOWN, flags);
+                let res = self.swap_chain.ResizeBuffers(
+                    FRAME_COUNT,
+                    wh.0 as u32,
+                    wh.1 as u32,
+                    DXGI_FORMAT_UNKNOWN,
+                    flags,
+                );
 
                 if !res.is_ok() {
                     let err = res.err();
@@ -652,19 +639,19 @@ impl super::SwapChain<Graphics> for SwapChain {
                         let eee = err.unwrap();
                         println!("swap chain resize failed {}", eee);
                     }
-                }
-                else {
+                } else {
                     println!("resize success!");
                 }
 
                 // TODO: move into shared function
-                let rtv_descriptor_size = device.device.GetDescriptorHandleIncrementSize(
-                    D3D12_DESCRIPTOR_HEAP_TYPE_RTV
-                ) as usize;
+                let rtv_descriptor_size = device
+                    .device
+                    .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
+                    as usize;
                 let rtv_handle = self.rtv_heap.GetCPUDescriptorHandleForHeapStart();
-                
-                let mut handles : Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
-                let mut render_targets : Vec<ID3D12Resource> = Vec::new();
+
+                let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+                let mut render_targets: Vec<ID3D12Resource> = Vec::new();
                 for i in 0..FRAME_COUNT {
                     let render_target: ID3D12Resource = self.swap_chain.GetBuffer(i).unwrap();
                     let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -673,7 +660,7 @@ impl super::SwapChain<Graphics> for SwapChain {
                     device.device.CreateRenderTargetView(
                         &render_target,
                         std::ptr::null_mut(),
-                        &sub_handle
+                        &sub_handle,
                     );
                     handles.push(sub_handle);
                     render_targets.push(render_target);
@@ -683,50 +670,50 @@ impl super::SwapChain<Graphics> for SwapChain {
                 self.width = wh.0;
                 self.height = wh.1;
             }
-        } 
-        else {
+        } else {
             self.new_frame();
         }
     }
 
-    fn get_frame_index(&self) -> i32 {
-        self.cur_frame_ctx
+    fn get_backbuffer_index(&self) -> i32 {
+        self.bb_index
     }
 
     fn swap(&mut self, device: &Device) {
         unsafe {
             self.swap_chain.Present(1, 0);
             let fv = self.fence_last_signalled_value + 1;
-            println!("signal {}", fv);
             device.command_queue.Signal(&self.fence, fv as u64);
             self.fence_last_signalled_value = fv;
-            self.frame_fence_value[self.cur_frame_ctx as usize] = fv;
+            self.frame_fence_value[self.bb_index as usize] = fv;
+
+            // swap buffers
+            let next_frame_index = self.frame_index + 1;
+            self.frame_index = next_frame_index;
+            self.bb_index = next_frame_index % FRAME_COUNT as i32;
         }
     }
 }
 
 impl CmdBuf {
     fn cmd(&self) -> &ID3D12GraphicsCommandList {
-        &self.command_list[self.cur_frame_index]
+        &self.command_list[self.bb_index]
     }
 }
 
 impl super::CmdBuf<Graphics> for CmdBuf {
-    fn reset(&mut self, queue: &SwapChain) {
-        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
-        unsafe { 
-            self.command_allocator[bb].Reset();
-            self.command_list[bb].Reset(&self.command_allocator[bb], None);
-        }
-        self.cur_frame_index = bb;
-        // println!("reset {}", self.cur_frame_index);
-    }
-
-    fn reset_all(&mut self) {
-        for i in 0..FRAME_COUNT as usize {
-            unsafe { 
-                self.command_allocator[i].Reset();
-                self.command_list[i].Reset(&self.command_allocator[i], None);
+    fn reset(&mut self, swap_chain: &SwapChain) {
+        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
+        self.bb_index = bb;
+        if swap_chain.frame_fence_value[bb] != 0 {
+            unsafe {
+                if !self.command_allocator[bb].Reset().is_ok() {
+                    //panic!("failed to reset command_allocator")
+                    println!("failed to reset command_allocator");
+                }
+                if !self.command_list[bb].Reset(&self.command_allocator[bb], None).is_ok() {
+                    //panic!("failed to reset command_list")
+                };
             }
         }
     }
@@ -735,32 +722,37 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
 
         // Indicate that the back buffer will be used as a render target.
-        unsafe { 
+        unsafe {
             let barrier = transition_barrier(
                 &queue.swap_chain.GetBuffer(bb as u32).unwrap(),
                 D3D12_RESOURCE_STATE_PRESENT,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
             );
-            
+
             self.command_list[bb].ResourceBarrier(1, &barrier);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER = std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
             self.command_list[bb].ClearRenderTargetView(
-                queue.rtv_handles[bb], [r, g, b, a].as_ptr(), 0, std::ptr::null());
-            self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
+                queue.rtv_handles[bb],
+                [r, g, b, a].as_ptr(),
+                0,
+                std::ptr::null(),
+            );
+            self.cmd()
+                .OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
         }
     }
 
     fn set_state_debug(&self) {
         let cmd = self.cmd();
-        unsafe { 
+        unsafe {
             if self.sample.is_some() {
                 let sss = self.sample.as_ref().unwrap();
                 cmd.SetGraphicsRootSignature(&sss.root_signature);
                 cmd.SetPipelineState(&sss.pso);
                 cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
             }
-
         };
     }
 
@@ -771,11 +763,11 @@ impl super::CmdBuf<Graphics> for CmdBuf {
             Width: viewport.width,
             Height: viewport.height,
             MinDepth: viewport.min_depth,
-            MaxDepth: viewport.max_depth
+            MaxDepth: viewport.max_depth,
         };
         unsafe {
             self.cmd().RSSetViewports(1, &d3d12_vp);
-        }     
+        }
     }
 
     fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
@@ -783,7 +775,7 @@ impl super::CmdBuf<Graphics> for CmdBuf {
             left: scissor_rect.left,
             top: scissor_rect.top,
             right: scissor_rect.right,
-            bottom: scissor_rect.bottom
+            bottom: scissor_rect.bottom,
         };
         unsafe {
             self.cmd().RSSetScissorRects(1, &d3d12_sr);
@@ -792,17 +784,23 @@ impl super::CmdBuf<Graphics> for CmdBuf {
 
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
-        unsafe { 
+        unsafe {
             if buffer.vbv.is_some() {
                 cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap());
             }
-            
         };
     }
 
-    fn draw_instanced(&self, vertex_count: u32, instance_count: u32, start_vertex: u32, start_instance: u32) {
+    fn draw_instanced(
+        &self,
+        vertex_count: u32,
+        instance_count: u32,
+        start_vertex: u32,
+        start_instance: u32,
+    ) {
         unsafe {
-            self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
+            self.cmd()
+                .DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
         }
     }
 
@@ -817,7 +815,8 @@ impl super::CmdBuf<Graphics> for CmdBuf {
                 D3D12_RESOURCE_STATE_PRESENT,
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER = std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
             cmd.Close();
         }

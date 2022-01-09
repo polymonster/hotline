@@ -8,7 +8,7 @@
             "name": "(Windows) Launch",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/hello-world.exe",
+            "program": "${workspaceFolder}/target/debug/hello_world.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

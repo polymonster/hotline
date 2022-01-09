@@ -1,3 +1,5 @@
+use hotline::*;
+
 use os::Instance;
 use os::Window;
 
@@ -5,8 +7,14 @@ use gfx::Device;
 use gfx::SwapChain;
 use gfx::CmdBuf;
 
+use std::env;
+use std::fs;
+
 #[cfg(target_os = "windows")]
-use win32 as platform;
+use hotline::os::win32 as os_platform;
+
+#[cfg(target_os = "windows")]
+use hotline::gfx::d3d12 as gfx_platform;
 
 pub struct ClearCol {
     r: f32,
@@ -22,8 +30,12 @@ struct Vertex {
 }
 
 fn main() {
-    let instarc = platform::Instance::create();
-    let dev = d3d12::Device::create();
+    let instarc = os_platform::Instance::create();
+    main_test(instarc);
+}
+
+fn main_test(instarc: os_platform::Instance) {
+    let dev = gfx_platform::Device::create();
 
     let mut win = instarc.create_window(os::WindowInfo { 
         title : String::from("helloworld!"),
@@ -97,6 +109,24 @@ fn main() {
 
     let mut ci = 0;
     let mut incr = 0;
+
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+    let shaders_hlsl_path = asset_path.join("..\\..\\src\\shaders.hlsl");
+    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+
+    let info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: Some( gfx::ShaderCompileInfo {
+            entry_point: String::from("VSMain"),
+            target: String::from("vs_5_0"),
+            flags: gfx::ShaderCompileFlags::none()
+        })
+    };
+
+    let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
+
+    dev.create_shader(info, contents.as_bytes());
 
     while instarc.run() {
         win.update();

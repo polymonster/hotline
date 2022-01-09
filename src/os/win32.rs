@@ -1,19 +1,17 @@
 use windows::{
-    Win32::Foundation::*, 
-    Win32::System::LibraryLoader::*, 
-    Win32::UI::WindowsAndMessaging::*,
-    Win32::Graphics::Gdi::ValidateRect,
-    Win32::UI::Input::KeyboardAndMouse
+    Win32::Foundation::*, Win32::Graphics::Gdi::ValidateRect, Win32::System::LibraryLoader::*,
+    Win32::UI::Input::KeyboardAndMouse, Win32::UI::WindowsAndMessaging::*,
 };
 
 pub struct Instance {
     window_class: String,
-    hinstance: HINSTANCE
+    hinstance: HINSTANCE,
+    atom: u16
 }
 
 pub struct Window {
     info: super::WindowInfo,
-    hwnd : HWND
+    hwnd: HWND,
 }
 
 impl Window {
@@ -22,28 +20,40 @@ impl Window {
     }
 }
 
+impl Drop for Window {
+    fn drop(&mut self) {
+        unsafe {
+            DestroyWindow(self.hwnd);
+            self.hwnd = HWND(0);
+        }
+    }
+}
+
 impl super::Instance<Platform> for Instance {
     fn create() -> Self {
         unsafe {
-            let window_class = "window";
+            let window_class = "window\0";
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
-    
+
             let wc = WNDCLASSA {
                 hCursor: LoadCursorW(None, IDC_ARROW),
                 hInstance: instance,
-                lpszClassName: PSTR(b"window\0".as_ptr() as _),
+                lpszClassName: PSTR(window_class.as_ptr() as _),
                 style: CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(wndproc),
                 ..Default::default()
             };
-    
+
             let atom = RegisterClassA(&wc);
-            //debug_assert!(atom != 0);
-    
+            if atom == 0 {
+                println!("win32 class {} already registered", window_class);
+            }
+
             Instance {
                 window_class: String::from(window_class),
-                hinstance: instance
+                hinstance: instance,
+                atom: atom
             }
         }
     }
@@ -64,10 +74,9 @@ impl super::Instance<Platform> for Instance {
                 self.hinstance,
                 std::ptr::null_mut(),
             );
-            println!("creating window {}", self.window_class);
             Window {
                 hwnd: hwnd,
-                info: info
+                info: info,
             }
         }
     }
@@ -84,10 +93,8 @@ impl super::Instance<Platform> for Instance {
                     if msg.message == WM_QUIT {
                         quit = true;
                         break;
-                    } 
-                }
-                else
-                {
+                    }
+                } else {
                     break;
                 }
             }
@@ -107,9 +114,17 @@ impl super::Window<Platform> for Window {
         }
     }
 
-    fn set_rect(&mut self, rect : super::Rect<i32>) {
+    fn set_rect(&mut self, rect: super::Rect<i32>) {
         unsafe {
-            SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);
+            SetWindowPos(
+                self.hwnd,
+                HWND(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                SWP_ASYNCWINDOWPOS,
+            );
         }
         self.info.rect = rect;
     }
@@ -118,12 +133,20 @@ impl super::Window<Platform> for Window {
         self.info.rect
     }
 
-    fn set_size(&mut self, width : i32, height : i32) {
+    fn set_size(&mut self, width: i32, height: i32) {
         let mut rect = self.info.rect;
         rect.width = width;
         rect.height = height;
         unsafe {
-            SetWindowPos(self.hwnd, HWND(0), rect.x, rect.y, rect.width, rect.height, SWP_ASYNCWINDOWPOS);
+            SetWindowPos(
+                self.hwnd,
+                HWND(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                SWP_ASYNCWINDOWPOS,
+            );
         }
         self.info.rect = rect;
     }
