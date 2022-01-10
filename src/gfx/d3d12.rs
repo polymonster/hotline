@@ -4,9 +4,7 @@ use crate::os::win32 as platform;
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
     Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
-    Win32::Graphics::Gdi::ValidateRect, Win32::System::LibraryLoader::*,
     Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
-    Win32::UI::WindowsAndMessaging::*,
 };
 
 const FRAME_COUNT: u32 = 2;
@@ -20,11 +18,6 @@ pub struct Device {
     device: ID3D12Device,
     command_queue: ID3D12CommandQueue,
     val: i32,
-}
-
-pub struct Sample {
-    root_signature: ID3D12RootSignature,
-    pso: ID3D12PipelineState,
 }
 
 pub struct SwapChain {
@@ -41,11 +34,15 @@ pub struct SwapChain {
     frame_fence_value: [u64; FRAME_COUNT as usize],
 }
 
+pub struct Pipeline {
+    pso: ID3D12PipelineState,
+    root_signature: ID3D12RootSignature,
+}
+
 pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
-    sample: Option<Sample>,
 }
 
 pub struct Buffer {
@@ -54,17 +51,13 @@ pub struct Buffer {
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
 }
 
-pub struct Shader {}
+pub struct Shader {
+    blob: ID3DBlob, 
+}
 
 impl super::Buffer<Graphics> for Buffer {}
-
 impl super::Shader<Graphics> for Shader {}
-
-fn any_as_u8_slice<T: Sized>(p: &T) -> &[u8] {
-    unsafe {
-        ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
-    }
-}
+impl super::Pipeline<Graphics> for Pipeline {}
 
 fn transition_barrier(
     resource: &ID3D12Resource,
@@ -137,135 +130,6 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     }
 }
 
-fn create_pipeline_state(
-    device: &ID3D12Device,
-    root_signature: &ID3D12RootSignature,
-) -> Result<ID3D12PipelineState> {
-    let compile_flags = if cfg!(debug_assertions) {
-        D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
-    } else {
-        0
-    };
-
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
-    let shaders_hlsl_path = asset_path.join("..\\..\\src\\shaders.hlsl");
-    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
-
-    println!("shaders: {}", shaders_hlsl);
-
-    let mut vertex_shader = None;
-    let vertex_shader = unsafe {
-        D3DCompileFromFile(
-            shaders_hlsl,
-            std::ptr::null_mut(),
-            None,
-            "VSMain",
-            "vs_5_0",
-            compile_flags,
-            0,
-            &mut vertex_shader,
-            std::ptr::null_mut(),
-        )
-    }
-    .map(|()| vertex_shader.unwrap())?;
-
-    let mut pixel_shader = None;
-    let pixel_shader = unsafe {
-        D3DCompileFromFile(
-            shaders_hlsl,
-            std::ptr::null_mut(),
-            None,
-            "PSMain",
-            "ps_5_0",
-            compile_flags,
-            0,
-            &mut pixel_shader,
-            std::ptr::null_mut(),
-        )
-    }
-    .map(|()| pixel_shader.unwrap())?;
-
-    let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
-        D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32B32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 0,
-            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        },
-        D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 12,
-            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        },
-    ];
-
-    let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-        InputLayout: D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: input_element_descs.as_mut_ptr(),
-            NumElements: input_element_descs.len() as u32,
-        },
-        pRootSignature: Some(root_signature.clone()), // << https://github.com/microsoft/windows-rs/discussions/623
-        VS: D3D12_SHADER_BYTECODE {
-            pShaderBytecode: unsafe { vertex_shader.GetBufferPointer() },
-            BytecodeLength: unsafe { vertex_shader.GetBufferSize() },
-        },
-        PS: D3D12_SHADER_BYTECODE {
-            pShaderBytecode: unsafe { pixel_shader.GetBufferPointer() },
-            BytecodeLength: unsafe { pixel_shader.GetBufferSize() },
-        },
-        RasterizerState: D3D12_RASTERIZER_DESC {
-            FillMode: D3D12_FILL_MODE_SOLID,
-            CullMode: D3D12_CULL_MODE_NONE,
-            ..Default::default()
-        },
-        BlendState: D3D12_BLEND_DESC {
-            AlphaToCoverageEnable: false.into(),
-            IndependentBlendEnable: false.into(),
-            RenderTarget: [
-                D3D12_RENDER_TARGET_BLEND_DESC {
-                    BlendEnable: false.into(),
-                    LogicOpEnable: false.into(),
-                    SrcBlend: D3D12_BLEND_ONE,
-                    DestBlend: D3D12_BLEND_ZERO,
-                    BlendOp: D3D12_BLEND_OP_ADD,
-                    SrcBlendAlpha: D3D12_BLEND_ONE,
-                    DestBlendAlpha: D3D12_BLEND_ZERO,
-                    BlendOpAlpha: D3D12_BLEND_OP_ADD,
-                    LogicOp: D3D12_LOGIC_OP_NOOP,
-                    RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
-                },
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                D3D12_RENDER_TARGET_BLEND_DESC::default(),
-            ],
-        },
-        DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
-        SampleMask: u32::max_value(),
-        PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
-        NumRenderTargets: 1,
-        SampleDesc: DXGI_SAMPLE_DESC {
-            Count: 1,
-            ..Default::default()
-        },
-        ..Default::default()
-    };
-    desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-    unsafe { device.CreateGraphicsPipelineState(&desc) }
-}
-
 impl super::Device<Graphics> for Device {
     fn create() -> Device {
         unsafe {
@@ -275,7 +139,7 @@ impl super::Device<Graphics> for Device {
                 let mut debug: Option<ID3D12Debug> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
                     debug.EnableDebugLayer();
-                    println!("enabling debug layer");
+                    println!("hotline::gfx::d3d12: enabling debug layer");
                 }
                 dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
             }
@@ -283,14 +147,14 @@ impl super::Device<Graphics> for Device {
             // create dxgi factory
             let dxgi_factory_result = CreateDXGIFactory2(dxgi_factory_flags);
             if !dxgi_factory_result.is_ok() {
-                panic!("failed to create dxgi factory");
+                panic!("hotline::gfx::d3d12: failed to create dxgi factory");
             }
 
             // create adapter
             let dxgi_factory = dxgi_factory_result.unwrap();
             let adapter_result = get_hardware_adapter(&dxgi_factory);
             if !adapter_result.is_ok() {
-                panic!("failed to get hardware adapter");
+                panic!("hotline::gfx::d3d12: failed to get hardware adapter");
             }
 
             // create device
@@ -299,7 +163,7 @@ impl super::Device<Graphics> for Device {
             let device_result =
                 D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
             if !device_result.is_ok() {
-                panic!("failed to create d3d12 device");
+                panic!("hotline::gfx::d3d12: failed to create d3d12 device");
             }
             let device = d3d12_device.unwrap();
 
@@ -311,7 +175,7 @@ impl super::Device<Graphics> for Device {
             };
             let command_queue_result = device.CreateCommandQueue(&desc);
             if !command_queue_result.is_ok() {
-                println!("failed to create command queue");
+                println!("hotline::gfx::d3d12: failed to create command queue");
             }
             let command_queue = command_queue_result.unwrap();
 
@@ -355,7 +219,7 @@ impl super::Device<Graphics> for Device {
                 None,
             );
             if !swap_chain_result.is_ok() {
-                panic!("failed to create swap chain for window");
+                panic!("hotline::gfx::d3d12: failed to create swap chain for window");
             }
             let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
@@ -368,7 +232,7 @@ impl super::Device<Graphics> for Device {
                     ..Default::default()
                 });
             if !rtv_heap_result.is_ok() {
-                panic!("failed to create rtv heap for swap chain");
+                panic!("hotline::gfx::d3d12: failed to create rtv heap for swap chain");
             }
 
             let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
@@ -424,7 +288,7 @@ impl super::Device<Graphics> for Device {
                     .device
                     .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
                 if !command_allocator.is_ok() {
-                    panic!("failed to create command allocator");
+                    panic!("hotline::gfx::d3d12: failed to create command allocator");
                 }
                 let command_allocator = command_allocator.unwrap();
 
@@ -436,7 +300,7 @@ impl super::Device<Graphics> for Device {
                     None,
                 );
                 if !command_list.is_ok() {
-                    panic!("failed to create command list");
+                    panic!("hotline::gfx::d3d12: failed to create command list");
                 }
                 let command_list = command_list.unwrap();
 
@@ -444,28 +308,108 @@ impl super::Device<Graphics> for Device {
                 command_lists.push(command_list);
             }
 
-            /*
-            let root_signature = create_root_signature(&self.device).unwrap();
-            let pso = create_pipeline_state(&self.device, &root_signature).unwrap();
-
-            let sample = Sample {
-                root_signature: root_signature,
-                pso: pso
-            };
-            */
-
             // assign struct
             CmdBuf {
                 bb_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
-                sample: None,
             }
         }
     }
 
+    fn create_pipeline(&self, info: super::PipelineInfo<Graphics>) -> Pipeline {
+        let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 0,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+        D3D12_INPUT_ELEMENT_DESC {
+            SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+            SemanticIndex: 0,
+            Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+            InputSlot: 0,
+            AlignedByteOffset: 12,
+            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+            InstanceDataStepRate: 0,
+        },
+        ];
+
+        let root_signature = create_root_signature(&self.device).unwrap();
+
+        let vs = info.vs.unwrap().blob;
+        let ps = info.fs.unwrap().blob;
+
+        let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
+            InputLayout: D3D12_INPUT_LAYOUT_DESC {
+                pInputElementDescs: input_element_descs.as_mut_ptr(),
+                NumElements: input_element_descs.len() as u32,
+            },
+            pRootSignature: Some(root_signature.clone()),
+            VS: D3D12_SHADER_BYTECODE {
+                pShaderBytecode: unsafe { vs.GetBufferPointer() },
+                BytecodeLength: unsafe { vs.GetBufferSize() },
+            },
+            PS: D3D12_SHADER_BYTECODE {
+                pShaderBytecode: unsafe { ps.GetBufferPointer() },
+                BytecodeLength: unsafe { ps.GetBufferSize() },
+            },
+            RasterizerState: D3D12_RASTERIZER_DESC {
+                FillMode: D3D12_FILL_MODE_SOLID,
+                CullMode: D3D12_CULL_MODE_NONE,
+                ..Default::default()
+            },
+            BlendState: D3D12_BLEND_DESC {
+                AlphaToCoverageEnable: false.into(),
+                IndependentBlendEnable: false.into(),
+                RenderTarget: [
+                    D3D12_RENDER_TARGET_BLEND_DESC {
+                        BlendEnable: false.into(),
+                        LogicOpEnable: false.into(),
+                        SrcBlend: D3D12_BLEND_ONE,
+                        DestBlend: D3D12_BLEND_ZERO,
+                        BlendOp: D3D12_BLEND_OP_ADD,
+                        SrcBlendAlpha: D3D12_BLEND_ONE,
+                        DestBlendAlpha: D3D12_BLEND_ZERO,
+                        BlendOpAlpha: D3D12_BLEND_OP_ADD,
+                        LogicOp: D3D12_LOGIC_OP_NOOP,
+                        RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                    },
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
+                ],
+            },
+            DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
+            SampleMask: u32::max_value(),
+            PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+            NumRenderTargets: 1,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
+
+        Pipeline {
+            pso: unsafe{ self.device.CreateGraphicsPipelineState(&desc).unwrap() },
+            root_signature: root_signature
+        }
+    }
+
     fn create_shader(&self, info: super::ShaderInfo, data: &[u8]) -> Shader {
+        let mut shader_blob = None;
         if info.compile_info.is_some() {
+            // TODO: properly use flags
             let compile_flags = if cfg!(debug_assertions) {
                 D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
             } else {
@@ -473,7 +417,6 @@ impl super::Device<Graphics> for Device {
             };
             let compile_info = info.compile_info.unwrap();
             unsafe {
-                let mut shader = None;
                 let mut errors = None;
                 let result = D3DCompile(
                     data.as_ptr() as *const core::ffi::c_void,
@@ -485,7 +428,7 @@ impl super::Device<Graphics> for Device {
                     PSTR(compile_info.target.as_ptr() as _),
                     compile_flags, 
                     0, 
-                    &mut shader,
+                    &mut shader_blob,
                     &mut errors,
                 );
                 if !result.is_ok() {
@@ -493,7 +436,9 @@ impl super::Device<Graphics> for Device {
                 }
             }
         }
-        Shader {}
+        Shader {
+            blob: shader_blob.unwrap()
+        }
     }
 
     fn create_buffer(&self, info: super::BufferInfo, data: &[u8]) -> Buffer {
@@ -526,7 +471,8 @@ impl super::Device<Graphics> for Device {
                 )
                 .is_ok()
             {
-                panic!("failed to create buffer");
+                // TODO: the error should be passed to the user
+                panic!("hotline::gfx::d3d12: failed to create buffer!");
             };
         };
         let buf = buf.unwrap();
@@ -601,7 +547,7 @@ impl SwapChain {
                     .SetEventOnCompletion(fv as u64, self.fence_event)
                     .is_ok()
                 {
-                    panic!("failed to set on completion event!");
+                    panic!("hotline::gfx::d3d12: failed to set on completion event!");
                 }
                 waitable[1] = self.fence_event;
                 num_waitable = 2;
@@ -708,11 +654,10 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         if swap_chain.frame_fence_value[bb] != 0 {
             unsafe {
                 if !self.command_allocator[bb].Reset().is_ok() {
-                    //panic!("failed to reset command_allocator")
-                    println!("failed to reset command_allocator");
+                    panic!("hotline::gfx::d3d12: failed to reset command_allocator")
                 }
                 if !self.command_list[bb].Reset(&self.command_allocator[bb], None).is_ok() {
-                    //panic!("failed to reset command_list")
+                    panic!("hotline::gfx::d3d12: to reset command_list")
                 };
             }
         }
@@ -742,18 +687,6 @@ impl super::CmdBuf<Graphics> for CmdBuf {
             self.cmd()
                 .OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
         }
-    }
-
-    fn set_state_debug(&self) {
-        let cmd = self.cmd();
-        unsafe {
-            if self.sample.is_some() {
-                let sss = self.sample.as_ref().unwrap();
-                cmd.SetGraphicsRootSignature(&sss.root_signature);
-                cmd.SetPipelineState(&sss.pso);
-                cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-            }
-        };
     }
 
     fn set_viewport(&self, viewport: &super::Viewport) {
@@ -791,6 +724,15 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         };
     }
 
+    fn set_pipeline_state(&self, pipeline: &Pipeline) {
+        unsafe {
+            let cmd = self.cmd();
+            cmd.SetGraphicsRootSignature(&pipeline.root_signature);
+            cmd.SetPipelineState(&pipeline.pso);
+            cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+    }
+
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -804,21 +746,22 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         }
     }
 
-    fn close_debug(&self, queue: &SwapChain) {
-        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
+    fn close(&self, swap_chain: &SwapChain) {
+        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         let cmd = self.cmd();
         // Indicate that the back buffer will now be used to present.
         unsafe {
             let barrier = transition_barrier(
-                &queue.swap_chain.GetBuffer(bb as u32).unwrap(),
+                &swap_chain.swap_chain.GetBuffer(bb as u32).unwrap(),
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_PRESENT,
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                 std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-
-            cmd.Close();
+            if !cmd.Close().is_ok() {
+                panic!("hotline: d3d12 failed to close command list.")
+            }
         }
     }
 }
@@ -830,4 +773,5 @@ impl super::Graphics for Graphics {
     type CmdBuf = CmdBuf;
     type Buffer = Buffer;
     type Shader = Shader;
+    type Pipeline = Pipeline;
 }

@@ -115,7 +115,7 @@ fn main_test(instarc: os_platform::Instance) {
     let shaders_hlsl_path = asset_path.join("..\\..\\src\\shaders.hlsl");
     let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
-    let info = gfx::ShaderInfo {
+    let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some( gfx::ShaderCompileInfo {
             entry_point: String::from("VSMain"),
@@ -124,9 +124,27 @@ fn main_test(instarc: os_platform::Instance) {
         })
     };
 
+    let ps_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: Some( gfx::ShaderCompileInfo {
+            entry_point: String::from("PSMain"),
+            target: String::from("ps_5_0"),
+            flags: gfx::ShaderCompileFlags::none()
+        })
+    };
+
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    dev.create_shader(info, contents.as_bytes());
+    let vs = dev.create_shader(vs_info, contents.as_bytes());
+    let ps = dev.create_shader(ps_info, contents.as_bytes());
+
+    let pso_info = gfx::PipelineInfo::<gfx::d3d12::Graphics> {
+        vs: Some(vs),
+        fs: Some(ps),
+        cs: None
+    };
+
+    let pso = dev.create_pipeline(pso_info);
 
     while instarc.run() {
         win.update();
@@ -144,12 +162,12 @@ fn main_test(instarc: os_platform::Instance) {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-
-        cmdbuffer.set_state_debug(); //
+        cmdbuffer.set_pipeline_state(&pso);
+                
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
 
-        cmdbuffer.close_debug(&swap_chain);
+        cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);
         swap_chain.swap(&dev);

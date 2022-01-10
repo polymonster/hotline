@@ -128,7 +128,7 @@ fn swap_chain_buffer() {
 
         let col = &clears_colours[i];
         cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a);
-        cmdbuffer.close_debug(&swap_chain);
+        cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);
         swap_chain.swap(&dev);

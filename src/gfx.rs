@@ -7,17 +7,23 @@ use std::any::Any;
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
 
-/// Structure to specify viewport coordinates on a `CmdBuf`
+/// Structure to specify viewport coordinates on a `CmdBuf`.
 pub struct Viewport {
+    /// Top left x coordinate.
     pub x: f32,
+    /// Top left y coordinate.
     pub y: f32,
+    /// Width of the viewport rectangle.
     pub width: f32,
+    /// Height of the viewport rectangle (Y is down).
     pub height: f32,
+    /// Minimum depth of the viewport. Ranges between 0 and 1.
     pub min_depth: f32,
+    /// Maximum depth of the viewport. Ranges between 0 and 1.
     pub max_depth: f32,
 }
 
-/// Structure to specify scissor rect coordinates on a `CmdBuf`
+/// Structure to specify scissor rect coordinates on a `CmdBuf`.
 pub struct ScissorRect {
     pub left: i32,
     pub top: i32,
@@ -25,21 +31,21 @@ pub struct ScissorRect {
     pub bottom: i32,
 }
 
-/// Signifies how this buffer will be used on the GPU
+/// Signifies how this buffer will be used on the GPU.
 pub enum BufferUsage {
     Vertex,
     Index,
 }
 
-/// Information to create a buffer through `Device::create_buffer`
+/// Information to create a buffer through `Device::create_buffer`.
 pub struct BufferInfo {
-    /// Indicates how the buffer will be used on the GPU
+    /// Indicates how the buffer will be used on the GPU.
     pub usage: BufferUsage,
-    /// The stride of a vertex or structure in bytes
+    /// The stride of a vertex or structure in bytes.
     pub stride: usize,
 }
 
-/// The stage to which a shader will bind itself
+/// The stage to which a shader will bind itself.
 pub enum ShaderType {
     Vertex,
     Fragment,
@@ -47,55 +53,76 @@ pub enum ShaderType {
 }
 
 bitmask! {
-    /// Flags for shaders compiled at run time
+    /// Flags for shaders compiled at run time.
     pub mask ShaderCompileFlags: u8 where flags CompileFlags {
-        /// No flags
+        /// No flags.
         None = 0b00000000,
-        /// Generate debuggable shader
+        /// Generate debuggable shader.
         Debug = 0b00000001,
-        /// Do not perform optimization to aid debugging
+        /// Do not perform optimization to aid debugging.
         SkipOptimization = 0b00000010
     }
 }
 
 /// Information required to compile a shader from source. 
 pub struct ShaderCompileInfo {
-    /// The name of the entry point function in the shader to compile
+    /// The name of the entry point function in the shader to compile.
     pub entry_point: String,
-    /// The target you wish to compile for, this is paltform specific
-    /// hlsl: (vs_5_0, ps_5_0, vs_6_0, ps_6_0)
+    /// The target you wish to compile for, this is paltform specific.
+    /// hlsl: (vs_5_0, ps_5_0, vs_6_0, ps_6_0).
     pub target: String,
-    /// Flags to pass to the compiler
+    /// Flags to pass to the compiler.
     pub flags: ShaderCompileFlags,
 }
 
-/// Information to create a shader through `Device::create_shader`
+/// Information to create a shader through `Device::create_shader`.
 pub struct ShaderInfo {
-    /// Type of the shader (Vertex, Fragment, Compute, etc...)
+    /// Type of the shader (Vertex, Fragment, Compute, etc...).
     pub shader_type: ShaderType,
     /// Optional info to compile from source, if this is none then
     /// the shader will be treated as a precompiled byte code blob.
     pub compile_info: Option<ShaderCompileInfo>,
 }
 
-/// Graphics backends are required to implement these concrete types
+/// Information to create a pipeline through `Device::create_pipeline`.
+pub struct PipelineInfo<G: Graphics> {
+    // optional vertex shader
+    pub vs: Option<G::Shader>,
+    // optional fragment shader
+    pub fs: Option<G::Shader>,
+    // optional compute shader
+    pub cs: Option<G::Shader>
+}
+
+/// Graphics backends are required to implement these concrete types.
 pub trait Graphics: 'static + Sized + Any + Send + Sync {
     type Device: Device<Self>;
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
     type Shader: Shader<Self>;
+    type Pipeline: Pipeline<Self>;
 }
+
+/// A GPU Buffer (Vertex, Index, Constant, etc...).
+pub trait Buffer<G: Graphics>: 'static + Sized + Any {}
+
+/// A GPU Shader (Vertex, Fragment, Compute, etc...).
+pub trait Shader<G: Graphics>: 'static + Sized + Any {}
+
+/// A GPU Pipeline 
+pub trait Pipeline<G: Graphics>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also
 /// contains a single a single command queue to which all command buffers will
-/// submitted and executed each frame
+/// submitted and executed each frame.
 pub trait Device<G: Graphics>: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
     fn create_cmd_buf(&self) -> G::CmdBuf;
     fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> G::Buffer;
     fn create_shader(&self, info: ShaderInfo, data: &[u8]) -> G::Shader;
+    fn create_pipeline(&self, info: PipelineInfo<G>) -> G::Pipeline;
     fn execute(&self, cmd: &G::CmdBuf);
 
     // tests
@@ -104,7 +131,7 @@ pub trait Device<G: Graphics>: 'static + Sized + Any {
 }
 
 /// A swap chain is connected to a window and controls fences and signals
-/// as we swap buffers
+/// as we swap buffers.
 pub trait SwapChain<G: Graphics>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &G::Device, window: &platform::Window);
@@ -119,9 +146,11 @@ pub trait SwapChain<G: Graphics>: 'static + Sized + Any {
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &G::SwapChain);
+    fn close(&self, swap_chain: &G::SwapChain);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_vertex_buffer(&self, buffer: &G::Buffer, slot: u32);
+    fn set_pipeline_state(&self, pipeline: &G::Pipeline);
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -130,17 +159,9 @@ pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
         start_instance: u32,
     );
 
-    // debug funcs
+    /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
-    fn set_state_debug(&self);
-    fn close_debug(&self, swap_chain: &G::SwapChain);
 }
-
-/// A GPU buffer (Vertex, Index, Constant, etc...)
-pub trait Buffer<G: Graphics>: 'static + Sized + Any {}
-
-/// A Generic GPU Shader (Vertex, Fragment, Compute, etc...)
-pub trait Shader<G: Graphics>: 'static + Sized + Any {}
 
 impl From<os::Rect<i32>> for Viewport {
     fn from(rect: os::Rect<i32>) -> Viewport {
@@ -167,7 +188,7 @@ impl From<os::Rect<i32>> for ScissorRect {
 }
 
 /// Utility function to take any sized type and return a u8 slice.
-/// This can be useful to pass `data` to `Device::create_buffer`
+/// This can be useful to pass `data` to `Device::create_buffer`.
 pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
         ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
@@ -175,25 +196,25 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 }
 
 // TODO:
-// - rust fmt
-// - docs
-// - window bring to front
-// - Shaders
+// - rust fmt line length
+// - window bring to front ??
+// - Enumerate adapters
 // - Input Layout
 // - Raster State
 // - Depth Stencil State
 // - Blend State
 // - Topology
-// - PSO
+// - Shaders from IR
+// - docs on website
 
 // TODO:
 // - pmfx Shaders
 // - pmfx Input Layout
 
-// TODO:
-// - samples
-
-// TODO:
+// DONE:
+// x samples
+// x PSO
+// x Shaders from source
 // x Viewport
 // x Scissor
 // x Bind Viewport
@@ -206,3 +227,5 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // x Bind Vertex Buffer
 // x move tests
 // x move files / modules / libs
+// x docs
+
