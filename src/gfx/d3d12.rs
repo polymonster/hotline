@@ -52,7 +52,7 @@ pub struct Buffer {
 }
 
 pub struct Shader {
-    blob: ID3DBlob, 
+    blob: ID3DBlob,
 }
 
 impl super::Buffer<Graphics> for Buffer {}
@@ -224,22 +224,19 @@ impl super::Device<Graphics> for Device {
             let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
             // create rtv heap
-            let rtv_heap_result = self
-                .device
-                .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                    NumDescriptors: FRAME_COUNT,
-                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                    ..Default::default()
-                });
+            let rtv_heap_result = self.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                NumDescriptors: FRAME_COUNT,
+                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                ..Default::default()
+            });
             if !rtv_heap_result.is_ok() {
                 panic!("hotline::gfx::d3d12: failed to create rtv heap for swap chain");
             }
 
             let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
-            let rtv_descriptor_size = self
-                .device
-                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
-                as usize;
+            let rtv_descriptor_size =
+                self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
+                    as usize;
             let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
 
             // render targets for the swap chain
@@ -284,9 +281,8 @@ impl super::Device<Graphics> for Device {
 
             for _ in 0..FRAME_COUNT as usize {
                 // create command allocator
-                let command_allocator = self
-                    .device
-                    .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
+                let command_allocator =
+                    self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
                 if !command_allocator.is_ok() {
                     panic!("hotline::gfx::d3d12: failed to create command allocator");
                 }
@@ -319,24 +315,24 @@ impl super::Device<Graphics> for Device {
 
     fn create_pipeline(&self, info: super::PipelineInfo<Graphics>) -> Pipeline {
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
-        D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32B32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 0,
-            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        },
-        D3D12_INPUT_ELEMENT_DESC {
-            SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
-            SemanticIndex: 0,
-            Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
-            InputSlot: 0,
-            AlignedByteOffset: 12,
-            InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-            InstanceDataStepRate: 0,
-        },
+            D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32B32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 0,
+                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
+            D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
+                SemanticIndex: 0,
+                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
+                InputSlot: 0,
+                AlignedByteOffset: 12,
+                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                InstanceDataStepRate: 0,
+            },
         ];
 
         let root_signature = create_root_signature(&self.device).unwrap();
@@ -401,8 +397,8 @@ impl super::Device<Graphics> for Device {
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         Pipeline {
-            pso: unsafe{ self.device.CreateGraphicsPipelineState(&desc).unwrap() },
-            root_signature: root_signature
+            pso: unsafe { self.device.CreateGraphicsPipelineState(&desc).unwrap() },
+            root_signature: root_signature,
         }
     }
 
@@ -420,14 +416,14 @@ impl super::Device<Graphics> for Device {
                 let mut errors = None;
                 let result = D3DCompile(
                     data.as_ptr() as *const core::ffi::c_void,
-                    data.len(), 
-                    PSTR(std::ptr::null_mut() as _), 
-                    std::ptr::null(), 
+                    data.len(),
+                    PSTR(std::ptr::null_mut() as _),
+                    std::ptr::null(),
                     None,
                     PSTR(compile_info.entry_point.as_ptr() as _),
                     PSTR(compile_info.target.as_ptr() as _),
-                    compile_flags, 
-                    0, 
+                    compile_flags,
+                    0,
                     &mut shader_blob,
                     &mut errors,
                 );
@@ -437,7 +433,7 @@ impl super::Device<Graphics> for Device {
             }
         }
         Shader {
-            blob: shader_blob.unwrap()
+            blob: shader_blob.unwrap(),
         }
     }
 
@@ -515,8 +511,7 @@ impl super::Device<Graphics> for Device {
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
-            self.command_queue
-                .ExecuteCommandLists(1, &mut Some(command_list));
+            self.command_queue.ExecuteCommandLists(1, &mut Some(command_list));
         }
     }
 
@@ -542,11 +537,7 @@ impl SwapChain {
             // means no fence was signaled
             {
                 fv = 0;
-                if !self
-                    .fence
-                    .SetEventOnCompletion(fv as u64, self.fence_event)
-                    .is_ok()
-                {
+                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
                     panic!("hotline::gfx::d3d12: failed to set on completion event!");
                 }
                 waitable[1] = self.fence_event;
@@ -590,10 +581,9 @@ impl super::SwapChain<Graphics> for SwapChain {
                 }
 
                 // TODO: move into shared function
-                let rtv_descriptor_size = device
-                    .device
-                    .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
-                    as usize;
+                let rtv_descriptor_size =
+                    device.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
+                        as usize;
                 let rtv_handle = self.rtv_heap.GetCPUDescriptorHandleForHeapStart();
 
                 let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
@@ -684,8 +674,7 @@ impl super::CmdBuf<Graphics> for CmdBuf {
                 0,
                 std::ptr::null(),
             );
-            self.cmd()
-                .OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
+            self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
         }
     }
 
@@ -741,8 +730,7 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         start_instance: u32,
     ) {
         unsafe {
-            self.cmd()
-                .DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
+            self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
         }
     }
 
