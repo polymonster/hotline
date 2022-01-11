@@ -3,9 +3,9 @@ use hotline::*;
 use os::Instance;
 use os::Window;
 
+use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
-use gfx::CmdBuf;
 
 use std::env;
 use std::fs;
@@ -20,7 +20,7 @@ pub struct ClearCol {
     r: f32,
     g: f32,
     b: f32,
-    a: f32
+    a: f32,
 }
 
 #[repr(C)]
@@ -37,14 +37,14 @@ fn main() {
 fn main_test(instarc: os_platform::Instance) {
     let dev = gfx_platform::Device::create();
 
-    let mut win = instarc.create_window(os::WindowInfo { 
-        title : String::from("helloworld!"),
-        rect : os::Rect {
-            x : 0,
-            y : 0,
-            width : 1280,
-            height : 720
-        }
+    let mut win = instarc.create_window(os::WindowInfo {
+        title: String::from("helloworld!"),
+        rect: os::Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
+        },
     });
 
     let mut swap_chain = dev.create_swap_chain(&win);
@@ -52,35 +52,33 @@ fn main_test(instarc: os_platform::Instance) {
 
     let magenta = ClearCol {
         r: 1.0,
-        g: 0.0, 
+        g: 0.0,
         b: 1.0,
-        a: 1.0
+        a: 1.0,
     };
 
     let yellow = ClearCol {
         r: 1.0,
-        g: 1.0, 
+        g: 1.0,
         b: 0.0,
-        a: 1.0
+        a: 1.0,
     };
 
     let cyan = ClearCol {
         r: 0.0,
-        g: 1.0, 
+        g: 1.0,
         b: 1.0,
-        a: 1.0
+        a: 1.0,
     };
 
     let green = ClearCol {
         r: 0.0,
-        g: 1.0, 
+        g: 1.0,
         b: 0.0,
-        a: 1.0
+        a: 1.0,
     };
 
-    let clears : [ClearCol; 4] = [
-        magenta, yellow, cyan, green
-    ];
+    let clears: [ClearCol; 4] = [magenta, yellow, cyan, green];
 
     let vertices = [
         Vertex {
@@ -99,13 +97,10 @@ fn main_test(instarc: os_platform::Instance) {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Vertex,
-        stride: std::mem::size_of::<Vertex>()
+        stride: std::mem::size_of::<Vertex>(),
     };
 
-    let vertex_buffer = dev.create_buffer(
-        info,
-        gfx::as_u8_slice(&vertices)
-    );
+    let vertex_buffer = dev.create_buffer(info, gfx::as_u8_slice(&vertices));
 
     let mut ci = 0;
     let mut incr = 0;
@@ -117,20 +112,20 @@ fn main_test(instarc: os_platform::Instance) {
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
-        compile_info: Some( gfx::ShaderCompileInfo {
+        compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("VSMain"),
             target: String::from("vs_5_0"),
-            flags: gfx::ShaderCompileFlags::none()
-        })
+            flags: gfx::ShaderCompileFlags::none(),
+        }),
     };
 
     let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
-        compile_info: Some( gfx::ShaderCompileInfo {
+        compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain"),
             target: String::from("ps_5_0"),
-            flags: gfx::ShaderCompileFlags::none()
-        })
+            flags: gfx::ShaderCompileFlags::none(),
+        }),
     };
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
@@ -141,7 +136,7 @@ fn main_test(instarc: os_platform::Instance) {
     let pso_info = gfx::PipelineInfo::<gfx::d3d12::Graphics> {
         vs: Some(vs),
         fs: Some(ps),
-        cs: None
+        cs: None,
     };
 
     let pso = dev.create_pipeline(pso_info);
@@ -154,7 +149,7 @@ fn main_test(instarc: os_platform::Instance) {
 
         let viewport = gfx::Viewport::from(window_rect);
         let scissor = gfx::ScissorRect::from(window_rect);
-        
+
         cmdbuffer.reset(&swap_chain);
 
         let col = &clears[ci];
@@ -163,7 +158,7 @@ fn main_test(instarc: os_platform::Instance) {
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_pipeline_state(&pso);
-                
+
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
 

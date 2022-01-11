@@ -64,7 +64,7 @@ bitmask! {
     }
 }
 
-/// Information required to compile a shader from source. 
+/// Information required to compile a shader from source.
 pub struct ShaderCompileInfo {
     /// The name of the entry point function in the shader to compile.
     pub entry_point: String,
@@ -91,7 +91,7 @@ pub struct PipelineInfo<G: Graphics> {
     // optional fragment shader
     pub fs: Option<G::Shader>,
     // optional compute shader
-    pub cs: Option<G::Shader>
+    pub cs: Option<G::Shader>,
 }
 
 /// Graphics backends are required to implement these concrete types.
@@ -110,7 +110,7 @@ pub trait Buffer<G: Graphics>: 'static + Sized + Any {}
 /// A GPU Shader (Vertex, Fragment, Compute, etc...).
 pub trait Shader<G: Graphics>: 'static + Sized + Any {}
 
-/// A GPU Pipeline 
+/// A GPU Pipeline
 pub trait Pipeline<G: Graphics>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also
@@ -228,4 +228,3 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // x move tests
 // x move files / modules / libs
 // x docs
-

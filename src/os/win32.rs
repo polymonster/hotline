@@ -6,7 +6,7 @@ use windows::{
 pub struct Instance {
     window_class: String,
     hinstance: HINSTANCE,
-    atom: u16
+    atom: u16,
 }
 
 pub struct Window {
@@ -53,7 +53,7 @@ impl super::Instance<Platform> for Instance {
             Instance {
                 window_class: String::from(window_class),
                 hinstance: instance,
-                atom: atom
+                atom: atom,
             }
         }
     }
