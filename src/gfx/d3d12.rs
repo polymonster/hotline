@@ -7,9 +7,21 @@ use windows::{
     Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
 };
 
+// TODO: from info
 const FRAME_COUNT: u32 = 2;
 
 use crate::os::Window;
+
+pub enum Graphics {}
+impl super::Graphics for Graphics {
+    type Device = Device;
+    type SwapChain = SwapChain;
+    type CmdBuf = CmdBuf;
+    type Buffer = Buffer;
+    type Shader = Shader;
+    type Pipeline = Pipeline;
+    type Texture = Texture;
+}
 
 pub struct Device {
     name: String,
@@ -55,9 +67,14 @@ pub struct Shader {
     blob: ID3DBlob,
 }
 
+pub struct Texture {
+    resource: ID3D12Resource,
+}
+
 impl super::Buffer<Graphics> for Buffer {}
 impl super::Shader<Graphics> for Shader {}
 impl super::Pipeline<Graphics> for Pipeline {}
+impl super::Texture<Graphics> for Texture {}
 
 fn transition_barrier(
     resource: &ID3D12Resource,
@@ -95,7 +112,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
             // create the actual device yet.
             if D3D12CreateDevice(
                 &adapter,
-                D3D_FEATURE_LEVEL_11_0,
+                D3D_FEATURE_LEVEL_12_1,
                 std::ptr::null_mut::<Option<ID3D12Device>>(),
             )
             .is_ok()
@@ -508,20 +525,55 @@ impl super::Device<Graphics> for Device {
         }
     }
 
+    fn create_texture(&self, info: super::TextureInfo, data: &[u8]) -> Texture {
+        let mut tex: Option<ID3D12Resource> = None;
+        unsafe {
+            if !self
+                .device
+                .CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_DEFAULT,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: match info.tex_type {
+                            super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
+                            super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                            super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+                        },
+                        Alignment: 0,
+                        Width: info.width as u64,
+                        Height: info.height as u32,
+                        DepthOrArraySize: info.depth as u16,
+                        MipLevels: info.mip_levels as u16,
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: info.samples as u32,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    std::ptr::null(),
+                    &mut tex,
+                )
+                .is_ok()
+            {
+                // TODO: the error should be passed to the user
+                panic!("hotline::gfx::d3d12: failed to create texture!");
+            };
+        };
+        let tex = tex.unwrap();
+        Texture { resource: tex }
+    }
+
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
             self.command_queue.ExecuteCommandLists(1, &mut Some(command_list));
         }
-    }
-
-    // tests
-    fn test_mutate(&mut self) {
-        self.val += 1
-    }
-
-    fn print_mutate(&self) {
-        println!("mutated value {}", self.val);
     }
 }
 
@@ -707,14 +759,18 @@ impl super::CmdBuf<Graphics> for CmdBuf {
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
         if buffer.vbv.is_some() {
-            unsafe { cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap()); }
+            unsafe {
+                cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap());
+            }
         }
     }
 
     fn set_index_buffer(&self, buffer: &Buffer) {
         let cmd = self.cmd();
         if buffer.ibv.is_some() {
-            unsafe { cmd.IASetIndexBuffer(&buffer.ibv.unwrap()); }
+            unsafe {
+                cmd.IASetIndexBuffer(&buffer.ibv.unwrap());
+            }
         }
     }
 
@@ -734,18 +790,28 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         start_vertex: u32,
         start_instance: u32,
     ) {
-        unsafe { self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance); }
+        unsafe {
+            self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
+        }
     }
-    
+
     fn draw_indexed_instanced(
         &self,
         index_count: u32,
         instance_count: u32,
         start_index: u32,
         base_vertex: i32,
-        start_instance: u32
+        start_instance: u32,
     ) {
-        unsafe { self.cmd().DrawIndexedInstanced(index_count, instance_count, start_index, base_vertex, start_instance); }
+        unsafe {
+            self.cmd().DrawIndexedInstanced(
+                index_count,
+                instance_count,
+                start_index,
+                base_vertex,
+                start_instance,
+            );
+        }
     }
 
     fn close(&self, swap_chain: &SwapChain) {
@@ -766,14 +832,4 @@ impl super::CmdBuf<Graphics> for CmdBuf {
             }
         }
     }
-}
-
-pub enum Graphics {}
-impl super::Graphics for Graphics {
-    type Device = Device;
-    type SwapChain = SwapChain;
-    type CmdBuf = CmdBuf;
-    type Buffer = Buffer;
-    type Shader = Shader;
-    type Pipeline = Pipeline;
 }

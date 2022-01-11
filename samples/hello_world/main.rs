@@ -83,9 +83,7 @@ fn main_index_buffer(instarc: os_platform::Instance) {
 
     let vertex_buffer = dev.create_buffer(info, gfx::as_u8_slice(&vertices));
 
-    let indices : [u16; 6] = [
-        0, 1, 2, 0, 2, 3
-    ];
+    let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Index,
@@ -132,6 +130,19 @@ fn main_index_buffer(instarc: os_platform::Instance) {
     };
 
     let pso = dev.create_pipeline(pso_info);
+
+    // tex
+
+    let tex_info = gfx::TextureInfo {
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+    };
+    dev.create_texture(tex_info, contents.as_bytes());
 
     while instarc.run() {
         win.update();
