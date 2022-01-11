@@ -706,11 +706,16 @@ impl super::CmdBuf<Graphics> for CmdBuf {
 
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
-        unsafe {
-            if buffer.vbv.is_some() {
-                cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap());
-            }
-        };
+        if buffer.vbv.is_some() {
+            unsafe { cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap()); }
+        }
+    }
+
+    fn set_index_buffer(&self, buffer: &Buffer) {
+        let cmd = self.cmd();
+        if buffer.ibv.is_some() {
+            unsafe { cmd.IASetIndexBuffer(&buffer.ibv.unwrap()); }
+        }
     }
 
     fn set_pipeline_state(&self, pipeline: &Pipeline) {
@@ -729,9 +734,18 @@ impl super::CmdBuf<Graphics> for CmdBuf {
         start_vertex: u32,
         start_instance: u32,
     ) {
-        unsafe {
-            self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance);
-        }
+        unsafe { self.cmd().DrawInstanced(vertex_count, instance_count, start_vertex, start_instance); }
+    }
+    
+    fn draw_indexed_instanced(
+        &self,
+        index_count: u32,
+        instance_count: u32,
+        start_index: u32,
+        base_vertex: i32,
+        start_instance: u32
+    ) {
+        unsafe { self.cmd().DrawIndexedInstanced(index_count, instance_count, start_index, base_vertex, start_instance); }
     }
 
     fn close(&self, swap_chain: &SwapChain) {

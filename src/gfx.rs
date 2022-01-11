@@ -149,6 +149,7 @@ pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
     fn close(&self, swap_chain: &G::SwapChain);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
+    fn set_index_buffer(&self, buffer: &G::Buffer);
     fn set_vertex_buffer(&self, buffer: &G::Buffer, slot: u32);
     fn set_pipeline_state(&self, pipeline: &G::Pipeline);
     fn draw_instanced(
@@ -156,9 +157,16 @@ pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
         vertex_count: u32,
         instance_count: u32,
         start_vertex: u32,
-        start_instance: u32,
+        start_instance: u32
     );
-
+    fn draw_indexed_instanced(
+        &self,
+        index_count: u32,
+        instance_count: u32,
+        start_index: u32,
+        base_vertex: i32,
+        start_instance: u32
+    );
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
 }
@@ -195,23 +203,32 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     }
 }
 
-// TODO:
-// - rust fmt line length
-// - window bring to front ??
-// - Enumerate adapters
+// TODO: lingering
+// - window bring to front ?? (during tests)
+
+// TODO: current
+// - Index Buffer
+// - Texture
+// - Constant Buffer
+// - Root Signature
 // - Input Layout
+// - Shaders from IR
+// - Triangle as test (fix shader compile issue)
+
+// TODO: maybe
+// - pmfx Shaders
+// - pmfx Input Layout
+
+// TODO: later
+// - Enumerate adapters
 // - Raster State
 // - Depth Stencil State
 // - Blend State
 // - Topology
-// - Shaders from IR
 // - docs on website
 
-// TODO:
-// - pmfx Shaders
-// - pmfx Input Layout
-
 // DONE:
+// x rust fmt line length
 // x samples
 // x PSO
 // x Shaders from source
