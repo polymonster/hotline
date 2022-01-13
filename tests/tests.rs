@@ -212,6 +212,7 @@ fn draw_triangle() {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Vertex,
+        format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
     };
 
