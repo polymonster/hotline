@@ -3,7 +3,7 @@ use windows::{
     Win32::UI::Input::KeyboardAndMouse, Win32::UI::WindowsAndMessaging::*,
 };
 
-pub struct Instance {
+pub struct App {
     window_class: String,
     hinstance: HINSTANCE,
     atom: u16,
@@ -29,7 +29,10 @@ impl Drop for Window {
     }
 }
 
-impl super::Instance<Platform> for Instance {
+impl super::App for App {
+    // types
+    type Window = Window;
+
     fn create() -> Self {
         unsafe {
             let window_class = "window\0";
@@ -50,7 +53,7 @@ impl super::Instance<Platform> for Instance {
                 println!("win32 class {} already registered", window_class);
             }
 
-            Instance {
+            App {
                 window_class: String::from(window_class),
                 hinstance: instance,
                 atom: atom,
@@ -103,7 +106,7 @@ impl super::Instance<Platform> for Instance {
     }
 }
 
-impl super::Window<Platform> for Window {
+impl super::Window<App> for Window {
     fn bring_to_front(&self) {
         unsafe {
             SetForegroundWindow(self.hwnd);
@@ -187,10 +190,4 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             _ => DefWindowProcA(window, message, wparam, lparam),
         }
     }
-}
-
-pub enum Platform {}
-impl super::Platform for Platform {
-    type Instance = Instance;
-    type Window = Window;
 }
