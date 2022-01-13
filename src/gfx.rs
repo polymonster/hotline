@@ -33,14 +33,22 @@ pub struct ScissorRect {
 
 /// Format for resource types (textures / buffers)
 pub enum Format {
-    R16UNorm,
-    R16Int,
+    Unknown,
+    R16n,
+    R16u,
+    R16i,
+    R16f,
+    RGBA32u,
+    RGBA32i,
+    RGBA32f,
 }
 
 /// Information to create a buffer through `Device::create_buffer`.
 pub struct BufferInfo {
     /// Indicates how the buffer will be used on the GPU.
     pub usage: BufferUsage,
+    /// Data format of the buffer
+    pub format: Format,
     /// The stride of a vertex or structure in bytes.
     pub stride: usize,
 }

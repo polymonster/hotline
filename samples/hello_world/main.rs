@@ -77,6 +77,7 @@ fn main_index_buffer(instarc: os_platform::App) {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Vertex,
+        format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
     };
 
@@ -86,6 +87,7 @@ fn main_index_buffer(instarc: os_platform::App) {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Index,
+        format: gfx::Format::R16u,
         stride: std::mem::size_of::<Vertex>(),
     };
 

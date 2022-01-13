@@ -64,6 +64,19 @@ impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 
+fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
+    match format {
+        super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
+        super::Format::R16n => DXGI_FORMAT_R16_UNORM,
+        super::Format::R16u => DXGI_FORMAT_R16_UINT,
+        super::Format::R16i => DXGI_FORMAT_R16_SINT,
+        super::Format::R16f => DXGI_FORMAT_R16_FLOAT,
+        super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
+        super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
+        super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
+    }
+}
+
 fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,
@@ -508,7 +521,7 @@ impl super::Device for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: DXGI_FORMAT_R16_UINT,
+                    Format: to_dxgi_format(info.format),
                 })
             }
         }
