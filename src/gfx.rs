@@ -7,17 +7,6 @@ use std::any::Any;
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
 
-/// Graphics backends are required to implement these concrete types.
-pub trait Graphics: 'static + Sized + Any + Send + Sync {
-    type Device: Device<Self>;
-    type SwapChain: SwapChain<Self>;
-    type CmdBuf: CmdBuf<Self>;
-    type Buffer: Buffer<Self>;
-    type Shader: Shader<Self>;
-    type Pipeline: Pipeline<Self>;
-    type Texture: Texture<Self>;
-}
-
 /// Structure to specify viewport coordinates on a `CmdBuf`.
 pub struct Viewport {
     /// Top left x coordinate.
@@ -40,6 +29,12 @@ pub struct ScissorRect {
     pub top: i32,
     pub right: i32,
     pub bottom: i32,
+}
+
+/// Format for resource types (textures / buffers)
+pub enum Format {
+    R16UNorm,
+    R16Int,
 }
 
 /// Information to create a buffer through `Device::create_buffer`.
@@ -96,13 +91,13 @@ bitmask! {
 }
 
 /// Information to create a pipeline through `Device::create_pipeline`.
-pub struct PipelineInfo<G: Graphics> {
+pub struct PipelineInfo<D: Device> {
     // optional vertex shader
-    pub vs: Option<G::Shader>,
+    pub vs: Option<D::Shader>,
     // optional fragment shader
-    pub fs: Option<G::Shader>,
+    pub fs: Option<D::Shader>,
     // optional compute shader
-    pub cs: Option<G::Shader>,
+    pub cs: Option<D::Shader>,
 }
 
 pub struct TextureInfo {
@@ -122,38 +117,43 @@ pub enum TextureType {
 }
 
 /// A GPU Buffer (Vertex, Index, Constant, etc...).
-pub trait Buffer<G: Graphics>: 'static + Sized + Any {}
+pub trait Buffer<D: Device>: 'static + Sized + Any {}
 
 /// A GPU Shader (Vertex, Fragment, Compute, etc...).
-pub trait Shader<G: Graphics>: 'static + Sized + Any {}
+pub trait Shader<D: Device>: 'static + Sized + Any {}
 
 /// A GPU Pipeline
-pub trait Pipeline<G: Graphics>: 'static + Sized + Any {}
+pub trait Pipeline<D: Device>: 'static + Sized + Any {}
 
 /// A GPU Texture
-pub trait Texture<G: Graphics>: 'static + Sized + Any {}
+pub trait Texture<D: Device>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also
 /// contains a single a single command queue to which all command buffers will
 /// submitted and executed each frame.
-pub trait Device<G: Graphics>: 'static + Sized + Any {
+pub trait Device: 'static + Sized + Any {
+    type SwapChain: SwapChain<Self>;
+    type CmdBuf: CmdBuf<Self>;
+    type Buffer: Buffer<Self>;
+    type Shader: Shader<Self>;
+    type Pipeline: Pipeline<Self>;
+    type Texture: Texture<Self>;
     fn create() -> Self;
-    fn create_swap_chain(&self, window: &platform::Window) -> G::SwapChain;
-    fn create_cmd_buf(&self) -> G::CmdBuf;
-    fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> G::Buffer;
-    fn create_texture(&self, info: TextureInfo, data: &[u8]) -> G::Texture;
-    fn create_shader(&self, info: ShaderInfo, data: &[u8]) -> G::Shader;
-    fn create_pipeline(&self, info: PipelineInfo<G>) -> G::Pipeline;
-    fn execute(&self, cmd: &G::CmdBuf);
+    fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
+    fn create_cmd_buf(&self) -> Self::CmdBuf;
+    fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> Self::Buffer;
+    fn create_texture(&self, info: TextureInfo, data: &[u8]) -> Self::Texture;
+    fn create_shader(&self, info: ShaderInfo, data: &[u8]) -> Self::Shader;
+    fn create_pipeline(&self, info: PipelineInfo<Self>) -> Self::Pipeline;
+    fn execute(&self, cmd: &Self::CmdBuf);
 }
 
-/// A swap chain is connected to a window and controls fences and signals
-/// as we swap buffers.
-pub trait SwapChain<G: Graphics>: 'static + Sized + Any {
+/// A swap chain is connected to a window and controls fences and signals as we swap buffers.
+pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &G::Device, window: &platform::Window);
+    fn update(&mut self, device: &D, window: &platform::Window);
     fn get_backbuffer_index(&self) -> i32;
-    fn swap(&mut self, device: &G::Device);
+    fn swap(&mut self, device: &D);
 }
 
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
@@ -161,14 +161,14 @@ pub trait SwapChain<G: Graphics>: 'static + Sized + Any {
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
-pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
-    fn reset(&mut self, swap_chain: &G::SwapChain);
-    fn close(&self, swap_chain: &G::SwapChain);
+pub trait CmdBuf<D: Device>: 'static + Sized + Any {
+    fn reset(&mut self, swap_chain: &D::SwapChain);
+    fn close(&self, swap_chain: &D::SwapChain);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
-    fn set_index_buffer(&self, buffer: &G::Buffer);
-    fn set_vertex_buffer(&self, buffer: &G::Buffer, slot: u32);
-    fn set_pipeline_state(&self, pipeline: &G::Pipeline);
+    fn set_index_buffer(&self, buffer: &D::Buffer);
+    fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
+    fn set_pipeline_state(&self, pipeline: &D::Pipeline);
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -185,7 +185,7 @@ pub trait CmdBuf<G: Graphics>: 'static + Sized + Any {
         start_instance: u32,
     );
     /// debug funcs will be removed
-    fn clear_debug(&mut self, swap_chain: &G::SwapChain, r: f32, g: f32, b: f32, a: f32);
+    fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
 }
 
 impl From<os::Rect<i32>> for Viewport {
@@ -245,6 +245,7 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // - docs on website
 
 // DONE:
+// x remove "Graphics" and move "Instance" to "App"
 // x Index Buffer
 // x rust fmt line length
 // x samples

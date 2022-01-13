@@ -3,18 +3,12 @@ pub mod win32;
 
 use std::any::Any;
 
-/// Contains types which operating system backends
-/// need to implement concrete types for
-pub trait Platform: 'static + Sized + Any {
-    type Instance: Instance<Self>;
-    type Window: Window<Self>;
-}
-
 /// An interface which all platforms need to implement
 /// for general operating system calls
-pub trait Instance<P: Platform>: 'static + Any + Sized {
+pub trait App: 'static + Any + Sized {
+    type Window: Window<Self>;
     fn create() -> Self;
-    fn create_window(&self, info: WindowInfo) -> P::Window;
+    fn create_window(&self, info: WindowInfo) -> Self::Window;
     fn run(&self) -> bool;
 }
 
@@ -29,14 +23,14 @@ pub struct Rect<T> {
 }
 
 /// Filled out to specify various window parameters
-/// when a window is created by `Instance::create_window`
+/// when a window is created by `App::create_window`
 pub struct WindowInfo {
     pub title: String,
     pub rect: Rect<i32>,
 }
 
 /// An instance of an operating system window
-pub trait Window<P: Platform>: Any + Sized {
+pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
     fn set_rect(&mut self, rect: Rect<i32>);
     fn get_rect(&self) -> Rect<i32>;

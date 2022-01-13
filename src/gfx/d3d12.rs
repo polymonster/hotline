@@ -12,24 +12,12 @@ const FRAME_COUNT: u32 = 2;
 
 use crate::os::Window;
 
-pub enum Graphics {}
-impl super::Graphics for Graphics {
-    type Device = Device;
-    type SwapChain = SwapChain;
-    type CmdBuf = CmdBuf;
-    type Buffer = Buffer;
-    type Shader = Shader;
-    type Pipeline = Pipeline;
-    type Texture = Texture;
-}
-
 pub struct Device {
     name: String,
     adapter: IDXGIAdapter1,
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
     command_queue: ID3D12CommandQueue,
-    val: i32,
 }
 
 pub struct SwapChain {
@@ -71,10 +59,10 @@ pub struct Texture {
     resource: ID3D12Resource,
 }
 
-impl super::Buffer<Graphics> for Buffer {}
-impl super::Shader<Graphics> for Shader {}
-impl super::Pipeline<Graphics> for Pipeline {}
-impl super::Texture<Graphics> for Texture {}
+impl super::Buffer<Device> for Buffer {}
+impl super::Shader<Device> for Shader {}
+impl super::Pipeline<Device> for Pipeline {}
+impl super::Texture<Device> for Texture {}
 
 fn transition_barrier(
     resource: &ID3D12Resource,
@@ -147,7 +135,15 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     }
 }
 
-impl super::Device<Graphics> for Device {
+impl super::Device for Device {
+    // types
+    type SwapChain = SwapChain;
+    type CmdBuf = CmdBuf;
+    type Buffer = Buffer;
+    type Shader = Shader;
+    type Pipeline = Pipeline;
+    type Texture = Texture;
+
     fn create() -> Device {
         unsafe {
             // enable debug layer
@@ -203,7 +199,6 @@ impl super::Device<Graphics> for Device {
                 device: device,
                 dxgi_factory: dxgi_factory,
                 command_queue: command_queue,
-                val: 69,
             }
         }
     }
@@ -330,7 +325,7 @@ impl super::Device<Graphics> for Device {
         }
     }
 
-    fn create_pipeline(&self, info: super::PipelineInfo<Graphics>) -> Pipeline {
+    fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
                 SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
@@ -513,7 +508,7 @@ impl super::Device<Graphics> for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: DXGI_FORMAT_R16_UNORM,
+                    Format: DXGI_FORMAT_R16_UINT,
                 })
             }
         }
@@ -601,7 +596,7 @@ impl SwapChain {
     }
 }
 
-impl super::SwapChain<Graphics> for SwapChain {
+impl super::SwapChain<Device> for SwapChain {
     fn new_frame(&mut self) {
         self.wait_for_frame(self.bb_index as usize);
     }
@@ -689,7 +684,7 @@ impl CmdBuf {
     }
 }
 
-impl super::CmdBuf<Graphics> for CmdBuf {
+impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         self.bb_index = bb;
