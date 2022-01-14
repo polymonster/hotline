@@ -29,14 +29,18 @@ struct Vertex {
 }
 
 fn main() {
-    let instarc = os_platform::App::create();
-    main_index_buffer(instarc);
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("window_set_rect"),
+        window: false,
+        num_buffers: 0
+    });
+    main_index_buffer(app);
 }
 
-fn main_index_buffer(instarc: os_platform::App) {
+fn main_index_buffer(app: os_platform::App) {
     let dev = gfx_platform::Device::create();
 
-    let mut win = instarc.create_window(os::WindowInfo {
+    let mut win = app.create_window(os::WindowInfo {
         title: String::from("index buffer!"),
         rect: os::Rect {
             x: 0,
@@ -143,7 +147,7 @@ fn main_index_buffer(instarc: os_platform::App) {
     };
     dev.create_texture(tex_info, contents.as_bytes());
 
-    while instarc.run() {
+    while app.run() {
         win.update();
         swap_chain.update(&dev, &win);
 

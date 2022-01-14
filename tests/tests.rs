@@ -27,20 +27,32 @@ struct Vertex {
 }
 
 #[test]
-fn create_instance() {
-    let _inst = os_platform::App::create();
+fn create_app() {
+    let _app = os_platform::App::create(os::AppInfo {
+        name: String::from("create_app"),
+        window: false,
+        num_buffers: 0
+    });
 }
 
 #[test]
 fn create_d3d12_device() {
-    let _inst = os_platform::App::create();
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("create_d3d12_device"),
+        window: false,
+        num_buffers: 0
+    });
     let _dev = gfx_platform::Device::create();
 }
 
 #[test]
 fn create_window() {
-    let inst = os_platform::App::create();
-    let win = inst.create_window(os::WindowInfo {
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("create_window"),
+        window: false,
+        num_buffers: 0
+    });
+    let win = app.create_window(os::WindowInfo {
         title: String::from("hello world!"),
         rect: os::Rect {
             x: 0,
@@ -59,9 +71,13 @@ fn create_window() {
 
 #[test]
 fn window_set_rect() {
-    let inst = os_platform::App::create();
-    let mut win = inst.create_window(os::WindowInfo {
-        title: String::from("hello world!"),
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("window_set_rect"),
+        window: false,
+        num_buffers: 0
+    });
+    let mut win = app.create_window(os::WindowInfo {
+        title: String::from("window_set_rect!"),
         rect: os::Rect {
             x: 0,
             y: 0,
@@ -85,9 +101,13 @@ fn window_set_rect() {
 
 #[test]
 fn swap_chain_buffer() {
-    let inst = os_platform::App::create();
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("swap_chain_buffer"),
+        window: false,
+        num_buffers: 0
+    });
     let dev = gfx_platform::Device::create();
-    let mut win = inst.create_window(os::WindowInfo {
+    let mut win = app.create_window(os::WindowInfo {
         title: String::from("swap chain buffering"),
         rect: os::Rect {
             x: 0,
@@ -129,7 +149,7 @@ fn swap_chain_buffer() {
     ];
 
     let mut i = 0;
-    while inst.run() {
+    while app.run() {
         win.update();
         swap_chain.update(&dev, &win);
 
@@ -149,7 +169,11 @@ fn swap_chain_buffer() {
 
 #[test]
 fn draw_triangle() {
-    let app = os_platform::App::create();
+    let app = os_platform::App::create(os::AppInfo {
+        name: String::from("draw_triangle"),
+        window: false,
+        num_buffers: 0
+    });
     let dev = gfx_platform::Device::create();
 
     let mut win = app.create_window(os::WindowInfo {
