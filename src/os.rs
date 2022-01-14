@@ -3,17 +3,25 @@ pub mod win32;
 
 use std::any::Any;
 
-/// An interface which all platforms need to implement
-/// for general operating system calls
+/// Information to describe the Application properties
+pub struct AppInfo {
+    /// Name of the application
+    pub name: String,
+    /// Set to true to create a default window
+    pub window: bool,
+    /// Specify the number of buffers in the swap chain
+    pub num_buffers: u32
+}
+
+/// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized {
     type Window: Window<Self>;
-    fn create() -> Self;
+    fn create(info: AppInfo) -> Self;
     fn create_window(&self, info: WindowInfo) -> Self::Window;
     fn run(&self) -> bool;
 }
 
-/// Describes a rectangle starting at the top left corner specified by x,y
-/// with the size of width and height.
+/// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height.
 #[derive(Copy, Clone)]
 pub struct Rect<T> {
     pub x: T,
@@ -22,8 +30,7 @@ pub struct Rect<T> {
     pub height: T,
 }
 
-/// Filled out to specify various window parameters
-/// when a window is created by `App::create_window`
+/// Filled out to specify various window parameters when a window is created by `App::create_window`
 pub struct WindowInfo {
     pub title: String,
     pub rect: Rect<i32>,

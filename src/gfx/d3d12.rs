@@ -32,6 +32,7 @@ pub struct SwapChain {
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
     frame_fence_value: [u64; FRAME_COUNT as usize],
+    readback_buffer: Option<ID3D12Resource>
 }
 
 pub struct Pipeline {
@@ -146,6 +147,41 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
     unsafe {
         device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
     }
+}
+
+fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource> {
+    let mut readback_buffer: Option<ID3D12Resource> = None;
+    unsafe {
+        // readback buffer
+        if !device.device
+            .CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_READBACK,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Width: size,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    ..Default::default()
+                },
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                std::ptr::null(),
+                &mut readback_buffer,
+            )
+            .is_ok() {
+                panic!("hotline::gfx::d3d12: failed to create readback buffer");
+            }
+    }
+    readback_buffer
 }
 
 impl super::Device for Device {
@@ -282,6 +318,8 @@ impl super::Device for Device {
 
             let fence_event = CreateEventA(std::ptr::null_mut(), false, false, None);
 
+            let data_size = (rect.width * rect.height * 4) as u64;
+
             // initialise struct
             SwapChain {
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
@@ -295,6 +333,7 @@ impl super::Device for Device {
                 rtv_handles: handles,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
+                readback_buffer: create_read_back_buffer(&self, data_size)
             }
         }
     }
@@ -665,6 +704,9 @@ impl super::SwapChain<Device> for SwapChain {
                 self.rtv_handles = handles;
                 self.width = wh.0;
                 self.height = wh.1;
+
+                let data_size = (self.width * self.height * 4) as u64;
+                self.readback_buffer = create_read_back_buffer(&device, data_size)
             }
         } else {
             self.new_frame();

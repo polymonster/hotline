@@ -33,9 +33,9 @@ impl super::App for App {
     // types
     type Window = Window;
 
-    fn create() -> Self {
+    fn create(info: super::AppInfo) -> Self {
         unsafe {
-            let window_class = "window\0";
+            let window_class = info.name + "\0";
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
 
