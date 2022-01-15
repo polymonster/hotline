@@ -1,3 +1,5 @@
+use crate::os::Window;
+
 #[cfg(target_os = "windows")]
 use crate::os::win32 as platform;
 
@@ -7,10 +9,11 @@ use windows::{
     Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
 };
 
-// TODO: from info
-const FRAME_COUNT: u32 = 2;
+use std::ffi::CStr;
+use std::str;
 
-use crate::os::Window;
+/// Indicates the number of backbuffers used for swap chains and command buffers.
+const NUM_BB: u32 = 2;
 
 pub struct Device {
     name: String,
@@ -23,6 +26,7 @@ pub struct Device {
 pub struct SwapChain {
     width: i32,
     height: i32,
+    flags: u32,
     frame_index: i32,
     bb_index: i32,
     swap_chain: IDXGISwapChain3,
@@ -31,8 +35,8 @@ pub struct SwapChain {
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
-    frame_fence_value: [u64; FRAME_COUNT as usize],
-    readback_buffer: Option<ID3D12Resource>
+    frame_fence_value: [u64; NUM_BB as usize],
+    readback_buffer: Option<ID3D12Resource>,
 }
 
 pub struct Pipeline {
@@ -60,11 +64,6 @@ pub struct Texture {
     resource: ID3D12Resource,
 }
 
-impl super::Buffer<Device> for Buffer {}
-impl super::Shader<Device> for Shader {}
-impl super::Pipeline<Device> for Pipeline {}
-impl super::Texture<Device> for Texture {}
-
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
@@ -76,6 +75,17 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
     }
+}
+
+fn to_d3d12_compile_flags(flags: super::ShaderCompileFlags) -> u32 {
+    let mut d3d12_flags = 0;
+    if flags.contains(super::CompileFlags::SkipOptimization) {
+        d3d12_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
+    }
+    if flags.contains(super::CompileFlags::Debug) {
+        d3d12_flags |= D3DCOMPILE_DEBUG;
+    }
+    d3d12_flags
 }
 
 fn transition_barrier(
@@ -153,7 +163,8 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
     let mut readback_buffer: Option<ID3D12Resource> = None;
     unsafe {
         // readback buffer
-        if !device.device
+        if !device
+            .device
             .CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: D3D12_HEAP_TYPE_READBACK,
@@ -177,15 +188,55 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
                 std::ptr::null(),
                 &mut readback_buffer,
             )
-            .is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create readback buffer");
-            }
+            .is_ok()
+        {
+            panic!("hotline::gfx::d3d12: failed to create readback buffer");
+        }
     }
     readback_buffer
 }
 
+fn create_swap_chain_rtv(
+    swap_chain: &IDXGISwapChain3,
+    device: &ID3D12Device,
+) -> (ID3D12DescriptorHeap, Vec<D3D12_CPU_DESCRIPTOR_HANDLE>) {
+    unsafe {
+        // create rtv heap
+        let rtv_heap_result = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+            NumDescriptors: NUM_BB,
+            Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+            ..Default::default()
+        });
+        if !rtv_heap_result.is_ok() {
+            panic!("hotline::gfx::d3d12: failed to create rtv heap for swap chain");
+        }
+
+        let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
+        let rtv_descriptor_size =
+            device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) as usize;
+        let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
+
+        // render targets for the swap chain
+        let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+
+        for i in 0..NUM_BB {
+            let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
+            let h = D3D12_CPU_DESCRIPTOR_HANDLE {
+                ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
+            };
+            device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
+            handles.push(h);
+        }
+        (rtv_heap, handles)
+    }
+}
+
+impl super::Buffer<Device> for Buffer {}
+impl super::Shader<Device> for Shader {}
+impl super::Pipeline<Device> for Pipeline {}
+impl super::Texture<Device> for Texture {}
+
 impl super::Device for Device {
-    // types
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
     type Buffer = Buffer;
@@ -241,7 +292,7 @@ impl super::Device for Device {
             }
             let command_queue = command_queue_result.unwrap();
 
-            // construct device and return
+            // initialise struct
             Device {
                 name: String::from("d3d12 device"),
                 adapter: adapter,
@@ -254,16 +305,19 @@ impl super::Device for Device {
 
     fn create_swap_chain(&self, win: &platform::Window) -> SwapChain {
         unsafe {
+            // set flags, these could be passed in
+            let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
+
             // create swap chain desc
             let rect = win.get_rect();
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
-                BufferCount: FRAME_COUNT,
+                BufferCount: NUM_BB,
                 Width: rect.width as u32,
                 Height: rect.height as u32,
                 Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-                Flags: 64,
+                Flags: flags as u32,
                 SampleDesc: DXGI_SAMPLE_DESC {
                     Count: 1,
                     ..Default::default()
@@ -284,56 +338,25 @@ impl super::Device for Device {
             }
             let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
-            // create rtv heap
-            let rtv_heap_result = self.device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                NumDescriptors: FRAME_COUNT,
-                Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                ..Default::default()
-            });
-            if !rtv_heap_result.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create rtv heap for swap chain");
-            }
-
-            let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
-            let rtv_descriptor_size =
-                self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
-                    as usize;
-            let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
-
-            // render targets for the swap chain
-            let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
-
-            for i in 0..FRAME_COUNT {
-                let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
-                let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-                    ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
-                };
-                self.device.CreateRenderTargetView(
-                    &render_target,
-                    std::ptr::null_mut(),
-                    &sub_handle,
-                );
-                handles.push(sub_handle);
-            }
-
-            let fence_event = CreateEventA(std::ptr::null_mut(), false, false, None);
-
+            // create rtv heap and handles
+            let rtv = create_swap_chain_rtv(&swap_chain, &self.device);
             let data_size = (rect.width * rect.height * 4) as u64;
 
             // initialise struct
             SwapChain {
-                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                 width: rect.width,
                 height: rect.height,
+                flags: flags as u32,
                 bb_index: 0,
+                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                 fence_last_signalled_value: 0,
-                fence_event: fence_event,
+                fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
                 swap_chain: swap_chain,
-                rtv_heap: rtv_heap,
-                rtv_handles: handles,
+                rtv_heap: rtv.0,
+                rtv_handles: rtv.1,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
-                readback_buffer: create_read_back_buffer(&self, data_size)
+                readback_buffer: create_read_back_buffer(&self, data_size),
             }
         }
     }
@@ -343,7 +366,7 @@ impl super::Device for Device {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
 
-            for _ in 0..FRAME_COUNT as usize {
+            for _ in 0..NUM_BB as usize {
                 // create command allocator
                 let command_allocator =
                     self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
@@ -368,7 +391,7 @@ impl super::Device for Device {
                 command_lists.push(command_list);
             }
 
-            // assign struct
+            // initialise struct
             CmdBuf {
                 bb_index: 1,
                 command_allocator: command_allocators,
@@ -400,7 +423,6 @@ impl super::Device for Device {
         ];
 
         let root_signature = create_root_signature(&self.device).unwrap();
-
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;
 
@@ -460,6 +482,7 @@ impl super::Device for Device {
         };
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
+        // initialise struct
         Pipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc).unwrap() },
             root_signature: root_signature,
@@ -469,13 +492,8 @@ impl super::Device for Device {
     fn create_shader(&self, info: super::ShaderInfo, data: &[u8]) -> Shader {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
-            // TODO: properly use flags
-            let compile_flags = if cfg!(debug_assertions) {
-                D3DCOMPILE_DEBUG | D3DCOMPILE_SKIP_OPTIMIZATION
-            } else {
-                0
-            };
             let compile_info = info.compile_info.unwrap();
+            let compile_flags = to_d3d12_compile_flags(compile_info.flags);
             unsafe {
                 let mut errors = None;
                 let result = D3DCompile(
@@ -493,9 +511,18 @@ impl super::Device for Device {
                 );
                 if !result.is_ok() {
                     println!("shader compile failed!");
+                    if errors.is_some() {
+                        let w = errors.unwrap();
+                        let buf = w.GetBufferPointer();
+                        let c_str: &CStr = unsafe { CStr::from_ptr(buf as *const i8) };
+                        let str_slice: &str = c_str.to_str().unwrap();
+                        println!("{}", str_slice);
+                    }
                 }
             }
         }
+
+        // initialise struct
         Shader {
             blob: shader_blob.unwrap(),
         }
@@ -565,6 +592,7 @@ impl super::Device for Device {
             }
         }
 
+        // initialise struct
         Buffer {
             resource: buf,
             vbv: vbv,
@@ -613,6 +641,8 @@ impl super::Device for Device {
             };
         };
         let tex = tex.unwrap();
+
+        // initialise struct
         Texture { resource: tex }
     }
 
@@ -659,14 +689,12 @@ impl super::SwapChain<Device> for SwapChain {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
 
-                // TODO: how to properly use flags
-                let flags = 64;
                 let res = self.swap_chain.ResizeBuffers(
-                    FRAME_COUNT,
+                    NUM_BB,
                     wh.0 as u32,
                     wh.1 as u32,
                     DXGI_FORMAT_UNKNOWN,
-                    flags,
+                    self.flags,
                 );
 
                 if !res.is_ok() {
@@ -679,34 +707,14 @@ impl super::SwapChain<Device> for SwapChain {
                     println!("resize success!");
                 }
 
-                // TODO: move into shared function
-                let rtv_descriptor_size =
-                    device.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV)
-                        as usize;
-                let rtv_handle = self.rtv_heap.GetCPUDescriptorHandleForHeapStart();
+                let rtv = create_swap_chain_rtv(&self.swap_chain, &device.device);
+                let data_size = (self.width * self.height * 4) as u64;
+                self.readback_buffer = create_read_back_buffer(&device, data_size);
 
-                let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
-                let mut render_targets: Vec<ID3D12Resource> = Vec::new();
-                for i in 0..FRAME_COUNT {
-                    let render_target: ID3D12Resource = self.swap_chain.GetBuffer(i).unwrap();
-                    let sub_handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-                        ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
-                    };
-                    device.device.CreateRenderTargetView(
-                        &render_target,
-                        std::ptr::null_mut(),
-                        &sub_handle,
-                    );
-                    handles.push(sub_handle);
-                    render_targets.push(render_target);
-                }
-
-                self.rtv_handles = handles;
+                self.rtv_heap = rtv.0;
+                self.rtv_handles = rtv.1;
                 self.width = wh.0;
                 self.height = wh.1;
-
-                let data_size = (self.width * self.height * 4) as u64;
-                self.readback_buffer = create_read_back_buffer(&device, data_size)
             }
         } else {
             self.new_frame();
@@ -728,7 +736,7 @@ impl super::SwapChain<Device> for SwapChain {
             // swap buffers
             let next_frame_index = self.frame_index + 1;
             self.frame_index = next_frame_index;
-            self.bb_index = next_frame_index % FRAME_COUNT as i32;
+            self.bb_index = next_frame_index % NUM_BB as i32;
         }
     }
 }

@@ -10,7 +10,7 @@ pub struct AppInfo {
     /// Set to true to create a default window
     pub window: bool,
     /// Specify the number of buffers in the swap chain
-    pub num_buffers: u32
+    pub num_buffers: u32,
 }
 
 /// An interface which all platforms need to implement for general operating system calls

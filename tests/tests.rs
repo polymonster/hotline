@@ -31,7 +31,7 @@ fn create_app() {
     let _app = os_platform::App::create(os::AppInfo {
         name: String::from("create_app"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
 }
 
@@ -40,7 +40,7 @@ fn create_d3d12_device() {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("create_d3d12_device"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
     let _dev = gfx_platform::Device::create();
 }
@@ -50,7 +50,7 @@ fn create_window() {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("create_window"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
     let win = app.create_window(os::WindowInfo {
         title: String::from("hello world!"),
@@ -74,7 +74,7 @@ fn window_set_rect() {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
     let mut win = app.create_window(os::WindowInfo {
         title: String::from("window_set_rect!"),
@@ -104,7 +104,7 @@ fn swap_chain_buffer() {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("swap_chain_buffer"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
     let dev = gfx_platform::Device::create();
     let mut win = app.create_window(os::WindowInfo {
@@ -172,7 +172,7 @@ fn draw_triangle() {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("draw_triangle"),
         window: false,
-        num_buffers: 0
+        num_buffers: 0,
     });
     let dev = gfx_platform::Device::create();
 
@@ -256,8 +256,8 @@ fn draw_triangle() {
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain"),
-            target: String::from("vs_5_0"),
+            entry_point: String::from("VSMain\0"),
+            target: String::from("vs_5_0\0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -265,8 +265,8 @@ fn draw_triangle() {
     let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain"),
-            target: String::from("ps_5_0"),
+            entry_point: String::from("PSMain\0"),
+            target: String::from("ps_5_0\0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
