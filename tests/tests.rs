@@ -2,12 +2,19 @@ use hotline::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
+use gfx::ReadBackRequest;
 use gfx::SwapChain;
+
 use os::App;
 use os::Window;
 
 use std::env;
 use std::fs;
+
+use png::*;
+use std::fs::File;
+use std::io::BufWriter;
+use std::path::Path;
 
 use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
@@ -256,8 +263,8 @@ fn draw_triangle() {
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain\0"),
-            target: String::from("vs_5_0\0"),
+            entry_point: String::from("VSMain"),
+            target: String::from("vs_5_0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -265,8 +272,8 @@ fn draw_triangle() {
     let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain\0"),
-            target: String::from("ps_5_0\0"),
+            entry_point: String::from("PSMain"),
+            target: String::from("ps_5_0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -281,6 +288,16 @@ fn draw_triangle() {
         fs: Some(ps),
         cs: None,
     });
+
+    let mut rbr = gfx_platform::ReadBackRequest {
+        fence_value: u64::MAX,
+        resource: None,
+        size: 0,
+        row_pitch: 0,
+        slice_pitch: 0,
+    };
+
+    let mut written = false;
 
     while app.run() {
         win.update();
@@ -302,6 +319,27 @@ fn draw_triangle() {
 
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
+
+        if !rbr.resource.is_some() && !written {
+            rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
+        } else {
+            if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
+                let data = rbr.get_data();
+
+                let path = Path::new(r"my_triangle_png.png");
+                let file = File::create(path).unwrap();
+                let ref mut w = BufWriter::new(file);
+
+                let mut encoder = png::Encoder::new(w, 1280, 720); // Width is 2 pixels and height is 1.
+                encoder.set_color(png::ColorType::Rgba);
+                encoder.set_depth(png::BitDepth::Eight);
+                let mut writer = encoder.write_header().unwrap();
+
+                writer.write_image_data(&data.data).unwrap();
+                rbr.resource = None;
+                written = true;
+            }
+        }
 
         cmdbuffer.close(&swap_chain);
 

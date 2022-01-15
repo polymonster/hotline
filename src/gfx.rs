@@ -139,7 +139,7 @@ pub trait Pipeline<D: Device>: 'static + Sized + Any {}
 /// A GPU Texture
 pub trait Texture<D: Device>: 'static + Sized + Any {}
 
-/// A GPU device is used to create GPU resources, the device also contains a single a single command queue 
+/// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
 pub trait Device: 'static + Sized + Any {
     type SwapChain: SwapChain<Self>;
@@ -148,6 +148,7 @@ pub trait Device: 'static + Sized + Any {
     type Shader: Shader<Self>;
     type Pipeline: Pipeline<Self>;
     type Texture: Texture<Self>;
+    type ReadBackRequest: ReadBackRequest<Self>;
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
@@ -194,8 +195,22 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
         base_vertex: i32,
         start_instance: u32,
     );
+    fn read_back_backbuffer(&self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
+}
+
+pub struct ReadBackData {
+    pub data: &'static [u8],
+    pub format: Format,
+    pub size: usize,
+    pub row_pitch: usize,
+    pub slice_pitch: usize,
+}
+
+pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
+    fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
+    fn get_data(&self) -> ReadBackData;
 }
 
 impl From<os::Rect<i32>> for Viewport {
@@ -230,11 +245,26 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     }
 }
 
+/// Returns the block size (texel, compressed block of texels or single buffer element) for a given format
+pub fn block_size_for_format(format: Format) -> u32 {
+    match format {
+        Format::Unknown => 0,
+        Format::R16n => 2,
+        Format::R16u => 2,
+        Format::R16i => 2,
+        Format::R16f => 2,
+        Format::RGBA32u => 16,
+        Format::RGBA32i => 16,
+        Format::RGBA32f => 16,
+    }
+}
+
 // TODO: lingering
 // - window bring to front ?? (during tests)
 
 // TODO: current
 // - Backbuffer readback / resource readback
+// - Track transitions and manually drop
 // - Texture
 // - Constant Buffer
 // - Root Signature
