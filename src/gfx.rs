@@ -108,13 +108,16 @@ pub struct PipelineInfo<D: Device> {
     pub cs: Option<D::Shader>,
 }
 
+/// Information to create a pipeline through `Device::create_texture`.
 pub struct TextureInfo {
     pub tex_type: TextureType,
     pub width: u64,
     pub height: u64,
+    /// Supply only for 3D textures
     pub depth: u32,
     pub array_levels: u32,
     pub mip_levels: u32,
+    /// Number of MSAA samples
     pub samples: u32,
 }
 
@@ -136,9 +139,8 @@ pub trait Pipeline<D: Device>: 'static + Sized + Any {}
 /// A GPU Texture
 pub trait Texture<D: Device>: 'static + Sized + Any {}
 
-/// A GPU device is used to create GPU resources, the device also
-/// contains a single a single command queue to which all command buffers will
-/// submitted and executed each frame.
+/// A GPU device is used to create GPU resources, the device also contains a single a single command queue 
+/// to which all command buffers will submitted and executed each frame.
 pub trait Device: 'static + Sized + Any {
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
@@ -232,8 +234,8 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // - window bring to front ?? (during tests)
 
 // TODO: current
+// - Backbuffer readback / resource readback
 // - Texture
-// - how to properly use bitmask and flags?
 // - Constant Buffer
 // - Root Signature
 // - Input Layout
@@ -253,6 +255,7 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 // - docs on website
 
 // DONE:
+// x how to properly use bitmask and flags?
 // x remove "Graphics" and move "Instance" to "App"
 // x Index Buffer
 // x rust fmt line length
