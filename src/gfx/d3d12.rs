@@ -64,6 +64,15 @@ pub struct Texture {
     resource: ID3D12Resource,
 }
 
+#[derive(Clone)]
+pub struct ReadBackRequest {
+    pub resource: Option<ID3D12Resource>,
+    pub fence_value: u64,
+    pub size: usize,
+    pub row_pitch: usize,
+    pub slice_pitch: usize,
+}
+
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
@@ -181,6 +190,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
                         Count: 1,
                         Quality: 0,
                     },
+                    Format: DXGI_FORMAT_UNKNOWN,
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                     ..Default::default()
                 },
@@ -243,6 +253,7 @@ impl super::Device for Device {
     type Shader = Shader;
     type Pipeline = Pipeline;
     type Texture = Texture;
+    type ReadBackRequest = ReadBackRequest;
 
     fn create() -> Device {
         unsafe {
@@ -502,22 +513,22 @@ impl super::Device for Device {
                     PSTR(std::ptr::null_mut() as _),
                     std::ptr::null(),
                     None,
-                    PSTR(compile_info.entry_point.as_ptr() as _),
-                    PSTR(compile_info.target.as_ptr() as _),
+                    PSTR((compile_info.entry_point + "\0").as_ptr() as _),
+                    PSTR((compile_info.target + "\0").as_ptr() as _),
                     compile_flags,
                     0,
                     &mut shader_blob,
                     &mut errors,
                 );
                 if !result.is_ok() {
-                    println!("shader compile failed!");
                     if errors.is_some() {
                         let w = errors.unwrap();
                         let buf = w.GetBufferPointer();
-                        let c_str: &CStr = unsafe { CStr::from_ptr(buf as *const i8) };
+                        let c_str: &CStr = CStr::from_ptr(buf as *const i8);
                         let str_slice: &str = c_str.to_str().unwrap();
                         println!("{}", str_slice);
                     }
+                    panic!("shader compile failed!");
                 }
             }
         }
@@ -889,5 +900,106 @@ impl super::CmdBuf<Device> for CmdBuf {
                 panic!("hotline: d3d12 failed to close command list.")
             }
         }
+    }
+
+    fn read_back_backbuffer(&self, swap_chain: &SwapChain) -> ReadBackRequest {
+        let bb = self.bb_index;
+        let bbz = self.bb_index as u32;
+        unsafe {
+            let resource = swap_chain.swap_chain.GetBuffer(bbz);
+            let r2 = resource.as_ref();
+            // transition to copy source
+            let barrier = transition_barrier(
+                &r2.unwrap(),
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                D3D12_RESOURCE_STATE_COPY_SOURCE,
+            );
+            self.command_list[bb].ResourceBarrier(1, &barrier);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+
+            let src = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: Some(resource.clone().unwrap()),
+                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    SubresourceIndex: 0,
+                },
+            };
+
+            let dst = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: Some(swap_chain.readback_buffer.clone().unwrap()),
+                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                        Offset: 0,
+                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                            Width: swap_chain.width as u32,
+                            Height: swap_chain.height as u32,
+                            Depth: 1,
+                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                            RowPitch: (swap_chain.width * 4) as u32,
+                        },
+                    },
+                },
+            };
+
+            self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
+
+            let barrier = transition_barrier(
+                &r2.unwrap(),
+                D3D12_RESOURCE_STATE_COPY_SOURCE,
+                D3D12_RESOURCE_STATE_RENDER_TARGET,
+            );
+            // transition back to render target
+            // TODO: improve tracking
+            self.command_list[bb].ResourceBarrier(1, &barrier);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            ReadBackRequest {
+                resource: Some(swap_chain.readback_buffer.clone().unwrap()),
+                fence_value: swap_chain.frame_index as u64,
+                size: (swap_chain.width * swap_chain.height * 4) as usize,
+                row_pitch: (swap_chain.width * 4) as usize,
+                slice_pitch: (swap_chain.width * swap_chain.height * 4) as usize,
+            }
+        }
+    }
+}
+
+impl super::ReadBackRequest<Device> for ReadBackRequest {
+    fn is_complete(&self, swap_chain: &SwapChain) -> bool {
+        //println!("waiting on fence {}", self.fence_value);
+        //println!("last signalled was {}", swap_chain.frame_index);
+        if swap_chain.frame_index as u64 > self.fence_value + 1 {
+            return true;
+        }
+        false
+    }
+
+    fn get_data(&self) -> super::ReadBackData {
+        let range = D3D12_RANGE {
+            Begin: 0,
+            End: self.size,
+        };
+        let mut map_data = std::ptr::null_mut();
+        unsafe {
+            let res = self.resource.as_ref();
+            res.unwrap().Map(0, &range, &mut map_data);
+            if map_data != std::ptr::null_mut() {
+                let slice = unsafe { std::slice::from_raw_parts(map_data as *const u8, self.size) };
+                let rb_data = super::ReadBackData {
+                    data: slice,
+                    size: self.size,
+                    format: super::Format::Unknown,
+                    row_pitch: self.row_pitch,
+                    slice_pitch: self.size,
+                };
+                return rb_data;
+            } else {
+                println!("buffer is null!");
+            }
+            res.unwrap().Unmap(0, std::ptr::null());
+        }
+        unreachable!();
     }
 }
