@@ -200,7 +200,7 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
 
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
-    fn debug_set_descriptor_heap(&self, device: &D);
+    fn debug_set_descriptor_heap(&self, device: &D, tex: &D::Texture);
 }
 
 #[derive(Debug)]

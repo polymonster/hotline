@@ -15,9 +15,12 @@ PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
 }
 
 Texture2D texture0 : register(t0);
+SamplerState sampler0 : register(s0);
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
-    float4 res = texture0.Load(int3(input.color.r, input.color.g, 0));
+    float4 res = texture0.Sample(sampler0, input.color.rg);
     return res;
+
+    //return input.color;
 }
