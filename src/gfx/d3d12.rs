@@ -66,6 +66,7 @@ pub struct Shader {
 pub struct Texture {
     resource: ID3D12Resource,
     srv: D3D12_CPU_DESCRIPTOR_HANDLE,
+    gpu: D3D12_GPU_DESCRIPTOR_HANDLE
 }
 
 #[derive(Clone)]
@@ -150,8 +151,61 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
 }
 
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
+
+    let mut range = D3D12_DESCRIPTOR_RANGE {
+        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+        NumDescriptors: 1,
+        BaseShaderRegister: 0,
+        RegisterSpace: 0,
+        OffsetInDescriptorsFromTableStart: 0
+    };
+
+    let mut params : [D3D12_ROOT_PARAMETER; 2] = [
+        D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                Constants: D3D12_ROOT_CONSTANTS {
+                    ShaderRegister: 0,
+                    RegisterSpace: 0,
+                    Num32BitValues: 16
+                }
+            },
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_VERTEX
+        },
+        D3D12_ROOT_PARAMETER {
+            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+            Anonymous: D3D12_ROOT_PARAMETER_0 {
+                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                    NumDescriptorRanges: 1,
+                    pDescriptorRanges: &mut range
+                }
+            },
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL
+        },
+    ];
+
+    let mut sampler = D3D12_STATIC_SAMPLER_DESC {
+        Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        AddressU: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        AddressV: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        AddressW: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        MipLODBias: 0.0,
+        MaxAnisotropy: 0,
+        ComparisonFunc: D3D12_COMPARISON_FUNC_ALWAYS,
+        BorderColor: D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
+        MinLOD: 0.0,
+        MaxLOD: 0.0,
+        ShaderRegister: 0,
+        RegisterSpace: 0,
+        ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+    };
+
     let desc = D3D12_ROOT_SIGNATURE_DESC {
+        NumParameters: params.len() as u32,
         Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+        pParameters: params.as_mut_ptr(),
+        NumStaticSamplers: 1,
+        pStaticSamplers: &mut sampler,
         ..Default::default()
     };
 
@@ -799,6 +853,7 @@ impl super::Device for Device {
             Texture {
                 resource: tex.unwrap(),
                 srv: handle,
+                gpu: self.shader_heap.GetGPUDescriptorHandleForHeapStart()
             }
         }
     }
@@ -954,9 +1009,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn debug_set_descriptor_heap(&self, device: &Device) {
+    fn debug_set_descriptor_heap(&self, device: &Device, tex: &Texture) {
         unsafe {
             self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
+            self.cmd().SetGraphicsRootDescriptorTable(1, &tex.gpu);
         }
     }
 
