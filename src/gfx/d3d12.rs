@@ -20,6 +20,8 @@ pub struct Device {
     adapter: IDXGIAdapter1,
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
+    command_allocator: ID3D12CommandAllocator,
+    command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
 }
 
@@ -291,6 +293,25 @@ impl super::Device for Device {
             }
             let device = d3d12_device.unwrap();
 
+            // create command allocator
+            let command_allocator = device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
+            if !command_allocator.is_ok() {
+                panic!("hotline::gfx::d3d12: failed to create command allocator");
+            }
+            let command_allocator = command_allocator.unwrap();
+
+            // create command list
+            let command_list = device.CreateCommandList(
+                0,
+                D3D12_COMMAND_LIST_TYPE_DIRECT,
+                &command_allocator,
+                None,
+            );
+            if !command_list.is_ok() {
+                panic!("hotline::gfx::d3d12: failed to create command list");
+            }
+            let command_list = command_list.unwrap();
+
             // create queue
             let desc = D3D12_COMMAND_QUEUE_DESC {
                 Type: D3D12_COMMAND_LIST_TYPE_DIRECT,
@@ -309,6 +330,8 @@ impl super::Device for Device {
                 adapter: adapter,
                 device: device,
                 dxgi_factory: dxgi_factory,
+                command_allocator: command_allocator,
+                command_list: command_list,
                 command_queue: command_queue,
             }
         }
@@ -614,6 +637,7 @@ impl super::Device for Device {
     fn create_texture(&self, info: super::TextureInfo, data: &[u8]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
         unsafe {
+            // create texture resource
             if !self
                 .device
                 .CreateCommittedResource(
@@ -650,11 +674,112 @@ impl super::Device for Device {
                 // TODO: the error should be passed to the user
                 panic!("hotline::gfx::d3d12: failed to create texture!");
             };
-        };
-        let tex = tex.unwrap();
+
+            // create upload buffer
+            let mut upload: Option<ID3D12Resource> = None;
+            let block_size = 4; // TODO:
+            let upload_pitch = super::align(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+            let upload_size = info.height * upload_pitch;
+            let upload_buffer = self.device
+                .CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_UPLOAD,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 0,
+                        Width: upload_size,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    std::ptr::null(),
+                    &mut upload,
+                );
+
+            // copy data to upload buffer
+            let range = D3D12_RANGE {
+                Begin: 0,
+                End: upload_size as usize,
+            };
+            let mut map_data = std::ptr::null_mut();
+            let res = upload.clone().unwrap();
+            res.Map(0, &range, &mut map_data);
+            if map_data != std::ptr::null_mut() {
+                for y in 0..info.height {
+                    let src = data.as_ptr().offset((y * info.width * 4) as isize);
+                    let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
+                    std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
+                }
+            }
+            res.Unmap(0, std::ptr::null());
+
+            // copy resource
+            let fence : ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+
+            let src = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: Some(upload.clone().unwrap()),
+                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                        Offset: 0,
+                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                            Width: info.width as u32,
+                            Height: info.height as u32,
+                            Depth: 1,
+                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                            RowPitch: upload_pitch as u32
+                        },
+                    },
+                },
+            };
+
+            let dst = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: Some(tex.clone().unwrap()),
+                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    SubresourceIndex: 0,
+                },
+            };
+
+            self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
+
+            let barrier = transition_barrier(
+                &tex.clone().unwrap(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            );
+
+            // transition to shader resource
+            self.command_list.ResourceBarrier(1, &barrier);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+
+            self.command_list.Close();
+
+            let cmd = ID3D12CommandList::from(&self.command_list);
+            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+            self.command_queue.Signal(&fence, 1);
+
+            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+            fence.SetEventOnCompletion(1, event);
+            WaitForSingleObject(event, INFINITE);
+
+            let a = 0;
+        }
 
         // initialise struct
-        Texture { resource: tex }
+        Texture { resource: tex.unwrap() }
     }
 
     fn execute(&self, cmd: &CmdBuf) {
@@ -738,9 +863,18 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn swap(&mut self, device: &Device) {
         unsafe {
-            self.swap_chain.Present(1, 0);
+            // present
+            if !self.swap_chain.Present(1, 0).is_ok() {
+                println!("hotline::gfx::d3d12: warning: present failed!");
+            }
+
+            // signal fence
             let fv = self.fence_last_signalled_value + 1;
-            device.command_queue.Signal(&self.fence, fv as u64);
+            if !device.command_queue.Signal(&self.fence, fv as u64).is_ok() {
+                println!("hotline::gfx::d3d12: warning: command_queue.Signal failed!");
+            }
+            
+            // update fence tracking
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.bb_index as usize] = fv;
 
@@ -908,6 +1042,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unsafe {
             let resource = swap_chain.swap_chain.GetBuffer(bbz);
             let r2 = resource.as_ref();
+
             // transition to copy source
             let barrier = transition_barrier(
                 &r2.unwrap(),
@@ -950,6 +1085,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
             );
+
             // transition back to render target
             // TODO: improve tracking
             self.command_list[bb].ResourceBarrier(1, &barrier);
@@ -976,17 +1112,17 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         false
     }
 
-    fn get_data(&self) -> super::ReadBackData {
+    fn get_data(&self) -> std::result::Result<super::ReadBackData, super::ReadBackError> {
         let range = D3D12_RANGE {
             Begin: 0,
             End: self.size,
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
-            let res = self.resource.as_ref();
-            res.unwrap().Map(0, &range, &mut map_data);
+            let res = self.resource.as_ref().unwrap();
+            res.Map(0, &range, &mut map_data).map_err(|_| super::ReadBackError::MapFailed)?;
             if map_data != std::ptr::null_mut() {
-                let slice = unsafe { std::slice::from_raw_parts(map_data as *const u8, self.size) };
+                let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
                 let rb_data = super::ReadBackData {
                     data: slice,
                     size: self.size,
@@ -994,12 +1130,13 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                     row_pitch: self.row_pitch,
                     slice_pitch: self.size,
                 };
-                return rb_data;
-            } else {
-                println!("buffer is null!");
+                return Ok(rb_data);
             }
-            res.unwrap().Unmap(0, std::ptr::null());
+            else {
+                return Err(super::ReadBackError::NullData);
+            }
+            // TODO: ownership
+            //res.Unmap(0, std::ptr::null());
         }
-        unreachable!();
     }
 }

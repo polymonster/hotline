@@ -5,15 +5,17 @@ use os::Window;
 
 use gfx::CmdBuf;
 use gfx::Device;
-use gfx::ReadBackRequest;
 use gfx::SwapChain;
 
-use png::*;
 use std::fs;
 
+/*
+use gfx::ReadBackRequest;
+use png::*;
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::Path;
+*/
 
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
@@ -153,6 +155,7 @@ fn main_index_buffer(app: os_platform::App) {
     };
     dev.create_texture(tex_info, contents.as_bytes());
 
+    /*
     let mut rbr = gfx_platform::ReadBackRequest {
         fence_value: u64::MAX,
         resource: None,
@@ -162,6 +165,7 @@ fn main_index_buffer(app: os_platform::App) {
     };
 
     let mut written = false;
+    */
 
     while app.run() {
         win.update();
@@ -185,6 +189,7 @@ fn main_index_buffer(app: os_platform::App) {
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
+        /*
         if !rbr.resource.is_some() && !written {
             rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
         } else {
@@ -195,7 +200,7 @@ fn main_index_buffer(app: os_platform::App) {
                 let file = File::create(path).unwrap();
                 let ref mut w = BufWriter::new(file);
 
-                let mut encoder = png::Encoder::new(w, 1280, 720); // Width is 2 pixels and height is 1.
+                let mut encoder = png::Encoder::new(w, 1280, 720);
                 encoder.set_color(png::ColorType::Rgba);
                 encoder.set_depth(png::BitDepth::Eight);
                 let mut writer = encoder.write_header().unwrap();
@@ -205,13 +210,15 @@ fn main_index_buffer(app: os_platform::App) {
                 written = true;
             }
         }
+        */
 
         cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);
+
         swap_chain.swap(&dev);
 
-        std::thread::sleep_ms(128);
+        //std::thread::sleep_ms(128);
         ci = (ci + 1) % 4;
         incr = incr + 1;
     }
