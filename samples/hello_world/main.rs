@@ -187,6 +187,8 @@ fn main_index_buffer(app: os_platform::App) {
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
 
+        cmdbuffer.debug_set_descriptor_heap(&dev);
+
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         /*

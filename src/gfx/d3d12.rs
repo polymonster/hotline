@@ -23,6 +23,7 @@ pub struct Device {
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
+    shader_heap: ID3D12DescriptorHeap,
 }
 
 pub struct SwapChain {
@@ -64,6 +65,7 @@ pub struct Shader {
 
 pub struct Texture {
     resource: ID3D12Resource,
+    srv: D3D12_CPU_DESCRIPTOR_HANDLE,
 }
 
 #[derive(Clone)]
@@ -271,46 +273,29 @@ impl super::Device for Device {
             }
 
             // create dxgi factory
-            let dxgi_factory_result = CreateDXGIFactory2(dxgi_factory_flags);
-            if !dxgi_factory_result.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create dxgi factory");
-            }
+            let dxgi_factory = CreateDXGIFactory2(dxgi_factory_flags)
+                .expect("hotline::gfx::d3d12: failed to create dxgi factory");
 
             // create adapter
-            let dxgi_factory = dxgi_factory_result.unwrap();
-            let adapter_result = get_hardware_adapter(&dxgi_factory);
-            if !adapter_result.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to get hardware adapter");
-            }
+            let adapter = get_hardware_adapter(&dxgi_factory)
+                .expect("hotline::gfx::d3d12: failed to get hardware adapter");
 
             // create device
-            let adapter = adapter_result.unwrap();
             let mut d3d12_device: Option<ID3D12Device> = None;
             let device_result =
-                D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device);
-            if !device_result.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create d3d12 device");
-            }
+                D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
+                    .expect("hotline::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
             // create command allocator
-            let command_allocator = device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
-            if !command_allocator.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create command allocator");
-            }
-            let command_allocator = command_allocator.unwrap();
+            let command_allocator = device
+                .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
+                .expect("hotline::gfx::d3d12: failed to create command allocator");
 
             // create command list
-            let command_list = device.CreateCommandList(
-                0,
-                D3D12_COMMAND_LIST_TYPE_DIRECT,
-                &command_allocator,
-                None,
-            );
-            if !command_list.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create command list");
-            }
-            let command_list = command_list.unwrap();
+            let command_list = device
+                .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
+                .expect("hotline::gfx::d3d12: failed to create command list");
 
             // create queue
             let desc = D3D12_COMMAND_QUEUE_DESC {
@@ -318,11 +303,19 @@ impl super::Device for Device {
                 NodeMask: 1,
                 ..Default::default()
             };
-            let command_queue_result = device.CreateCommandQueue(&desc);
-            if !command_queue_result.is_ok() {
-                println!("hotline::gfx::d3d12: failed to create command queue");
-            }
-            let command_queue = command_queue_result.unwrap();
+            let command_queue = device
+                .CreateCommandQueue(&desc)
+                .expect("hotline::gfx::d3d12: failed to create command queue");
+
+            // create shader heap (srv, cbv, uav)
+            let shader_heap = device
+                .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+                    NumDescriptors: 1,
+                    Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+                    NodeMask: 0,
+                })
+                .expect("hotline::gfx::d3d12: failed to create shader heap");
 
             // initialise struct
             Device {
@@ -333,6 +326,7 @@ impl super::Device for Device {
                 command_allocator: command_allocator,
                 command_list: command_list,
                 command_queue: command_queue,
+                shader_heap: shader_heap,
             }
         }
     }
@@ -638,8 +632,7 @@ impl super::Device for Device {
         let mut tex: Option<ID3D12Resource> = None;
         unsafe {
             // create texture resource
-            if !self
-                .device
+            self.device
                 .CreateCommittedResource(
                     &D3D12_HEAP_PROPERTIES {
                         Type: D3D12_HEAP_TYPE_DEFAULT,
@@ -669,18 +662,16 @@ impl super::Device for Device {
                     std::ptr::null(),
                     &mut tex,
                 )
-                .is_ok()
-            {
-                // TODO: the error should be passed to the user
-                panic!("hotline::gfx::d3d12: failed to create texture!");
-            };
+                .expect("hotline::gfx::d3d12: failed to create texture!");
 
             // create upload buffer
-            let mut upload: Option<ID3D12Resource> = None;
             let block_size = 4; // TODO:
-            let upload_pitch = super::align(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+            let upload_pitch =
+                super::align(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
             let upload_size = info.height * upload_pitch;
-            let upload_buffer = self.device
+
+            let mut upload: Option<ID3D12Resource> = None;
+            self.device
                 .CreateCommittedResource(
                     &D3D12_HEAP_PROPERTIES {
                         Type: D3D12_HEAP_TYPE_UPLOAD,
@@ -705,7 +696,8 @@ impl super::Device for Device {
                     D3D12_RESOURCE_STATE_GENERIC_READ,
                     std::ptr::null(),
                     &mut upload,
-                );
+                )
+                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
 
             // copy data to upload buffer
             let range = D3D12_RANGE {
@@ -725,7 +717,7 @@ impl super::Device for Device {
             res.Unmap(0, std::ptr::null());
 
             // copy resource
-            let fence : ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
 
             let src = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: Some(upload.clone().unwrap()),
@@ -738,7 +730,7 @@ impl super::Device for Device {
                             Height: info.height as u32,
                             Depth: 1,
                             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                            RowPitch: upload_pitch as u32
+                            RowPitch: upload_pitch as u32,
                         },
                     },
                 },
@@ -775,11 +767,40 @@ impl super::Device for Device {
             fence.SetEventOnCompletion(1, event);
             WaitForSingleObject(event, INFINITE);
 
-            let a = 0;
-        }
+            // create an srv for the texture
+            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr;
+            let handle = D3D12_CPU_DESCRIPTOR_HANDLE {
+                ptr: ptr
+            };
 
-        // initialise struct
-        Texture { resource: tex.unwrap() }
+            self.device
+                .CreateShaderResourceView(
+                    &tex,
+                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        ViewDimension: match info.tex_type {
+                            super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
+                            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
+                            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
+                        },
+                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D12_TEX2D_SRV {
+                                MipLevels: info.mip_levels,
+                                MostDetailedMip: 0,
+                                ..Default::default()
+                            },
+                        },
+                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                    },
+                    &handle,
+                );
+
+            // initialise struct
+            Texture {
+                resource: tex.unwrap(),
+                srv: handle,
+            }
+        }
     }
 
     fn execute(&self, cmd: &CmdBuf) {
@@ -873,7 +894,7 @@ impl super::SwapChain<Device> for SwapChain {
             if !device.command_queue.Signal(&self.fence, fv as u64).is_ok() {
                 println!("hotline::gfx::d3d12: warning: command_queue.Signal failed!");
             }
-            
+
             // update fence tracking
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.bb_index as usize] = fv;
@@ -930,6 +951,12 @@ impl super::CmdBuf<Device> for CmdBuf {
                 std::ptr::null(),
             );
             self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
+        }
+    }
+
+    fn debug_set_descriptor_heap(&self, device: &Device) {
+        unsafe {
+            self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
         }
     }
 
@@ -1131,8 +1158,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                     slice_pitch: self.size,
                 };
                 return Ok(rb_data);
-            }
-            else {
+            } else {
                 return Err(super::ReadBackError::NullData);
             }
             // TODO: ownership

@@ -5,7 +5,7 @@ use windows::{
 
 pub struct App {
     window_class: String,
-    hinstance: HINSTANCE
+    hinstance: HINSTANCE,
 }
 
 pub struct Window {
@@ -37,7 +37,6 @@ impl Drop for App {
 }
 
 impl super::App for App {
-
     type Window = Window;
 
     fn create(info: super::AppInfo) -> Self {
@@ -54,7 +53,7 @@ impl super::App for App {
                 lpfnWndProc: Some(wndproc),
                 ..Default::default()
             };
-            
+
             if RegisterClassA(&wc) == 0 {
                 panic!("hotline::os::win32: class already registered!");
             }
@@ -102,7 +101,6 @@ impl super::App for App {
                         quit = true;
                         break;
                     }
-
                 } else {
                     break;
                 }
@@ -193,7 +191,7 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 PostQuitMessage(0);
                 LRESULT(0)
             }
-            _ => DefWindowProcA(window, message, wparam, lparam)
+            _ => DefWindowProcA(window, message, wparam, lparam),
         }
     }
 }
@@ -203,7 +201,7 @@ WM_MOUSEMOVE
 WM_MOUSELEAVE
 WM_LBUTTONDOWN
 WM_LBUTTONDBLCLK
-WM_RBUTTONDOWN 
+WM_RBUTTONDOWN
 WM_RBUTTONDBLCLK
 WM_MBUTTONDOWN => {LRESULT(0)}
 WM_MBUTTONDBLCLK => {LRESULT(0)}

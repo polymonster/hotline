@@ -200,25 +200,26 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
 
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
+    fn debug_set_descriptor_heap(&self, device: &D);
 }
 
 #[derive(Debug)]
 pub enum ReadBackError {
     ResultNotRready,
     MapFailed,
-    NullData
+    NullData,
 }
 
 impl std::error::Error for ReadBackError {}
 
 impl std::fmt::Display for ReadBackError {
-  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-    match self {
-        ReadBackError::ResultNotRready => write!(f, "Result Not Ready"),
-        ReadBackError::MapFailed => write!(f, "Map Failed"),
-        ReadBackError::NullData => write!(f, "Map Data is Null"),
-      }
-  }
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        match self {
+            ReadBackError::ResultNotRready => write!(f, "Result Not Ready"),
+            ReadBackError::MapFailed => write!(f, "Map Failed"),
+            ReadBackError::NullData => write!(f, "Map Data is Null"),
+        }
+    }
 }
 
 pub struct ReadBackData {
