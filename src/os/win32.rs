@@ -5,8 +5,7 @@ use windows::{
 
 pub struct App {
     window_class: String,
-    hinstance: HINSTANCE,
-    atom: u16,
+    hinstance: HINSTANCE
 }
 
 pub struct Window {
@@ -29,8 +28,16 @@ impl Drop for Window {
     }
 }
 
+impl Drop for App {
+    fn drop(&mut self) {
+        unsafe {
+            UnregisterClassA(PSTR(self.window_class.as_ptr() as _), self.hinstance);
+        }
+    }
+}
+
 impl super::App for App {
-    // types
+
     type Window = Window;
 
     fn create(info: super::AppInfo) -> Self {
@@ -47,16 +54,14 @@ impl super::App for App {
                 lpfnWndProc: Some(wndproc),
                 ..Default::default()
             };
-
-            let atom = RegisterClassA(&wc);
-            if atom == 0 {
-                println!("win32 class {} already registered", window_class);
+            
+            if RegisterClassA(&wc) == 0 {
+                panic!("hotline::os::win32: class already registered!");
             }
 
             App {
                 window_class: String::from(window_class),
                 hinstance: instance,
-                atom: atom,
             }
         }
     }
@@ -97,6 +102,7 @@ impl super::App for App {
                         quit = true;
                         break;
                     }
+
                 } else {
                     break;
                 }
@@ -187,7 +193,36 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 PostQuitMessage(0);
                 LRESULT(0)
             }
-            _ => DefWindowProcA(window, message, wparam, lparam),
+            _ => DefWindowProcA(window, message, wparam, lparam)
         }
     }
 }
+
+/*
+WM_MOUSEMOVE
+WM_MOUSELEAVE
+WM_LBUTTONDOWN
+WM_LBUTTONDBLCLK
+WM_RBUTTONDOWN 
+WM_RBUTTONDBLCLK
+WM_MBUTTONDOWN => {LRESULT(0)}
+WM_MBUTTONDBLCLK => {LRESULT(0)}
+WM_XBUTTONDOWN => {LRESULT(0)}
+WM_XBUTTONDBLCLK => {LRESULT(0)}
+WM_LBUTTONUP => {LRESULT(0)}
+WM_RBUTTONUP => {LRESULT(0)}
+WM_MBUTTONUP => {LRESULT(0)}
+WM_XBUTTONUP => {LRESULT(0)}
+WM_MOUSEWHEEL => LRESULT(0),
+WM_MOUSEHWHEEL => LRESULT(0),
+WM_KEYDOWN => LRESULT(0),
+WM_KEYUP => LRESULT(0),
+WM_SYSKEYDOWN => LRESULT(0),
+WM_SYSKEYUP => LRESULT(0),
+WM_SETFOCUS => LRESULT(0),
+WM_KILLFOCUS => LRESULT(0),
+WM_CHAR => LRESULT(0),
+WM_SETCURSOR => LRESULT(0),
+WM_DEVICECHANGE => LRESULT(0),
+WM_DISPLAYCHANGE => LRESULT(0),
+*/

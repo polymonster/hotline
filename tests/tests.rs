@@ -44,7 +44,7 @@ fn create_app() {
 
 #[test]
 fn create_d3d12_device() {
-    let app = os_platform::App::create(os::AppInfo {
+    let _ = os_platform::App::create(os::AppInfo {
         name: String::from("create_d3d12_device"),
         window: false,
         num_buffers: 0,
@@ -324,7 +324,7 @@ fn draw_triangle() {
             rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
         } else {
             if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
-                let data = rbr.get_data();
+                let data = rbr.get_data().unwrap();
 
                 let path = Path::new(r"my_triangle_png.png");
                 let file = File::create(path).unwrap();

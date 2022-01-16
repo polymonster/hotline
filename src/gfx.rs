@@ -2,6 +2,7 @@
 pub mod d3d12;
 
 use crate::os;
+
 use std::any::Any;
 
 #[cfg(target_os = "windows")]
@@ -196,8 +197,28 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
         start_instance: u32,
     );
     fn read_back_backbuffer(&self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
+
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
+}
+
+#[derive(Debug)]
+pub enum ReadBackError {
+    ResultNotRready,
+    MapFailed,
+    NullData
+}
+
+impl std::error::Error for ReadBackError {}
+
+impl std::fmt::Display for ReadBackError {
+  fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+    match self {
+        ReadBackError::ResultNotRready => write!(f, "Result Not Ready"),
+        ReadBackError::MapFailed => write!(f, "Map Failed"),
+        ReadBackError::NullData => write!(f, "Map Data is Null"),
+      }
+  }
 }
 
 pub struct ReadBackData {
@@ -210,7 +231,7 @@ pub struct ReadBackData {
 
 pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
-    fn get_data(&self) -> ReadBackData;
+    fn get_data(&self) -> Result<ReadBackData, ReadBackError>;
 }
 
 impl From<os::Rect<i32>> for Viewport {
@@ -259,11 +280,14 @@ pub fn block_size_for_format(format: Format) -> u32 {
     }
 }
 
+pub fn align(value: u64, align: u64) -> u64 {
+    value + (align - 1) & !(align - 1)
+}
+
 // TODO: lingering
 // - window bring to front ?? (during tests)
 
 // TODO: current
-// - Backbuffer readback / resource readback
 // - Track transitions and manually drop
 // - Texture
 // - Constant Buffer
@@ -285,6 +309,7 @@ pub fn block_size_for_format(format: Format) -> u32 {
 // - docs on website
 
 // DONE:
+// x Backbuffer readback / resource readback
 // x how to properly use bitmask and flags?
 // x remove "Graphics" and move "Instance" to "App"
 // x Index Buffer
