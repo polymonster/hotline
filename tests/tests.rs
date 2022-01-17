@@ -158,7 +158,7 @@ fn swap_chain_buffer() {
     let mut i = 0;
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win);
+        swap_chain.update(&dev, &win, &mut cmdbuffer);
 
         cmdbuffer.reset(&swap_chain);
 
@@ -313,7 +313,7 @@ fn draw_triangle() {
 
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win);
+        swap_chain.update(&dev, &win, &mut cmdbuffer);
 
         let window_rect = win.get_rect();
 
@@ -362,4 +362,30 @@ fn draw_triangle() {
         ci = (ci + 1) % 4;
         incr = incr + 1;
     }
+}
+
+#[test]
+fn align_tests() {
+    // pow2
+    let val = gfx::align_pow2(101, 256);
+    assert_eq!(val % 256, 0);
+    let val = gfx::align_pow2(8861, 64);
+    assert_eq!(val % 64, 0);
+    let val = gfx::align_pow2(1280, 128);
+    assert_eq!(val % 128, 0);
+    let val = gfx::align_pow2(5, 4);
+    assert_eq!(val % 4, 0);
+    let val = gfx::align_pow2(19, 2);
+    assert_eq!(val % 2, 0);
+    // non pow2
+    let val = gfx::align(92, 133);
+    assert_eq!(val % 133, 0);
+    let val = gfx::align(172, 201);
+    assert_eq!(val % 201, 0);
+    let val = gfx::align(288, 1177);
+    assert_eq!(val % 1177, 0);
+    let val = gfx::align(1092, 52);
+    assert_eq!(val % 52, 0);
+    let val = gfx::align(5568, 21);
+    assert_eq!(val % 21, 0);
 }
