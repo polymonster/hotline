@@ -63,7 +63,7 @@ fn main_index_buffer(app: os_platform::App) {
     let vertices = [
         Vertex {
             position: [-1.0, -1.0, 0.0],
-            color: [1.0, 0.0, 0.0, 1.0],
+            color: [0.0, 0.0, 0.0, 1.0],
         },
         Vertex {
             position: [-1.0, 1.0, 0.0],
@@ -71,11 +71,11 @@ fn main_index_buffer(app: os_platform::App) {
         },
         Vertex {
             position: [1.0, 1.0, 0.0],
-            color: [0.0, 0.0, 1.0, 1.0],
+            color: [1.0, 1.0, 0.0, 1.0],
         },
         Vertex {
             position: [1.0, -1.0, 0.0],
-            color: [0.0, 0.0, 1.0, 1.0],
+            color: [1.0, 0.0, 0.0, 1.0],
         },
     ];
 
@@ -132,22 +132,24 @@ fn main_index_buffer(app: os_platform::App) {
     });
 
     // tex
+    let nam = String::from("../../samples/hello_world/redchecker01.png");
+    let image = image::load_from_file(nam);
 
     let tex_info = gfx::TextureInfo {
         tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
+        width: image.width,
+        height: image.height,
         depth: 1,
         array_levels: 1,
         mip_levels: 1,
         samples: 1,
     };
     
-    let mut texture_data : Vec<u8> = Vec::new();
-    texture_data.resize(512 * 512 * 4, 0xff);
+    //let mut texture_data : Vec<u8> = Vec::new();
+    //texture_data.resize(512 * 512 * 4, 0xff);
+    //let slice = unsafe { ::std::slice::from_raw_parts(texture_data.as_ptr() as *const u8, texture_data.len()) };
 
-    let slice = unsafe { ::std::slice::from_raw_parts(texture_data.as_ptr() as *const u8, texture_data.len()) };
-    let texture = dev.create_texture(tex_info, slice);
+    let texture = dev.create_texture(tex_info, image.data.as_slice());
 
     let constants : [f32; 4] = [
         1.0,
