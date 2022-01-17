@@ -11,6 +11,7 @@ use windows::{
 
 use std::ffi::CStr;
 use std::str;
+use super::*;
 
 /// Indicates the number of backbuffers used for swap chains and command buffers.
 const NUM_BB: u32 = 2;
@@ -909,7 +910,7 @@ impl super::SwapChain<Device> for SwapChain {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.reset_internal();
-                
+
                 let res = self.swap_chain.ResizeBuffers(
                     NUM_BB,
                     wh.0 as u32,
@@ -984,11 +985,11 @@ impl CmdBuf {
                 let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                     std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
             }
-            println!("manually dropping {}", i);
         }
         self.in_flight_barriers[bb].clear();
     }
 
+    // TODO: how to call super traits?
     fn reset_internal(&mut self) {
         self.drop_complete_in_flight_barriers(self.bb_index);
     }
@@ -1147,11 +1148,6 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.command_list[bb].ResourceBarrier(1, &barrier);
             self.in_flight_barriers[bb].push(barrier);
 
-            /*
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-            */
-
             if !self.command_list[bb].Close().is_ok() {
                 panic!("hotline: d3d12 failed to close command list.")
             }
@@ -1173,11 +1169,6 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
             self.in_flight_barriers[bb].push(barrier);
-
-            /*
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-            */
 
             let src = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: Some(resource.clone().unwrap()),
@@ -1213,14 +1204,8 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
 
             // transition back to render target
-            // TODO: improve tracking
             self.command_list[bb].ResourceBarrier(1, &barrier);
             self.in_flight_barriers[bb].push(barrier);
-
-            /*
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-            */
 
             ReadBackRequest {
                 resource: Some(swap_chain.readback_buffer.clone().unwrap()),
@@ -1235,8 +1220,6 @@ impl super::CmdBuf<Device> for CmdBuf {
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {
     fn is_complete(&self, swap_chain: &SwapChain) -> bool {
-        //println!("waiting on fence {}", self.fence_value);
-        //println!("last signalled was {}", swap_chain.frame_index);
         if swap_chain.frame_index as u64 > self.fence_value + 1 {
             return true;
         }

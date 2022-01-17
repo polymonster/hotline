@@ -9,14 +9,6 @@ use gfx::SwapChain;
 
 use std::fs;
 
-/*
-use gfx::ReadBackRequest;
-use png::*;
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::Path;
-*/
-
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
 
@@ -105,9 +97,6 @@ fn main_index_buffer(app: os_platform::App) {
 
     let index_buffer = dev.create_buffer(info, gfx::as_u8_slice(&indices));
 
-    let mut ci = 0;
-    let mut incr = 0;
-
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
     let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
@@ -160,18 +149,6 @@ fn main_index_buffer(app: os_platform::App) {
     let slice = unsafe { ::std::slice::from_raw_parts(texture_data.as_ptr() as *const u8, texture_data.len()) };
     let texture = dev.create_texture(tex_info, slice);
 
-    /*
-    let mut rbr = gfx_platform::ReadBackRequest {
-        fence_value: u64::MAX,
-        resource: None,
-        size: 0,
-        row_pitch: 0,
-        slice_pitch: 0,
-    };
-
-    let mut written = false;
-    */
-
     let constants : [f32; 4] = [
         1.0,
         1.0,
@@ -179,6 +156,7 @@ fn main_index_buffer(app: os_platform::App) {
         1.0
     ];
 
+    let mut ci = 0;
     while app.run() {
         win.update();
         swap_chain.update(&dev, &win, &mut cmdbuffer);
@@ -205,38 +183,13 @@ fn main_index_buffer(app: os_platform::App) {
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
-        /*
-        if !rbr.resource.is_some() && !written {
-            rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
-        } else {
-            if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
-                let data = rbr.get_data();
-
-                let path = Path::new(r"my_read_back_png.png");
-                let file = File::create(path).unwrap();
-                let ref mut w = BufWriter::new(file);
-
-                let mut encoder = png::Encoder::new(w, 1280, 720);
-                encoder.set_color(png::ColorType::Rgba);
-                encoder.set_depth(png::BitDepth::Eight);
-                let mut writer = encoder.write_header().unwrap();
-
-                writer.write_image_data(&data.data).unwrap();
-                rbr.resource = None;
-                written = true;
-            }
-        }
-        */
-
         cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);
 
         swap_chain.swap(&dev);
 
-        //std::thread::sleep_ms(128);
         ci = (ci + 1) % 4;
-        incr = incr + 1;
     }
 
     // must wait for the final frame to be completed

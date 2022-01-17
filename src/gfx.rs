@@ -317,13 +317,8 @@ pub fn align(value: u64, align: u64) -> u64 {
     value
 }
 
-// TODO: lingering
-// - window bring to front ?? (during tests)
-
 // TODO: current
-// - Track transitions and manually drop
 // - validation checks on buffer and texture data used in create functions
-
 // - Bindless texture array
 // - Samplers
 // - Constant Buffer
@@ -344,6 +339,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - docs on website
 
 // DONE:
+// x Track transitions and manually drop
 // x Push constants
 // x viewport rect position must be stomped to 0
 // x Triangle as test (fix shader compile issue)

@@ -8,13 +8,10 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
+use image::*;
+
 use std::env;
 use std::fs;
-
-use png::*;
-use std::fs::File;
-use std::io::BufWriter;
-use std::path::Path;
 
 use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
@@ -156,6 +153,7 @@ fn swap_chain_buffer() {
     ];
 
     let mut i = 0;
+    let mut count = 0;
     while app.run() {
         win.update();
         swap_chain.update(&dev, &win, &mut cmdbuffer);
@@ -171,6 +169,11 @@ fn swap_chain_buffer() {
 
         std::thread::sleep_ms(128);
         i = (i + 1) % clears_colours.len();
+        count = count + 1;
+
+        if count > 3 {
+            break;
+        }
     }
 }
 
@@ -249,9 +252,6 @@ fn draw_triangle() {
 
     let vertex_buffer = dev.create_buffer(info, gfx::as_u8_slice(&vertices));
 
-    let mut ci = 0;
-    let mut incr = 0;
-
     let src = "
         struct PSInput
         {
@@ -310,7 +310,8 @@ fn draw_triangle() {
     };
 
     let mut written = false;
-
+    let mut ci = 0;
+    let mut count = 0;
     while app.run() {
         win.update();
         swap_chain.update(&dev, &win, &mut cmdbuffer);
@@ -337,17 +338,8 @@ fn draw_triangle() {
         } else {
             if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
                 let data = rbr.get_data().unwrap();
+                image::write_to_file(String::from("my_triangle"), 1280, 720, 4, &data.data).unwrap();
 
-                let path = Path::new(r"my_triangle_png.png");
-                let file = File::create(path).unwrap();
-                let ref mut w = BufWriter::new(file);
-
-                let mut encoder = png::Encoder::new(w, 1280, 720); // Width is 2 pixels and height is 1.
-                encoder.set_color(png::ColorType::Rgba);
-                encoder.set_depth(png::BitDepth::Eight);
-                let mut writer = encoder.write_header().unwrap();
-
-                writer.write_image_data(&data.data).unwrap();
                 rbr.resource = None;
                 written = true;
             }
@@ -360,7 +352,11 @@ fn draw_triangle() {
 
         std::thread::sleep_ms(128);
         ci = (ci + 1) % 4;
-        incr = incr + 1;
+        count = count + 1;
+
+        if count > 3 {
+            break;
+        }
     }
 }
 
