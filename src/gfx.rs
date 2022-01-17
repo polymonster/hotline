@@ -163,7 +163,7 @@ pub trait Device: 'static + Sized + Any {
 /// A swap chain is connected to a window and controls fences and signals as we swap buffers.
 pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &D, window: &platform::Window);
+    fn update(&mut self, device: &D, window: &platform::Window, cmd: &mut D::CmdBuf);
     fn get_backbuffer_index(&self) -> i32;
     fn swap(&mut self, device: &D);
 }
@@ -175,7 +175,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &D::SwapChain);
-    fn close(&self, swap_chain: &D::SwapChain);
+    fn close(&mut self, swap_chain: &D::SwapChain);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
@@ -204,7 +204,7 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
         base_vertex: i32,
         start_instance: u32,
     );
-    fn read_back_backbuffer(&self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
+    fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 
     /// debug funcs will be removed
     fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
@@ -302,8 +302,19 @@ pub fn block_size_for_format(format: Format) -> u32 {
     }
 }
 
-pub fn align(value: u64, align: u64) -> u64 {
+/// Aligns value to the alignment specified by align. value must be a power of 2
+pub fn align_pow2(value: u64, align: u64) -> u64 {
     value + (align - 1) & !(align - 1)
+}
+
+/// Aligns value to the alignment specified by align. valu can be non-power of 2
+pub fn align(value: u64, align: u64) -> u64 {
+    let div = value / align;
+    let rem = value % align;
+    if rem != 0 {
+        return (div + 1) * align;
+    }
+    value
 }
 
 // TODO: lingering
@@ -312,8 +323,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // TODO: current
 // - Track transitions and manually drop
 // - validation checks on buffer and texture data used in create functions
-// - viewport rect position must be stomped to 0
-// - Push constants
+
 // - Bindless texture array
 // - Samplers
 // - Constant Buffer
@@ -334,6 +344,8 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - docs on website
 
 // DONE:
+// x Push constants
+// x viewport rect position must be stomped to 0
 // x Triangle as test (fix shader compile issue)
 // x Texture
 // x Backbuffer readback / resource readback

@@ -51,6 +51,7 @@ pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
+    in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>
 }
 
 pub struct Buffer {
@@ -447,6 +448,7 @@ impl super::Device for Device {
         unsafe {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
+            let mut barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>> = Vec::new();
 
             for _ in 0..NUM_BB as usize {
                 // create command allocator
@@ -471,6 +473,8 @@ impl super::Device for Device {
 
                 command_allocators.push(command_allocator);
                 command_lists.push(command_list);
+
+                barriers.push(Vec::new());
             }
 
             // initialise struct
@@ -478,6 +482,7 @@ impl super::Device for Device {
                 bb_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
+                in_flight_barriers: barriers
             }
         }
     }
@@ -724,7 +729,7 @@ impl super::Device for Device {
             // create upload buffer
             let block_size = 4; // TODO:
             let upload_pitch =
-                super::align(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+                super::align_pow2(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
             let upload_size = info.height * upload_pitch;
 
             let mut upload: Option<ID3D12Resource> = None;
@@ -898,12 +903,13 @@ impl super::SwapChain<Device> for SwapChain {
         self.wait_for_frame(self.bb_index as usize);
     }
 
-    fn update(&mut self, device: &Device, window: &platform::Window) {
+    fn update(&mut self, device: &Device, window: &platform::Window, cmd: &mut CmdBuf) {
         let wh = window.get_size();
         if wh.0 != self.width || wh.1 != self.height {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
-
+                cmd.reset_internal();
+                
                 let res = self.swap_chain.ResizeBuffers(
                     NUM_BB,
                     wh.0 as u32,
@@ -969,10 +975,28 @@ impl CmdBuf {
     fn cmd(&self) -> &ID3D12GraphicsCommandList {
         &self.command_list[self.bb_index]
     }
+
+    fn drop_complete_in_flight_barriers(&mut self, bb: usize) {
+        let size = self.in_flight_barriers[bb].len();
+        for i in (0..size).rev() {
+            let barrier = self.in_flight_barriers[bb].remove(i);
+            unsafe {
+                let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                    std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            }
+            println!("manually dropping {}", i);
+        }
+        self.in_flight_barriers[bb].clear();
+    }
+
+    fn reset_internal(&mut self) {
+        self.drop_complete_in_flight_barriers(self.bb_index);
+    }
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
+        let prev_bb = self.bb_index;
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         self.bb_index = bb;
         if swap_chain.frame_fence_value[bb] != 0 {
@@ -985,6 +1009,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 };
             }
         }
+        self.drop_complete_in_flight_barriers(prev_bb);
     }
 
     fn clear_debug(&mut self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
@@ -999,8 +1024,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
 
             self.command_list[bb].ResourceBarrier(1, &barrier);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            self.in_flight_barriers[bb].push(barrier);
 
             self.command_list[bb].ClearRenderTargetView(
                 queue.rtv_handles[bb],
@@ -1111,9 +1135,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn close(&self, swap_chain: &SwapChain) {
+    fn close(&mut self, swap_chain: &SwapChain) {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
-        let cmd = self.cmd();
         // Indicate that the back buffer will now be used to present.
         unsafe {
             let barrier = transition_barrier(
@@ -1122,15 +1145,20 @@ impl super::CmdBuf<Device> for CmdBuf {
                 D3D12_RESOURCE_STATE_PRESENT,
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
+            self.in_flight_barriers[bb].push(barrier);
+
+            /*
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                 std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-            if !cmd.Close().is_ok() {
+            */
+
+            if !self.command_list[bb].Close().is_ok() {
                 panic!("hotline: d3d12 failed to close command list.")
             }
         }
     }
 
-    fn read_back_backbuffer(&self, swap_chain: &SwapChain) -> ReadBackRequest {
+    fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> ReadBackRequest {
         let bb = self.bb_index;
         let bbz = self.bb_index as u32;
         unsafe {
@@ -1144,8 +1172,12 @@ impl super::CmdBuf<Device> for CmdBuf {
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
+            self.in_flight_barriers[bb].push(barrier);
+
+            /*
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                 std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            */
 
             let src = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: Some(resource.clone().unwrap()),
@@ -1183,8 +1215,13 @@ impl super::CmdBuf<Device> for CmdBuf {
             // transition back to render target
             // TODO: improve tracking
             self.command_list[bb].ResourceBarrier(1, &barrier);
+            self.in_flight_barriers[bb].push(barrier);
+
+            /*
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                 std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+            */
+
             ReadBackRequest {
                 resource: Some(swap_chain.readback_buffer.clone().unwrap()),
                 fence_value: swap_chain.frame_index as u64,

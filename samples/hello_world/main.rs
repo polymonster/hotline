@@ -181,7 +181,7 @@ fn main_index_buffer(app: os_platform::App) {
 
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win);
+        swap_chain.update(&dev, &win, &mut cmdbuffer);
 
         let vp_rect = win.get_viewport_rect();
 
@@ -238,4 +238,7 @@ fn main_index_buffer(app: os_platform::App) {
         ci = (ci + 1) % 4;
         incr = incr + 1;
     }
+
+    // must wait for the final frame to be completed
+    cmdbuffer.reset(&swap_chain);
 }
