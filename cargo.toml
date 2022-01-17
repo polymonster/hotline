@@ -8,7 +8,8 @@ version = "0.8.0"
 
 [dependencies]
 bitmask = "^0.5.0"
-png = "0.17.2"
+stb_image_rust = "2.27.2"
+stb_image_write_rust = "1.16.1"
 
 [dependencies.windows]
 version = "0.27"
