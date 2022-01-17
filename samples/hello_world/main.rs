@@ -110,14 +110,14 @@ fn main_index_buffer(app: os_platform::App) {
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
-    let shaders_hlsl_path = asset_path.join("..\\..\\src\\shaders.hlsl");
+    let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
     let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("VSMain"),
-            target: String::from("vs_5_0"),
+            target: String::from("vs_5_1"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -126,7 +126,7 @@ fn main_index_buffer(app: os_platform::App) {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain"),
-            target: String::from("ps_5_0"),
+            target: String::from("ps_5_1"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -172,14 +172,21 @@ fn main_index_buffer(app: os_platform::App) {
     let mut written = false;
     */
 
+    let constants : [f32; 4] = [
+        1.0,
+        1.0,
+        0.0,
+        1.0
+    ];
+
     while app.run() {
         win.update();
         swap_chain.update(&dev, &win);
 
-        let window_rect = win.get_rect();
+        let vp_rect = win.get_viewport_rect();
 
-        let viewport = gfx::Viewport::from(window_rect);
-        let scissor = gfx::ScissorRect::from(window_rect);
+        let viewport = gfx::Viewport::from(vp_rect);
+        let scissor = gfx::ScissorRect::from(vp_rect);
 
         cmdbuffer.reset(&swap_chain);
 
@@ -193,6 +200,8 @@ fn main_index_buffer(app: os_platform::App) {
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
 
         cmdbuffer.debug_set_descriptor_heap(&dev, &texture);
+
+        cmdbuffer.push_constants(0, 4, 0, constants.as_slice());
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
