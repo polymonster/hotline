@@ -153,9 +153,9 @@ pub trait Device: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
-    fn create_buffer(&self, info: BufferInfo, data: &[u8]) -> Self::Buffer;
-    fn create_texture(&self, info: TextureInfo, data: &[u8]) -> Self::Texture;
-    fn create_shader(&self, info: ShaderInfo, data: &[u8]) -> Self::Shader;
+    fn create_buffer<T: Sized>(&self, info: BufferInfo, data: &[T]) -> Self::Buffer;
+    fn create_texture<T: Sized>(&self, info: TextureInfo, data: &[T]) -> Self::Texture;
+    fn create_shader<T: Sized>(&self, info: ShaderInfo, data: &[T]) -> Self::Shader;
     fn create_pipeline(&self, info: PipelineInfo<Self>) -> Self::Pipeline;
     fn execute(&self, cmd: &Self::CmdBuf);
 }
@@ -181,6 +181,14 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn set_index_buffer(&self, buffer: &D::Buffer);
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     fn set_pipeline_state(&self, pipeline: &D::Pipeline);
+    /// pushes constants directly to the root signature
+    fn push_constants<T: Sized>(
+        &self, 
+        slot: u32, 
+        num_values: u32,
+        dest_offset: u32,
+        data: &[T]
+    );
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -203,10 +211,36 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn debug_set_descriptor_heap(&self, device: &D, tex: &D::Texture);
 }
 
+/// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
+/// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
+/// data can be obtained using `get_data`
+pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
+    fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
+    fn get_data(&self) -> Result<ReadBackData, ReadBackError>;
+}
+
+/// Results from an issued ReadBackRequest
+pub struct ReadBackData {
+    /// Slice of data bytes
+    pub data: &'static [u8],
+    /// GPU format to interperet the data
+    pub format: Format,
+    /// Total size of data (should be == data.len())
+    pub size: usize,
+    /// Pitch of a row of data
+    pub row_pitch: usize,
+    /// Pitch of a slice (3D texture or array level, cubemap face etc)
+    pub slice_pitch: usize,
+}
+
+/// Errors returned from ReadBackRequest
 #[derive(Debug)]
 pub enum ReadBackError {
+    /// You must wait until the GPU has finished processing the request
     ResultNotRready,
+    /// Mapping the data has failed
     MapFailed,
+    /// The pointer returned by the map operation is null
     NullData,
 }
 
@@ -220,19 +254,6 @@ impl std::fmt::Display for ReadBackError {
             ReadBackError::NullData => write!(f, "Map Data is Null"),
         }
     }
-}
-
-pub struct ReadBackData {
-    pub data: &'static [u8],
-    pub format: Format,
-    pub size: usize,
-    pub row_pitch: usize,
-    pub slice_pitch: usize,
-}
-
-pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
-    fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
-    fn get_data(&self) -> Result<ReadBackData, ReadBackError>;
 }
 
 impl From<os::Rect<i32>> for Viewport {
@@ -290,12 +311,15 @@ pub fn align(value: u64, align: u64) -> u64 {
 
 // TODO: current
 // - Track transitions and manually drop
-// - Texture
+// - validation checks on buffer and texture data used in create functions
+// - viewport rect position must be stomped to 0
+// - Push constants
+// - Bindless texture array
+// - Samplers
 // - Constant Buffer
 // - Root Signature
 // - Input Layout
 // - Shaders from IR
-// - Triangle as test (fix shader compile issue)
 
 // TODO: maybe
 // - pmfx Shaders
@@ -310,6 +334,8 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - docs on website
 
 // DONE:
+// x Triangle as test (fix shader compile issue)
+// x Texture
 // x Backbuffer readback / resource readback
 // x how to properly use bitmask and flags?
 // x remove "Graphics" and move "Instance" to "App"

@@ -167,10 +167,10 @@ fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
                 Constants: D3D12_ROOT_CONSTANTS {
                     ShaderRegister: 0,
                     RegisterSpace: 0,
-                    Num32BitValues: 16
+                    Num32BitValues: 4
                 }
             },
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_VERTEX
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL
         },
         D3D12_ROOT_PARAMETER {
             ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
@@ -571,7 +571,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_shader(&self, info: super::ShaderInfo, data: &[u8]) -> Shader {
+    fn create_shader<T: Sized>(&self, info: super::ShaderInfo, data: &[T]) -> Shader {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
             let compile_info = info.compile_info.unwrap();
@@ -610,7 +610,8 @@ impl super::Device for Device {
         }
     }
 
-    fn create_buffer(&self, info: super::BufferInfo, data: &[u8]) -> Buffer {
+    // TODO: validate and return result
+    fn create_buffer<T: Sized>(&self, info: super::BufferInfo, data: &[T]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
             if !self
@@ -649,8 +650,9 @@ impl super::Device for Device {
         // Copy the triangle data to the vertex buffer.
         unsafe {
             let mut map_data = std::ptr::null_mut();
+            let src = data.as_ptr() as *const u8;
             buf.Map(0, std::ptr::null(), &mut map_data);
-            std::ptr::copy_nonoverlapping(data.as_ptr(), map_data as *mut u8, data.len());
+            std::ptr::copy_nonoverlapping(src, map_data as *mut u8, data.len());
             buf.Unmap(0, std::ptr::null());
         }
 
@@ -682,7 +684,8 @@ impl super::Device for Device {
         }
     }
 
-    fn create_texture(&self, info: super::TextureInfo, data: &[u8]) -> Texture {
+    // TODO: validate and return result
+    fn create_texture<T: Sized>(&self, info: super::TextureInfo, data: &[T]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
         unsafe {
             // create texture resource
@@ -763,7 +766,7 @@ impl super::Device for Device {
             res.Map(0, &range, &mut map_data);
             if map_data != std::ptr::null_mut() {
                 for y in 0..info.height {
-                    let src = data.as_ptr().offset((y * info.width * 4) as isize);
+                    let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
                     let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
                     std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
                 }
@@ -1061,11 +1064,19 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_pipeline_state(&self, pipeline: &Pipeline) {
+        let cmd = self.cmd();
         unsafe {
-            let cmd = self.cmd();
             cmd.SetGraphicsRootSignature(&pipeline.root_signature);
             cmd.SetPipelineState(&pipeline.pso);
             cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+    }
+
+    fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+        let cmd = self.cmd();
+        unsafe {
+            cmd.SetGraphicsRoot32BitConstants(
+                slot, num_values, data.as_ptr() as *const ::core::ffi::c_void, dest_offset)
         }
     }
 

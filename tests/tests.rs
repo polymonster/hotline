@@ -252,13 +252,27 @@ fn draw_triangle() {
     let mut ci = 0;
     let mut incr = 0;
 
-    let path = env::current_dir().unwrap();
-    let shaders_hlsl_path = path.join("src\\shaders.hlsl");
+    let src = "
+        struct PSInput
+        {
+            float4 position : SV_POSITION;
+            float4 color : COLOR;
+        };
 
-    println!("The current directory is {}", path.display());
-    println!("hlsl directory is {}", shaders_hlsl_path.display());
+        PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
+        {
+            PSInput result;
 
-    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+            result.position = position;
+            result.color = color;
+
+            return result;
+        }
+
+        float4 PSMain(PSInput input) : SV_TARGET
+        {
+            return input.color;
+        }";
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
@@ -278,10 +292,8 @@ fn draw_triangle() {
         }),
     };
 
-    let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
-
-    let vs = dev.create_shader(vs_info, contents.as_bytes());
-    let ps = dev.create_shader(ps_info, contents.as_bytes());
+    let vs = dev.create_shader(vs_info, src.as_bytes());
+    let ps = dev.create_shader(ps_info, src.as_bytes());
 
     let pso = dev.create_pipeline(gfx::PipelineInfo {
         vs: Some(vs),

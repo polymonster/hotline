@@ -140,6 +140,15 @@ impl super::Window<App> for Window {
         self.info.rect
     }
 
+    fn get_viewport_rect(&self) -> super::Rect<i32> {
+        super::Rect::<i32> {
+            x: 0, 
+            y: 0,
+            width: self.info.rect.width,
+            height: self.info.rect.height
+        }
+    }
+
     fn set_size(&mut self, width: i32, height: i32) {
         let mut rect = self.info.rect;
         rect.width = width;
