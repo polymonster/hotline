@@ -9,9 +9,9 @@ use windows::{
     Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
 };
 
+use super::*;
 use std::ffi::CStr;
 use std::str;
-use super::*;
 
 /// Indicates the number of backbuffers used for swap chains and command buffers.
 const NUM_BB: u32 = 2;
@@ -52,7 +52,7 @@ pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
-    in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>
+    in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>,
 }
 
 pub struct Buffer {
@@ -68,7 +68,7 @@ pub struct Shader {
 pub struct Texture {
     resource: ID3D12Resource,
     srv: D3D12_CPU_DESCRIPTOR_HANDLE,
-    gpu: D3D12_GPU_DESCRIPTOR_HANDLE
+    gpu: D3D12_GPU_DESCRIPTOR_HANDLE,
 }
 
 #[derive(Clone)]
@@ -153,36 +153,35 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
 }
 
 fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
-
     let mut range = D3D12_DESCRIPTOR_RANGE {
         RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
         NumDescriptors: 1,
         BaseShaderRegister: 0,
         RegisterSpace: 0,
-        OffsetInDescriptorsFromTableStart: 0
+        OffsetInDescriptorsFromTableStart: 0,
     };
 
-    let mut params : [D3D12_ROOT_PARAMETER; 2] = [
+    let mut params: [D3D12_ROOT_PARAMETER; 2] = [
         D3D12_ROOT_PARAMETER {
             ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
             Anonymous: D3D12_ROOT_PARAMETER_0 {
                 Constants: D3D12_ROOT_CONSTANTS {
                     ShaderRegister: 0,
                     RegisterSpace: 0,
-                    Num32BitValues: 4
-                }
+                    Num32BitValues: 4,
+                },
             },
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
         },
         D3D12_ROOT_PARAMETER {
             ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
             Anonymous: D3D12_ROOT_PARAMETER_0 {
                 DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
                     NumDescriptorRanges: 1,
-                    pDescriptorRanges: &mut range
-                }
+                    pDescriptorRanges: &mut range,
+                },
             },
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL
+            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
         },
     ];
 
@@ -483,7 +482,7 @@ impl super::Device for Device {
                 bb_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
-                in_flight_barriers: barriers
+                in_flight_barriers: barriers,
             }
         }
     }
@@ -832,37 +831,34 @@ impl super::Device for Device {
 
             // create an srv for the texture
             let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr;
-            let handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-                ptr: ptr
-            };
+            let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
 
-            self.device
-                .CreateShaderResourceView(
-                    &tex,
-                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
-                        ViewDimension: match info.tex_type {
-                            super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
-                            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
-                            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
-                        },
-                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                            Texture2D: D3D12_TEX2D_SRV {
-                                MipLevels: info.mip_levels,
-                                MostDetailedMip: 0,
-                                ..Default::default()
-                            },
-                        },
-                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+            self.device.CreateShaderResourceView(
+                &tex,
+                &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    ViewDimension: match info.tex_type {
+                        super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
+                        super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
+                        super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
                     },
-                    &handle,
-                );
+                    Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                        Texture2D: D3D12_TEX2D_SRV {
+                            MipLevels: info.mip_levels,
+                            MostDetailedMip: 0,
+                            ..Default::default()
+                        },
+                    },
+                    Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                },
+                &handle,
+            );
 
             // initialise struct
             Texture {
                 resource: tex.unwrap(),
                 srv: handle,
-                gpu: self.shader_heap.GetGPUDescriptorHandleForHeapStart()
+                gpu: self.shader_heap.GetGPUDescriptorHandleForHeapStart(),
             }
         }
     }
@@ -1101,7 +1097,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRoot32BitConstants(
-                slot, num_values, data.as_ptr() as *const ::core::ffi::c_void, dest_offset)
+                slot,
+                num_values,
+                data.as_ptr() as *const ::core::ffi::c_void,
+                dest_offset,
+            )
         }
     }
 
@@ -1226,7 +1226,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         false
     }
 
-    fn get_data(&self) -> std::result::Result<super::ReadBackData, super::ReadBackError> {
+    fn get_data(&self) -> std::result::Result<super::ReadBackData, &str> {
         let range = D3D12_RANGE {
             Begin: 0,
             End: self.size,
@@ -1234,7 +1234,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         let mut map_data = std::ptr::null_mut();
         unsafe {
             let res = self.resource.as_ref().unwrap();
-            res.Map(0, &range, &mut map_data).map_err(|_| super::ReadBackError::MapFailed)?;
+            res.Map(0, &range, &mut map_data).map_err(|_| "hotline::gfx::d3d12: map failed!")?;
             if map_data != std::ptr::null_mut() {
                 let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
                 let rb_data = super::ReadBackData {
@@ -1246,7 +1246,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                 };
                 return Ok(rb_data);
             } else {
-                return Err(super::ReadBackError::NullData);
+                return Err("hotline::gfx::d3d12: map failed!");
             }
             // TODO: ownership
             //res.Unmap(0, std::ptr::null());

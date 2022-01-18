@@ -129,6 +129,8 @@ fn main_index_buffer(app: os_platform::App) {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
+        input_layout: None,
+        descriptor_layout: None,
     });
 
     // tex
@@ -144,19 +146,14 @@ fn main_index_buffer(app: os_platform::App) {
         mip_levels: 1,
         samples: 1,
     };
-    
+
     //let mut texture_data : Vec<u8> = Vec::new();
     //texture_data.resize(512 * 512 * 4, 0xff);
     //let slice = unsafe { ::std::slice::from_raw_parts(texture_data.as_ptr() as *const u8, texture_data.len()) };
 
     let texture = dev.create_texture(tex_info, image.data.as_slice());
 
-    let constants : [f32; 4] = [
-        1.0,
-        1.0,
-        0.0,
-        1.0
-    ];
+    let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
 
     let mut ci = 0;
     while app.run() {
