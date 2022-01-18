@@ -80,7 +80,7 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
-fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
+fn to_dxgi_format(format: &super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
         super::Format::R16n => DXGI_FORMAT_R16_UNORM,
@@ -93,7 +93,7 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     }
 }
 
-fn to_d3d12_compile_flags(flags: super::ShaderCompileFlags) -> u32 {
+fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     let mut d3d12_flags = 0;
     if flags.contains(super::CompileFlags::SkipOptimization) {
         d3d12_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
@@ -305,6 +305,66 @@ impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 
+impl Device {
+    fn create_input_layout(layout: &super::InputLayout) -> D3D12_INPUT_LAYOUT_DESC {
+        let mut d3d12_elems : Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
+        for elem in layout {
+            d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC{
+                SemanticName: PSTR(elem.semantic.as_ptr() as _),
+                SemanticIndex: elem.index,
+                Format: to_dxgi_format(&elem.format),
+                InputSlot: elem.input_slot,
+                AlignedByteOffset: elem.aligned_byte_offset,
+                InputSlotClass: match elem.input_slot_class {
+                    super::InputSlotClass::PerVertex => D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
+                    super::InputSlotClass::PerInstance => D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+                },
+                InstanceDataStepRate: elem.step_rate,
+            })
+        }
+        D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: d3d12_elems.as_mut_ptr(),
+            NumElements: d3d12_elems.len() as u32
+        }
+    }
+
+    fn create_root_signature(layout: &super::DescriptorLayout) {
+        let mut root_params : Vec<D3D12_ROOT_PARAMETER> = Vec::new();
+        // tables for (SRV, UAV, CBV an Samplers)
+        if layout.tables.is_some() {
+            let table_info = layout.tables.as_ref();
+            let mut descriptor_offset = 0;
+            for table in table_info.unwrap() {
+                let count = if table.num_descriptors.is_some() { table.num_descriptors.unwrap() } else { u32::MAX };
+                let mut range = D3D12_DESCRIPTOR_RANGE {
+                    RangeType: match table.table_type {
+                        super::DescriptorTableType::ShaderResource => D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
+                        super::DescriptorTableType::UnorderedAccess => D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
+                        super::DescriptorTableType::ConstantBuffer => D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+                        super::DescriptorTableType::Sampler => D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+                    },
+                    NumDescriptors: count,
+                    BaseShaderRegister: table.shader_register,
+                    RegisterSpace: table.register_space,
+                    OffsetInDescriptorsFromTableStart: descriptor_offset,
+                };
+                descriptor_offset = descriptor_offset + count;
+                root_params.push(D3D12_ROOT_PARAMETER{
+                    ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+                    Anonymous: D3D12_ROOT_PARAMETER_0 {
+                        DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                            NumDescriptorRanges: 1,
+                            pDescriptorRanges: &mut range,
+                        },
+                    },
+                    ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+                })
+            }
+        }
+        // push constants
+    }
+}
+
 impl super::Device for Device {
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
@@ -488,6 +548,7 @@ impl super::Device for Device {
     }
 
     fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
+
         let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
             D3D12_INPUT_ELEMENT_DESC {
                 SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
@@ -510,6 +571,7 @@ impl super::Device for Device {
         ];
 
         let root_signature = create_root_signature(&self.device).unwrap();
+
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;
 
@@ -580,7 +642,7 @@ impl super::Device for Device {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
             let compile_info = info.compile_info.unwrap();
-            let compile_flags = to_d3d12_compile_flags(compile_info.flags);
+            let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
             unsafe {
                 let mut errors = None;
                 let result = D3DCompile(
@@ -676,7 +738,7 @@ impl super::Device for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: to_dxgi_format(info.format),
+                    Format: to_dxgi_format(&info.format),
                 })
             }
         }
