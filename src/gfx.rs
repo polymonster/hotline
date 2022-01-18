@@ -141,12 +141,14 @@ pub enum ShaderVisibility {
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
 pub struct PushConatntInfo {
+    /// The shader stage the constants will be accessible to
+    pub visibility: ShaderVisibility,
+    /// Number of 32-bit values to push
+    pub num_values: u32,
     /// Register index to bind to (supplied in shader)
     pub shader_register: u32,
     /// Register space to bind to (supplied in shader)
     pub register_space: u32,
-    /// Number of 32-bit values to push
-    pub num_values: u32,
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
