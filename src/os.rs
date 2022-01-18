@@ -33,7 +33,7 @@ pub struct Rect<T> {
     pub y: T,
     /// Width of the window starting at x
     pub width: T,
-    /// Height of the window starting at y 
+    /// Height of the window starting at y
     pub height: T,
 }
 

@@ -299,6 +299,8 @@ fn draw_triangle() {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
+        input_layout: None,
+        descriptor_layout: None,
     });
 
     let mut rbr = gfx_platform::ReadBackRequest {
@@ -338,7 +340,8 @@ fn draw_triangle() {
         } else {
             if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
                 let data = rbr.get_data().unwrap();
-                image::write_to_file(String::from("my_triangle"), 1280, 720, 4, &data.data).unwrap();
+                image::write_to_file(String::from("my_triangle"), 1280, 720, 4, &data.data)
+                    .unwrap();
 
                 rbr.resource = None;
                 written = true;

@@ -1,9 +1,8 @@
+use crate::os;
+use std::any::Any;
+
 /// Implemets this interface with Direct3d12 backend
 pub mod d3d12;
-
-use crate::os;
-
-use std::any::Any;
 
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
@@ -54,7 +53,7 @@ pub struct BufferInfo {
     pub stride: usize,
 }
 
-/// Signifies how this buffer will be used on the GPU.
+/// Describes how a buffer will be used on the GPU.
 pub enum BufferUsage {
     Vertex,
     Index,
@@ -69,7 +68,7 @@ pub struct ShaderInfo {
     pub compile_info: Option<ShaderCompileInfo>,
 }
 
-/// Information required to compile a shader from source.
+/// Information required to compile a shader from source code.
 pub struct ShaderCompileInfo {
     /// The name of the entry point function in the shader to compile.
     pub entry_point: String,
@@ -87,6 +86,7 @@ pub enum ShaderType {
     Compute,
 }
 
+// TODO: bitflags! bitmask is the wrong thing
 bitmask! {
     /// Flags for shaders compiled at run time.
     pub mask ShaderCompileFlags: u8 where flags CompileFlags {
@@ -99,14 +99,129 @@ bitmask! {
     }
 }
 
+/// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
+pub struct DescriptorLayout {
+    pub tables: Option<Vec<DescriptorTableInfo>>,
+    pub constants: Option<Vec<PushConatntInfo>>,
+    pub samplers: Option<Vec<SamplerInfo>>,
+}
+
+/// Describes a range of resources for access on the GPU.
+pub struct DescriptorTableInfo {
+    /// Type of resources in this table
+    pub table_type: DescriptorTableType,
+    /// Control which shder stages can access
+    pub visibility: ShaderVisibility,
+    /// Number of descriptors in this table, use `None` for unbounded
+    pub num_descriptors: Option<u32>,
+    /// Register index to bind to (supplied in shader)
+    pub shader_register: u32,
+    /// Register space to bind to (supplied in shader)
+    pub register_space: u32,
+}
+
+/// Describes the type of descriptor table to create.
+pub enum DescriptorTableType {
+    /// Used for textures or structured buffers
+    ShaderResource,
+    /// Used for cbuffers
+    ConstantBuffer,
+    /// Used for read-write textures
+    UnorderedAccess,
+    /// Used for texture samplers
+    Sampler,
+}
+
+/// Describes the visibility of which shader stages can access a descriptor.
+pub enum ShaderVisibility {
+    All,
+    Vertex,
+    Fragment,
+}
+
+/// Describes space in the shader to send data to via `CmdBuf::push_constants`.
+pub struct PushConatntInfo {
+    /// Register index to bind to (supplied in shader)
+    pub shader_register: u32,
+    /// Register space to bind to (supplied in shader)
+    pub register_space: u32,
+    /// Number of 32-bit values to push
+    pub num_values: u32,
+}
+
+/// Input layout describes the layout of vertex buffers bound to the input assembler.
+type InputLayout = Vec<InputElementInfo>;
+
+/// Describe a single element of an `InputLayoutInfo`
+pub struct InputElementInfo {
+    pub semantic: String,
+    pub index: u32,
+    pub format: Format,
+    pub input_slot: u32,
+    pub aligned_byte_offset: u32,
+    pub input_slot_class: InputSlotClass,
+    pub step_rate: u32,
+}
+
+/// Describes the frequency of which elements are fetched from a vertex input element.
+pub enum InputSlotClass {
+    PerVertex,
+    PerInstance,
+}
+
+/// Info to create a sampler state object to sample textures in shaders.
+pub struct SamplerInfo {
+    pub filter: SamplerFilter,
+    pub mip_filter: SamplerFilter,
+    pub address_u: SamplerAddressMode,
+    pub address_v: SamplerAddressMode,
+    pub address_w: SamplerAddressMode,
+    pub comparison: Option<ComparisonFunc>,
+    pub border_colour: Option<u32>,
+    pub mip_lod_bias: f32,
+    pub max_aniso: u32,
+    pub min_lod: f32,
+    pub max_lod: f32,
+    pub shader_register: u32,
+    pub register_space: u32,
+    pub shader_visibility: ShaderVisibility,
+}
+
+/// Filtering mode for the sampler (controls bilinear and trilinear interpolation).
+pub enum SamplerFilter {
+    Point,
+    Linear,
+    MaxAnisotropic,
+}
+
+/// Address mode for the sampler (controls wrapping and clamping).
+pub enum SamplerAddressMode {
+    Wrap,
+    Mirror,
+    Clamp,
+    Border,
+    MirrorOnce,
+}
+
+/// Used for comparison ops in depth testing, samplers.
+pub enum ComparisonFunc {
+    Never,
+    Less,
+    Equal,
+    LessEqual,
+    Greater,
+    NotEqual,
+    GreaterEqual,
+    Always,
+}
+
 /// Information to create a pipeline through `Device::create_pipeline`.
 pub struct PipelineInfo<D: Device> {
-    // optional vertex shader
     pub vs: Option<D::Shader>,
-    // optional fragment shader
     pub fs: Option<D::Shader>,
-    // optional compute shader
     pub cs: Option<D::Shader>,
+    pub input_layout: Option<InputLayout>,
+    pub descriptor_layout: Option<DescriptorLayout>,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -114,30 +229,29 @@ pub struct TextureInfo {
     pub tex_type: TextureType,
     pub width: u64,
     pub height: u64,
-    /// Supply only for 3D textures
     pub depth: u32,
     pub array_levels: u32,
     pub mip_levels: u32,
-    /// Number of MSAA samples
     pub samples: u32,
 }
 
+/// Describes the dimension of a texture
 pub enum TextureType {
     Texture1D,
     Texture2D,
     Texture3D,
 }
 
-/// A GPU Buffer (Vertex, Index, Constant, etc...).
+/// An opaque Buffer type
 pub trait Buffer<D: Device>: 'static + Sized + Any {}
 
-/// A GPU Shader (Vertex, Fragment, Compute, etc...).
+/// An opaque Shader type
 pub trait Shader<D: Device>: 'static + Sized + Any {}
 
-/// A GPU Pipeline
+/// An opaque Pipeline type
 pub trait Pipeline<D: Device>: 'static + Sized + Any {}
 
-/// A GPU Texture
+/// An opaque Texture type
 pub trait Texture<D: Device>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
@@ -160,7 +274,7 @@ pub trait Device: 'static + Sized + Any {
     fn execute(&self, cmd: &Self::CmdBuf);
 }
 
-/// A swap chain is connected to a window and controls fences and signals as we swap buffers.
+/// A swap chain is connected to a window, controls fences and signals as we swap buffers.
 pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &D, window: &platform::Window, cmd: &mut D::CmdBuf);
@@ -182,13 +296,7 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     fn set_pipeline_state(&self, pipeline: &D::Pipeline);
     /// pushes constants directly to the root signature
-    fn push_constants<T: Sized>(
-        &self, 
-        slot: u32, 
-        num_values: u32,
-        dest_offset: u32,
-        data: &[T]
-    );
+    fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -216,7 +324,7 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
 /// data can be obtained using `get_data`
 pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
-    fn get_data(&self) -> Result<ReadBackData, ReadBackError>;
+    fn get_data(&self) -> Result<ReadBackData, &str>;
 }
 
 /// Results from an issued ReadBackRequest
@@ -231,29 +339,6 @@ pub struct ReadBackData {
     pub row_pitch: usize,
     /// Pitch of a slice (3D texture or array level, cubemap face etc)
     pub slice_pitch: usize,
-}
-
-/// Errors returned from ReadBackRequest
-#[derive(Debug)]
-pub enum ReadBackError {
-    /// You must wait until the GPU has finished processing the request
-    ResultNotRready,
-    /// Mapping the data has failed
-    MapFailed,
-    /// The pointer returned by the map operation is null
-    NullData,
-}
-
-impl std::error::Error for ReadBackError {}
-
-impl std::fmt::Display for ReadBackError {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
-        match self {
-            ReadBackError::ResultNotRready => write!(f, "Result Not Ready"),
-            ReadBackError::MapFailed => write!(f, "Map Failed"),
-            ReadBackError::NullData => write!(f, "Map Data is Null"),
-        }
-    }
 }
 
 impl From<os::Rect<i32>> for Viewport {
@@ -319,14 +404,14 @@ pub fn align(value: u64, align: u64) -> u64 {
 
 // TODO: current
 // - validation checks on buffer and texture data used in create functions
+// - Root Signature == DescriptorLayout
+// - Pipeline->RootSignature
+
 // - Bindless texture array
 // - Samplers
 // - Constant Buffer
-// - Root Signature
 // - Input Layout
 // - Shaders from IR
-
-// TODO: maybe
 // - pmfx Shaders
 // - pmfx Input Layout
 

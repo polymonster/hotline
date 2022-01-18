@@ -142,10 +142,10 @@ impl super::Window<App> for Window {
 
     fn get_viewport_rect(&self) -> super::Rect<i32> {
         super::Rect::<i32> {
-            x: 0, 
+            x: 0,
             y: 0,
             width: self.info.rect.width,
-            height: self.info.rect.height
+            height: self.info.rect.height,
         }
     }
 
