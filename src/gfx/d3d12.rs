@@ -80,13 +80,22 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
-fn to_dxgi_format(format: &super::Format) -> DXGI_FORMAT {
+fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
         super::Format::R16n => DXGI_FORMAT_R16_UNORM,
         super::Format::R16u => DXGI_FORMAT_R16_UINT,
         super::Format::R16i => DXGI_FORMAT_R16_SINT,
         super::Format::R16f => DXGI_FORMAT_R16_FLOAT,
+        super::Format::R32u => DXGI_FORMAT_R32_UINT,
+        super::Format::R32i => DXGI_FORMAT_R32_SINT,
+        super::Format::R32f => DXGI_FORMAT_R32_FLOAT,
+        super::Format::RG32u => DXGI_FORMAT_R32G32_UINT,
+        super::Format::RG32i => DXGI_FORMAT_R32G32_SINT,
+        super::Format::RG32f => DXGI_FORMAT_R32G32_FLOAT,
+        super::Format::RGB32u => DXGI_FORMAT_R32G32B32_UINT,
+        super::Format::RGB32i => DXGI_FORMAT_R32G32B32_SINT,
+        super::Format::RGB32f => DXGI_FORMAT_R32G32B32_FLOAT,
         super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
@@ -102,6 +111,55 @@ fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
         d3d12_flags |= D3DCOMPILE_DEBUG;
     }
     d3d12_flags
+}
+
+fn to_d3d12_shader_visibility(visibility: super::ShaderVisibility) -> D3D12_SHADER_VISIBILITY {
+    match visibility {
+        super::ShaderVisibility::All => D3D12_SHADER_VISIBILITY_ALL,
+        super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
+        super::ShaderVisibility::Fragment => D3D12_SHADER_VISIBILITY_PIXEL,
+    }
+}
+
+fn to_d3d12_sampler_boarder_colour(col: Option<u32>) -> D3D12_STATIC_BORDER_COLOR {
+    if col.is_some() {
+        return D3D12_STATIC_BORDER_COLOR::from(col.unwrap() as i32);
+    }
+    D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK
+}
+
+fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
+    match filter {
+        super::SamplerFilter::Point => D3D12_FILTER_MIN_MAG_MIP_POINT,
+        super::SamplerFilter::Linear => D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+        super::SamplerFilter::Anisotropic => D3D12_FILTER_ANISOTROPIC,
+    }
+}
+
+fn to_d3d12_address_mode(mode: super::SamplerAddressMode) -> D3D12_TEXTURE_ADDRESS_MODE {
+    match mode {
+        super::SamplerAddressMode::Wrap => D3D12_TEXTURE_ADDRESS_MODE_WRAP,
+        super::SamplerAddressMode::Mirror => D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
+        super::SamplerAddressMode::Clamp => D3D12_TEXTURE_ADDRESS_MODE_CLAMP,
+        super::SamplerAddressMode::Border => D3D12_TEXTURE_ADDRESS_MODE_BORDER,
+        super::SamplerAddressMode::MirrorOnce => D3D12_TEXTURE_ADDRESS_MODE_MIRROR_ONCE,
+    }
+}
+
+fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D12_COMPARISON_FUNC {
+    if func.is_some() {
+        return match func.unwrap() {
+            super::ComparisonFunc::Never => D3D12_COMPARISON_FUNC_NEVER,
+            super::ComparisonFunc::Less => D3D12_COMPARISON_FUNC_LESS,
+            super::ComparisonFunc::Equal => D3D12_COMPARISON_FUNC_EQUAL,
+            super::ComparisonFunc::LessEqual => D3D12_COMPARISON_FUNC_LESS_EQUAL,
+            super::ComparisonFunc::Greater => D3D12_COMPARISON_FUNC_GREATER,
+            super::ComparisonFunc::NotEqual => D3D12_COMPARISON_FUNC_NOT_EQUAL,
+            super::ComparisonFunc::GreaterEqual => D3D12_COMPARISON_FUNC_GREATER_EQUAL,
+            super::ComparisonFunc::Always => D3D12_COMPARISON_FUNC_ALWAYS,
+        }
+    }
+    D3D12_COMPARISON_FUNC_ALWAYS
 }
 
 fn transition_barrier(
@@ -306,13 +364,13 @@ impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 
 impl Device {
-    fn create_input_layout(layout: &super::InputLayout) -> D3D12_INPUT_LAYOUT_DESC {
+    fn create_input_layout(&self, layout: &super::InputLayout) -> D3D12_INPUT_LAYOUT_DESC {
         let mut d3d12_elems : Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC{
-                SemanticName: PSTR(elem.semantic.as_ptr() as _),
+                SemanticName: PSTR(elem.semantic.as_ptr()  as _),
                 SemanticIndex: elem.index,
-                Format: to_dxgi_format(&elem.format),
+                Format: to_dxgi_format(elem.format),
                 InputSlot: elem.input_slot,
                 AlignedByteOffset: elem.aligned_byte_offset,
                 InputSlotClass: match elem.input_slot_class {
@@ -328,8 +386,26 @@ impl Device {
         }
     }
 
-    fn create_root_signature(layout: &super::DescriptorLayout) {
+    fn create_root_signature(&mut self, layout: &super::DescriptorLayout) -> Result<ID3D12RootSignature> {
         let mut root_params : Vec<D3D12_ROOT_PARAMETER> = Vec::new();
+        let mut static_samplers : Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
+        // push constants
+        if layout.constants.is_some() {
+            let constants_set = layout.constants.as_ref();
+            for constants in constants_set.unwrap() {
+                root_params.push(D3D12_ROOT_PARAMETER {
+                    ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
+                    Anonymous: D3D12_ROOT_PARAMETER_0 {
+                        Constants: D3D12_ROOT_CONSTANTS {
+                            ShaderRegister: constants.shader_register,
+                            RegisterSpace: constants.register_space,
+                            Num32BitValues: constants.num_values,
+                        },
+                    },
+                    ShaderVisibility: to_d3d12_shader_visibility(constants.visibility)
+                });
+            }   
+        }
         // tables for (SRV, UAV, CBV an Samplers)
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
@@ -357,11 +433,54 @@ impl Device {
                             pDescriptorRanges: &mut range,
                         },
                     },
-                    ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
+                    ShaderVisibility: to_d3d12_shader_visibility(table.visibility),
                 })
             }
         }
-        // push constants
+        // immutable samplers
+        if layout.samplers.is_some() {
+            let samplers = layout.samplers.as_ref();
+            for sampler in samplers.unwrap() {
+                static_samplers.push( D3D12_STATIC_SAMPLER_DESC {
+                    Filter: to_d3d12_filter(sampler.filter),
+                    AddressU: to_d3d12_address_mode(sampler.address_u),
+                    AddressV: to_d3d12_address_mode(sampler.address_v),
+                    AddressW: to_d3d12_address_mode(sampler.address_w),
+                    MipLODBias: sampler.mip_lod_bias,
+                    MaxAnisotropy: sampler.max_aniso,
+                    ComparisonFunc: to_d3d12_address_comparison_func(sampler.comparison),
+                    BorderColor: to_d3d12_sampler_boarder_colour(sampler.border_colour),
+                    MinLOD: sampler.min_lod,
+                    MaxLOD: sampler.max_lod,
+                    ShaderRegister: sampler.shader_register,
+                    RegisterSpace: sampler.register_space,
+                    ShaderVisibility: to_d3d12_shader_visibility(sampler.shader_visibility),
+                })
+            }
+        }
+
+        // desc
+        let desc = D3D12_ROOT_SIGNATURE_DESC {
+            NumParameters: root_params.len() as u32,
+            Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+            pParameters: root_params.as_mut_ptr(),
+            NumStaticSamplers: static_samplers.len() as u32,
+            pStaticSamplers: static_samplers.as_mut_ptr(),
+            ..Default::default()
+        };
+        
+        // create signature
+        unsafe {
+            let mut signature = None;
+            let signature = D3D12SerializeRootSignature(
+                &desc,
+                D3D_ROOT_SIGNATURE_VERSION_1,
+                &mut signature,
+                std::ptr::null_mut(),
+            ).map(|()| signature.unwrap())?;
+
+            self.device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
+        }
     }
 }
 
@@ -572,14 +691,13 @@ impl super::Device for Device {
 
         let root_signature = create_root_signature(&self.device).unwrap();
 
+        let input_layout = self.create_input_layout(&info.input_layout);
+
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
-            InputLayout: D3D12_INPUT_LAYOUT_DESC {
-                pInputElementDescs: input_element_descs.as_mut_ptr(),
-                NumElements: input_element_descs.len() as u32,
-            },
+            InputLayout: input_layout,
             pRootSignature: Some(root_signature.clone()),
             VS: D3D12_SHADER_BYTECODE {
                 pShaderBytecode: unsafe { vs.GetBufferPointer() },
@@ -738,7 +856,7 @@ impl super::Device for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: to_dxgi_format(&info.format),
+                    Format: to_dxgi_format(info.format),
                 })
             }
         }
