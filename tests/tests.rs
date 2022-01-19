@@ -272,13 +272,13 @@ fn draw_triangle() {
         float4 PSMain(PSInput input) : SV_TARGET
         {
             return input.color;
-        }";
+        }\0";
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain"),
-            target: String::from("vs_5_0"),
+            entry_point: String::from("VSMain\0"),
+            target: String::from("vs_5_0\0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -286,8 +286,8 @@ fn draw_triangle() {
     let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain"),
-            target: String::from("ps_5_0"),
+            entry_point: String::from("PSMain\0"),
+            target: String::from("ps_5_0\0"),
             flags: gfx::ShaderCompileFlags::none(),
         }),
     };
@@ -295,14 +295,37 @@ fn draw_triangle() {
     let vs = dev.create_shader(vs_info, src.as_bytes());
     let ps = dev.create_shader(ps_info, src.as_bytes());
 
+    let vs_position = gfx::InputElementInfo {
+        semantic: String::from("POSITION\0"),
+        index: 0,
+        format: gfx::Format::RGB32f,
+        input_slot: 0,
+        aligned_byte_offset: 0,
+        input_slot_class: gfx::InputSlotClass::PerVertex,
+        step_rate: 0
+    };
+
+    let vs_color = gfx::InputElementInfo {
+        semantic: String::from("COLOR\0"),
+        index: 0,
+        format: gfx::Format::RGBA32f,
+        input_slot: 0,
+        aligned_byte_offset: 12,
+        input_slot_class: gfx::InputSlotClass::PerVertex,
+        step_rate: 0
+    };
+
+    let input_layout = vec![vs_position, vs_color];
+
     let pso = dev.create_pipeline(gfx::PipelineInfo {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
-        input_layout: None,
+        input_layout: input_layout,
         descriptor_layout: None,
     });
 
+    /*
     let mut rbr = gfx_platform::ReadBackRequest {
         fence_value: u64::MAX,
         resource: None,
@@ -335,6 +358,7 @@ fn draw_triangle() {
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
 
+        /*
         if !rbr.resource.is_some() && !written {
             rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
         } else {
@@ -347,6 +371,7 @@ fn draw_triangle() {
                 written = true;
             }
         }
+        */
 
         cmdbuffer.close(&swap_chain);
 
@@ -357,10 +382,13 @@ fn draw_triangle() {
         ci = (ci + 1) % 4;
         count = count + 1;
 
-        if count > 3 {
+        if count > 16 {
             break;
         }
     }
+
+    cmdbuffer.reset(&swap_chain);
+    */
 }
 
 #[test]

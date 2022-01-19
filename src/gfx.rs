@@ -8,6 +8,7 @@ pub mod d3d12;
 use os::win32 as platform;
 
 /// Structure to specify viewport coordinates on a `CmdBuf`.
+#[derive(Copy, Clone)]
 pub struct Viewport {
     /// Top left x coordinate.
     pub x: f32,
@@ -24,6 +25,7 @@ pub struct Viewport {
 }
 
 /// Structure to specify scissor rect coordinates on a `CmdBuf`.
+#[derive(Copy, Clone)]
 pub struct ScissorRect {
     pub left: i32,
     pub top: i32,
@@ -32,18 +34,29 @@ pub struct ScissorRect {
 }
 
 /// Format for resource types (textures / buffers)
+#[derive(Copy, Clone)]
 pub enum Format {
     Unknown,
     R16n,
     R16u,
     R16i,
     R16f,
+    R32u,
+    R32i,
+    R32f,
+    RG32u,
+    RG32i,
+    RG32f,
+    RGB32u,
+    RGB32i,
+    RGB32f,
     RGBA32u,
     RGBA32i,
     RGBA32f,
 }
 
 /// Information to create a buffer through `Device::create_buffer`.
+#[derive(Copy, Clone)]
 pub struct BufferInfo {
     /// Indicates how the buffer will be used on the GPU.
     pub usage: BufferUsage,
@@ -54,6 +67,7 @@ pub struct BufferInfo {
 }
 
 /// Describes how a buffer will be used on the GPU.
+#[derive(Copy, Clone)]
 pub enum BufferUsage {
     Vertex,
     Index,
@@ -80,6 +94,7 @@ pub struct ShaderCompileInfo {
 }
 
 /// The stage to which a shader will bind itself.
+#[derive(Copy, Clone)]
 pub enum ShaderType {
     Vertex,
     Fragment,
@@ -133,6 +148,7 @@ pub enum DescriptorTableType {
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
+#[derive(Copy, Clone)]
 pub enum ShaderVisibility {
     All,
     Vertex,
@@ -166,15 +182,16 @@ pub struct InputElementInfo {
 }
 
 /// Describes the frequency of which elements are fetched from a vertex input element.
+#[derive(Copy, Clone)]
 pub enum InputSlotClass {
     PerVertex,
     PerInstance,
 }
 
 /// Info to create a sampler state object to sample textures in shaders.
+#[derive(Copy, Clone)]
 pub struct SamplerInfo {
     pub filter: SamplerFilter,
-    pub mip_filter: SamplerFilter,
     pub address_u: SamplerAddressMode,
     pub address_v: SamplerAddressMode,
     pub address_w: SamplerAddressMode,
@@ -190,13 +207,15 @@ pub struct SamplerInfo {
 }
 
 /// Filtering mode for the sampler (controls bilinear and trilinear interpolation).
+#[derive(Copy, Clone)]
 pub enum SamplerFilter {
     Point,
     Linear,
-    MaxAnisotropic,
+    Anisotropic,
 }
 
 /// Address mode for the sampler (controls wrapping and clamping).
+#[derive(Copy, Clone)]
 pub enum SamplerAddressMode {
     Wrap,
     Mirror,
@@ -206,6 +225,7 @@ pub enum SamplerAddressMode {
 }
 
 /// Used for comparison ops in depth testing, samplers.
+#[derive(Copy, Clone)]
 pub enum ComparisonFunc {
     Never,
     Less,
@@ -222,11 +242,12 @@ pub struct PipelineInfo<D: Device> {
     pub vs: Option<D::Shader>,
     pub fs: Option<D::Shader>,
     pub cs: Option<D::Shader>,
-    pub input_layout: Option<InputLayout>,
+    pub input_layout: InputLayout,
     pub descriptor_layout: Option<DescriptorLayout>,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
+#[derive(Copy, Clone)]
 pub struct TextureInfo {
     pub tex_type: TextureType,
     pub width: u64,
@@ -238,6 +259,7 @@ pub struct TextureInfo {
 }
 
 /// Describes the dimension of a texture
+#[derive(Copy, Clone)]
 pub enum TextureType {
     Texture1D,
     Texture2D,
@@ -383,6 +405,15 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::R16u => 2,
         Format::R16i => 2,
         Format::R16f => 2,
+        Format::R32u => 4,
+        Format::R32i => 4,
+        Format::R32f => 4,
+        Format::RG32u => 8,
+        Format::RG32i => 8,
+        Format::RG32f => 8,
+        Format::RGB32u => 12,
+        Format::RGB32i => 12,
+        Format::RGB32f => 12,
         Format::RGBA32u => 16,
         Format::RGBA32i => 16,
         Format::RGBA32f => 16,
@@ -408,11 +439,13 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - validation checks on buffer and texture data used in create functions
 // - Root Signature == DescriptorLayout
 // - Pipeline->RootSignature
+// -    Input Layout
+// -    Static Samplers
 
 // - Bindless texture array
-// - Samplers
+// - Sampler
 // - Constant Buffer
-// - Input Layout
+
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
