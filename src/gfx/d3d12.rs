@@ -364,8 +364,7 @@ impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 
 impl Device {
-    fn create_input_layout(&self, layout: &super::InputLayout) -> D3D12_INPUT_LAYOUT_DESC {
-        let mut d3d12_elems : Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
+    fn create_input_layout(&self, layout: &super::InputLayout, d3d12_elems : &mut Vec<D3D12_INPUT_ELEMENT_DESC>) -> D3D12_INPUT_LAYOUT_DESC {
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC{
                 SemanticName: PSTR(elem.semantic.as_ptr()  as _),
@@ -667,31 +666,10 @@ impl super::Device for Device {
     }
 
     fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
-
-        let mut input_element_descs: [D3D12_INPUT_ELEMENT_DESC; 2] = [
-            D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"POSITION\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32B32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 0,
-                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-            D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(b"COLOR\0".as_ptr() as _),
-                SemanticIndex: 0,
-                Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
-                InputSlot: 0,
-                AlignedByteOffset: 12,
-                InputSlotClass: D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                InstanceDataStepRate: 0,
-            },
-        ];
-
         let root_signature = create_root_signature(&self.device).unwrap();
 
-        let input_layout = self.create_input_layout(&info.input_layout);
+        let mut d3d12_elems : Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
+        let input_layout = self.create_input_layout(&info.input_layout, &mut d3d12_elems);
 
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;

@@ -325,7 +325,6 @@ fn draw_triangle() {
         descriptor_layout: None,
     });
 
-    /*
     let mut rbr = gfx_platform::ReadBackRequest {
         fence_value: u64::MAX,
         resource: None,
@@ -388,7 +387,6 @@ fn draw_triangle() {
     }
 
     cmdbuffer.reset(&swap_chain);
-    */
 }
 
 #[test]

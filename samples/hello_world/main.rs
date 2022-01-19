@@ -29,15 +29,14 @@ struct Vertex {
 }
 
 fn main() {
-    /*
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
         window: false,
         num_buffers: 0,
     });
     main_index_buffer(app);
-    */
-    draw_triangle();
+
+    // draw_triangle();
 }
 
 fn main_index_buffer(app: os_platform::App) {
