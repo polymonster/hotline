@@ -295,34 +295,66 @@ fn draw_triangle() {
     let vs = dev.create_shader(vs_info, src.as_bytes());
     let ps = dev.create_shader(ps_info, src.as_bytes());
 
-    let vs_position = gfx::InputElementInfo {
-        semantic: String::from("POSITION\0"),
-        index: 0,
-        format: gfx::Format::RGB32f,
-        input_slot: 0,
-        aligned_byte_offset: 0,
-        input_slot_class: gfx::InputSlotClass::PerVertex,
-        step_rate: 0
-    };
-
-    let vs_color = gfx::InputElementInfo {
-        semantic: String::from("COLOR\0"),
-        index: 0,
-        format: gfx::Format::RGBA32f,
-        input_slot: 0,
-        aligned_byte_offset: 12,
-        input_slot_class: gfx::InputSlotClass::PerVertex,
-        step_rate: 0
-    };
-
-    let input_layout = vec![vs_position, vs_color];
-
     let pso = dev.create_pipeline(gfx::PipelineInfo {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
-        input_layout: input_layout,
-        descriptor_layout: None,
+        input_layout: vec![
+            gfx::InputElementInfo {
+                semantic: String::from("POSITION\0"),
+                index: 0,
+                format: gfx::Format::RGB32f,
+                input_slot: 0,
+                aligned_byte_offset: 0,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            }, 
+            gfx::InputElementInfo {
+                semantic: String::from("COLOR\0"),
+                index: 0,
+                format: gfx::Format::RGBA32f,
+                input_slot: 0,
+                aligned_byte_offset: 12,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            }
+        ],
+        descriptor_layout: gfx::DescriptorLayout {
+            push_constants: Some(vec![
+                gfx::PushConatntInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    num_values: 4,
+                    shader_register: 0,
+                    register_space: 0
+                }
+            ]),
+            tables: Some(vec![
+                gfx::DescriptorTableInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    table_type: gfx::DescriptorTableType::ShaderResource,
+                    num_descriptors: Some(1),
+                    shader_register: 0,
+                    register_space: 0
+                }
+            ]),
+            static_samplers: Some(vec![
+                gfx::SamplerInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    filter: gfx::SamplerFilter::Linear,
+                    address_u: gfx::SamplerAddressMode::Wrap,
+                    address_v: gfx::SamplerAddressMode::Wrap,
+                    address_w: gfx::SamplerAddressMode::Wrap,
+                    comparison: None,
+                    border_colour: None,
+                    mip_lod_bias: 0.0,
+                    max_aniso: 0,
+                    min_lod: -1.0,
+                    max_lod: -1.0,
+                    shader_register: 0,
+                    register_space: 0
+                }
+            ])
+        },
     });
 
     let mut rbr = gfx_platform::ReadBackRequest {

@@ -157,7 +157,7 @@ fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D1
             super::ComparisonFunc::NotEqual => D3D12_COMPARISON_FUNC_NOT_EQUAL,
             super::ComparisonFunc::GreaterEqual => D3D12_COMPARISON_FUNC_GREATER_EQUAL,
             super::ComparisonFunc::Always => D3D12_COMPARISON_FUNC_ALWAYS,
-        }
+        };
     }
     D3D12_COMPARISON_FUNC_ALWAYS
 }
@@ -364,33 +364,45 @@ impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 
 impl Device {
-    fn create_input_layout(&self, layout: &super::InputLayout, d3d12_elems : &mut Vec<D3D12_INPUT_ELEMENT_DESC>) -> D3D12_INPUT_LAYOUT_DESC {
+    fn create_input_layout(
+        &self,
+        layout: &super::InputLayout,
+    ) -> (D3D12_INPUT_LAYOUT_DESC, Vec<D3D12_INPUT_ELEMENT_DESC>) {
+        let mut d3d12_elems: Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
         for elem in layout {
-            d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC{
-                SemanticName: PSTR(elem.semantic.as_ptr()  as _),
+            d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
+                SemanticName: PSTR(elem.semantic.as_ptr() as _),
                 SemanticIndex: elem.index,
                 Format: to_dxgi_format(elem.format),
                 InputSlot: elem.input_slot,
                 AlignedByteOffset: elem.aligned_byte_offset,
                 InputSlotClass: match elem.input_slot_class {
                     super::InputSlotClass::PerVertex => D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,
-                    super::InputSlotClass::PerInstance => D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+                    super::InputSlotClass::PerInstance => {
+                        D3D12_INPUT_CLASSIFICATION_PER_INSTANCE_DATA
+                    }
                 },
                 InstanceDataStepRate: elem.step_rate,
             })
         }
-        D3D12_INPUT_LAYOUT_DESC {
-            pInputElementDescs: d3d12_elems.as_mut_ptr(),
-            NumElements: d3d12_elems.len() as u32
-        }
+        (
+            D3D12_INPUT_LAYOUT_DESC {
+                pInputElementDescs: d3d12_elems.as_mut_ptr(),
+                NumElements: d3d12_elems.len() as u32,
+            },
+            d3d12_elems,
+        )
     }
 
-    fn create_root_signature(&mut self, layout: &super::DescriptorLayout) -> Result<ID3D12RootSignature> {
-        let mut root_params : Vec<D3D12_ROOT_PARAMETER> = Vec::new();
-        let mut static_samplers : Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
+    fn create_root_signature(
+        &self,
+        layout: &super::DescriptorLayout,
+    ) -> Result<ID3D12RootSignature> {
+        let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
+        let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
         // push constants
-        if layout.constants.is_some() {
-            let constants_set = layout.constants.as_ref();
+        if layout.push_constants.is_some() {
+            let constants_set = layout.push_constants.as_ref();
             for constants in constants_set.unwrap() {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
@@ -401,21 +413,31 @@ impl Device {
                             Num32BitValues: constants.num_values,
                         },
                     },
-                    ShaderVisibility: to_d3d12_shader_visibility(constants.visibility)
+                    ShaderVisibility: to_d3d12_shader_visibility(constants.visibility),
                 });
-            }   
+            }
         }
         // tables for (SRV, UAV, CBV an Samplers)
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
             let mut descriptor_offset = 0;
             for table in table_info.unwrap() {
-                let count = if table.num_descriptors.is_some() { table.num_descriptors.unwrap() } else { u32::MAX };
+                let count = if table.num_descriptors.is_some() {
+                    table.num_descriptors.unwrap()
+                } else {
+                    u32::MAX
+                };
                 let mut range = D3D12_DESCRIPTOR_RANGE {
                     RangeType: match table.table_type {
-                        super::DescriptorTableType::ShaderResource => D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-                        super::DescriptorTableType::UnorderedAccess => D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
-                        super::DescriptorTableType::ConstantBuffer => D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
+                        super::DescriptorTableType::ShaderResource => {
+                            D3D12_DESCRIPTOR_RANGE_TYPE_SRV
+                        }
+                        super::DescriptorTableType::UnorderedAccess => {
+                            D3D12_DESCRIPTOR_RANGE_TYPE_UAV
+                        }
+                        super::DescriptorTableType::ConstantBuffer => {
+                            D3D12_DESCRIPTOR_RANGE_TYPE_CBV
+                        }
                         super::DescriptorTableType::Sampler => D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
                     },
                     NumDescriptors: count,
@@ -424,7 +446,7 @@ impl Device {
                     OffsetInDescriptorsFromTableStart: descriptor_offset,
                 };
                 descriptor_offset = descriptor_offset + count;
-                root_params.push(D3D12_ROOT_PARAMETER{
+                root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
                         DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
@@ -437,10 +459,10 @@ impl Device {
             }
         }
         // immutable samplers
-        if layout.samplers.is_some() {
-            let samplers = layout.samplers.as_ref();
+        if layout.static_samplers.is_some() {
+            let samplers = layout.static_samplers.as_ref();
             for sampler in samplers.unwrap() {
-                static_samplers.push( D3D12_STATIC_SAMPLER_DESC {
+                static_samplers.push(D3D12_STATIC_SAMPLER_DESC {
                     Filter: to_d3d12_filter(sampler.filter),
                     AddressU: to_d3d12_address_mode(sampler.address_u),
                     AddressV: to_d3d12_address_mode(sampler.address_v),
@@ -453,7 +475,7 @@ impl Device {
                     MaxLOD: sampler.max_lod,
                     ShaderRegister: sampler.shader_register,
                     RegisterSpace: sampler.register_space,
-                    ShaderVisibility: to_d3d12_shader_visibility(sampler.shader_visibility),
+                    ShaderVisibility: to_d3d12_shader_visibility(sampler.visibility),
                 })
             }
         }
@@ -467,7 +489,7 @@ impl Device {
             pStaticSamplers: static_samplers.as_mut_ptr(),
             ..Default::default()
         };
-        
+
         // create signature
         unsafe {
             let mut signature = None;
@@ -476,9 +498,14 @@ impl Device {
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
                 std::ptr::null_mut(),
-            ).map(|()| signature.unwrap())?;
+            )
+            .map(|()| signature.unwrap())?;
 
-            self.device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
+            self.device.CreateRootSignature(
+                0,
+                signature.GetBufferPointer(),
+                signature.GetBufferSize(),
+            )
         }
     }
 }
@@ -515,9 +542,8 @@ impl super::Device for Device {
 
             // create device
             let mut d3d12_device: Option<ID3D12Device> = None;
-            let device_result =
-                D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
-                    .expect("hotline::gfx::d3d12: failed to create d3d12 device");
+            D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
+                .expect("hotline::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
             // create command allocator
@@ -666,10 +692,8 @@ impl super::Device for Device {
     }
 
     fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
-        let root_signature = create_root_signature(&self.device).unwrap();
-
-        let mut d3d12_elems : Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
-        let input_layout = self.create_input_layout(&info.input_layout, &mut d3d12_elems);
+        let (input_layout, _) = self.create_input_layout(&info.input_layout);
+        let root_signature = self.create_root_signature(&info.descriptor_layout).unwrap();
 
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;
