@@ -117,22 +117,22 @@ bitmask! {
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
 pub struct DescriptorLayout {
     pub tables: Option<Vec<DescriptorTableInfo>>,
-    pub constants: Option<Vec<PushConatntInfo>>,
-    pub samplers: Option<Vec<SamplerInfo>>,
+    pub push_constants: Option<Vec<PushConatntInfo>>,
+    pub static_samplers: Option<Vec<SamplerInfo>>,
 }
 
 /// Describes a range of resources for access on the GPU.
 pub struct DescriptorTableInfo {
-    /// Type of resources in this table
-    pub table_type: DescriptorTableType,
-    /// Control which shder stages can access
+    /// The shader stage the resources will be accessible to
     pub visibility: ShaderVisibility,
-    /// Number of descriptors in this table, use `None` for unbounded
-    pub num_descriptors: Option<u32>,
     /// Register index to bind to (supplied in shader)
     pub shader_register: u32,
     /// Register space to bind to (supplied in shader)
     pub register_space: u32,
+    /// Type of resources in this table
+    pub table_type: DescriptorTableType,
+    /// Number of descriptors in this table, use `None` for unbounded
+    pub num_descriptors: Option<u32>,
 }
 
 /// Describes the type of descriptor table to create.
@@ -159,12 +159,12 @@ pub enum ShaderVisibility {
 pub struct PushConatntInfo {
     /// The shader stage the constants will be accessible to
     pub visibility: ShaderVisibility,
-    /// Number of 32-bit values to push
-    pub num_values: u32,
     /// Register index to bind to (supplied in shader)
     pub shader_register: u32,
     /// Register space to bind to (supplied in shader)
     pub register_space: u32,
+    /// Number of 32-bit values to push
+    pub num_values: u32,
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
@@ -191,19 +191,23 @@ pub enum InputSlotClass {
 /// Info to create a sampler state object to sample textures in shaders.
 #[derive(Copy, Clone)]
 pub struct SamplerInfo {
+    /// The shader stage the sampler will be accessible to
+    pub visibility: ShaderVisibility,
+    /// Register index to bind to (supplied in shader)
+    pub shader_register: u32,
+    /// Register space to bind to (supplied in shader)
+    pub register_space: u32,
     pub filter: SamplerFilter,
     pub address_u: SamplerAddressMode,
     pub address_v: SamplerAddressMode,
     pub address_w: SamplerAddressMode,
     pub comparison: Option<ComparisonFunc>,
+    /// Colour is rgba8 packed into a u32
     pub border_colour: Option<u32>,
     pub mip_lod_bias: f32,
     pub max_aniso: u32,
     pub min_lod: f32,
     pub max_lod: f32,
-    pub shader_register: u32,
-    pub register_space: u32,
-    pub shader_visibility: ShaderVisibility,
 }
 
 /// Filtering mode for the sampler (controls bilinear and trilinear interpolation).
@@ -239,11 +243,14 @@ pub enum ComparisonFunc {
 
 /// Information to create a pipeline through `Device::create_pipeline`.
 pub struct PipelineInfo<D: Device> {
+    /// Vertex Shader
     pub vs: Option<D::Shader>,
+    /// Fragment Shader
     pub fs: Option<D::Shader>,
+    /// Compute Shader
     pub cs: Option<D::Shader>,
     pub input_layout: InputLayout,
-    pub descriptor_layout: Option<DescriptorLayout>,
+    pub descriptor_layout: DescriptorLayout,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -435,30 +442,29 @@ pub fn align(value: u64, align: u64) -> u64 {
     value
 }
 
-// TODO: current
+// TODO:
 // - validation checks on buffer and texture data used in create functions
-// - Root Signature == DescriptorLayout
-// - Pipeline->RootSignature
-// -    Input Layout
-// -    Static Samplers
-
+// - Enumerate adapters
+// - Topology
 // - Bindless texture array
 // - Sampler
 // - Constant Buffer
+// - Raster State
+// - Depth Stencil State
+// - Blend State
+// - docs on website
 
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
-
-// TODO: later
-// - Enumerate adapters
-// - Raster State
-// - Depth Stencil State
-// - Blend State
-// - Topology
-// - docs on website
+// - pmfx Descriptor Layout
 
 // DONE:
+// x Root Signature == DescriptorLayout
+// x Pipeline->RootSignature
+// x    Input Layout
+// x    Static Samplers
+// x    Push Constants
 // x Track transitions and manually drop
 // x Push constants
 // x viewport rect position must be stomped to 0
