@@ -80,6 +80,11 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
+pub struct RenderPass {
+    //rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
+    //ds: D3D12_RENDER_PASS_DEPTH_STENCIL_DESC,
+}
+
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
@@ -210,81 +215,6 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
     unreachable!()
 }
 
-fn create_root_signature(device: &ID3D12Device) -> Result<ID3D12RootSignature> {
-    let mut range = D3D12_DESCRIPTOR_RANGE {
-        RangeType: D3D12_DESCRIPTOR_RANGE_TYPE_SRV,
-        NumDescriptors: 1,
-        BaseShaderRegister: 0,
-        RegisterSpace: 0,
-        OffsetInDescriptorsFromTableStart: 0,
-    };
-
-    let mut params: [D3D12_ROOT_PARAMETER; 2] = [
-        D3D12_ROOT_PARAMETER {
-            ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
-            Anonymous: D3D12_ROOT_PARAMETER_0 {
-                Constants: D3D12_ROOT_CONSTANTS {
-                    ShaderRegister: 0,
-                    RegisterSpace: 0,
-                    Num32BitValues: 4,
-                },
-            },
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-        },
-        D3D12_ROOT_PARAMETER {
-            ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-            Anonymous: D3D12_ROOT_PARAMETER_0 {
-                DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                    NumDescriptorRanges: 1,
-                    pDescriptorRanges: &mut range,
-                },
-            },
-            ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-        },
-    ];
-
-    let mut sampler = D3D12_STATIC_SAMPLER_DESC {
-        Filter: D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-        AddressU: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        AddressV: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        AddressW: D3D12_TEXTURE_ADDRESS_MODE_WRAP,
-        MipLODBias: 0.0,
-        MaxAnisotropy: 0,
-        ComparisonFunc: D3D12_COMPARISON_FUNC_ALWAYS,
-        BorderColor: D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK,
-        MinLOD: 0.0,
-        MaxLOD: 0.0,
-        ShaderRegister: 0,
-        RegisterSpace: 0,
-        ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL,
-    };
-
-    let desc = D3D12_ROOT_SIGNATURE_DESC {
-        NumParameters: params.len() as u32,
-        Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
-        pParameters: params.as_mut_ptr(),
-        NumStaticSamplers: 1,
-        pStaticSamplers: &mut sampler,
-        ..Default::default()
-    };
-
-    let mut signature = None;
-
-    let signature = unsafe {
-        D3D12SerializeRootSignature(
-            &desc,
-            D3D_ROOT_SIGNATURE_VERSION_1,
-            &mut signature,
-            std::ptr::null_mut(),
-        )
-    }
-    .map(|()| signature.unwrap())?;
-
-    unsafe {
-        device.CreateRootSignature(0, signature.GetBufferPointer(), signature.GetBufferSize())
-    }
-}
-
 fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource> {
     let mut readback_buffer: Option<ID3D12Resource> = None;
     unsafe {
@@ -362,6 +292,7 @@ impl super::Buffer<Device> for Buffer {}
 impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
+impl super::RenderPass<Device> for RenderPass {}
 
 impl Device {
     fn create_input_layout(
@@ -518,6 +449,7 @@ impl super::Device for Device {
     type Pipeline = Pipeline;
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
+    type RenderPass = RenderPass;
 
     fn create() -> Device {
         unsafe {
@@ -629,7 +561,6 @@ impl super::Device for Device {
             let rtv = create_swap_chain_rtv(&swap_chain, &self.device);
             let data_size = (rect.width * rect.height * 4) as u64;
 
-            // initialise struct
             SwapChain {
                 width: rect.width,
                 height: rect.height,
@@ -681,7 +612,6 @@ impl super::Device for Device {
                 barriers.push(Vec::new());
             }
 
-            // initialise struct
             CmdBuf {
                 bb_index: 1,
                 command_allocator: command_allocators,
@@ -751,7 +681,6 @@ impl super::Device for Device {
         };
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        // initialise struct
         Pipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc).unwrap() },
             root_signature: root_signature,
@@ -791,7 +720,6 @@ impl super::Device for Device {
             }
         }
 
-        // initialise struct
         Shader {
             blob: shader_blob.unwrap(),
         }
@@ -863,7 +791,6 @@ impl super::Device for Device {
             }
         }
 
-        // initialise struct
         Buffer {
             resource: buf,
             vbv: vbv,
@@ -1036,12 +963,16 @@ impl super::Device for Device {
                 &handle,
             );
 
-            // initialise struct
             Texture {
                 resource: tex.unwrap(),
                 srv: handle,
                 gpu: self.shader_heap.GetGPUDescriptorHandleForHeapStart(),
             }
+        }
+    }
+
+    fn create_render_pass(&self, info: super::RenderPassInfo<Device>) -> RenderPass {
+        RenderPass {
         }
     }
 
@@ -1174,23 +1105,6 @@ impl CmdBuf {
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
-    fn reset(&mut self, swap_chain: &SwapChain) {
-        let prev_bb = self.bb_index;
-        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
-        self.bb_index = bb;
-        if swap_chain.frame_fence_value[bb] != 0 {
-            unsafe {
-                if !self.command_allocator[bb].Reset().is_ok() {
-                    panic!("hotline::gfx::d3d12: failed to reset command_allocator")
-                }
-                if !self.command_list[bb].Reset(&self.command_allocator[bb], None).is_ok() {
-                    panic!("hotline::gfx::d3d12: to reset command_list")
-                };
-            }
-        }
-        self.drop_complete_in_flight_barriers(prev_bb);
-    }
-
     fn clear_debug(&mut self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
         let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
 
@@ -1220,6 +1134,31 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
             self.cmd().SetGraphicsRootDescriptorTable(1, &tex.gpu);
         }
+    }
+
+    fn reset(&mut self, swap_chain: &SwapChain) {
+        let prev_bb = self.bb_index;
+        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
+        self.bb_index = bb;
+        if swap_chain.frame_fence_value[bb] != 0 {
+            unsafe {
+                if !self.command_allocator[bb].Reset().is_ok() {
+                    panic!("hotline::gfx::d3d12: failed to reset command_allocator")
+                }
+                if !self.command_list[bb].Reset(&self.command_allocator[bb], None).is_ok() {
+                    panic!("hotline::gfx::d3d12: to reset command_list")
+                };
+            }
+        }
+        self.drop_complete_in_flight_barriers(prev_bb);
+    }
+
+    fn begin_render_pass(&self, render_pass: &RenderPass) {
+
+    }
+
+    fn end_render_pass() {
+
     }
 
     fn set_viewport(&self, viewport: &super::Viewport) {

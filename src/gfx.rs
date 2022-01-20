@@ -273,17 +273,39 @@ pub enum TextureType {
     Texture3D,
 }
 
+#[derive(Copy, Clone)]
+pub struct ClearColour {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32
+}
+
+type ClearDepth = f32;
+
+pub struct RenderPassInfo<D: Device> {
+    /// Array of textures which have been created with render target flags
+    pub render_targets: Vec<D::Texture>,
+    /// Colour to clear render target when the pass starts, use None to preserve previous contents
+    pub rt_clear: Option<ClearColour>,
+    /// A texture which was created with depth stencil flags
+    pub depth_stencil_target: D::Texture,
+    /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
+    pub ds_clear: Option<ClearDepth>,
+    /// Choose to resolve multi-sample AA targets,
+    pub resolve: bool
+}
+
 /// An opaque Buffer type
 pub trait Buffer<D: Device>: 'static + Sized + Any {}
-
 /// An opaque Shader type
 pub trait Shader<D: Device>: 'static + Sized + Any {}
-
 /// An opaque Pipeline type
 pub trait Pipeline<D: Device>: 'static + Sized + Any {}
-
 /// An opaque Texture type
 pub trait Texture<D: Device>: 'static + Sized + Any {}
+/// An opaque RenderPass type
+pub trait RenderPass<D: Device>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
@@ -295,6 +317,7 @@ pub trait Device: 'static + Sized + Any {
     type Pipeline: Pipeline<Self>;
     type Texture: Texture<Self>;
     type ReadBackRequest: ReadBackRequest<Self>;
+    type RenderPass: RenderPass<Self>;
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
@@ -302,6 +325,7 @@ pub trait Device: 'static + Sized + Any {
     fn create_texture<T: Sized>(&self, info: TextureInfo, data: &[T]) -> Self::Texture;
     fn create_shader<T: Sized>(&self, info: ShaderInfo, data: &[T]) -> Self::Shader;
     fn create_pipeline(&self, info: PipelineInfo<Self>) -> Self::Pipeline;
+    fn create_render_pass(&self, info: RenderPassInfo<Self>) -> Self::RenderPass;
     fn execute(&self, cmd: &Self::CmdBuf);
 }
 
@@ -321,6 +345,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
+    fn begin_render_pass(&self, render_pass: &D::RenderPass);
+    fn end_render_pass();
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
@@ -444,7 +470,8 @@ pub fn align(value: u64, align: u64) -> u64 {
 
 // TODO:
 // - validation checks on buffer and texture data used in create functions
-// - Enumerate adapters
+
+// - Render Passes
 // - Topology
 // - Bindless texture array
 // - Sampler
@@ -453,6 +480,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - Depth Stencil State
 // - Blend State
 // - docs on website
+// - Enumerate adapters
 
 // - Shaders from IR
 // - pmfx Shaders
