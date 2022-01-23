@@ -189,6 +189,21 @@ fn main_index_buffer(app: os_platform::App) {
         },
     });
 
+    // render pass
+    let pass = dev.create_render_pass(gfx::RenderPassInfo {
+        render_targets: vec![],
+        rt_clear: Some( gfx::ClearColour {
+            r: 1.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0
+        }),
+        depth_stencil_target: None,
+        ds_clear: None,
+        resolve: false,
+        discard: false
+    });
+
     // tex
     let nam = String::from("../../samples/hello_world/redchecker01.png");
     let image = image::load_from_file(nam);
@@ -219,7 +234,23 @@ fn main_index_buffer(app: os_platform::App) {
 
         cmdbuffer.reset(&swap_chain);
 
-        cmdbuffer.clear_debug(&swap_chain, magenta.r, magenta.g, magenta.b, magenta.a); //
+        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
+            rt_clear: Some( gfx::ClearColour {
+                r: 0.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0
+            }),
+            depth_stencil_target: None,
+            ds_clear: None,
+            resolve: false,
+            discard: false
+        });
+
+        cmdbuffer.begin_render_pass(&mut pass);
+
+        //cmdbuffer.clear_debug(&swap_chain, magenta.r, magenta.g, magenta.b, magenta.a); //
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
@@ -233,6 +264,8 @@ fn main_index_buffer(app: os_platform::App) {
         cmdbuffer.push_constants(0, 4, 0, constants.as_slice());
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
+
+        cmdbuffer.end_render_pass();
 
         cmdbuffer.close(&swap_chain);
 
