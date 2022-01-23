@@ -293,7 +293,9 @@ pub struct RenderPassInfo<D: Device> {
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
     pub ds_clear: Option<ClearDepth>,
     /// Choose to resolve multi-sample AA targets,
-    pub resolve: bool
+    pub resolve: bool,
+    /// (must also specify None to clear). This can save having to Load conents from main memory
+    pub discard: bool
 }
 
 /// An opaque Buffer type
@@ -345,8 +347,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
-    fn begin_render_pass(&self, render_pass: &D::RenderPass);
-    fn end_render_pass();
+    fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
+    fn end_render_pass(&self);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
