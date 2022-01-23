@@ -81,7 +81,7 @@ pub struct ReadBackRequest {
 }
 
 pub struct RenderPass {
-    //rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
+    rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
     //ds: D3D12_RENDER_PASS_DEPTH_STENCIL_DESC,
 }
 
@@ -798,6 +798,7 @@ impl super::Device for Device {
         }
     }
 
+    // TODO: formats
     // TODO: validate and return result
     fn create_texture<T: Sized>(&self, info: super::TextureInfo, data: &[T]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
@@ -972,7 +973,48 @@ impl super::Device for Device {
     }
 
     fn create_render_pass(&self, info: super::RenderPassInfo<Device>) -> RenderPass {
+        let mut rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC> = Vec::new();
+        let mut begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
+        let mut clear_col = ClearColour { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+        let end_type = D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_PRESERVE;
+        if info.rt_clear.is_some() {
+            begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
+            clear_col = info.rt_clear.unwrap();
+        }
+        else if info.discard { 
+            begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
+        }
+        for target in &info.render_targets {
+            let begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
+                Type: begin_type,
+                Anonymous: D3D12_RENDER_PASS_BEGINNING_ACCESS_0 {
+                    Clear: D3D12_RENDER_PASS_BEGINNING_ACCESS_CLEAR_PARAMETERS {
+                        ClearValue: D3D12_CLEAR_VALUE {
+                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                            Anonymous: D3D12_CLEAR_VALUE_0 {
+                                Color: [clear_col.r, clear_col.g, clear_col.b, clear_col.a]
+                            }
+                        }
+                    }
+                }
+            };
+            let end = D3D12_RENDER_PASS_ENDING_ACCESS {
+                Type: end_type,
+                Anonymous: D3D12_RENDER_PASS_ENDING_ACCESS_0 {
+                    Resolve: Default::default()
+                }
+            };
+            rt.push( 
+                D3D12_RENDER_PASS_RENDER_TARGET_DESC {
+                    cpuDescriptor: target.srv,
+                    BeginningAccess: begin,
+                    EndingAccess: end
+                }
+            )
+        }
         RenderPass {
+            rt: rt,
+            //ds: ds
         }
     }
 
@@ -1153,12 +1195,18 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
-    fn begin_render_pass(&self, render_pass: &RenderPass) {
-
+    fn begin_render_pass(&self, render_pass: &mut RenderPass) {
+        unsafe {
+            let cmd4 : ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
+            cmd4.BeginRenderPass(1, render_pass.rt.as_mut_ptr(), std::ptr::null_mut(), D3D12_RENDER_PASS_FLAG_NONE);
+        }
     }
 
-    fn end_render_pass() {
-
+    fn end_render_pass(&self) {
+        unsafe {
+            let cmd4 : ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
+            cmd4.EndRenderPass();
+        }
     }
 
     fn set_viewport(&self, viewport: &super::Viewport) {
