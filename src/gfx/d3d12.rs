@@ -36,6 +36,7 @@ pub struct SwapChain {
     swap_chain: IDXGISwapChain3,
     rtv_heap: ID3D12DescriptorHeap,
     rtv_handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    backbuffer_textures: Vec<Texture>,
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
@@ -65,10 +66,12 @@ pub struct Shader {
     blob: ID3DBlob,
 }
 
+#[derive(Clone)]
 pub struct Texture {
-    resource: ID3D12Resource,
-    srv: D3D12_CPU_DESCRIPTOR_HANDLE,
-    gpu: D3D12_GPU_DESCRIPTOR_HANDLE,
+    resource: Option<ID3D12Resource>,
+    rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    gpu: Option<D3D12_GPU_DESCRIPTOR_HANDLE>, // TODO: this needs renaming
 }
 
 #[derive(Clone)]
@@ -561,6 +564,18 @@ impl super::Device for Device {
             let rtv = create_swap_chain_rtv(&swap_chain, &self.device);
             let data_size = (rect.width * rect.height * 4) as u64;
 
+            // create textures
+            let mut tex : Vec<Texture> = Vec::new();
+            for r in &rtv.1 {
+                tex.push( Texture {
+                    resource: None,
+                    rtv: Some(r.clone()),
+                    srv: None,
+                    gpu: None, 
+                })
+            }
+
+
             SwapChain {
                 width: rect.width,
                 height: rect.height,
@@ -572,6 +587,7 @@ impl super::Device for Device {
                 swap_chain: swap_chain,
                 rtv_heap: rtv.0,
                 rtv_handles: rtv.1,
+                backbuffer_textures: tex,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
                 readback_buffer: create_read_back_buffer(&self, data_size),
@@ -965,9 +981,10 @@ impl super::Device for Device {
             );
 
             Texture {
-                resource: tex.unwrap(),
-                srv: handle,
-                gpu: self.shader_heap.GetGPUDescriptorHandleForHeapStart(),
+                resource: Some(tex.unwrap()),
+                rtv: None,
+                srv: Some(handle),
+                gpu: Some(self.shader_heap.GetGPUDescriptorHandleForHeapStart()),
             }
         }
     }
@@ -1006,7 +1023,7 @@ impl super::Device for Device {
             };
             rt.push( 
                 D3D12_RENDER_PASS_RENDER_TARGET_DESC {
-                    cpuDescriptor: target.srv,
+                    cpuDescriptor: target.rtv.unwrap(),
                     BeginningAccess: begin,
                     EndingAccess: end
                 }
@@ -1096,6 +1113,10 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn get_backbuffer_index(&self) -> i32 {
         self.bb_index
+    }
+
+    fn get_backbuffer_texture(&self) -> &Texture {
+        return &self.backbuffer_textures[self.bb_index as usize]
     }
 
     fn swap(&mut self, device: &Device) {

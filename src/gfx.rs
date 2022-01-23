@@ -289,7 +289,7 @@ pub struct RenderPassInfo<D: Device> {
     /// Colour to clear render target when the pass starts, use None to preserve previous contents
     pub rt_clear: Option<ClearColour>,
     /// A texture which was created with depth stencil flags
-    pub depth_stencil_target: D::Texture,
+    pub depth_stencil_target: Option<D::Texture>,
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
     pub ds_clear: Option<ClearDepth>,
     /// Choose to resolve multi-sample AA targets,
@@ -336,6 +336,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &D, window: &platform::Window, cmd: &mut D::CmdBuf);
     fn get_backbuffer_index(&self) -> i32;
+    fn get_backbuffer_texture(&self) -> &D::Texture;
     fn swap(&mut self, device: &D);
 }
 
