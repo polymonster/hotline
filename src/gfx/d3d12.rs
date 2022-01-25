@@ -334,6 +334,7 @@ impl Device {
     ) -> Result<ID3D12RootSignature> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
         let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
+        let mut ranges: Vec<D3D12_DESCRIPTOR_RANGE> = Vec::new();
         // push constants
         if layout.push_constants.is_some() {
             let constants_set = layout.push_constants.as_ref();
@@ -379,6 +380,7 @@ impl Device {
                     RegisterSpace: table.register_space,
                     OffsetInDescriptorsFromTableStart: descriptor_offset,
                 };
+                ranges.push(range);
                 descriptor_offset = descriptor_offset + count;
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
@@ -427,18 +429,28 @@ impl Device {
         // create signature
         unsafe {
             let mut signature = None;
-            let signature = D3D12SerializeRootSignature(
+            let mut error = None;
+
+            let ss = D3D12SerializeRootSignature(
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
-                std::ptr::null_mut(),
-            )
-            .map(|()| signature.unwrap())?;
+                &mut error,
+            );
+
+            if error.is_some() {
+                let blob = error.unwrap();
+                let txt = String::from_raw_parts(
+                    blob.GetBufferPointer() as *mut _, blob.GetBufferSize(), blob.GetBufferSize());
+                println!("{}", txt);
+            }
+
+            let sig = signature.unwrap();
 
             self.device.CreateRootSignature(
                 0,
-                signature.GetBufferPointer(),
-                signature.GetBufferSize(),
+                sig.GetBufferPointer(),
+                sig.GetBufferSize(),
             )
         }
     }
@@ -1168,30 +1180,6 @@ impl CmdBuf {
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
-    fn clear_debug(&mut self, queue: &SwapChain, r: f32, g: f32, b: f32, a: f32) {
-        let bb = unsafe { queue.swap_chain.GetCurrentBackBufferIndex() as usize };
-
-        // Indicate that the back buffer will be used as a render target.
-        unsafe {
-            let barrier = transition_barrier(
-                &queue.swap_chain.GetBuffer(bb as u32).unwrap(),
-                D3D12_RESOURCE_STATE_PRESENT,
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-            );
-
-            self.command_list[bb].ResourceBarrier(1, &barrier);
-            self.in_flight_barriers[bb].push(barrier);
-
-            self.command_list[bb].ClearRenderTargetView(
-                queue.rtv_handles[bb],
-                [r, g, b, a].as_ptr(),
-                0,
-                std::ptr::null(),
-            );
-            self.cmd().OMSetRenderTargets(1, &queue.rtv_handles[bb], false, std::ptr::null());
-        }
-    }
-
     fn debug_set_descriptor_heap(&self, device: &Device, tex: &Texture) {
         unsafe {
             self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
