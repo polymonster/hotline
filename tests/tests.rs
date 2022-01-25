@@ -17,13 +17,6 @@ use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 
-pub struct ClearCol {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-}
-
 #[repr(C)]
 struct Vertex {
     position: [f32; 3],
@@ -125,26 +118,26 @@ fn swap_chain_buffer() {
     let mut swap_chain = dev.create_swap_chain(&win);
     let mut cmdbuffer = dev.create_cmd_buf();
 
-    let clears_colours: [ClearCol; 4] = [
-        ClearCol {
+    let clears_colours: [gfx::ClearColour; 4] = [
+        gfx::ClearColour {
             r: 1.0,
             g: 0.0,
             b: 1.0,
             a: 1.0,
         },
-        ClearCol {
+        gfx::ClearColour {
             r: 1.0,
             g: 1.0,
             b: 0.0,
             a: 1.0,
         },
-        ClearCol {
+        gfx::ClearColour {
             r: 0.0,
             g: 1.0,
             b: 1.0,
             a: 1.0,
         },
-        ClearCol {
+        gfx::ClearColour {
             r: 0.0,
             g: 1.0,
             b: 0.0,
@@ -161,7 +154,24 @@ fn swap_chain_buffer() {
         cmdbuffer.reset(&swap_chain);
 
         let col = &clears_colours[i];
-        cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a);
+
+        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
+            rt_clear: Some( gfx::ClearColour {
+                r: 0.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0
+            }),
+            depth_stencil_target: None,
+            ds_clear: None,
+            resolve: false,
+            discard: false
+        });
+
+        cmdbuffer.begin_render_pass(&mut pass);
+        cmdbuffer.end_render_pass();
+
         cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);
@@ -198,36 +208,6 @@ fn draw_triangle() {
 
     let mut swap_chain = dev.create_swap_chain(&win);
     let mut cmdbuffer = dev.create_cmd_buf();
-
-    let magenta = ClearCol {
-        r: 1.0,
-        g: 0.0,
-        b: 1.0,
-        a: 1.0,
-    };
-
-    let yellow = ClearCol {
-        r: 1.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-
-    let cyan = ClearCol {
-        r: 0.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-
-    let green = ClearCol {
-        r: 0.0,
-        g: 1.0,
-        b: 0.0,
-        a: 1.0,
-    };
-
-    let clears: [ClearCol; 4] = [magenta, yellow, cyan, green];
 
     let vertices = [
         Vertex {
@@ -379,9 +359,21 @@ fn draw_triangle() {
 
         cmdbuffer.reset(&swap_chain);
 
-        let col = &clears[ci];
-        cmdbuffer.clear_debug(&swap_chain, col.r, col.g, col.b, col.a); //
+        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
+            rt_clear: Some( gfx::ClearColour {
+                r: 0.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0
+            }),
+            depth_stencil_target: None,
+            ds_clear: None,
+            resolve: false,
+            discard: false
+        });
 
+        cmdbuffer.begin_render_pass(&mut pass);
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_pipeline_state(&pso);
@@ -404,6 +396,7 @@ fn draw_triangle() {
         }
         */
 
+        cmdbuffer.end_render_pass();
         cmdbuffer.close(&swap_chain);
 
         dev.execute(&cmdbuffer);

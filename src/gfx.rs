@@ -355,7 +355,6 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn set_index_buffer(&self, buffer: &D::Buffer);
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     fn set_pipeline_state(&self, pipeline: &D::Pipeline);
-    /// pushes constants directly to the root signature
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
@@ -375,7 +374,6 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 
     /// debug funcs will be removed
-    fn clear_debug(&mut self, swap_chain: &D::SwapChain, r: f32, g: f32, b: f32, a: f32);
     fn debug_set_descriptor_heap(&self, device: &D, tex: &D::Texture);
 }
 
