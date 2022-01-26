@@ -11,6 +11,7 @@ use windows::{
 
 use super::*;
 use std::ffi::CStr;
+use std::ffi::CString;
 use std::str;
 
 /// Indicates the number of backbuffers used for swap chains and command buffers.
@@ -170,6 +171,17 @@ fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D1
     D3D12_COMPARISON_FUNC_ALWAYS
 }
 
+fn print_error_blob(blob: ID3DBlob) {
+    unsafe {
+        let txt = String::from_raw_parts(
+            blob.GetBufferPointer() as *mut _, 
+            blob.GetBufferSize(), 
+            blob.GetBufferSize()
+        );
+        println!("{}", txt);
+    }
+}
+
 fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,
@@ -298,10 +310,7 @@ impl super::Texture<Device> for Texture {}
 impl super::RenderPass<Device> for RenderPass {}
 
 impl Device {
-    fn create_input_layout(
-        &self,
-        layout: &super::InputLayout,
-    ) -> (D3D12_INPUT_LAYOUT_DESC, Vec<D3D12_INPUT_ELEMENT_DESC>) {
+    fn create_d3d12_input_element_desc(layout: &super::InputLayout) -> Vec<D3D12_INPUT_ELEMENT_DESC> {
         let mut d3d12_elems: Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
@@ -317,15 +326,9 @@ impl Device {
                     }
                 },
                 InstanceDataStepRate: elem.step_rate,
-            })
+            });
         }
-        (
-            D3D12_INPUT_LAYOUT_DESC {
-                pInputElementDescs: d3d12_elems.as_mut_ptr(),
-                NumElements: d3d12_elems.len() as u32,
-            },
-            d3d12_elems,
-        )
+        d3d12_elems
     }
 
     fn create_root_signature(
@@ -387,7 +390,7 @@ impl Device {
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
                         DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
                             NumDescriptorRanges: 1,
-                            pDescriptorRanges: &mut range,
+                            pDescriptorRanges: &mut range
                         },
                     },
                     ShaderVisibility: to_d3d12_shader_visibility(table.visibility),
@@ -431,22 +434,20 @@ impl Device {
             let mut signature = None;
             let mut error = None;
 
-            let ss = D3D12SerializeRootSignature(
+            let _ = D3D12SerializeRootSignature(
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
                 &mut error,
             );
 
+            // print error
             if error.is_some() {
                 let blob = error.unwrap();
-                let txt = String::from_raw_parts(
-                    blob.GetBufferPointer() as *mut _, blob.GetBufferSize(), blob.GetBufferSize());
-                println!("{}", txt);
+                print_error_blob(blob);
             }
 
             let sig = signature.unwrap();
-
             self.device.CreateRootSignature(
                 0,
                 sig.GetBufferPointer(),
@@ -650,11 +651,17 @@ impl super::Device for Device {
     }
 
     fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
-        let (input_layout, _) = self.create_input_layout(&info.input_layout);
         let root_signature = self.create_root_signature(&info.descriptor_layout).unwrap();
 
+        // TODO: select which shaders
         let vs = info.vs.unwrap().blob;
         let ps = info.fs.unwrap().blob;
+
+        let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout);
+        let input_layout = D3D12_INPUT_LAYOUT_DESC {
+            pInputElementDescs: elems.as_mut_ptr(),
+            NumElements: elems.len() as u32,
+        };
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
@@ -703,15 +710,18 @@ impl super::Device for Device {
             NumRenderTargets: 1,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
-                ..Default::default()
+                Quality: 0
             },
             ..Default::default()
         };
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        Pipeline {
-            pso: unsafe { self.device.CreateGraphicsPipelineState(&desc).unwrap() },
-            root_signature: root_signature,
+        unsafe
+        {
+            Pipeline {
+                pso: self.device.CreateGraphicsPipelineState(&desc).unwrap(),
+                root_signature: root_signature,
+            }
         }
     }
 
