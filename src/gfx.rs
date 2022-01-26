@@ -324,7 +324,7 @@ pub trait Device: 'static + Sized + Any {
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
     fn create_buffer<T: Sized>(&self, info: BufferInfo, data: &[T]) -> Self::Buffer;
-    fn create_texture<T: Sized>(&self, info: TextureInfo, data: &[T]) -> Self::Texture;
+    fn create_texture<T: Sized>(&mut self, info: TextureInfo, data: &[T]) -> Self::Texture;
     fn create_shader<T: Sized>(&self, info: ShaderInfo, data: &[T]) -> Self::Shader;
     fn create_pipeline(&self, info: PipelineInfo<Self>) -> Self::Pipeline;
     fn create_render_pass(&self, info: RenderPassInfo<Self>) -> Self::RenderPass;
@@ -374,7 +374,7 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 
     /// debug funcs will be removed
-    fn debug_set_descriptor_heap(&self, device: &D, tex: &D::Texture);
+    fn debug_set_descriptor_heap(&self, device: &D);
 }
 
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
@@ -472,9 +472,9 @@ pub fn align(value: u64, align: u64) -> u64 {
 // TODO:
 // - validation checks on buffer and texture data used in create functions
 
-// - Render Passes
-// - Topology
 // - Bindless texture array
+// - Transition barriers
+// - Topology
 // - Sampler
 // - Constant Buffer
 // - Raster State
@@ -489,6 +489,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - pmfx Descriptor Layout
 
 // DONE:
+// x Render Passes
 // x Root Signature == DescriptorLayout
 // x Pipeline->RootSignature
 // x    Input Layout
