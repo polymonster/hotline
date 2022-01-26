@@ -80,7 +80,7 @@ fn main() {
         stride: std::mem::size_of::<Vertex>(),
     };
 
-    let vertex_buffer = dev.create_buffer(info, gfx::as_u8_slice(&vertices));
+    let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
 
     // index buffer
     let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
@@ -91,7 +91,7 @@ fn main() {
         stride: std::mem::size_of::<Vertex>(),
     };
 
-    let index_buffer = dev.create_buffer(info, gfx::as_u8_slice(&indices));
+    let index_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&indices));
 
     // shaders
     let exe_path = std::env::current_exe().ok().unwrap();
@@ -119,11 +119,11 @@ fn main() {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs = dev.create_shader(vs_info, contents.as_bytes());
-    let ps = dev.create_shader(ps_info, contents.as_bytes());
+    let vs = dev.create_shader(&vs_info, contents.as_bytes());
+    let ps = dev.create_shader(&ps_info, contents.as_bytes());
 
     // pipeline
-    let pso = dev.create_pipeline(gfx::PipelineInfo {
+    let pso = dev.create_pipeline(&gfx::PipelineInfo {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
@@ -205,7 +205,7 @@ fn main() {
             samples: 1,
         };
         textures.push(
-            dev.create_texture(tex_info, image.data.as_slice())
+            dev.create_texture(&tex_info, image.data.as_slice())
         );
     }
 
@@ -225,7 +225,7 @@ fn main() {
         cmdbuffer.reset(&swap_chain);
 
         // TODO: passes in swap chain
-        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
             rt_clear: Some( gfx::ClearColour {
                 r: 1.0,

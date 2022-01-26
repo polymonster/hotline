@@ -155,7 +155,7 @@ fn swap_chain_buffer() {
 
         let col = &clears_colours[i];
 
-        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
             rt_clear: Some( gfx::ClearColour {
                 r: 0.0,
@@ -231,7 +231,7 @@ fn draw_triangle() {
         stride: std::mem::size_of::<Vertex>(),
     };
 
-    let vertex_buffer = dev.create_buffer(info, gfx::as_u8_slice(&vertices));
+    let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
 
     let src = "
         struct PSInput
@@ -273,10 +273,10 @@ fn draw_triangle() {
         }),
     };
 
-    let vs = dev.create_shader(vs_info, src.as_bytes());
-    let ps = dev.create_shader(ps_info, src.as_bytes());
+    let vs = dev.create_shader(&vs_info, src.as_bytes());
+    let ps = dev.create_shader(&ps_info, src.as_bytes());
 
-    let pso = dev.create_pipeline(gfx::PipelineInfo {
+    let pso = dev.create_pipeline( &gfx::PipelineInfo {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
@@ -360,7 +360,7 @@ fn draw_triangle() {
 
         cmdbuffer.reset(&swap_chain);
 
-        let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
             rt_clear: Some( gfx::ClearColour {
                 r: 0.0,
