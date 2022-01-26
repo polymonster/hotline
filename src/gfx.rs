@@ -50,6 +50,10 @@ pub enum Format {
     RGB32u,
     RGB32i,
     RGB32f,
+    RGBA8n,
+    RGBA8u,
+    RGBA8i,
+    BGRA8n,
     RGBA32u,
     RGBA32i,
     RGBA32f,
@@ -257,6 +261,7 @@ pub struct PipelineInfo<D: Device> {
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
     pub tex_type: TextureType,
+    pub format: Format,
     pub width: u64,
     pub height: u64,
     pub depth: u32,
@@ -431,7 +436,7 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     }
 }
 
-/// Returns the block size (texel, compressed block of texels or single buffer element) for a given format
+/// Returns the 'block size' (texel, compressed block of texels or single buffer element) for a given format
 pub fn block_size_for_format(format: Format) -> u32 {
     match format {
         Format::Unknown => 0,
@@ -445,6 +450,10 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::RG32u => 8,
         Format::RG32i => 8,
         Format::RG32f => 8,
+        Format::RGBA8n => 4,
+        Format::RGBA8u => 4,
+        Format::RGBA8i => 4,
+        Format::BGRA8n => 4,
         Format::RGB32u => 12,
         Format::RGB32i => 12,
         Format::RGB32f => 12,
@@ -452,6 +461,21 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::RGBA32i => 16,
         Format::RGBA32f => 16,
     }
+}
+
+// returns the row pitch of an image in bytes: width * block size
+pub fn row_pitch_for_format(format: Format, width: u64) -> u64 {
+    block_size_for_format(format) as u64 * width
+}
+
+// returns the slice pitch of an image in bytes: width * height * block size
+pub fn slice_pitch_for_format(format: Format, width: u64, height: u64) -> u64 {
+    block_size_for_format(format) as u64 * width * height
+}
+
+// return the size in bytes of a 3d texture or texture array
+pub fn size_for_format_3d(format: Format, width: u64, height: u64, depth: u64) -> u64 {
+    block_size_for_format(format) as u64 * width * height * depth
 }
 
 /// Aligns value to the alignment specified by align. value must be a power of 2

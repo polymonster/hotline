@@ -195,6 +195,7 @@ fn main() {
     for file in files {
         let image = image::load_from_file(String::from(file));
         let tex_info = gfx::TextureInfo {
+            format: gfx::Format::RGBA8n,
             tex_type: gfx::TextureType::Texture2D,
             width: image.width,
             height: image.height,
@@ -227,7 +228,7 @@ fn main() {
         let mut pass = dev.create_render_pass(gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
             rt_clear: Some( gfx::ClearColour {
-                r: 0.0,
+                r: 1.0,
                 g: 1.0,
                 b: 1.0,
                 a: 1.0
