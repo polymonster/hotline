@@ -105,9 +105,14 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGB32u => DXGI_FORMAT_R32G32B32_UINT,
         super::Format::RGB32i => DXGI_FORMAT_R32G32B32_SINT,
         super::Format::RGB32f => DXGI_FORMAT_R32G32B32_FLOAT,
+        super::Format::RGBA8n => DXGI_FORMAT_R8G8B8A8_UNORM,
+        super::Format::RGBA8u => DXGI_FORMAT_R8G8B8A8_UINT,
+        super::Format::RGBA8i => DXGI_FORMAT_R8G8B8A8_SINT,
+        super::Format::BGRA8n => DXGI_FORMAT_B8G8R8A8_UNORM,
         super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
+        
     }
 }
 
@@ -836,10 +841,11 @@ impl super::Device for Device {
         }
     }
 
-    // TODO: formats
+
     // TODO: validate and return result
     fn create_texture<T: Sized>(&mut self, info: super::TextureInfo, data: &[T]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
+        let dxgi_format = to_dxgi_format(info.format);
         unsafe {
             // create texture resource
             self.device
@@ -860,7 +866,7 @@ impl super::Device for Device {
                         Height: info.height as u32,
                         DepthOrArraySize: info.depth as u16,
                         MipLevels: info.mip_levels as u16,
-                        Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                        Format: dxgi_format,
                         SampleDesc: DXGI_SAMPLE_DESC {
                             Count: info.samples as u32,
                             Quality: 0,
@@ -875,9 +881,8 @@ impl super::Device for Device {
                 .expect("hotline::gfx::d3d12: failed to create texture!");
 
             // create upload buffer
-            let block_size = 4; // TODO:
-            let upload_pitch =
-                super::align_pow2(info.width * 4, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+            let row_pitch = super::row_pitch_for_format(info.format, info.width);
+            let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
             let upload_size = info.height * upload_pitch;
 
             let mut upload: Option<ID3D12Resource> = None;
@@ -939,7 +944,7 @@ impl super::Device for Device {
                             Width: info.width as u32,
                             Height: info.height as u32,
                             Depth: 1,
-                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                            Format: dxgi_format,
                             RowPitch: upload_pitch as u32,
                         },
                     },
@@ -978,6 +983,7 @@ impl super::Device for Device {
             fence.SetEventOnCompletion(1, event);
             WaitForSingleObject(event, INFINITE);
 
+            // TODO: free list
             // create an srv for the texture
             let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
             let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
@@ -989,7 +995,7 @@ impl super::Device for Device {
             self.device.CreateShaderResourceView(
                 &tex,
                 &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                    Format: dxgi_format,
                     ViewDimension: match info.tex_type {
                         super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
                         super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
