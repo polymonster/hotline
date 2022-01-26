@@ -655,12 +655,12 @@ impl super::Device for Device {
         }
     }
 
-    fn create_pipeline(&self, info: super::PipelineInfo<Device>) -> Pipeline {
+    fn create_pipeline(&self, info: &super::PipelineInfo<Device>) -> Pipeline {
         let root_signature = self.create_root_signature(&info.descriptor_layout).unwrap();
 
         // TODO: select which shaders
-        let vs = info.vs.unwrap().blob;
-        let ps = info.fs.unwrap().blob;
+        let vs = &info.vs.as_ref().unwrap().blob;
+        let ps = &info.fs.as_ref().unwrap().blob;
 
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout);
         let input_layout = D3D12_INPUT_LAYOUT_DESC {
@@ -730,10 +730,10 @@ impl super::Device for Device {
         }
     }
 
-    fn create_shader<T: Sized>(&self, info: super::ShaderInfo, data: &[T]) -> Shader {
+    fn create_shader<T: Sized>(&self, info: &super::ShaderInfo, data: &[T]) -> Shader {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
-            let compile_info = info.compile_info.unwrap();
+            let compile_info = info.compile_info.as_ref().unwrap();
             let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
             unsafe {
                 let mut errors = None;
@@ -743,8 +743,8 @@ impl super::Device for Device {
                     PSTR(std::ptr::null_mut() as _),
                     std::ptr::null(),
                     None,
-                    PSTR((compile_info.entry_point + "\0").as_ptr() as _),
-                    PSTR((compile_info.target + "\0").as_ptr() as _),
+                    PSTR((compile_info.entry_point).as_ptr() as _),
+                    PSTR((compile_info.target).as_ptr() as _),
                     compile_flags,
                     0,
                     &mut shader_blob,
@@ -769,7 +769,7 @@ impl super::Device for Device {
     }
 
     // TODO: validate and return result
-    fn create_buffer<T: Sized>(&self, info: super::BufferInfo, data: &[T]) -> Buffer {
+    fn create_buffer<T: Sized>(&self, info: &super::BufferInfo, data: &[T]) -> Buffer {
         let mut buf: Option<ID3D12Resource> = None;
         unsafe {
             if !self
@@ -841,9 +841,8 @@ impl super::Device for Device {
         }
     }
 
-
     // TODO: validate and return result
-    fn create_texture<T: Sized>(&mut self, info: super::TextureInfo, data: &[T]) -> Texture {
+    fn create_texture<T: Sized>(&mut self, info: &super::TextureInfo, data: &[T]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         unsafe {
@@ -1021,7 +1020,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_render_pass(&self, info: super::RenderPassInfo<Device>) -> RenderPass {
+    fn create_render_pass(&self, info: &super::RenderPassInfo<Device>) -> RenderPass {
         let mut rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC> = Vec::new();
         let mut begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
         let mut clear_col = ClearColour { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };

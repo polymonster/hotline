@@ -328,11 +328,11 @@ pub trait Device: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
-    fn create_buffer<T: Sized>(&self, info: BufferInfo, data: &[T]) -> Self::Buffer;
-    fn create_texture<T: Sized>(&mut self, info: TextureInfo, data: &[T]) -> Self::Texture;
-    fn create_shader<T: Sized>(&self, info: ShaderInfo, data: &[T]) -> Self::Shader;
-    fn create_pipeline(&self, info: PipelineInfo<Self>) -> Self::Pipeline;
-    fn create_render_pass(&self, info: RenderPassInfo<Self>) -> Self::RenderPass;
+    fn create_buffer<T: Sized>(&self, info: &BufferInfo, data: &[T]) -> Self::Buffer;
+    fn create_texture<T: Sized>(&mut self, info: &TextureInfo, data: &[T]) -> Self::Texture;
+    fn create_shader<T: Sized>(&self, info: &ShaderInfo, data: &[T]) -> Self::Shader;
+    fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Self::Pipeline;
+    fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
     fn execute(&self, cmd: &Self::CmdBuf);
 }
 
@@ -496,11 +496,12 @@ pub fn align(value: u64, align: u64) -> u64 {
 // TODO:
 // - validation checks on buffer and texture data used in create functions
 
-// - Bindless texture array
 // - Transition barriers
+// - Constant Buffer
+// - Heap management
+
 // - Topology
 // - Sampler
-// - Constant Buffer
 // - Raster State
 // - Depth Stencil State
 // - Blend State
@@ -513,6 +514,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - pmfx Descriptor Layout
 
 // DONE:
+// x Bindless texture array
 // x Render Passes
 // x Root Signature == DescriptorLayout
 // x Pipeline->RootSignature
