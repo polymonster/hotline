@@ -23,7 +23,6 @@ struct Vertex {
     color: [f32; 4],
 }
 
-/*
 #[test]
 fn create_app() {
     let _app = os_platform::App::create(os::AppInfo {
@@ -187,7 +186,6 @@ fn swap_chain_buffer() {
         }
     }
 }
-*/
 
 #[test]
 fn draw_triangle() {
@@ -414,7 +412,6 @@ fn draw_triangle() {
     cmdbuffer.reset(&swap_chain);
 }
 
-/*
 #[test]
 fn align_tests() {
     // pow2
@@ -440,4 +437,3 @@ fn align_tests() {
     let val = gfx::align(5568, 21);
     assert_eq!(val % 21, 0);
 }
-*/
