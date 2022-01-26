@@ -23,6 +23,7 @@ struct Vertex {
     color: [f32; 4],
 }
 
+/*
 #[test]
 fn create_app() {
     let _app = os_platform::App::create(os::AppInfo {
@@ -186,6 +187,7 @@ fn swap_chain_buffer() {
         }
     }
 }
+*/
 
 #[test]
 fn draw_triangle() {
@@ -194,6 +196,7 @@ fn draw_triangle() {
         window: false,
         num_buffers: 0,
     });
+    
     let dev = gfx_platform::Device::create();
 
     let mut win = app.create_window(os::WindowInfo {
@@ -405,15 +408,13 @@ fn draw_triangle() {
         std::thread::sleep_ms(128);
         ci = (ci + 1) % 4;
         count = count + 1;
-
-        if count > 16 {
-            break;
-        }
+        break;
     }
 
     cmdbuffer.reset(&swap_chain);
 }
 
+/*
 #[test]
 fn align_tests() {
     // pow2
@@ -439,3 +440,4 @@ fn align_tests() {
     let val = gfx::align(5568, 21);
     assert_eq!(val % 21, 0);
 }
+*/
