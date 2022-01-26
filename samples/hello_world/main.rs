@@ -37,11 +37,11 @@ fn main() {
     });
 
     // device
-    let dev = gfx_platform::Device::create();
+    let mut dev = gfx_platform::Device::create();
 
     // window
     let mut win = app.create_window(os::WindowInfo {
-        title: String::from("index buffer!"),
+        title: String::from("bindless texture!"),
         rect: os::Rect {
             x: 0,
             y: 0,
@@ -160,7 +160,7 @@ fn main() {
                 gfx::DescriptorTableInfo {
                     visibility: gfx::ShaderVisibility::Fragment,
                     table_type: gfx::DescriptorTableType::ShaderResource,
-                    num_descriptors: Some(1),
+                    num_descriptors: Some(4),
                     shader_register: 0,
                     register_space: 0
                 }
@@ -185,21 +185,28 @@ fn main() {
         },
     });
 
-    // textues
-    let nam = String::from("../../samples/hello_world/redchecker01.png");
-    let image = image::load_from_file(nam);
-
-    let tex_info = gfx::TextureInfo {
-        tex_type: gfx::TextureType::Texture2D,
-        width: image.width,
-        height: image.height,
-        depth: 1,
-        array_levels: 1,
-        mip_levels: 1,
-        samples: 1,
-    };
-
-    let texture = dev.create_texture(tex_info, image.data.as_slice());
+    let mut textures : Vec<gfx::d3d12::Texture> = Vec::new();
+    let files = vec![
+        "../../samples/hello_world/redchecker01.png",
+        "../../samples/hello_world/blend_test_fg.png",
+        "../../samples/hello_world/bear_stomp_anim_001.png",
+        "../../samples/hello_world/bluechecker01.png",
+    ];
+    for file in files {
+        let image = image::load_from_file(String::from(file));
+        let tex_info = gfx::TextureInfo {
+            tex_type: gfx::TextureType::Texture2D,
+            width: image.width,
+            height: image.height,
+            depth: 1,
+            array_levels: 1,
+            mip_levels: 1,
+            samples: 1,
+        };
+        textures.push(
+            dev.create_texture(tex_info, image.data.as_slice())
+        );
+    }
 
     // push constants
     let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
@@ -240,7 +247,7 @@ fn main() {
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
 
-        cmdbuffer.debug_set_descriptor_heap(&dev, &texture);
+        cmdbuffer.debug_set_descriptor_heap(&dev);
 
         cmdbuffer.push_constants(0, 4, 0, constants.as_slice());
 

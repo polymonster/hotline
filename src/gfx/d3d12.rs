@@ -26,6 +26,7 @@ pub struct Device {
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
     shader_heap: ID3D12DescriptorHeap,
+    shader_heap_offset: usize
 }
 
 pub struct SwapChain {
@@ -72,7 +73,6 @@ pub struct Texture {
     resource: Option<ID3D12Resource>,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    gpu: Option<D3D12_GPU_DESCRIPTOR_HANDLE>, // TODO: this needs renaming
 }
 
 #[derive(Clone)]
@@ -518,7 +518,7 @@ impl super::Device for Device {
             let shader_heap = device
                 .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                     Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                    NumDescriptors: 1,
+                    NumDescriptors: 4,
                     Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                     NodeMask: 0,
                 })
@@ -534,6 +534,7 @@ impl super::Device for Device {
                 command_list: command_list,
                 command_queue: command_queue,
                 shader_heap: shader_heap,
+                shader_heap_offset: 0
             }
         }
     }
@@ -584,7 +585,6 @@ impl super::Device for Device {
                     resource: None,
                     rtv: Some(r.clone()),
                     srv: None,
-                    gpu: None, 
                 })
             }
 
@@ -838,7 +838,7 @@ impl super::Device for Device {
 
     // TODO: formats
     // TODO: validate and return result
-    fn create_texture<T: Sized>(&self, info: super::TextureInfo, data: &[T]) -> Texture {
+    fn create_texture<T: Sized>(&mut self, info: super::TextureInfo, data: &[T]) -> Texture {
         let mut tex: Option<ID3D12Resource> = None;
         unsafe {
             // create texture resource
@@ -954,6 +954,7 @@ impl super::Device for Device {
                 },
             };
 
+            self.command_list.Reset(&self.command_allocator, None);
             self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
 
             let barrier = transition_barrier(
@@ -978,8 +979,12 @@ impl super::Device for Device {
             WaitForSingleObject(event, INFINITE);
 
             // create an srv for the texture
-            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr;
+            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
             let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
+
+            let descriptor_size =
+                self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) as usize;
+            self.shader_heap_offset += descriptor_size;
 
             self.device.CreateShaderResourceView(
                 &tex,
@@ -1006,7 +1011,6 @@ impl super::Device for Device {
                 resource: Some(tex.unwrap()),
                 rtv: None,
                 srv: Some(handle),
-                gpu: Some(self.shader_heap.GetGPUDescriptorHandleForHeapStart()),
             }
         }
     }
@@ -1190,10 +1194,10 @@ impl CmdBuf {
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
-    fn debug_set_descriptor_heap(&self, device: &Device, tex: &Texture) {
+    fn debug_set_descriptor_heap(&self, device: &Device) {
         unsafe {
             self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
-            self.cmd().SetGraphicsRootDescriptorTable(1, &tex.gpu);
+            self.cmd().SetGraphicsRootDescriptorTable(1, &device.shader_heap.GetGPUDescriptorHandleForHeapStart());
         }
     }
 
