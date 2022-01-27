@@ -278,6 +278,7 @@ pub enum TextureType {
     Texture3D,
 }
 
+/// Values to clear colour render targets with in a `RenderPass`
 #[derive(Copy, Clone)]
 pub struct ClearColour {
     pub r: f32,
@@ -286,8 +287,13 @@ pub struct ClearColour {
     pub a: f32,
 }
 
-type ClearDepth = f32;
+/// Single float value to clear depth buffers, supply none to preserve contents
+pub struct ClearDepthStencil {
+    pub depth: Option<f32>,
+    pub stencil: Option<u8>
+}
 
+/// Information to create a render pass
 pub struct RenderPassInfo<D: Device> {
     /// Array of textures which have been created with render target flags
     pub render_targets: Vec<D::Texture>,
@@ -296,22 +302,47 @@ pub struct RenderPassInfo<D: Device> {
     /// A texture which was created with depth stencil flags
     pub depth_stencil_target: Option<D::Texture>,
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
-    pub ds_clear: Option<ClearDepth>,
+    pub ds_clear: Option<ClearDepthStencil>,
     /// Choose to resolve multi-sample AA targets,
     pub resolve: bool,
     /// (must also specify None to clear). This can save having to Load conents from main memory
     pub discard: bool,
 }
 
-/// An opaque Buffer type
+/// Transitions are required to be performed to switch resources from reading to writing or into different formats
+pub struct TransitionBarrier<D: Device> {
+    pub texture: Option<D::Texture>,
+    pub buffer: Option<D::Buffer>,
+    pub state_before: ResourceState,
+    pub state_after: ResourceState
+}
+
+/// All possible resource states, some for buffers and some for textures
+#[derive(Copy, Clone)]
+pub enum ResourceState {
+    /// Used for texture only to be written to from fragment shaders
+    RenderTarget,
+    /// Used for swap chain textures only, required before calling swap
+    Present,
+    /// Access for read/write from shaders
+    UnorderedAccess,
+    /// Readable from shaders
+    ShaderResource,
+    /// Bindable as a vertex or constant buffer for use in shaders
+    VertexConstantBuffer,
+    /// Bindable as an index buffer
+    IndexBuffer
+}
+
+/// An opaque Buffer type used for vertex, index, constant or unordered access.
 pub trait Buffer<D: Device>: 'static + Sized + Any {}
 /// An opaque Shader type
 pub trait Shader<D: Device>: 'static + Sized + Any {}
-/// An opaque Pipeline type
+/// An opaque Pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait Pipeline<D: Device>: 'static + Sized + Any {}
 /// An opaque Texture type
 pub trait Texture<D: Device>: 'static + Sized + Any {}
-/// An opaque RenderPass type
+/// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: 'static + Sized + Any {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
@@ -349,12 +380,13 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// command list for each buffer in the associated swap chain.
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
-/// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
+/// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU. 
 pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
     fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
     fn end_render_pass(&self);
+    fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
@@ -463,17 +495,18 @@ pub fn block_size_for_format(format: Format) -> u32 {
     }
 }
 
-// returns the row pitch of an image in bytes: width * block size
+/// Returns the row pitch of an image in bytes: width * block size
 pub fn row_pitch_for_format(format: Format, width: u64) -> u64 {
     block_size_for_format(format) as u64 * width
 }
 
-// returns the slice pitch of an image in bytes: width * height * block size
+/// Returns the slice pitch of an image in bytes: width * height * block size, a slice is a single 2D image
+/// or a single slice of a 3D texture or texture array
 pub fn slice_pitch_for_format(format: Format, width: u64, height: u64) -> u64 {
     block_size_for_format(format) as u64 * width * height
 }
 
-// return the size in bytes of a 3d texture or texture array
+/// Return the size in bytes of a 3 dimensional resource: width * height * depth block size
 pub fn size_for_format_3d(format: Format, width: u64, height: u64, depth: u64) -> u64 {
     block_size_for_format(format) as u64 * width * height * depth
 }
@@ -483,7 +516,7 @@ pub fn align_pow2(value: u64, align: u64) -> u64 {
     value + (align - 1) & !(align - 1)
 }
 
-/// Aligns value to the alignment specified by align. valu can be non-power of 2
+/// Aligns value to the alignment specified by align. value can be non-power of 2
 pub fn align(value: u64, align: u64) -> u64 {
     let div = value / align;
     let rem = value % align;
@@ -496,10 +529,8 @@ pub fn align(value: u64, align: u64) -> u64 {
 // TODO:
 // - validation checks on buffer and texture data used in create functions
 
-// - Transition barriers
 // - Constant Buffer
 // - Heap management
-
 // - Topology
 // - Sampler
 // - Raster State
@@ -507,13 +538,13 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - Blend State
 // - docs on website
 // - Enumerate adapters
-
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
 
 // DONE:
+// x Transition barriers
 // x Bindless texture array
 // x Render Passes
 // x Root Signature == DescriptorLayout

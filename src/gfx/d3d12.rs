@@ -69,7 +69,7 @@ pub struct Shader {
 
 #[derive(Clone)]
 pub struct Texture {
-    resource: Option<ID3D12Resource>,
+    resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
 }
@@ -174,6 +174,17 @@ fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D1
     D3D12_COMPARISON_FUNC_ALWAYS
 }
 
+fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES {
+    match state {
+        super::ResourceState::RenderTarget => D3D12_RESOURCE_STATE_RENDER_TARGET,
+        super::ResourceState::Present => D3D12_RESOURCE_STATE_PRESENT,
+        super::ResourceState::UnorderedAccess => D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+        super::ResourceState::ShaderResource => D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        super::ResourceState::VertexConstantBuffer => D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+        super::ResourceState::IndexBuffer => D3D12_RESOURCE_STATE_INDEX_BUFFER,
+    }
+}
+
 fn print_error_blob(blob: ID3DBlob) {
     unsafe {
         let txt = String::from_raw_parts(
@@ -274,7 +285,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
     device: &ID3D12Device,
-) -> (ID3D12DescriptorHeap, Vec<D3D12_CPU_DESCRIPTOR_HANDLE>) {
+) -> (ID3D12DescriptorHeap, Vec<Texture>) {
     unsafe {
         // create rtv heap
         let rtv_heap_result = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
@@ -292,7 +303,7 @@ fn create_swap_chain_rtv(
         let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
 
         // render targets for the swap chain
-        let mut handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE> = Vec::new();
+        let mut textures: Vec<Texture> = Vec::new();
 
         for i in 0..NUM_BB {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
@@ -300,9 +311,13 @@ fn create_swap_chain_rtv(
                 ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
             };
             device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
-            handles.push(h);
+            textures.push(Texture {
+                resource: render_target.clone(),
+                srv: None,
+                rtv: Some(h)
+            });
         }
-        (rtv_heap, handles)
+        (rtv_heap, textures)
     }
 }
 
@@ -575,19 +590,10 @@ impl super::Device for Device {
             }
             let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
 
+            // TODO: move heap creation
             // create rtv heap and handles
-            let rtv = create_swap_chain_rtv(&swap_chain, &self.device);
+            let (heap, textures) = create_swap_chain_rtv(&swap_chain, &self.device);
             let data_size = (rect.width * rect.height * 4) as u64;
-
-            // create textures
-            let mut tex: Vec<Texture> = Vec::new();
-            for r in &rtv.1 {
-                tex.push(Texture {
-                    resource: None,
-                    rtv: Some(r.clone()),
-                    srv: None,
-                })
-            }
 
             SwapChain {
                 width: rect.width,
@@ -598,8 +604,8 @@ impl super::Device for Device {
                 fence_last_signalled_value: 0,
                 fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
                 swap_chain: swap_chain,
-                rtv_heap: rtv.0,
-                backbuffer_textures: tex,
+                rtv_heap: heap,
+                backbuffer_textures: textures,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
                 readback_buffer: create_read_back_buffer(&self, data_size),
@@ -952,7 +958,6 @@ impl super::Device for Device {
                 },
             };
 
-            self.command_list.Reset(&self.command_allocator, None);
             self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
 
             let barrier = transition_barrier(
@@ -975,6 +980,7 @@ impl super::Device for Device {
             let event = CreateEventA(std::ptr::null_mut(), false, false, None);
             fence.SetEventOnCompletion(1, event);
             WaitForSingleObject(event, INFINITE);
+            self.command_list.Reset(&self.command_allocator, None);
 
             // TODO: free list
             // create an srv for the texture
@@ -1010,7 +1016,7 @@ impl super::Device for Device {
             );
 
             Texture {
-                resource: Some(tex.unwrap()),
+                resource: tex.unwrap(),
                 rtv: None,
                 srv: Some(handle),
             }
@@ -1103,40 +1109,32 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn update(&mut self, device: &Device, window: &platform::Window, cmd: &mut CmdBuf) {
-        let wh = window.get_size();
-        if wh.0 != self.width || wh.1 != self.height {
+        let (width, height) = window.get_size();
+        if width != self.width || height != self.height {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.reset_internal();
+                self.backbuffer_textures.clear();
 
                 self.swap_chain
                     .ResizeBuffers(
                         NUM_BB,
-                        wh.0 as u32,
-                        wh.1 as u32,
+                        width as u32,
+                        height as u32,
                         DXGI_FORMAT_UNKNOWN,
                         self.flags,
                     )
                     .expect("hotline::gfx::d3d12: warning: present failed!");
 
-                let rtv = create_swap_chain_rtv(&self.swap_chain, &device.device);
+                let (heap, textures) = create_swap_chain_rtv(&self.swap_chain, &device.device);
 
-                // create textures
-                let mut tex: Vec<Texture> = Vec::new();
-                for r in rtv.1 {
-                    tex.push(Texture {
-                        resource: None,
-                        rtv: Some(r),
-                        srv: None,
-                    })
-                }
-
-                let data_size = (self.width * self.height * 4) as u64;
-                self.backbuffer_textures = tex;
+                // TODO: format
+                let data_size = (width * height * 4) as u64;
+                self.backbuffer_textures = textures;
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
-                self.rtv_heap = rtv.0;
-                self.width = wh.0;
-                self.height = wh.1;
+                self.rtv_heap = heap;
+                self.width = width;
+                self.height = height;
                 self.bb_index = 0;
             }
         } else {
@@ -1245,6 +1243,22 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {
+        if barrier.texture.is_some() {
+            let tex = barrier.texture.as_ref().unwrap();
+            let barrier = transition_barrier(
+                &tex.resource,
+                to_d3d12_resource_state(barrier.state_before),
+                to_d3d12_resource_state(barrier.state_after),
+            );
+            unsafe {
+                let bb = self.bb_index;
+                self.command_list[bb].ResourceBarrier(1, &barrier);
+                self.in_flight_barriers[bb].push(barrier);
+            }
+        }
+    }
+
     fn set_viewport(&self, viewport: &super::Viewport) {
         let d3d12_vp = D3D12_VIEWPORT {
             TopLeftX: viewport.x,
@@ -1344,13 +1358,6 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn close(&mut self, swap_chain: &SwapChain) {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         unsafe {
-            let barrier = transition_barrier(
-                &swap_chain.swap_chain.GetBuffer(bb as u32).unwrap(),
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
-                D3D12_RESOURCE_STATE_PRESENT,
-            );
-            self.command_list[bb].ResourceBarrier(1, &barrier);
-            self.in_flight_barriers[bb].push(barrier);
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }
     }

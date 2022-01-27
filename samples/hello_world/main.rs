@@ -229,6 +229,13 @@ fn main() {
             discard: false,
         });
 
+        cmdbuffer.transition_barrier( &gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::Present,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+
         cmdbuffer.begin_render_pass(&mut pass);
 
         cmdbuffer.set_viewport(&viewport);
@@ -245,6 +252,13 @@ fn main() {
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         cmdbuffer.end_render_pass();
+
+        cmdbuffer.transition_barrier( &gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::Present,
+        });
 
         cmdbuffer.close(&swap_chain);
 

@@ -88,7 +88,9 @@ pub fn write_to_file(
 pub fn load_from_file(filename: String) -> ImageData {
     // read file
     let path = std::path::Path::new(&filename);
+    println!("{}", path.display());
     let mut f = fs::File::open(path).expect("hotline::image: File not found");
+
     let mut contents = vec![];
     f.read_to_end(&mut contents).expect("hotline::image: Failed to read file.");
 
