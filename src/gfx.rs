@@ -278,7 +278,7 @@ pub enum TextureType {
     Texture3D,
 }
 
-/// Values to clear colour render targets with in a `RenderPass`
+/// Values to clear colour render targets at the start of a in a `RenderPass`
 #[derive(Copy, Clone)]
 pub struct ClearColour {
     pub r: f32,
@@ -287,9 +287,11 @@ pub struct ClearColour {
     pub a: f32,
 }
 
-/// Single float value to clear depth buffers, supply none to preserve contents
+/// Values to clear depth stencil buffers during a `RenderPass`
 pub struct ClearDepthStencil {
+    /// Clear value for the depth buffer. Use `None` to preserve existing contents.
     pub depth: Option<f32>,
+    /// Clear value for the stencil buffer. Use `None` to preserve existing contents.
     pub stencil: Option<u8>
 }
 
