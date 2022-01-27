@@ -283,7 +283,7 @@ pub struct ClearColour {
     pub r: f32,
     pub g: f32,
     pub b: f32,
-    pub a: f32
+    pub a: f32,
 }
 
 type ClearDepth = f32;
@@ -300,7 +300,7 @@ pub struct RenderPassInfo<D: Device> {
     /// Choose to resolve multi-sample AA targets,
     pub resolve: bool,
     /// (must also specify None to clear). This can save having to Load conents from main memory
-    pub discard: bool
+    pub discard: bool,
 }
 
 /// An opaque Buffer type

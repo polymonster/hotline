@@ -26,7 +26,7 @@ pub struct Device {
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
     shader_heap: ID3D12DescriptorHeap,
-    shader_heap_offset: usize
+    shader_heap_offset: usize,
 }
 
 pub struct SwapChain {
@@ -37,7 +37,6 @@ pub struct SwapChain {
     bb_index: i32,
     swap_chain: IDXGISwapChain3,
     rtv_heap: ID3D12DescriptorHeap,
-    rtv_handles: Vec<D3D12_CPU_DESCRIPTOR_HANDLE>,
     backbuffer_textures: Vec<Texture>,
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
@@ -112,7 +111,6 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
-        
     }
 }
 
@@ -179,9 +177,9 @@ fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D1
 fn print_error_blob(blob: ID3DBlob) {
     unsafe {
         let txt = String::from_raw_parts(
-            blob.GetBufferPointer() as *mut _, 
-            blob.GetBufferSize(), 
-            blob.GetBufferSize()
+            blob.GetBufferPointer() as *mut _,
+            blob.GetBufferSize(),
+            blob.GetBufferSize(),
         );
         println!("{}", txt);
     }
@@ -315,7 +313,9 @@ impl super::Texture<Device> for Texture {}
 impl super::RenderPass<Device> for RenderPass {}
 
 impl Device {
-    fn create_d3d12_input_element_desc(layout: &super::InputLayout) -> Vec<D3D12_INPUT_ELEMENT_DESC> {
+    fn create_d3d12_input_element_desc(
+        layout: &super::InputLayout,
+    ) -> Vec<D3D12_INPUT_ELEMENT_DESC> {
         let mut d3d12_elems: Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
@@ -395,7 +395,7 @@ impl Device {
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
                         DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
                             NumDescriptorRanges: 1,
-                            pDescriptorRanges: &mut range
+                            pDescriptorRanges: &mut range,
                         },
                     },
                     ShaderVisibility: to_d3d12_shader_visibility(table.visibility),
@@ -453,11 +453,7 @@ impl Device {
             }
 
             let sig = signature.unwrap();
-            self.device.CreateRootSignature(
-                0,
-                sig.GetBufferPointer(),
-                sig.GetBufferSize(),
-            )
+            self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())
         }
     }
 }
@@ -539,7 +535,7 @@ impl super::Device for Device {
                 command_list: command_list,
                 command_queue: command_queue,
                 shader_heap: shader_heap,
-                shader_heap_offset: 0
+                shader_heap_offset: 0,
             }
         }
     }
@@ -584,15 +580,14 @@ impl super::Device for Device {
             let data_size = (rect.width * rect.height * 4) as u64;
 
             // create textures
-            let mut tex : Vec<Texture> = Vec::new();
+            let mut tex: Vec<Texture> = Vec::new();
             for r in &rtv.1 {
-                tex.push( Texture {
+                tex.push(Texture {
                     resource: None,
                     rtv: Some(r.clone()),
                     srv: None,
                 })
             }
-
 
             SwapChain {
                 width: rect.width,
@@ -604,7 +599,6 @@ impl super::Device for Device {
                 fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
                 swap_chain: swap_chain,
                 rtv_heap: rtv.0,
-                rtv_handles: rtv.1,
                 backbuffer_textures: tex,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
@@ -715,14 +709,13 @@ impl super::Device for Device {
             NumRenderTargets: 1,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
-                Quality: 0
+                Quality: 0,
             },
             ..Default::default()
         };
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
-        unsafe
-        {
+        unsafe {
             Pipeline {
                 pso: self.device.CreateGraphicsPipelineState(&desc).unwrap(),
                 root_signature: root_signature,
@@ -881,7 +874,8 @@ impl super::Device for Device {
 
             // create upload buffer
             let row_pitch = super::row_pitch_for_format(info.format, info.width);
-            let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+            let upload_pitch =
+                super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
             let upload_size = info.height * upload_pitch;
 
             let mut upload: Option<ID3D12Resource> = None;
@@ -984,11 +978,14 @@ impl super::Device for Device {
 
             // TODO: free list
             // create an srv for the texture
-            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
+            let ptr =
+                self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
             let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
 
-            let descriptor_size =
-                self.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV) as usize;
+            let descriptor_size = self
+                .device
+                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+                as usize;
             self.shader_heap_offset += descriptor_size;
 
             self.device.CreateShaderResourceView(
@@ -1023,13 +1020,17 @@ impl super::Device for Device {
     fn create_render_pass(&self, info: &super::RenderPassInfo<Device>) -> RenderPass {
         let mut rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC> = Vec::new();
         let mut begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
-        let mut clear_col = ClearColour { r: 0.0, g: 0.0, b: 0.0, a: 0.0 };
+        let mut clear_col = ClearColour {
+            r: 0.0,
+            g: 0.0,
+            b: 0.0,
+            a: 0.0,
+        };
         let end_type = D3D12_RENDER_PASS_ENDING_ACCESS_TYPE_PRESERVE;
         if info.rt_clear.is_some() {
             begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
             clear_col = info.rt_clear.unwrap();
-        }
-        else if info.discard { 
+        } else if info.discard {
             begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
         }
         for target in &info.render_targets {
@@ -1040,25 +1041,23 @@ impl super::Device for Device {
                         ClearValue: D3D12_CLEAR_VALUE {
                             Format: DXGI_FORMAT_R8G8B8A8_UNORM,
                             Anonymous: D3D12_CLEAR_VALUE_0 {
-                                Color: [clear_col.r, clear_col.g, clear_col.b, clear_col.a]
-                            }
-                        }
-                    }
-                }
+                                Color: [clear_col.r, clear_col.g, clear_col.b, clear_col.a],
+                            },
+                        },
+                    },
+                },
             };
             let end = D3D12_RENDER_PASS_ENDING_ACCESS {
                 Type: end_type,
                 Anonymous: D3D12_RENDER_PASS_ENDING_ACCESS_0 {
-                    Resolve: Default::default()
-                }
+                    Resolve: Default::default(),
+                },
             };
-            rt.push( 
-                D3D12_RENDER_PASS_RENDER_TARGET_DESC {
-                    cpuDescriptor: target.rtv.unwrap(),
-                    BeginningAccess: begin,
-                    EndingAccess: end
-                }
-            )
+            rt.push(D3D12_RENDER_PASS_RENDER_TARGET_DESC {
+                cpuDescriptor: target.rtv.unwrap(),
+                BeginningAccess: begin,
+                EndingAccess: end,
+            })
         }
         RenderPass {
             rt: rt,
@@ -1110,32 +1109,35 @@ impl super::SwapChain<Device> for SwapChain {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.reset_internal();
 
-                let res = self.swap_chain.ResizeBuffers(
-                    NUM_BB,
-                    wh.0 as u32,
-                    wh.1 as u32,
-                    DXGI_FORMAT_UNKNOWN,
-                    self.flags,
-                );
-
-                if !res.is_ok() {
-                    let err = res.err();
-                    if err.is_some() {
-                        let eee = err.unwrap();
-                        println!("swap chain resize failed {}", eee);
-                    }
-                } else {
-                    println!("resize success!");
-                }
+                self.swap_chain
+                    .ResizeBuffers(
+                        NUM_BB,
+                        wh.0 as u32,
+                        wh.1 as u32,
+                        DXGI_FORMAT_UNKNOWN,
+                        self.flags,
+                    )
+                    .expect("hotline::gfx::d3d12: warning: present failed!");
 
                 let rtv = create_swap_chain_rtv(&self.swap_chain, &device.device);
-                let data_size = (self.width * self.height * 4) as u64;
-                self.readback_buffer = create_read_back_buffer(&device, data_size);
 
+                // create textures
+                let mut tex: Vec<Texture> = Vec::new();
+                for r in rtv.1 {
+                    tex.push(Texture {
+                        resource: None,
+                        rtv: Some(r),
+                        srv: None,
+                    })
+                }
+
+                let data_size = (self.width * self.height * 4) as u64;
+                self.backbuffer_textures = tex;
+                self.readback_buffer = create_read_back_buffer(&device, data_size);
                 self.rtv_heap = rtv.0;
-                self.rtv_handles = rtv.1;
                 self.width = wh.0;
                 self.height = wh.1;
+                self.bb_index = 0;
             }
         } else {
             self.new_frame();
@@ -1147,30 +1149,28 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_backbuffer_texture(&self) -> &Texture {
-        return &self.backbuffer_textures[self.bb_index as usize]
+        return &self.backbuffer_textures[self.bb_index as usize];
     }
 
     fn swap(&mut self, device: &Device) {
         unsafe {
             // present
-            if !self.swap_chain.Present(1, 0).is_ok() {
-                println!("hotline::gfx::d3d12: warning: present failed!");
-            }
+            self.swap_chain.Present(1, 0).expect("hotline::gfx::d3d12: warning: present failed!");
 
             // signal fence
             let fv = self.fence_last_signalled_value + 1;
-            if !device.command_queue.Signal(&self.fence, fv as u64).is_ok() {
-                println!("hotline::gfx::d3d12: warning: command_queue.Signal failed!");
-            }
+            device
+                .command_queue
+                .Signal(&self.fence, fv as u64)
+                .expect("hotline::gfx::d3d12: warning: command_queue.Signal failed!");
 
             // update fence tracking
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.bb_index as usize] = fv;
 
             // swap buffers
-            let next_frame_index = self.frame_index + 1;
-            self.frame_index = next_frame_index;
-            self.bb_index = next_frame_index % NUM_BB as i32;
+            self.frame_index = self.frame_index + 1;
+            self.bb_index = (self.bb_index + 1) % NUM_BB as i32;
         }
     }
 }
@@ -1202,7 +1202,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn debug_set_descriptor_heap(&self, device: &Device) {
         unsafe {
             self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
-            self.cmd().SetGraphicsRootDescriptorTable(1, &device.shader_heap.GetGPUDescriptorHandleForHeapStart());
+            self.cmd().SetGraphicsRootDescriptorTable(
+                1,
+                &device.shader_heap.GetGPUDescriptorHandleForHeapStart(),
+            );
         }
     }
 
@@ -1225,14 +1228,19 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn begin_render_pass(&self, render_pass: &mut RenderPass) {
         unsafe {
-            let cmd4 : ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
-            cmd4.BeginRenderPass(1, render_pass.rt.as_mut_ptr(), std::ptr::null_mut(), D3D12_RENDER_PASS_FLAG_NONE);
+            let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
+            cmd4.BeginRenderPass(
+                1,
+                render_pass.rt.as_mut_ptr(),
+                std::ptr::null_mut(),
+                D3D12_RENDER_PASS_FLAG_NONE,
+            );
         }
     }
 
     fn end_render_pass(&self) {
         unsafe {
-            let cmd4 : ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
+            let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.EndRenderPass();
         }
     }
@@ -1335,7 +1343,6 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn close(&mut self, swap_chain: &SwapChain) {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
-        // Indicate that the back buffer will now be used to present.
         unsafe {
             let barrier = transition_barrier(
                 &swap_chain.swap_chain.GetBuffer(bb as u32).unwrap(),
@@ -1344,10 +1351,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
             self.command_list[bb].ResourceBarrier(1, &barrier);
             self.in_flight_barriers[bb].push(barrier);
-
-            if !self.command_list[bb].Close().is_ok() {
-                panic!("hotline: d3d12 failed to close command list.")
-            }
+            self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }
     }
 
