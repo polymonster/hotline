@@ -301,7 +301,7 @@ fn draw_triangle() {
             },
         ],
         descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![gfx::PushConatntInfo {
+            push_constants: Some(vec![gfx::PushConstantInfo {
                 visibility: gfx::ShaderVisibility::Fragment,
                 num_values: 4,
                 shader_register: 0,

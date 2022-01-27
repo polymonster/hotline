@@ -1,7 +1,7 @@
 use crate::os;
 use std::any::Any;
 
-/// Implemets this interface with Direct3d12 backend
+/// Implemets this interface with a Direct3D12 backend.
 pub mod d3d12;
 
 #[cfg(target_os = "windows")]
@@ -33,7 +33,11 @@ pub struct ScissorRect {
     pub bottom: i32,
 }
 
-/// Format for resource types (textures / buffers)
+/// Format for resource types (textures / buffers). 
+/// n = normalised unsigned integer,
+/// u = unsigned integer,
+/// i = signed integer,
+/// f = float
 #[derive(Copy, Clone)]
 pub enum Format {
     Unknown,
@@ -121,7 +125,7 @@ bitmask! {
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
 pub struct DescriptorLayout {
     pub tables: Option<Vec<DescriptorTableInfo>>,
-    pub push_constants: Option<Vec<PushConatntInfo>>,
+    pub push_constants: Option<Vec<PushConstantInfo>>,
     pub static_samplers: Option<Vec<SamplerInfo>>,
 }
 
@@ -160,7 +164,7 @@ pub enum ShaderVisibility {
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
-pub struct PushConatntInfo {
+pub struct PushConstantInfo {
     /// The shader stage the constants will be accessible to
     pub visibility: ShaderVisibility,
     /// Register index to bind to (supplied in shader)
