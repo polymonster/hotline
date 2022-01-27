@@ -155,18 +155,18 @@ fn swap_chain_buffer() {
 
         let col = &clears_colours[i];
 
-        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some( gfx::ClearColour {
+            rt_clear: Some(gfx::ClearColour {
                 r: 0.0,
                 g: 1.0,
                 b: 1.0,
-                a: 1.0
+                a: 1.0,
             }),
             depth_stencil_target: None,
             ds_clear: None,
             resolve: false,
-            discard: false
+            discard: false,
         });
 
         cmdbuffer.begin_render_pass(&mut pass);
@@ -194,7 +194,7 @@ fn draw_triangle() {
         window: false,
         num_buffers: 0,
     });
-    
+
     let dev = gfx_platform::Device::create();
 
     let mut win = app.create_window(os::WindowInfo {
@@ -276,7 +276,7 @@ fn draw_triangle() {
     let vs = dev.create_shader(&vs_info, src.as_bytes());
     let ps = dev.create_shader(&ps_info, src.as_bytes());
 
-    let pso = dev.create_pipeline( &gfx::PipelineInfo {
+    let pso = dev.create_pipeline(&gfx::PipelineInfo {
         vs: Some(vs),
         fs: Some(ps),
         cs: None,
@@ -289,7 +289,7 @@ fn draw_triangle() {
                 aligned_byte_offset: 0,
                 input_slot_class: gfx::InputSlotClass::PerVertex,
                 step_rate: 0,
-            }, 
+            },
             gfx::InputElementInfo {
                 semantic: String::from("COLOR\0"),
                 index: 0,
@@ -298,43 +298,37 @@ fn draw_triangle() {
                 aligned_byte_offset: 12,
                 input_slot_class: gfx::InputSlotClass::PerVertex,
                 step_rate: 0,
-            }
+            },
         ],
         descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![
-                gfx::PushConatntInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    num_values: 4,
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ]),
-            tables: Some(vec![
-                gfx::DescriptorTableInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    table_type: gfx::DescriptorTableType::ShaderResource,
-                    num_descriptors: Some(1),
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ]),
-            static_samplers: Some(vec![
-                gfx::SamplerInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    filter: gfx::SamplerFilter::Linear,
-                    address_u: gfx::SamplerAddressMode::Wrap,
-                    address_v: gfx::SamplerAddressMode::Wrap,
-                    address_w: gfx::SamplerAddressMode::Wrap,
-                    comparison: None,
-                    border_colour: None,
-                    mip_lod_bias: 0.0,
-                    max_aniso: 0,
-                    min_lod: -1.0,
-                    max_lod: -1.0,
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ])
+            push_constants: Some(vec![gfx::PushConatntInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                num_values: 4,
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            tables: Some(vec![gfx::DescriptorTableInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                table_type: gfx::DescriptorTableType::ShaderResource,
+                num_descriptors: Some(1),
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            static_samplers: Some(vec![gfx::SamplerInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                filter: gfx::SamplerFilter::Linear,
+                address_u: gfx::SamplerAddressMode::Wrap,
+                address_v: gfx::SamplerAddressMode::Wrap,
+                address_w: gfx::SamplerAddressMode::Wrap,
+                comparison: None,
+                border_colour: None,
+                mip_lod_bias: 0.0,
+                max_aniso: 0,
+                min_lod: -1.0,
+                max_lod: -1.0,
+                shader_register: 0,
+                register_space: 0,
+            }]),
         },
     });
 
@@ -360,18 +354,18 @@ fn draw_triangle() {
 
         cmdbuffer.reset(&swap_chain);
 
-        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some( gfx::ClearColour {
+            rt_clear: Some(gfx::ClearColour {
                 r: 0.0,
                 g: 1.0,
                 b: 1.0,
-                a: 1.0
+                a: 1.0,
             }),
             depth_stencil_target: None,
             ds_clear: None,
             resolve: false,
-            discard: false
+            discard: false,
         });
 
         cmdbuffer.begin_render_pass(&mut pass);

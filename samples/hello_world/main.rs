@@ -136,7 +136,7 @@ fn main() {
                 aligned_byte_offset: 0,
                 input_slot_class: gfx::InputSlotClass::PerVertex,
                 step_rate: 0,
-            }, 
+            },
             gfx::InputElementInfo {
                 semantic: String::from("COLOR\0"),
                 index: 0,
@@ -145,47 +145,41 @@ fn main() {
                 aligned_byte_offset: 12,
                 input_slot_class: gfx::InputSlotClass::PerVertex,
                 step_rate: 0,
-            }
+            },
         ],
         descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![
-                gfx::PushConatntInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    num_values: 4,
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ]),
-            tables: Some(vec![
-                gfx::DescriptorTableInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    table_type: gfx::DescriptorTableType::ShaderResource,
-                    num_descriptors: Some(4),
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ]),
-            static_samplers: Some(vec![
-                gfx::SamplerInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    filter: gfx::SamplerFilter::Linear,
-                    address_u: gfx::SamplerAddressMode::Wrap,
-                    address_v: gfx::SamplerAddressMode::Wrap,
-                    address_w: gfx::SamplerAddressMode::Wrap,
-                    comparison: None,
-                    border_colour: None,
-                    mip_lod_bias: 0.0,
-                    max_aniso: 0,
-                    min_lod: -1.0,
-                    max_lod: -1.0,
-                    shader_register: 0,
-                    register_space: 0
-                }
-            ])
+            push_constants: Some(vec![gfx::PushConatntInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                num_values: 4,
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            tables: Some(vec![gfx::DescriptorTableInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                table_type: gfx::DescriptorTableType::ShaderResource,
+                num_descriptors: Some(4),
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            static_samplers: Some(vec![gfx::SamplerInfo {
+                visibility: gfx::ShaderVisibility::Fragment,
+                filter: gfx::SamplerFilter::Linear,
+                address_u: gfx::SamplerAddressMode::Wrap,
+                address_v: gfx::SamplerAddressMode::Wrap,
+                address_w: gfx::SamplerAddressMode::Wrap,
+                comparison: None,
+                border_colour: None,
+                mip_lod_bias: 0.0,
+                max_aniso: 0,
+                min_lod: -1.0,
+                max_lod: -1.0,
+                shader_register: 0,
+                register_space: 0,
+            }]),
         },
     });
 
-    let mut textures : Vec<gfx::d3d12::Texture> = Vec::new();
+    let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
         "../../samples/hello_world/redchecker01.png",
         "../../samples/hello_world/blend_test_fg.png",
@@ -204,9 +198,7 @@ fn main() {
             mip_levels: 1,
             samples: 1,
         };
-        textures.push(
-            dev.create_texture(&tex_info, image.data.as_slice())
-        );
+        textures.push(dev.create_texture(&tex_info, image.data.as_slice()));
     }
 
     // push constants
@@ -216,27 +208,25 @@ fn main() {
     while app.run() {
         win.update();
         swap_chain.update(&dev, &win, &mut cmdbuffer);
+        cmdbuffer.reset(&swap_chain);
 
         let vp_rect = win.get_viewport_rect();
-
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
 
-        cmdbuffer.reset(&swap_chain);
-
         // TODO: passes in swap chain
-        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some( gfx::ClearColour {
+            rt_clear: Some(gfx::ClearColour {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,
-                a: 1.0
+                a: 1.0,
             }),
             depth_stencil_target: None,
             ds_clear: None,
             resolve: false,
-            discard: false
+            discard: false,
         });
 
         cmdbuffer.begin_render_pass(&mut pass);
