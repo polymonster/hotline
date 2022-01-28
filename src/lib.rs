@@ -9,4 +9,4 @@ pub mod image;
 
 /// Use bitmask for flags
 #[macro_use]
-extern crate bitmask;
+extern crate bitflags;

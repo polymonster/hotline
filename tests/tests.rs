@@ -260,7 +260,7 @@ fn draw_triangle() {
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("VSMain\0"),
             target: String::from("vs_5_0\0"),
-            flags: gfx::ShaderCompileFlags::none(),
+            flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
 
@@ -269,7 +269,7 @@ fn draw_triangle() {
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain\0"),
             target: String::from("ps_5_0\0"),
-            flags: gfx::ShaderCompileFlags::none(),
+            flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
 
