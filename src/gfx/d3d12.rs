@@ -116,10 +116,10 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
 
 fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     let mut d3d12_flags = 0;
-    if flags.contains(super::CompileFlags::SkipOptimization) {
+    if flags.contains(super::ShaderCompileFlags::SKIP_OPTIMIZATION) {
         d3d12_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
     }
-    if flags.contains(super::CompileFlags::Debug) {
+    if flags.contains(super::ShaderCompileFlags::DEBUG) {
         d3d12_flags |= D3DCOMPILE_DEBUG;
     }
     d3d12_flags

@@ -104,7 +104,7 @@ fn main() {
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("VSMain\0"),
             target: String::from("vs_5_1\0"),
-            flags: gfx::ShaderCompileFlags::none(),
+            flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
 
@@ -113,7 +113,7 @@ fn main() {
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain\0"),
             target: String::from("ps_5_1\0"),
-            flags: gfx::ShaderCompileFlags::none(),
+            flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
 
@@ -181,13 +181,13 @@ fn main() {
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
-        "../../samples/hello_world/redchecker01.png",
-        "../../samples/hello_world/blend_test_fg.png",
-        "../../samples/hello_world/bear_stomp_anim_001.png",
-        "../../samples/hello_world/bluechecker01.png",
+        asset_path.join("..\\..\\samples\\hello_world\\redchecker01.png"),
+        asset_path.join("..\\..\\samples\\hello_world\\blend_test_fg.png"),
+        asset_path.join("..\\..\\samples\\hello_world\\bear_stomp_anim_001.png"),
+        asset_path.join("..\\..\\samples\\hello_world\\bluechecker01.png"),
     ];
     for file in files {
-        let image = image::load_from_file(String::from(file));
+        let image = image::load_from_file(String::from(file.to_str().unwrap()));
         let tex_info = gfx::TextureInfo {
             format: gfx::Format::RGBA8n,
             tex_type: gfx::TextureType::Texture2D,

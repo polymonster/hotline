@@ -109,16 +109,15 @@ pub enum ShaderType {
     Compute,
 }
 
-// TODO: bitflags! bitmask is the wrong thing
-bitmask! {
-    /// Flags for shaders compiled at run time.
-    pub mask ShaderCompileFlags: u8 where flags CompileFlags {
-        /// No flags.
-        None = 0b00000000,
-        /// Generate debuggable shader.
-        Debug = 0b00000001,
-        /// Do not perform optimization to aid debugging.
-        SkipOptimization = 0b00000010
+bitflags! {
+    /// Shader compilation flags
+    pub struct ShaderCompileFlags: u32 {
+        /// No flags, default compilation
+        const NONE = 0b00000000;
+        /// Generates shader with debug info
+        const DEBUG = 0b00000001;
+        /// Skips optimization for easier debuggability or deterministic results
+        const SKIP_OPTIMIZATION = 0b00000010;
     }
 }
 
