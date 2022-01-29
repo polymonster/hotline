@@ -78,6 +78,7 @@ fn main() {
         usage: gfx::BufferUsage::Vertex,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
+        num_elements: 4
     };
 
     let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
@@ -89,6 +90,8 @@ fn main() {
         usage: gfx::BufferUsage::Index,
         format: gfx::Format::R16u,
         stride: std::mem::size_of::<Vertex>(),
+        num_elements: 6
+
     };
 
     let index_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&indices));
@@ -154,13 +157,22 @@ fn main() {
                 shader_register: 0,
                 register_space: 0,
             }]),
-            tables: Some(vec![gfx::DescriptorTableInfo {
-                visibility: gfx::ShaderVisibility::Fragment,
-                table_type: gfx::DescriptorTableType::ShaderResource,
-                num_descriptors: Some(4),
-                shader_register: 0,
-                register_space: 0,
-            }]),
+            tables: Some(vec![
+                gfx::DescriptorTableInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    table_type: gfx::DescriptorTableType::ShaderResource,
+                    num_descriptors: Some(5),
+                    shader_register: 0,
+                    register_space: 0,
+                },
+                gfx::DescriptorTableInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    table_type: gfx::DescriptorTableType::ConstantBuffer,
+                    num_descriptors: Some(5),
+                    shader_register: 1,
+                    register_space: 0,
+                }
+            ]),
             static_samplers: Some(vec![gfx::SamplerInfo {
                 visibility: gfx::ShaderVisibility::Fragment,
                 filter: gfx::SamplerFilter::Linear,
@@ -203,6 +215,22 @@ fn main() {
 
     // push constants
     let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
+
+    // constant buffer
+    let mut cbuffer : [f32; 64] = [0.0; 64];
+    cbuffer[0] = 1.0;
+    cbuffer[1] = 0.0;
+    cbuffer[2] = 1.0;
+    cbuffer[3] = 1.0;
+
+    let info = gfx::BufferInfo {
+        usage: gfx::BufferUsage::ConstantBuffer,
+        format: gfx::Format::Unknown,
+        stride: cbuffer.len() * 4,
+        num_elements: 1
+    };
+
+    let constant_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&cbuffer));
 
     let mut ci = 0;
     while app.run() {

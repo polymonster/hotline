@@ -72,6 +72,8 @@ pub struct BufferInfo {
     pub format: Format,
     /// The stride of a vertex or structure in bytes.
     pub stride: usize,
+    /// The number of array elements (buffer size bytes / stride)
+    pub num_elements: usize
 }
 
 /// Describes how a buffer will be used on the GPU.
@@ -79,6 +81,7 @@ pub struct BufferInfo {
 pub enum BufferUsage {
     Vertex,
     Index,
+    ConstantBuffer
 }
 
 /// Information to create a shader through `Device::create_shader`.
@@ -364,7 +367,7 @@ pub trait Device: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
-    fn create_buffer<T: Sized>(&self, info: &BufferInfo, data: &[T]) -> Self::Buffer;
+    fn create_buffer<T: Sized>(&mut self, info: &BufferInfo, data: &[T]) -> Self::Buffer;
     fn create_texture<T: Sized>(&mut self, info: &TextureInfo, data: &[T]) -> Self::Texture;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, data: &[T]) -> Self::Shader;
     fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Self::Pipeline;
