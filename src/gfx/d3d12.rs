@@ -61,6 +61,7 @@ pub struct Buffer {
     resource: ID3D12Resource,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
+    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
 }
 
 pub struct Shader {
@@ -185,7 +186,7 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
     }
 }
 
-fn print_error_blob(blob: ID3DBlob) {
+fn print_error_blob(blob: &ID3DBlob) {
     unsafe {
         let txt = String::from_raw_parts(
             blob.GetBufferPointer() as *mut _,
@@ -385,7 +386,7 @@ impl Device {
                 } else {
                     u32::MAX
                 };
-                let mut range = D3D12_DESCRIPTOR_RANGE {
+                let range = D3D12_DESCRIPTOR_RANGE {
                     RangeType: match table.table_type {
                         super::DescriptorTableType::ShaderResource => {
                             D3D12_DESCRIPTOR_RANGE_TYPE_SRV
@@ -401,21 +402,21 @@ impl Device {
                     NumDescriptors: count,
                     BaseShaderRegister: table.shader_register,
                     RegisterSpace: table.register_space,
-                    OffsetInDescriptorsFromTableStart: descriptor_offset,
+                    OffsetInDescriptorsFromTableStart: 0,
                 };
                 ranges.push(range);
                 descriptor_offset = descriptor_offset + count;
-                root_params.push(D3D12_ROOT_PARAMETER {
-                    ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-                    Anonymous: D3D12_ROOT_PARAMETER_0 {
-                        DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                            NumDescriptorRanges: 1,
-                            pDescriptorRanges: &mut range,
-                        },
-                    },
-                    ShaderVisibility: to_d3d12_shader_visibility(table.visibility),
-                })
             }
+            root_params.push(D3D12_ROOT_PARAMETER {
+                ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+                Anonymous: D3D12_ROOT_PARAMETER_0 {
+                    DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                        NumDescriptorRanges: ranges.len() as u32,
+                        pDescriptorRanges: ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
+                    },
+                },
+                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL //to_d3d12_shader_visibility(table.visibility),
+            })
         }
         // immutable samplers
         if layout.static_samplers.is_some() {
@@ -464,11 +465,163 @@ impl Device {
             // print error
             if error.is_some() {
                 let blob = error.unwrap();
-                print_error_blob(blob);
+                print_error_blob(&blob);
             }
 
             let sig = signature.unwrap();
             self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())
+        }
+    }
+
+    fn create_cbuffer<T: Sized>(&mut self, info: &super::BufferInfo, data: &[T]) -> Buffer {
+        let mut buf: Option<ID3D12Resource> = None;
+        let dxgi_format = to_dxgi_format(info.format);
+        unsafe {
+            self.device
+            .CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Width: data.len() as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    ..Default::default()
+                },
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                std::ptr::null(),
+                &mut buf,
+            ).expect("hotline::gfx::d3d12: failed to create buffer!"); // TODO: the error should be passed to the user
+
+            let mut upload: Option<ID3D12Resource> = None;
+            let upload_size = data.len();
+            self.device
+                .CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_UPLOAD,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 0,
+                        Width: upload_size as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    std::ptr::null(),
+                    &mut upload,
+                )
+                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
+
+            // copy data to upload buffer
+            let range = D3D12_RANGE {
+                Begin: 0,
+                End: upload_size as usize,
+            };
+            let mut map_data = std::ptr::null_mut();
+            let res = upload.clone().unwrap();
+            res.Map(0, &range, &mut map_data);
+            if map_data != std::ptr::null_mut() {
+                let src = data.as_ptr() as *mut u8;
+                let dst = map_data as *mut u8;
+                std::ptr::copy_nonoverlapping(src, map_data as *mut u8, upload_size as usize);
+            }
+            res.Unmap(0, std::ptr::null());
+
+            // copy resource
+            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+
+            self.command_list.CopyResource(&buf, upload);
+
+            let barrier = transition_barrier(
+                &buf.clone().unwrap(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            );
+
+            // transition to shader resource
+            self.command_list.ResourceBarrier(1, &barrier);
+            self.command_list.Close();
+
+            let cmd = ID3D12CommandList::from(&self.command_list);
+            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+            self.command_queue.Signal(&fence, 1);
+
+            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+            fence.SetEventOnCompletion(1, event);
+            WaitForSingleObject(event, INFINITE);
+            
+            self.command_list.Reset(&self.command_allocator, None);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+            std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+
+            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
+            let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
+
+            let descriptor_size = self
+                .device
+                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+                as usize;
+            self.shader_heap_offset += descriptor_size;
+
+            let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
+            let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
+            let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
+
+            self.device.CreateConstantBufferView(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                    BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                    SizeInBytes: data.len() as u32
+                },
+                &handle
+            );
+
+            /*
+            self.device.CreateShaderResourceView(
+                &buf,
+                &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                    Format: dxgi_format,
+                    ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                    Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                        Buffer: D3D12_BUFFER_SRV {
+                            FirstElement: 0,
+                            StructureByteStride: info.stride as u32,
+                            NumElements: info.num_elements as u32,
+                            Flags: D3D12_BUFFER_SRV_FLAG_NONE
+                        },
+                    },
+                    Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                },
+                &handle,
+            );
+            */
+
+            srv = Some(handle);
+
+            Buffer {
+                resource: buf.unwrap(),
+                vbv: vbv,
+                ibv: ibv,
+                srv: srv
+            }
         }
     }
 }
@@ -534,7 +687,7 @@ impl super::Device for Device {
             let shader_heap = device
                 .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                     Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                    NumDescriptors: 4,
+                    NumDescriptors: 100,
                     Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
                     NodeMask: 0,
                 })
@@ -768,43 +921,47 @@ impl super::Device for Device {
     }
 
     // TODO: validate and return result
-    fn create_buffer<T: Sized>(&self, info: &super::BufferInfo, data: &[T]) -> Buffer {
+    fn create_buffer<T: Sized>(&mut self, info: &super::BufferInfo, data: &[T]) -> Buffer {
+        match info.usage {
+            super::BufferUsage::ConstantBuffer => {
+                return self.create_cbuffer(info, data);
+            }
+            _ => {
+
+            }
+        }
+
         let mut buf: Option<ID3D12Resource> = None;
+        let dxgi_format = to_dxgi_format(info.format);
         unsafe {
-            if !self
-                .device
-                .CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_UPLOAD,
-                        ..Default::default()
+            self.device
+            .CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Width: data.len() as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
                     },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Width: data.len() as u64,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
-                        },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        ..Default::default()
-                    },
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    std::ptr::null(),
-                    &mut buf,
-                )
-                .is_ok()
-            {
-                // TODO: the error should be passed to the user
-                panic!("hotline::gfx::d3d12: failed to create buffer!");
-            };
-        };
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    ..Default::default()
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                std::ptr::null(),
+                &mut buf,
+            ).expect("hotline::gfx::d3d12: failed to create buffer!"); // TODO: the error should be passed to the user
+        }
         let buf = buf.unwrap();
 
-        // Copy the triangle data to the vertex buffer.
+        // copy data into buffer
         unsafe {
             let mut map_data = std::ptr::null_mut();
             let src = data.as_ptr() as *const u8;
@@ -815,6 +972,7 @@ impl super::Device for Device {
 
         let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
         let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
+        let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
 
         match info.usage {
             super::BufferUsage::Vertex => {
@@ -828,8 +986,40 @@ impl super::Device for Device {
                 ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                     BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
                     SizeInBytes: data.len() as u32,
-                    Format: to_dxgi_format(info.format),
+                    Format: dxgi_format,
                 })
+            }
+            super::BufferUsage::ConstantBuffer => {
+                unsafe {
+                    let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
+                    let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
+    
+                    let descriptor_size = self
+                        .device
+                        .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
+                        as usize;
+                    self.shader_heap_offset += descriptor_size;
+    
+                    self.device.CreateShaderResourceView(
+                        &buf,
+                        &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: dxgi_format,
+                            ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_SRV {
+                                    FirstElement: 0,
+                                    StructureByteStride: info.stride as u32,
+                                    NumElements: info.num_elements as u32,
+                                    Flags: D3D12_BUFFER_SRV_FLAG_NONE
+                                },
+                            },
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                        },
+                        &handle,
+                    );
+
+                    srv = Some(handle);
+                }
             }
         }
 
@@ -837,6 +1027,7 @@ impl super::Device for Device {
             resource: buf,
             vbv: vbv,
             ibv: ibv,
+            srv: srv
         }
     }
 
@@ -880,8 +1071,7 @@ impl super::Device for Device {
 
             // create upload buffer
             let row_pitch = super::row_pitch_for_format(info.format, info.width);
-            let upload_pitch =
-                super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+            let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
             let upload_size = info.height * upload_pitch;
 
             let mut upload: Option<ID3D12Resource> = None;

@@ -19,8 +19,15 @@ PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
     return result;
 }
 
-Texture2D texture0[4] : register(t0);
+Texture2D texture0[5] : register(t0);
 SamplerState sampler0 : register(s0);
+
+struct ccc
+{
+    float4 rgba;
+};
+
+ConstantBuffer<ccc> cbs[5] : register(b1);
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
@@ -48,6 +55,8 @@ float4 PSMain(PSInput input) : SV_TARGET
     {
         final = r3;
     }
+
+    final *= cbs[4].rgba;
 
     return final;
 }
