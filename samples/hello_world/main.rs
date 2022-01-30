@@ -243,9 +243,9 @@ fn main() {
         let scissor = gfx::ScissorRect::from(vp_rect);
 
         // TODO: passes in swap chain
-        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some(gfx::ClearColour {
+            rt_clear: Some( gfx::ClearColour {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,

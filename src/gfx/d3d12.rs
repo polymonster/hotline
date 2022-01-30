@@ -472,158 +472,6 @@ impl Device {
             self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())
         }
     }
-
-    fn create_cbuffer<T: Sized>(&mut self, info: &super::BufferInfo, data: &[T]) -> Buffer {
-        let mut buf: Option<ID3D12Resource> = None;
-        let dxgi_format = to_dxgi_format(info.format);
-        unsafe {
-            self.device
-            .CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_DEFAULT,
-                    ..Default::default()
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Width: data.len() as u64,
-                    Height: 1,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
-                    },
-                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                    ..Default::default()
-                },
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                std::ptr::null(),
-                &mut buf,
-            ).expect("hotline::gfx::d3d12: failed to create buffer!"); // TODO: the error should be passed to the user
-
-            let mut upload: Option<ID3D12Resource> = None;
-            let upload_size = data.len();
-            self.device
-                .CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_UPLOAD,
-                        ..Default::default()
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 0,
-                        Width: upload_size as u64,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
-                        },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    std::ptr::null(),
-                    &mut upload,
-                )
-                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
-
-            // copy data to upload buffer
-            let range = D3D12_RANGE {
-                Begin: 0,
-                End: upload_size as usize,
-            };
-            let mut map_data = std::ptr::null_mut();
-            let res = upload.clone().unwrap();
-            res.Map(0, &range, &mut map_data);
-            if map_data != std::ptr::null_mut() {
-                let src = data.as_ptr() as *mut u8;
-                let dst = map_data as *mut u8;
-                std::ptr::copy_nonoverlapping(src, map_data as *mut u8, upload_size as usize);
-            }
-            res.Unmap(0, std::ptr::null());
-
-            // copy resource
-            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
-
-            self.command_list.CopyResource(&buf, upload);
-
-            let barrier = transition_barrier(
-                &buf.clone().unwrap(),
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            );
-
-            // transition to shader resource
-            self.command_list.ResourceBarrier(1, &barrier);
-            self.command_list.Close();
-
-            let cmd = ID3D12CommandList::from(&self.command_list);
-            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
-            self.command_queue.Signal(&fence, 1);
-
-            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
-            fence.SetEventOnCompletion(1, event);
-            WaitForSingleObject(event, INFINITE);
-            
-            self.command_list.Reset(&self.command_allocator, None);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-            std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-
-            let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
-            let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
-
-            let descriptor_size = self
-                .device
-                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
-                as usize;
-            self.shader_heap_offset += descriptor_size;
-
-            let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
-            let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
-            let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-
-            self.device.CreateConstantBufferView(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                    BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
-                    SizeInBytes: data.len() as u32
-                },
-                &handle
-            );
-
-            /*
-            self.device.CreateShaderResourceView(
-                &buf,
-                &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                    Format: dxgi_format,
-                    ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
-                    Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                        Buffer: D3D12_BUFFER_SRV {
-                            FirstElement: 0,
-                            StructureByteStride: info.stride as u32,
-                            NumElements: info.num_elements as u32,
-                            Flags: D3D12_BUFFER_SRV_FLAG_NONE
-                        },
-                    },
-                    Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                },
-                &handle,
-            );
-            */
-
-            srv = Some(handle);
-
-            Buffer {
-                resource: buf.unwrap(),
-                vbv: vbv,
-                ibv: ibv,
-                srv: srv
-            }
-        }
-    }
 }
 
 impl super::Device for Device {
@@ -922,22 +770,13 @@ impl super::Device for Device {
 
     // TODO: validate and return result
     fn create_buffer<T: Sized>(&mut self, info: &super::BufferInfo, data: &[T]) -> Buffer {
-        match info.usage {
-            super::BufferUsage::ConstantBuffer => {
-                return self.create_cbuffer(info, data);
-            }
-            _ => {
-
-            }
-        }
-
         let mut buf: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         unsafe {
             self.device
             .CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
                     ..Default::default()
                 },
                 D3D12_HEAP_FLAG_NONE,
@@ -954,80 +793,130 @@ impl super::Device for Device {
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                     ..Default::default()
                 },
-                D3D12_RESOURCE_STATE_GENERIC_READ,
+                D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
                 &mut buf,
             ).expect("hotline::gfx::d3d12: failed to create buffer!"); // TODO: the error should be passed to the user
-        }
-        let buf = buf.unwrap();
 
-        // copy data into buffer
-        unsafe {
+            let mut upload: Option<ID3D12Resource> = None;
+            let upload_size = data.len();
+            self.device
+                .CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_UPLOAD,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 0,
+                        Width: upload_size as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    std::ptr::null(),
+                    &mut upload,
+                )
+                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
+
+            // copy data to upload buffer
+            let range = D3D12_RANGE {
+                Begin: 0,
+                End: upload_size as usize,
+            };
             let mut map_data = std::ptr::null_mut();
-            let src = data.as_ptr() as *const u8;
-            buf.Map(0, std::ptr::null(), &mut map_data);
-            std::ptr::copy_nonoverlapping(src, map_data as *mut u8, data.len());
-            buf.Unmap(0, std::ptr::null());
-        }
-
-        let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
-        let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
-        let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-
-        match info.usage {
-            super::BufferUsage::Vertex => {
-                vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
-                    BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
-                    StrideInBytes: info.stride as u32,
-                    SizeInBytes: data.len() as u32,
-                });
+            let res = upload.clone().unwrap();
+            res.Map(0, &range, &mut map_data);
+            if map_data != std::ptr::null_mut() {
+                let src = data.as_ptr() as *mut u8;
+                let dst = map_data as *mut u8;
+                std::ptr::copy_nonoverlapping(src, map_data as *mut u8, upload_size as usize);
             }
-            super::BufferUsage::Index => {
-                ibv = Some(D3D12_INDEX_BUFFER_VIEW {
-                    BufferLocation: unsafe { buf.GetGPUVirtualAddress() },
-                    SizeInBytes: data.len() as u32,
-                    Format: dxgi_format,
-                })
-            }
-            super::BufferUsage::ConstantBuffer => {
-                unsafe {
+            res.Unmap(0, std::ptr::null());
+
+            // copy resource
+            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+
+            self.command_list.CopyResource(&buf, upload);
+
+            let barrier = transition_barrier(
+                &buf.clone().unwrap(),
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+            );
+
+            // transition to shader resource
+            self.command_list.ResourceBarrier(1, &barrier);
+            self.command_list.Close();
+
+            let cmd = ID3D12CommandList::from(&self.command_list);
+            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+            self.command_queue.Signal(&fence, 1);
+
+            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+            fence.SetEventOnCompletion(1, event);
+            WaitForSingleObject(event, INFINITE);
+            
+            self.command_list.Reset(&self.command_allocator, None);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+            std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+
+            //
+            let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
+            let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
+            let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
+    
+            match info.usage {
+                super::BufferUsage::Vertex => {
+                    vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
+                        BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                        StrideInBytes: info.stride as u32,
+                        SizeInBytes: data.len() as u32,
+                    });
+                }
+                super::BufferUsage::Index => {
+                    ibv = Some(D3D12_INDEX_BUFFER_VIEW {
+                        BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                        SizeInBytes: data.len() as u32,
+                        Format: dxgi_format,
+                    })
+                }
+                super::BufferUsage::ConstantBuffer => {
                     let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
                     let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
-    
+        
                     let descriptor_size = self
                         .device
                         .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                         as usize;
                     self.shader_heap_offset += descriptor_size;
-    
-                    self.device.CreateShaderResourceView(
-                        &buf,
-                        &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                            Format: dxgi_format,
-                            ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
-                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                                Buffer: D3D12_BUFFER_SRV {
-                                    FirstElement: 0,
-                                    StructureByteStride: info.stride as u32,
-                                    NumElements: info.num_elements as u32,
-                                    Flags: D3D12_BUFFER_SRV_FLAG_NONE
-                                },
-                            },
-                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                
+                    self.device.CreateConstantBufferView(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                            BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                            SizeInBytes: data.len() as u32
                         },
-                        &handle,
+                        &handle
                     );
-
+        
                     srv = Some(handle);
                 }
             }
-        }
 
-        Buffer {
-            resource: buf,
-            vbv: vbv,
-            ibv: ibv,
-            srv: srv
+            Buffer {
+                resource: buf.unwrap(),
+                vbv: vbv,
+                ibv: ibv,
+                srv: srv
+            }
         }
     }
 

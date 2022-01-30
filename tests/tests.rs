@@ -195,7 +195,7 @@ fn draw_triangle() {
         num_buffers: 0,
     });
 
-    let dev = gfx_platform::Device::create();
+    let mut dev = gfx_platform::Device::create();
 
     let mut win = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
@@ -229,6 +229,7 @@ fn draw_triangle() {
         usage: gfx::BufferUsage::Vertex,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
+        num_elements: 3
     };
 
     let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
