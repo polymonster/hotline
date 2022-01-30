@@ -537,8 +537,12 @@ pub fn align(value: u64, align: u64) -> u64 {
 // TODO:
 // - validation checks on buffer and texture data used in create functions
 
-// - Constant Buffer
+// - null terminate strings passed to windows-rs
+// - render pass in swap chain
+
+// - GPU index from Texture and Buffer
 // - Heap management
+
 // - Topology
 // - Sampler
 // - Raster State
@@ -552,6 +556,7 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - pmfx Descriptor Layout
 
 // DONE:
+// x Constant Buffer
 // x Transition barriers
 // x Bindless texture array
 // x Render Passes
