@@ -288,7 +288,7 @@ fn create_swap_chain_rtv(
     device: &ID3D12Device,
 ) -> (ID3D12DescriptorHeap, Vec<Texture>) {
     unsafe {
-        // create rtv heap
+        // TODO: move to device: create rtv heap
         let rtv_heap_result = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
             NumDescriptors: NUM_BB,
             Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -322,6 +322,16 @@ fn create_swap_chain_rtv(
     }
 }
 
+fn null_terminate_semantics(layout: &super::InputLayout) -> Vec<CString> {
+    let mut c_strs: Vec<CString> = Vec::new();
+    for elem in layout {
+        c_strs.push(
+            CString::new(elem.semantic.clone()).unwrap()
+        );
+    }
+    c_strs
+}
+
 impl super::Buffer<Device> for Buffer {}
 impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
@@ -331,11 +341,13 @@ impl super::RenderPass<Device> for RenderPass {}
 impl Device {
     fn create_d3d12_input_element_desc(
         layout: &super::InputLayout,
+        null_terminated_semantics: &Vec<CString>,
     ) -> Vec<D3D12_INPUT_ELEMENT_DESC> {
         let mut d3d12_elems: Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
+        let mut ielem = 0;
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(elem.semantic.as_ptr() as _),
+                SemanticName: PSTR(null_terminated_semantics[ielem].as_ptr() as _),
                 SemanticIndex: elem.index,
                 Format: to_dxgi_format(elem.format),
                 InputSlot: elem.input_slot,
@@ -348,6 +360,7 @@ impl Device {
                 },
                 InstanceDataStepRate: elem.step_rate,
             });
+            ielem = ielem + 1;
         }
         d3d12_elems
     }
@@ -407,6 +420,7 @@ impl Device {
                 ranges.push(range);
                 descriptor_offset = descriptor_offset + count;
             }
+            // TODO:
             root_params.push(D3D12_ROOT_PARAMETER {
                 ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                 Anonymous: D3D12_ROOT_PARAMETER_0 {
@@ -663,7 +677,8 @@ impl super::Device for Device {
         let vs = &info.vs.as_ref().unwrap().blob;
         let ps = &info.fs.as_ref().unwrap().blob;
 
-        let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout);
+        let semantics = null_terminate_semantics(&info.input_layout);
+        let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
         let input_layout = D3D12_INPUT_LAYOUT_DESC {
             pInputElementDescs: elems.as_mut_ptr(),
             NumElements: elems.len() as u32,
@@ -736,6 +751,8 @@ impl super::Device for Device {
             let compile_info = info.compile_info.as_ref().unwrap();
             let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
             unsafe {
+                let nullt_entry_point = CString::new(compile_info.entry_point.clone()).unwrap();
+                let nullt_target = CString::new(compile_info.target.clone()).unwrap();
                 let mut errors = None;
                 let result = D3DCompile(
                     data.as_ptr() as *const core::ffi::c_void,
@@ -743,8 +760,8 @@ impl super::Device for Device {
                     PSTR(std::ptr::null_mut() as _),
                     std::ptr::null(),
                     None,
-                    PSTR((compile_info.entry_point).as_ptr() as _),
-                    PSTR((compile_info.target).as_ptr() as _),
+                    PSTR(nullt_entry_point.as_ptr() as _),
+                    PSTR(nullt_target.as_ptr() as _),
                     compile_flags,
                     0,
                     &mut shader_blob,
@@ -870,7 +887,7 @@ impl super::Device for Device {
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
             std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
-            //
+            // create optional views
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
@@ -906,6 +923,8 @@ impl super::Device for Device {
                         },
                         &handle
                     );
+
+                    let loc = ptr / descriptor_size;
         
                     srv = Some(handle);
                 }
