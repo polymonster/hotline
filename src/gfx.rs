@@ -536,12 +536,11 @@ pub fn align(value: u64, align: u64) -> u64 {
 
 // TODO:
 // - validation checks on buffer and texture data used in create functions
-
 // - null terminate strings passed to windows-rs
+// - descriptor table shader visibility
 // - render pass in swap chain
-
 // - GPU index from Texture and Buffer
-// - Heap management
+// - Heap management.. rtv heap to device
 
 // - Topology
 // - Sampler

@@ -105,8 +105,8 @@ fn main() {
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain\0"),
-            target: String::from("vs_5_1\0"),
+            entry_point: String::from("VSMain"),
+            target: String::from("vs_5_1"),
             flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
@@ -114,8 +114,8 @@ fn main() {
     let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain\0"),
-            target: String::from("ps_5_1\0"),
+            entry_point: String::from("PSMain"),
+            target: String::from("ps_5_1"),
             flags: gfx::ShaderCompileFlags::NONE,
         }),
     };
@@ -132,7 +132,7 @@ fn main() {
         cs: None,
         input_layout: vec![
             gfx::InputElementInfo {
-                semantic: String::from("POSITION\0"),
+                semantic: String::from("POSITION"),
                 index: 0,
                 format: gfx::Format::RGB32f,
                 input_slot: 0,
@@ -141,7 +141,7 @@ fn main() {
                 step_rate: 0,
             },
             gfx::InputElementInfo {
-                semantic: String::from("COLOR\0"),
+                semantic: String::from("COLOR"),
                 index: 0,
                 format: gfx::Format::RGBA32f,
                 input_slot: 0,
