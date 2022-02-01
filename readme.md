@@ -6,10 +6,10 @@
 - Concise graphics api frontend with low level feature access think somewhere in-between Metal and Direct3D12.
 - A focus on modern rendering (gpu-driven, multi-threaded, bindless, ray-tracing).
 - With flexibility to easily create and use different rendering strategies (deferred vs forward, gpu-driven vs cpu driven, etc).
-- Fibre based, multi-threaded, easily scalable to utilise available cpu cores.
+- Hardware accellerated video decoding.
+- Fibre based, multi-threaded, easily scalable to utilise available cpu and gpu.
 - Data-driven and configurable.
 - Plugin based an extendible.
-- Hardware accellerated video decoding.
 
 This is very early stages of development, it is also my first major project in rust so it is very much a learning experience too.
 
