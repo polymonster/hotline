@@ -254,7 +254,7 @@ fn draw_triangle() {
         float4 PSMain(PSInput input) : SV_TARGET
         {
             return input.color;
-        }\0";
+        }";
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
@@ -265,7 +265,7 @@ fn draw_triangle() {
         }),
     };
 
-    let ps_info = gfx::ShaderInfo {
+    let fs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain"),
@@ -274,12 +274,12 @@ fn draw_triangle() {
         }),
     };
 
-    let vs = dev.create_shader(&vs_info, src.as_bytes());
-    let ps = dev.create_shader(&ps_info, src.as_bytes());
+    let vs = dev.create_shader(&vs_info, src.as_bytes()).expect("failed to compile vertex shader");
+    let fs = dev.create_shader(&fs_info, src.as_bytes()).expect("failed to compile fragment shader");
 
     let pso = dev.create_pipeline(&gfx::PipelineInfo {
         vs: Some(vs),
-        fs: Some(ps),
+        fs: Some(fs),
         cs: None,
         input_layout: vec![
             gfx::InputElementInfo {

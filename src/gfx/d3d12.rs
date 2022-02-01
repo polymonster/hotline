@@ -745,7 +745,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_shader<T: Sized>(&self, info: &super::ShaderInfo, data: &[T]) -> Shader {
+    fn create_shader<T: Sized>(&self, info: &super::ShaderInfo, src: &[T]) -> std::result::Result<Shader, super::Error> {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
             let compile_info = info.compile_info.as_ref().unwrap();
@@ -753,10 +753,12 @@ impl super::Device for Device {
             unsafe {
                 let nullt_entry_point = CString::new(compile_info.entry_point.clone()).unwrap();
                 let nullt_target = CString::new(compile_info.target.clone()).unwrap();
+                let src_u8 = slice_as_u8_slice(src);
+                let nullt_data = CString::new(src_u8).unwrap();
                 let mut errors = None;
                 let result = D3DCompile(
-                    data.as_ptr() as *const core::ffi::c_void,
-                    data.len(),
+                    nullt_data.as_ptr() as *const core::ffi::c_void,
+                    src_u8.len(),
                     PSTR(std::ptr::null_mut() as _),
                     std::ptr::null(),
                     None,
@@ -779,10 +781,9 @@ impl super::Device for Device {
                 }
             }
         }
-
-        Shader {
+        Ok(Shader {
             blob: shader_blob.unwrap(),
-        }
+        })
     }
 
     // TODO: validate and return result

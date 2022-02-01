@@ -7,6 +7,18 @@ pub mod d3d12;
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
 
+pub enum ErrorPlatform {
+    Direct3D12,
+    Vulkan,
+    Metal,
+    WebGPU
+}
+
+#[derive(Debug)]
+pub struct Error {
+    pub code: u64
+}
+
 /// Structure to specify viewport coordinates on a `CmdBuf`.
 #[derive(Copy, Clone)]
 pub struct Viewport {
@@ -369,7 +381,7 @@ pub trait Device: 'static + Sized + Any {
     fn create_cmd_buf(&self) -> Self::CmdBuf;
     fn create_buffer<T: Sized>(&mut self, info: &BufferInfo, data: &[T]) -> Self::Buffer;
     fn create_texture<T: Sized>(&mut self, info: &TextureInfo, data: &[T]) -> Self::Texture;
-    fn create_shader<T: Sized>(&self, info: &ShaderInfo, data: &[T]) -> Self::Shader;
+    fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
     fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Self::Pipeline;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
     fn execute(&self, cmd: &Self::CmdBuf);
@@ -476,6 +488,12 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     }
 }
 
+pub fn slice_as_u8_slice<T: Sized>(p: &[T]) -> &[u8] {
+    unsafe {
+        ::std::slice::from_raw_parts((p.as_ptr() as *const T) as *const u8, ::std::mem::size_of::<T>() * p.len())
+    }
+}
+
 /// Returns the 'block size' (texel, compressed block of texels or single buffer element) for a given format
 pub fn block_size_for_format(format: Format) -> u32 {
     match format {
@@ -535,12 +553,11 @@ pub fn align(value: u64, align: u64) -> u64 {
 }
 
 // TODO:
-// - validation checks on buffer and texture data used in create functions
-// - null terminate strings passed to windows-rs
+// - return result and validate, texture, buffer and shader create functions
 // - descriptor table shader visibility
 // - render pass in swap chain
 // - GPU index from Texture and Buffer
-// - Heap management.. rtv heap to device
+// - Heap management... rtv heap to device
 
 // - Topology
 // - Sampler
@@ -555,16 +572,17 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - pmfx Descriptor Layout
 
 // DONE:
+// x null terminate strings passed to windows-rs **
 // x Constant Buffer
 // x Transition barriers
 // x Bindless texture array
 // x Render Passes
-// x Root Signature == DescriptorLayout
+// x Root Signature == DescriptorLayout **
 // x Pipeline->RootSignature
 // x    Input Layout
 // x    Static Samplers
 // x    Push Constants
-// x Track transitions and manually drop
+// x Track transitions and manually drop **
 // x Push constants
 // x viewport rect position must be stomped to 0
 // x Triangle as test (fix shader compile issue)
