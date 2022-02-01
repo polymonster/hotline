@@ -6,6 +6,7 @@ use os::Window;
 use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
+use gfx::Error;
 
 use std::fs;
 
@@ -111,7 +112,7 @@ fn main() {
         }),
     };
 
-    let ps_info = gfx::ShaderInfo {
+    let fs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
             entry_point: String::from("PSMain"),
@@ -122,13 +123,13 @@ fn main() {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs = dev.create_shader(&vs_info, contents.as_bytes());
-    let ps = dev.create_shader(&ps_info, contents.as_bytes());
+    let vs = dev.create_shader(&vs_info, contents.as_bytes()).expect("failed to compile vertex shader");
+    let fs = dev.create_shader(&fs_info, contents.as_bytes()).expect("failed to compile fragment shader");
 
     // pipeline
     let pso = dev.create_pipeline(&gfx::PipelineInfo {
         vs: Some(vs),
-        fs: Some(ps),
+        fs: Some(fs),
         cs: None,
         input_layout: vec![
             gfx::InputElementInfo {
