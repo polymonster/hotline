@@ -1,8 +1,7 @@
 // TODO:
 // - render pass in swap chain
 // - GPU index from Texture and Buffer
-// - Heaps?
-// -- rtv heaps in device not swap chain
+// - Heaps? + free list?
 // - pipeline result error handling
 // - descriptor table shader visibility
 
@@ -23,6 +22,8 @@
 // - GPU Timer Query
 
 // DONE:
+// x rtv heaps in device not swap chain
+// x call super traits = use super::Trait as SuperTrait (to avoid )
 // x render pass result error handling
 // x texture result error handling
 // x shaders result / error handling

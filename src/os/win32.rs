@@ -96,7 +96,6 @@ impl super::App for App {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
                     DispatchMessageA(&mut msg);
-
                     if msg.message == WM_QUIT {
                         quit = true;
                         break;
