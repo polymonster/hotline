@@ -251,7 +251,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
     let mut readback_buffer: Option<ID3D12Resource> = None;
     unsafe {
         // readback buffer
-        if !device
+        device
             .device
             .CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -276,11 +276,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
                 &mut readback_buffer,
-            )
-            .is_ok()
-        {
-            panic!("hotline::gfx::d3d12: failed to create readback buffer");
-        }
+            ).expect("hotline::gfx::d3d12: failed to create readback buffer");
     }
     readback_buffer
 }
@@ -1045,8 +1041,7 @@ impl super::Device for Device {
                         D3D12_RESOURCE_STATE_GENERIC_READ,
                         std::ptr::null(),
                         &mut upload,
-                    )
-                    .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
+                    )?;
 
                 // copy data to upload buffer
                 let range = D3D12_RANGE {
@@ -1066,7 +1061,7 @@ impl super::Device for Device {
                 res.Unmap(0, std::ptr::null());
 
                 // copy resource
-                let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+                let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
 
                 let src = D3D12_TEXTURE_COPY_LOCATION {
                     pResource: Some(upload.clone().unwrap()),
@@ -1223,13 +1218,11 @@ impl SwapChain {
             let mut num_waitable = 1;
             let mut fv = self.frame_fence_value[frame_index as usize];
 
-            if fv != 0
-            // means no fence was signaled
-            {
+            // 0 means no fence was signaled
+            if fv != 0 {
                 fv = 0;
-                if !self.fence.SetEventOnCompletion(fv as u64, self.fence_event).is_ok() {
-                    panic!("hotline::gfx::d3d12: failed to set on completion event!");
-                }
+                self.fence.SetEventOnCompletion(fv as u64, self.fence_event)
+                    .expect("hotline::gfx::d3d12: failed to set on completion event!");
                 waitable[1] = self.fence_event;
                 num_waitable = 2;
             }
@@ -1349,12 +1342,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.bb_index = bb;
         if swap_chain.frame_fence_value[bb] != 0 {
             unsafe {
-                if !self.command_allocator[bb].Reset().is_ok() {
-                    panic!("hotline::gfx::d3d12: failed to reset command_allocator")
-                }
-                if !self.command_list[bb].Reset(&self.command_allocator[bb], None).is_ok() {
-                    panic!("hotline::gfx::d3d12: to reset command_list")
-                };
+                self.command_allocator[bb].Reset().expect("hotline::gfx::d3d12: failed to reset command_allocator!");
+                self.command_list[bb].Reset(&self.command_allocator[bb], None)
+                    .expect("hotline::gfx::d3d12: failed to reset command_list!")
             }
         }
         self.drop_complete_in_flight_barriers(prev_bb);
