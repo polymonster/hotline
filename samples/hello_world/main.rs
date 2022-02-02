@@ -6,7 +6,6 @@ use os::Window;
 use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
-use gfx::Error;
 
 use std::fs;
 
@@ -15,13 +14,6 @@ use hotline::os::win32 as os_platform;
 
 #[cfg(target_os = "windows")]
 use hotline::gfx::d3d12 as gfx_platform;
-
-pub struct ClearCol {
-    r: f32,
-    g: f32,
-    b: f32,
-    a: f32,
-}
 
 #[repr(C)]
 struct Vertex {
@@ -79,10 +71,10 @@ fn main() {
         usage: gfx::BufferUsage::Vertex,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
-        num_elements: 4
+        num_elements: 4,
     };
 
-    let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
+    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices))).unwrap();
 
     // index buffer
     let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
@@ -90,12 +82,11 @@ fn main() {
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Index,
         format: gfx::Format::R16u,
-        stride: std::mem::size_of::<Vertex>(),
-        num_elements: 6
-
+        stride: std::mem::size_of::<u16>(),
+        num_elements: 6,
     };
 
-    let index_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&indices));
+    let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices))).unwrap();
 
     // shaders
     let exe_path = std::env::current_exe().ok().unwrap();
@@ -123,8 +114,11 @@ fn main() {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs = dev.create_shader(&vs_info, contents.as_bytes()).expect("failed to compile vertex shader");
-    let fs = dev.create_shader(&fs_info, contents.as_bytes()).expect("failed to compile fragment shader");
+    let vs =
+        dev.create_shader(&vs_info, contents.as_bytes()).expect("failed to compile vertex shader");
+    let fs = dev
+        .create_shader(&fs_info, contents.as_bytes())
+        .expect("failed to compile fragment shader");
 
     // pipeline
     let pso = dev.create_pipeline(&gfx::PipelineInfo {
@@ -172,7 +166,7 @@ fn main() {
                     num_descriptors: Some(5),
                     shader_register: 1,
                     register_space: 0,
-                }
+                },
             ]),
             static_samplers: Some(vec![gfx::SamplerInfo {
                 visibility: gfx::ShaderVisibility::Fragment,
@@ -211,14 +205,15 @@ fn main() {
             mip_levels: 1,
             samples: 1,
         };
-        textures.push(dev.create_texture(&tex_info, image.data.as_slice()));
+        let tex = dev.create_texture(&tex_info, Some(image.data.as_slice())).unwrap();
+        textures.push(tex);
     }
 
     // push constants
     let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
 
     // constant buffer
-    let mut cbuffer : [f32; 64] = [0.0; 64];
+    let mut cbuffer: [f32; 64] = [0.0; 64];
     cbuffer[0] = 1.0;
     cbuffer[1] = 0.0;
     cbuffer[2] = 1.0;
@@ -228,10 +223,10 @@ fn main() {
         usage: gfx::BufferUsage::ConstantBuffer,
         format: gfx::Format::Unknown,
         stride: cbuffer.len() * 4,
-        num_elements: 1
+        num_elements: 1,
     };
 
-    let constant_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&cbuffer));
+    let _constant_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&cbuffer)));
 
     let mut ci = 0;
     while app.run() {
@@ -244,9 +239,9 @@ fn main() {
         let scissor = gfx::ScissorRect::from(vp_rect);
 
         // TODO: passes in swap chain
-        let mut pass = dev.create_render_pass( &gfx::RenderPassInfo {
+        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some( gfx::ClearColour {
+            rt_clear: Some(gfx::ClearColour {
                 r: 1.0,
                 g: 1.0,
                 b: 1.0,
@@ -258,7 +253,7 @@ fn main() {
             discard: false,
         });
 
-        cmdbuffer.transition_barrier( &gfx::TransitionBarrier {
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture().clone()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
@@ -282,7 +277,7 @@ fn main() {
 
         cmdbuffer.end_render_pass();
 
-        cmdbuffer.transition_barrier( &gfx::TransitionBarrier {
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture().clone()),
             buffer: None,
             state_before: gfx::ResourceState::RenderTarget,

@@ -229,10 +229,10 @@ fn draw_triangle() {
         usage: gfx::BufferUsage::Vertex,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
-        num_elements: 3
+        num_elements: 3,
     };
 
-    let vertex_buffer = dev.create_buffer(&info, gfx::as_u8_slice(&vertices));
+    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices))).unwrap();
 
     let src = "
         struct PSInput
@@ -275,7 +275,8 @@ fn draw_triangle() {
     };
 
     let vs = dev.create_shader(&vs_info, src.as_bytes()).expect("failed to compile vertex shader");
-    let fs = dev.create_shader(&fs_info, src.as_bytes()).expect("failed to compile fragment shader");
+    let fs =
+        dev.create_shader(&fs_info, src.as_bytes()).expect("failed to compile fragment shader");
 
     let pso = dev.create_pipeline(&gfx::PipelineInfo {
         vs: Some(vs),

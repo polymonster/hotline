@@ -12,6 +12,7 @@ use windows::{
 use super::*;
 use std::ffi::CStr;
 use std::ffi::CString;
+use std::result;
 use std::str;
 
 /// Indicates the number of backbuffers used for swap chains and command buffers.
@@ -86,7 +87,6 @@ pub struct ReadBackRequest {
 
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
-    //ds: D3D12_RENDER_PASS_DEPTH_STENCIL_DESC,
 }
 
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -181,12 +181,14 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
         super::ResourceState::Present => D3D12_RESOURCE_STATE_PRESENT,
         super::ResourceState::UnorderedAccess => D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         super::ResourceState::ShaderResource => D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        super::ResourceState::VertexConstantBuffer => D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
+        super::ResourceState::VertexConstantBuffer => {
+            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
+        }
         super::ResourceState::IndexBuffer => D3D12_RESOURCE_STATE_INDEX_BUFFER,
     }
 }
 
-fn print_error_blob(blob: &ID3DBlob) {
+fn print_d3d12_error_blob(blob: &ID3DBlob) {
     unsafe {
         let txt = String::from_raw_parts(
             blob.GetBufferPointer() as *mut _,
@@ -315,7 +317,7 @@ fn create_swap_chain_rtv(
             textures.push(Texture {
                 resource: render_target.clone(),
                 srv: None,
-                rtv: Some(h)
+                rtv: Some(h),
             });
         }
         (rtv_heap, textures)
@@ -325,9 +327,7 @@ fn create_swap_chain_rtv(
 fn null_terminate_semantics(layout: &super::InputLayout) -> Vec<CString> {
     let mut c_strs: Vec<CString> = Vec::new();
     for elem in layout {
-        c_strs.push(
-            CString::new(elem.semantic.clone()).unwrap()
-        );
+        c_strs.push(CString::new(elem.semantic.clone()).unwrap());
     }
     c_strs
 }
@@ -337,6 +337,15 @@ impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
 impl super::Texture<Device> for Texture {}
 impl super::RenderPass<Device> for RenderPass {}
+
+impl From<windows::core::Error> for super::Error {
+    fn from(err: windows::core::Error) -> super::Error {
+        super::Error {
+            error_type: ErrorType::Direct3D12,
+            msg: err.message().to_string_lossy(),
+        }
+    }
+}
 
 impl Device {
     fn create_d3d12_input_element_desc(
@@ -429,7 +438,7 @@ impl Device {
                         pDescriptorRanges: ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
                     },
                 },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL //to_d3d12_shader_visibility(table.visibility),
+                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL, //to_d3d12_shader_visibility(table.visibility),
             })
         }
         // immutable samplers
@@ -479,7 +488,7 @@ impl Device {
             // print error
             if error.is_some() {
                 let blob = error.unwrap();
-                print_error_blob(&blob);
+                print_d3d12_error_blob(&blob);
             }
 
             let sig = signature.unwrap();
@@ -593,17 +602,17 @@ impl super::Device for Device {
             };
 
             // create swap chain itself
-            let swap_chain_result = self.dxgi_factory.CreateSwapChainForHwnd(
-                &self.command_queue,
-                win.get_native_handle(),
-                &swap_chain_desc,
-                std::ptr::null(),
-                None,
-            );
-            if !swap_chain_result.is_ok() {
-                panic!("hotline::gfx::d3d12: failed to create swap chain for window");
-            }
-            let swap_chain: IDXGISwapChain3 = swap_chain_result.unwrap().cast().unwrap();
+            let swap_chain1 = self
+                .dxgi_factory
+                .CreateSwapChainForHwnd(
+                    &self.command_queue,
+                    win.get_native_handle(),
+                    &swap_chain_desc,
+                    std::ptr::null(),
+                    None,
+                )
+                .expect("hotline::gfx::d3d12: failed to create swap chain for window");
+            let swap_chain: IDXGISwapChain3 = swap_chain1.cast().unwrap();
 
             // TODO: move heap creation
             // create rtv heap and handles
@@ -636,24 +645,16 @@ impl super::Device for Device {
 
             for _ in 0..NUM_BB as usize {
                 // create command allocator
-                let command_allocator =
-                    self.device.CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT);
-                if !command_allocator.is_ok() {
-                    panic!("hotline::gfx::d3d12: failed to create command allocator");
-                }
-                let command_allocator = command_allocator.unwrap();
+                let command_allocator = self
+                    .device
+                    .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
+                    .expect("hotline::gfx::d3d12: failed to create command allocator");
 
                 // create command list
-                let command_list = self.device.CreateCommandList(
-                    0,
-                    D3D12_COMMAND_LIST_TYPE_DIRECT,
-                    &command_allocator,
-                    None,
-                );
-                if !command_list.is_ok() {
-                    panic!("hotline::gfx::d3d12: failed to create command list");
-                }
-                let command_list = command_list.unwrap();
+                let command_list = self
+                    .device
+                    .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
+                    .expect("hotline::gfx::d3d12: failed to create command list");
 
                 command_allocators.push(command_allocator);
                 command_lists.push(command_list);
@@ -670,6 +671,7 @@ impl super::Device for Device {
         }
     }
 
+    // TODO: error handling
     fn create_pipeline(&self, info: &super::PipelineInfo<Device>) -> Pipeline {
         let root_signature = self.create_root_signature(&info.descriptor_layout).unwrap();
 
@@ -745,16 +747,20 @@ impl super::Device for Device {
         }
     }
 
-    fn create_shader<T: Sized>(&self, info: &super::ShaderInfo, src: &[T]) -> std::result::Result<Shader, super::Error> {
+    fn create_shader<T: Sized>(
+        &self,
+        info: &super::ShaderInfo,
+        src: &[T],
+    ) -> std::result::Result<Shader, super::Error> {
         let mut shader_blob = None;
         if info.compile_info.is_some() {
             let compile_info = info.compile_info.as_ref().unwrap();
             let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
             unsafe {
-                let nullt_entry_point = CString::new(compile_info.entry_point.clone()).unwrap();
-                let nullt_target = CString::new(compile_info.target.clone()).unwrap();
+                let nullt_entry_point = CString::new(compile_info.entry_point.clone())?;
+                let nullt_target = CString::new(compile_info.target.clone())?;
                 let src_u8 = slice_as_u8_slice(src);
-                let nullt_data = CString::new(src_u8).unwrap();
+                let nullt_data = CString::new(src_u8)?;
                 let mut errors = None;
                 let result = D3DCompile(
                     nullt_data.as_ptr() as *const core::ffi::c_void,
@@ -775,9 +781,12 @@ impl super::Device for Device {
                         let buf = w.GetBufferPointer();
                         let c_str: &CStr = CStr::from_ptr(buf as *const i8);
                         let str_slice: &str = c_str.to_str().unwrap();
-                        println!("{}", str_slice);
+                        return Err(super::Error {
+                            error_type: super::ErrorType::ShaderCompile,
+                            msg: String::from(str_slice),
+                        });
                     }
-                    panic!("shader compile failed!");
+                    panic!("hotline::gfx::d3d12: shader compile failed with no error information!");
                 }
             }
         }
@@ -786,13 +795,30 @@ impl super::Device for Device {
         })
     }
 
-    // TODO: validate and return result
-    fn create_buffer<T: Sized>(&mut self, info: &super::BufferInfo, data: &[T]) -> Buffer {
+    fn create_buffer<T: Sized>(
+        &mut self,
+        info: &super::BufferInfo,
+        data: Option<&[T]>,
+    ) -> result::Result<Buffer, super::Error> {
         let mut buf: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
+        let size_bytes = info.stride * info.num_elements;
+        // validate size
+        if data.is_some() {
+            let data = data.unwrap();
+            let data_size_bytes = data.len() * std::mem::size_of::<T>();
+            if data_size_bytes != size_bytes {
+                return Err(super::Error {
+                    error_type: super::ErrorType::CreateBuffer,
+                    msg: String::from(format!(
+                        "data.len ({}) does not match info.stride * info.num_elements ({})",
+                        data_size_bytes, size_bytes
+                    )),
+                });
+            }
+        }
         unsafe {
-            self.device
-            .CreateCommittedResource(
+            self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: D3D12_HEAP_TYPE_DEFAULT,
                     ..Default::default()
@@ -800,7 +826,7 @@ impl super::Device for Device {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC {
                     Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Width: data.len() as u64,
+                    Width: size_bytes as u64,
                     Height: 1,
                     DepthOrArraySize: 1,
                     MipLevels: 1,
@@ -814,12 +840,11 @@ impl super::Device for Device {
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 std::ptr::null(),
                 &mut buf,
-            ).expect("hotline::gfx::d3d12: failed to create buffer!"); // TODO: the error should be passed to the user
+            )?;
 
-            let mut upload: Option<ID3D12Resource> = None;
-            let upload_size = data.len();
-            self.device
-                .CreateCommittedResource(
+            if data.is_some() {
+                let mut upload: Option<ID3D12Resource> = None;
+                self.device.CreateCommittedResource(
                     &D3D12_HEAP_PROPERTIES {
                         Type: D3D12_HEAP_TYPE_UPLOAD,
                         ..Default::default()
@@ -828,7 +853,7 @@ impl super::Device for Device {
                     &D3D12_RESOURCE_DESC {
                         Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
                         Alignment: 0,
-                        Width: upload_size as u64,
+                        Width: size_bytes as u64,
                         Height: 1,
                         DepthOrArraySize: 1,
                         MipLevels: 1,
@@ -843,107 +868,124 @@ impl super::Device for Device {
                     D3D12_RESOURCE_STATE_GENERIC_READ,
                     std::ptr::null(),
                     &mut upload,
-                )
-                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
+                )?;
 
-            // copy data to upload buffer
-            let range = D3D12_RANGE {
-                Begin: 0,
-                End: upload_size as usize,
-            };
-            let mut map_data = std::ptr::null_mut();
-            let res = upload.clone().unwrap();
-            res.Map(0, &range, &mut map_data);
-            if map_data != std::ptr::null_mut() {
-                let src = data.as_ptr() as *mut u8;
-                let dst = map_data as *mut u8;
-                std::ptr::copy_nonoverlapping(src, map_data as *mut u8, upload_size as usize);
+                // copy data to upload buffer
+                let range = D3D12_RANGE {
+                    Begin: 0,
+                    End: size_bytes as usize,
+                };
+                let mut map_data = std::ptr::null_mut();
+                let res = upload.clone().unwrap();
+                res.Map(0, &range, &mut map_data)?;
+                if map_data != std::ptr::null_mut() {
+                    let src = data.as_ref().unwrap().as_ptr() as *mut u8;
+                    std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes as usize);
+                }
+                res.Unmap(0, std::ptr::null());
+
+                // copy resource
+                let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+
+                self.command_list.CopyResource(&buf, upload);
+
+                let barrier = transition_barrier(
+                    &buf.clone().unwrap(),
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                );
+
+                // transition to shader resource
+                self.command_list.ResourceBarrier(1, &barrier);
+                self.command_list.Close()?;
+
+                let cmd = ID3D12CommandList::from(&self.command_list);
+                self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+                self.command_queue.Signal(&fence, 1)?;
+
+                let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+                fence.SetEventOnCompletion(1, event)?;
+                WaitForSingleObject(event, INFINITE);
+
+                self.command_list.Reset(&self.command_allocator, None)?;
+                let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                    std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
             }
-            res.Unmap(0, std::ptr::null());
-
-            // copy resource
-            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
-
-            self.command_list.CopyResource(&buf, upload);
-
-            let barrier = transition_barrier(
-                &buf.clone().unwrap(),
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            );
-
-            // transition to shader resource
-            self.command_list.ResourceBarrier(1, &barrier);
-            self.command_list.Close();
-
-            let cmd = ID3D12CommandList::from(&self.command_list);
-            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
-            self.command_queue.Signal(&fence, 1);
-
-            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
-            fence.SetEventOnCompletion(1, event);
-            WaitForSingleObject(event, INFINITE);
-            
-            self.command_list.Reset(&self.command_allocator, None);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-            std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
             // create optional views
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-    
+
             match info.usage {
                 super::BufferUsage::Vertex => {
                     vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
                         BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
                         StrideInBytes: info.stride as u32,
-                        SizeInBytes: data.len() as u32,
+                        SizeInBytes: size_bytes as u32,
                     });
                 }
                 super::BufferUsage::Index => {
                     ibv = Some(D3D12_INDEX_BUFFER_VIEW {
                         BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
-                        SizeInBytes: data.len() as u32,
+                        SizeInBytes: size_bytes as u32,
                         Format: dxgi_format,
                     })
                 }
                 super::BufferUsage::ConstantBuffer => {
-                    let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
+                    let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr
+                        + self.shader_heap_offset;
                     let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
-        
+
                     let descriptor_size = self
                         .device
                         .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                         as usize;
                     self.shader_heap_offset += descriptor_size;
-                
-                    self.device.CreateConstantBufferView(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                            BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
-                            SizeInBytes: data.len() as u32
-                        },
-                        &handle
-                    );
 
-                    let loc = ptr / descriptor_size;
-        
+                    self.device.CreateConstantBufferView(
+                        &D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                            BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                            SizeInBytes: size_bytes as u32,
+                        },
+                        &handle,
+                    );
                     srv = Some(handle);
                 }
             }
 
-            Buffer {
+            Ok(Buffer {
                 resource: buf.unwrap(),
                 vbv: vbv,
                 ibv: ibv,
-                srv: srv
-            }
+                srv: srv,
+            })
         }
     }
 
-    // TODO: validate and return result
-    fn create_texture<T: Sized>(&mut self, info: &super::TextureInfo, data: &[T]) -> Texture {
+    fn create_texture<T: Sized>(
+        &mut self,
+        info: &super::TextureInfo,
+        data: Option<&[T]>,
+    ) -> result::Result<Texture, super::Error> {
         let mut tex: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
+        let size_bytes = size_for_format(info.format, info.width, info.height, info.depth) as usize;
+        // validate size
+        if data.is_some() {
+            let data = data.unwrap();
+            let data_size_bytes = data.len() * std::mem::size_of::<T>();
+            if data_size_bytes != size_bytes {
+                return Err(super::Error {
+                    error_type: super::ErrorType::CreateBuffer,
+                    msg: String::from(format!(
+                        "data.len ({}) does not match size_for_format ({})",
+                        data_size_bytes, 
+                        size_bytes
+                    )),
+                });
+            }
+        }
         unsafe {
             // create texture resource
             self.device
@@ -975,112 +1017,116 @@ impl super::Device for Device {
                     D3D12_RESOURCE_STATE_COPY_DEST,
                     std::ptr::null(),
                     &mut tex,
-                )
-                .expect("hotline::gfx::d3d12: failed to create texture!");
+                )?;
 
-            // create upload buffer
-            let row_pitch = super::row_pitch_for_format(info.format, info.width);
-            let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
-            let upload_size = info.height * upload_pitch;
+            if data.is_some() {
+                let data = data.unwrap();
 
-            let mut upload: Option<ID3D12Resource> = None;
-            self.device
-                .CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_UPLOAD,
-                        ..Default::default()
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 0,
-                        Width: upload_size,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
+                // create upload buffer
+                let row_pitch = super::row_pitch_for_format(info.format, info.width);
+                let upload_pitch =
+                    super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+                let upload_size = info.height * upload_pitch;
+
+                let mut upload: Option<ID3D12Resource> = None;
+                self.device
+                    .CreateCommittedResource(
+                        &D3D12_HEAP_PROPERTIES {
+                            Type: D3D12_HEAP_TYPE_UPLOAD,
+                            ..Default::default()
                         },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    std::ptr::null(),
-                    &mut upload,
-                )
-                .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
+                        D3D12_HEAP_FLAG_NONE,
+                        &D3D12_RESOURCE_DESC {
+                            Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                            Alignment: 0,
+                            Width: upload_size,
+                            Height: 1,
+                            DepthOrArraySize: 1,
+                            MipLevels: 1,
+                            Format: DXGI_FORMAT_UNKNOWN,
+                            SampleDesc: DXGI_SAMPLE_DESC {
+                                Count: 1,
+                                Quality: 0,
+                            },
+                            Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                            Flags: D3D12_RESOURCE_FLAG_NONE,
+                        },
+                        D3D12_RESOURCE_STATE_GENERIC_READ,
+                        std::ptr::null(),
+                        &mut upload,
+                    )
+                    .expect("hotline::gfx::d3d12: failed to create texture upload buffer!");
 
-            // copy data to upload buffer
-            let range = D3D12_RANGE {
-                Begin: 0,
-                End: upload_size as usize,
-            };
-            let mut map_data = std::ptr::null_mut();
-            let res = upload.clone().unwrap();
-            res.Map(0, &range, &mut map_data);
-            if map_data != std::ptr::null_mut() {
-                for y in 0..info.height {
-                    let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
-                    let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
-                    std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
+                // copy data to upload buffer
+                let range = D3D12_RANGE {
+                    Begin: 0,
+                    End: upload_size as usize,
+                };
+                let mut map_data = std::ptr::null_mut();
+                let res = upload.clone().unwrap();
+                res.Map(0, &range, &mut map_data)?;
+                if map_data != std::ptr::null_mut() {
+                    for y in 0..info.height {
+                        let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
+                        let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
+                        std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
+                    }
                 }
-            }
-            res.Unmap(0, std::ptr::null());
+                res.Unmap(0, std::ptr::null());
 
-            // copy resource
-            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
+                // copy resource
+                let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
 
-            let src = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: Some(upload.clone().unwrap()),
-                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                    PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
-                        Offset: 0,
-                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
-                            Width: info.width as u32,
-                            Height: info.height as u32,
-                            Depth: 1,
-                            Format: dxgi_format,
-                            RowPitch: upload_pitch as u32,
+                let src = D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: Some(upload.clone().unwrap()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                            Offset: 0,
+                            Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                                Width: info.width as u32,
+                                Height: info.height as u32,
+                                Depth: 1,
+                                Format: dxgi_format,
+                                RowPitch: upload_pitch as u32,
+                            },
                         },
                     },
-                },
-            };
+                };
 
-            let dst = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: Some(tex.clone().unwrap()),
-                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                    SubresourceIndex: 0,
-                },
-            };
+                let dst = D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: Some(tex.clone().unwrap()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        SubresourceIndex: 0,
+                    },
+                };
 
-            self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
+                self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
 
-            let barrier = transition_barrier(
-                &tex.clone().unwrap(),
-                D3D12_RESOURCE_STATE_COPY_DEST,
-                D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-            );
+                let barrier = transition_barrier(
+                    &tex.clone().unwrap(),
+                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                );
 
-            // transition to shader resource
-            self.command_list.ResourceBarrier(1, &barrier);
-            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+                // transition to shader resource
+                self.command_list.ResourceBarrier(1, &barrier);
+                let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                    std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
-            self.command_list.Close();
+                self.command_list.Close()?;
 
-            let cmd = ID3D12CommandList::from(&self.command_list);
-            self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
-            self.command_queue.Signal(&fence, 1);
+                let cmd = ID3D12CommandList::from(&self.command_list);
+                self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+                self.command_queue.Signal(&fence, 1)?;
 
-            let event = CreateEventA(std::ptr::null_mut(), false, false, None);
-            fence.SetEventOnCompletion(1, event);
-            WaitForSingleObject(event, INFINITE);
-            self.command_list.Reset(&self.command_allocator, None);
-
+                let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+                fence.SetEventOnCompletion(1, event)?;
+                WaitForSingleObject(event, INFINITE);
+                self.command_list.Reset(&self.command_allocator, None)?;
+            }
+            
             // TODO: free list
             // create an srv for the texture
             let ptr =
@@ -1114,11 +1160,11 @@ impl super::Device for Device {
                 &handle,
             );
 
-            Texture {
+            Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: None,
                 srv: Some(handle),
-            }
+            })
         }
     }
 
