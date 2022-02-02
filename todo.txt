@@ -1,0 +1,65 @@
+// TODO:
+// - render pass in swap chain
+// - GPU index from Texture and Buffer
+// - Heaps?
+// -- rtv heaps in device not swap chain
+// - pipeline result error handling
+// - descriptor table shader visibility
+
+// - Render Target
+// - Topology
+// - Sampler
+// - Raster State
+// - Depth Stencil State
+// - Blend State
+// - docs on website
+// - Enumerate adapters
+// - Enumerate Device Info
+// - Shaders from IR
+// - pmfx Shaders
+// - pmfx Input Layout
+// - pmfx Descriptor Layout
+// - GPU Marker
+// - GPU Timer Query
+
+// DONE:
+// x render pass result error handling
+// x texture result error handling
+// x shaders result / error handling
+// x buffers result / error handling
+// x null terminate strings passed to windows-rs **
+// x Constant Buffer
+// x Transition barriers
+// x Bindless texture array
+// x Render Passes
+// x Root Signature == DescriptorLayout **
+// x Pipeline->RootSignature
+// x    Input Layout
+// x    Static Samplers
+// x    Push Constants
+// x Track transitions and manually drop **
+// x Push constants
+// x viewport rect position must be stomped to 0
+// x Triangle as test (fix shader compile issue)
+// x Texture
+// x Backbuffer readback / resource readback
+// x how to properly use bitmask and flags?
+// x remove "Graphics" and move "Instance" to "App"
+// x Index Buffer
+// x rust fmt line length
+// x samples
+// x PSO
+// x Shaders from source
+// x Viewport
+// x Scissor
+// x Bind Viewport
+// x Bind Scissor
+// x Draw Call
+// x Resize Swap Chain
+// x Vsync not working?
+// x Buffer
+// x Create Buffer
+// x Bind Vertex Buffer
+// x move tests
+// x move files / modules / libs
+// x docs
