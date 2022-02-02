@@ -332,6 +332,24 @@ fn null_terminate_semantics(layout: &super::InputLayout) -> Vec<CString> {
     c_strs
 }
 
+/// validates the length of data is consistent with a known size_bytes of a buffer or texture
+fn validate_data_size<T: Sized>(size_bytes: usize, data: Option<&[T]>) -> result::Result<(), super::Error> {
+    if data.is_some() {
+        let data = data.unwrap();
+        let data_size_bytes = data.len() * std::mem::size_of::<T>();
+        if data_size_bytes != size_bytes {
+            return Err(super::Error {
+                error_type: super::ErrorType::DataSize,
+                msg: String::from(format!(
+                    "data size: ({}) bytes does not match expected size: ({}) bytes",
+                    data_size_bytes, size_bytes
+                )),
+            });
+        }
+    }
+    Ok(())
+}
+
 impl super::Buffer<Device> for Buffer {}
 impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
@@ -803,20 +821,7 @@ impl super::Device for Device {
         let mut buf: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         let size_bytes = info.stride * info.num_elements;
-        // validate size
-        if data.is_some() {
-            let data = data.unwrap();
-            let data_size_bytes = data.len() * std::mem::size_of::<T>();
-            if data_size_bytes != size_bytes {
-                return Err(super::Error {
-                    error_type: super::ErrorType::CreateBuffer,
-                    msg: String::from(format!(
-                        "data.len ({}) does not match info.stride * info.num_elements ({})",
-                        data_size_bytes, size_bytes
-                    )),
-                });
-            }
-        }
+        validate_data_size(size_bytes, data)?;
         unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -971,21 +976,7 @@ impl super::Device for Device {
         let mut tex: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         let size_bytes = size_for_format(info.format, info.width, info.height, info.depth) as usize;
-        // validate size
-        if data.is_some() {
-            let data = data.unwrap();
-            let data_size_bytes = data.len() * std::mem::size_of::<T>();
-            if data_size_bytes != size_bytes {
-                return Err(super::Error {
-                    error_type: super::ErrorType::CreateBuffer,
-                    msg: String::from(format!(
-                        "data.len ({}) does not match size_for_format ({})",
-                        data_size_bytes, 
-                        size_bytes
-                    )),
-                });
-            }
-        }
+        validate_data_size(size_bytes, data)?;
         unsafe {
             // create texture resource
             self.device

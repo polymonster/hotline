@@ -11,6 +11,7 @@ use os::win32 as platform;
 #[derive(Debug)]
 pub enum ErrorType {
     ShaderCompile,
+    DataSize,
     CreateBuffer,
     CreateTexture,
     Direct3D12,
