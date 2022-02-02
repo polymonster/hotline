@@ -41,6 +41,7 @@ pub struct SwapChain {
     bb_index: i32,
     swap_chain: IDXGISwapChain3,
     backbuffer_textures: Vec<Texture>,
+    backbuffer_passes: Vec<RenderPass>,
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
@@ -433,7 +434,7 @@ impl Device {
                 ranges.push(range);
                 descriptor_offset = descriptor_offset + count;
             }
-            // TODO:
+            // TODO: table.visibility
             root_params.push(D3D12_ROOT_PARAMETER {
                 ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                 Anonymous: D3D12_ROOT_PARAMETER_0 {
@@ -633,6 +634,24 @@ impl super::Device for Device {
             let textures = create_swap_chain_rtv(&swap_chain, &self);
             let data_size = (rect.width * rect.height * 4) as u64;
 
+            // create render passes for the swap chain
+            let mut passes = Vec::new();
+            for i in 0..NUM_BB as usize {
+                passes.push(self.create_render_pass(&super::RenderPassInfo {
+                    render_targets: vec![textures[i].clone()],
+                    rt_clear: Some(super::ClearColour {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        a: 1.0,
+                    }),
+                    depth_stencil_target: None,
+                    ds_clear: None,
+                    resolve: false,
+                    discard: false,
+                }));
+            }
+
             SwapChain {
                 width: rect.width,
                 height: rect.height,
@@ -644,6 +663,7 @@ impl super::Device for Device {
                 fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
                 swap_chain: swap_chain,
                 backbuffer_textures: textures,
+                backbuffer_passes: passes,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
                 readback_buffer: create_read_back_buffer(&self, data_size),
@@ -1273,6 +1293,10 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn get_backbuffer_texture(&self) -> &Texture {
         return &self.backbuffer_textures[self.bb_index as usize];
+    }
+
+    fn get_backbuffer_pass(&mut self) -> &mut RenderPass {
+        return &mut self.backbuffer_passes[self.bb_index as usize];
     }
 
     fn swap(&mut self, device: &Device) {

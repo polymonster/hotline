@@ -238,28 +238,14 @@ fn main() {
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
 
-        // TODO: passes in swap chain
-        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some(gfx::ClearColour {
-                r: 1.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil_target: None,
-            ds_clear: None,
-            resolve: false,
-            discard: false,
-        });
-
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture().clone()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
         });
-
+        
+        let mut pass = swap_chain.get_backbuffer_pass();
         cmdbuffer.begin_render_pass(&mut pass);
 
         cmdbuffer.set_viewport(&viewport);
