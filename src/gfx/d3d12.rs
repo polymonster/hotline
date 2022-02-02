@@ -28,16 +28,18 @@ pub struct Device {
     command_queue: ID3D12CommandQueue,
     shader_heap: ID3D12DescriptorHeap,
     shader_heap_offset: usize,
+    rtv_heap: ID3D12DescriptorHeap,
+    rtv_heap_offset: usize
 }
 
 pub struct SwapChain {
     width: i32,
     height: i32,
+    format: super::Format,
     flags: u32,
     frame_index: i32,
     bb_index: i32,
     swap_chain: IDXGISwapChain3,
-    rtv_heap: ID3D12DescriptorHeap,
     backbuffer_textures: Vec<Texture>,
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
@@ -283,40 +285,28 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
 
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
-    device: &ID3D12Device,
-) -> (ID3D12DescriptorHeap, Vec<Texture>) {
+    device: &Device
+) -> Vec<Texture> {
     unsafe {
-        // TODO: move to device: create rtv heap
-        let rtv_heap_result = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-            NumDescriptors: NUM_BB,
-            Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-            ..Default::default()
-        });
-        if !rtv_heap_result.is_ok() {
-            panic!("hotline::gfx::d3d12: failed to create rtv heap for swap chain");
-        }
-
-        let rtv_heap: ID3D12DescriptorHeap = rtv_heap_result.unwrap();
+        // TODO: rtv offset / freelist
         let rtv_descriptor_size =
-            device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) as usize;
-        let rtv_handle = rtv_heap.GetCPUDescriptorHandleForHeapStart();
-
+            device.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) as usize;
+        let rtv_handle = device.rtv_heap.GetCPUDescriptorHandleForHeapStart();
         // render targets for the swap chain
         let mut textures: Vec<Texture> = Vec::new();
-
         for i in 0..NUM_BB {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = D3D12_CPU_DESCRIPTOR_HANDLE {
                 ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
             };
-            device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
+            device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
             textures.push(Texture {
                 resource: render_target.clone(),
                 srv: None,
                 rtv: Some(h),
             });
         }
-        (rtv_heap, textures)
+        textures
     }
 }
 
@@ -520,7 +510,6 @@ impl super::Device for Device {
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
-
     fn create() -> Device {
         unsafe {
             // enable debug layer
@@ -568,7 +557,8 @@ impl super::Device for Device {
                 .CreateCommandQueue(&desc)
                 .expect("hotline::gfx::d3d12: failed to create command queue");
 
-            // create shader heap (srv, cbv, uav)
+            // TODO: NumDescriptors from info
+            // create shader heap (srv, cbv, uav).. need separates?
             let shader_heap = device
                 .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                     Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
@@ -577,6 +567,13 @@ impl super::Device for Device {
                     NodeMask: 0,
                 })
                 .expect("hotline::gfx::d3d12: failed to create shader heap");
+
+            let rtv_heap = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                    NumDescriptors: 100,
+                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+                    ..Default::default()
+                })
+                .expect("hotline::gfx::d3d12: failed to create rtv heap");
 
             // initialise struct
             Device {
@@ -589,6 +586,8 @@ impl super::Device for Device {
                 command_queue: command_queue,
                 shader_heap: shader_heap,
                 shader_heap_offset: 0,
+                rtv_heap: rtv_heap,
+                rtv_heap_offset: 0
             }
         }
     }
@@ -597,6 +596,8 @@ impl super::Device for Device {
         unsafe {
             // set flags, these could be passed in
             let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
+            let format = super::Format::RGBA8n;
+            let dxgi_format = to_dxgi_format(format);
 
             // create swap chain desc
             let rect = win.get_rect();
@@ -604,7 +605,7 @@ impl super::Device for Device {
                 BufferCount: NUM_BB,
                 Width: rect.width as u32,
                 Height: rect.height as u32,
-                Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                Format: dxgi_format,
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
                 Flags: flags as u32,
@@ -628,21 +629,20 @@ impl super::Device for Device {
                 .expect("hotline::gfx::d3d12: failed to create swap chain for window");
             let swap_chain: IDXGISwapChain3 = swap_chain1.cast().unwrap();
 
-            // TODO: move heap creation
             // create rtv heap and handles
-            let (heap, textures) = create_swap_chain_rtv(&swap_chain, &self.device);
+            let textures = create_swap_chain_rtv(&swap_chain, &self);
             let data_size = (rect.width * rect.height * 4) as u64;
 
             SwapChain {
                 width: rect.width,
                 height: rect.height,
+                format: format,
                 flags: flags as u32,
                 bb_index: 0,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                 fence_last_signalled_value: 0,
                 fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
                 swap_chain: swap_chain,
-                rtv_heap: heap,
                 backbuffer_textures: textures,
                 frame_index: 0,
                 frame_fence_value: [0, 0],
@@ -1242,7 +1242,7 @@ impl super::SwapChain<Device> for SwapChain {
         if width != self.width || height != self.height {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
-                cmd.reset_internal();
+                cmd.drop_complete_in_flight_barriers(cmd.bb_index);
                 self.backbuffer_textures.clear();
 
                 self.swap_chain
@@ -1255,13 +1255,9 @@ impl super::SwapChain<Device> for SwapChain {
                     )
                     .expect("hotline::gfx::d3d12: warning: present failed!");
 
-                let (heap, textures) = create_swap_chain_rtv(&self.swap_chain, &device.device);
-
-                // TODO: format
-                let data_size = (width * height * 4) as u64;
-                self.backbuffer_textures = textures;
+                let data_size = super::slice_pitch_for_format(self.format, self.width as u64, self.height as u64);
+                self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, &device);
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
-                self.rtv_heap = heap;
                 self.width = width;
                 self.height = height;
                 self.bb_index = 0;
@@ -1318,11 +1314,6 @@ impl CmdBuf {
         }
         self.in_flight_barriers[bb].clear();
     }
-
-    // TODO: how to call super traits?
-    fn reset_internal(&mut self) {
-        self.drop_complete_in_flight_barriers(self.bb_index);
-    }
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
@@ -1344,7 +1335,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             unsafe {
                 self.command_allocator[bb].Reset().expect("hotline::gfx::d3d12: failed to reset command_allocator!");
                 self.command_list[bb].Reset(&self.command_allocator[bb], None)
-                    .expect("hotline::gfx::d3d12: failed to reset command_list!")
+                    .expect("hotline::gfx::d3d12: failed to reset command_list!");
             }
         }
         self.drop_complete_in_flight_barriers(prev_bb);

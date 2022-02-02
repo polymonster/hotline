@@ -9,7 +9,6 @@ use os::App;
 use os::Window;
 
 use image::*;
-
 use std::env;
 use std::fs;
 
