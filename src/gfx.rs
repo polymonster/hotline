@@ -7,16 +7,33 @@ pub mod d3d12;
 #[cfg(target_os = "windows")]
 use os::win32 as platform;
 
-pub enum ErrorPlatform {
+/// Error types for different gfx backends and FFI calls
+#[derive(Debug)]
+pub enum ErrorType {
+    ShaderCompile,
+    CreateBuffer,
+    CreateTexture,
     Direct3D12,
     Vulkan,
-    Metal,
-    WebGPU
+    NulError,
 }
 
+/// Errors to be passed back from FFI calls to various gfx backends
 #[derive(Debug)]
 pub struct Error {
-    pub code: u64
+    pub error_type: ErrorType,
+    pub msg: String,
+}
+
+/// Error will occur if a string passed to an FFI contains a null terminator within
+impl From<std::ffi::NulError> for Error {
+    fn from(err: std::ffi::NulError) -> Error {
+        let v = err.into_vec();
+        Error {
+            error_type: ErrorType::NulError,
+            msg: String::from_utf8(v).unwrap(),
+        }
+    }
 }
 
 /// Structure to specify viewport coordinates on a `CmdBuf`.
@@ -45,7 +62,7 @@ pub struct ScissorRect {
     pub bottom: i32,
 }
 
-/// Format for resource types (textures / buffers). 
+/// Format for resource types (textures / buffers).
 /// n = normalised unsigned integer,
 /// u = unsigned integer,
 /// i = signed integer,
@@ -84,8 +101,8 @@ pub struct BufferInfo {
     pub format: Format,
     /// The stride of a vertex or structure in bytes.
     pub stride: usize,
-    /// The number of array elements (buffer size bytes / stride)
-    pub num_elements: usize
+    /// The number of array elements
+    pub num_elements: usize,
 }
 
 /// Describes how a buffer will be used on the GPU.
@@ -93,7 +110,7 @@ pub struct BufferInfo {
 pub enum BufferUsage {
     Vertex,
     Index,
-    ConstantBuffer
+    ConstantBuffer,
 }
 
 /// Information to create a shader through `Device::create_shader`.
@@ -310,7 +327,7 @@ pub struct ClearDepthStencil {
     /// Clear value for the depth buffer. Use `None` to preserve existing contents.
     pub depth: Option<f32>,
     /// Clear value for the stencil buffer. Use `None` to preserve existing contents.
-    pub stencil: Option<u8>
+    pub stencil: Option<u8>,
 }
 
 /// Information to create a render pass
@@ -334,7 +351,7 @@ pub struct TransitionBarrier<D: Device> {
     pub texture: Option<D::Texture>,
     pub buffer: Option<D::Buffer>,
     pub state_before: ResourceState,
-    pub state_after: ResourceState
+    pub state_after: ResourceState,
 }
 
 /// All possible resource states, some for buffers and some for textures
@@ -351,7 +368,7 @@ pub enum ResourceState {
     /// Bindable as a vertex or constant buffer for use in shaders
     VertexConstantBuffer,
     /// Bindable as an index buffer
-    IndexBuffer
+    IndexBuffer,
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
@@ -379,9 +396,17 @@ pub trait Device: 'static + Sized + Any {
     fn create() -> Self;
     fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self) -> Self::CmdBuf;
-    fn create_buffer<T: Sized>(&mut self, info: &BufferInfo, data: &[T]) -> Self::Buffer;
-    fn create_texture<T: Sized>(&mut self, info: &TextureInfo, data: &[T]) -> Self::Texture;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
+    fn create_buffer<T: Sized>(
+        &mut self,
+        info: &BufferInfo,
+        data: Option<&[T]>,
+    ) -> Result<Self::Buffer, Error>;
+    fn create_texture<T: Sized>(
+        &mut self,
+        info: &TextureInfo,
+        data: Option<&[T]>,
+    ) -> Result<Self::Texture, Error>;
     fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Self::Pipeline;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
     fn execute(&self, cmd: &Self::CmdBuf);
@@ -400,7 +425,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// command list for each buffer in the associated swap chain.
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
-/// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU. 
+/// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
@@ -490,7 +515,10 @@ pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
 
 pub fn slice_as_u8_slice<T: Sized>(p: &[T]) -> &[u8] {
     unsafe {
-        ::std::slice::from_raw_parts((p.as_ptr() as *const T) as *const u8, ::std::mem::size_of::<T>() * p.len())
+        ::std::slice::from_raw_parts(
+            (p.as_ptr() as *const T) as *const u8,
+            ::std::mem::size_of::<T>() * p.len(),
+        )
     }
 }
 
@@ -533,8 +561,8 @@ pub fn slice_pitch_for_format(format: Format, width: u64, height: u64) -> u64 {
 }
 
 /// Return the size in bytes of a 3 dimensional resource: width * height * depth block size
-pub fn size_for_format_3d(format: Format, width: u64, height: u64, depth: u64) -> u64 {
-    block_size_for_format(format) as u64 * width * height * depth
+pub fn size_for_format(format: Format, width: u64, height: u64, depth: u32) -> u64 {
+    block_size_for_format(format) as u64 * width * height * depth as u64
 }
 
 /// Aligns value to the alignment specified by align. value must be a power of 2
@@ -553,11 +581,14 @@ pub fn align(value: u64, align: u64) -> u64 {
 }
 
 // TODO:
-// - return result and validate, texture, buffer and shader create functions
+// - texture result error handling
+// - pipeline result error handling
+// - render pass result error handling
 // - descriptor table shader visibility
 // - render pass in swap chain
 // - GPU index from Texture and Buffer
-// - Heap management... rtv heap to device
+// - Heaps?
+// -- rtv heaps
 
 // - Topology
 // - Sampler
@@ -572,6 +603,8 @@ pub fn align(value: u64, align: u64) -> u64 {
 // - pmfx Descriptor Layout
 
 // DONE:
+// x shaders result / error handling
+// x buffers result / error handling
 // x null terminate strings passed to windows-rs **
 // x Constant Buffer
 // x Transition barriers
