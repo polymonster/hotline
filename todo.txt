@@ -14,12 +14,13 @@
 // - Blend State
 
 // - docs on website
-// - Enumerate adapters
-// - Enumerate Device Info
+
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
+// - Enumerate adapters
+// - Enumerate Device Info
 // - GPU Marker
 // - GPU Timer Query
 

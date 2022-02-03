@@ -221,7 +221,6 @@ pub struct InputElementInfo {
 }
 
 /// Describes the frequency of which elements are fetched from a vertex input element.
-#[derive(Copy, Clone)]
 pub enum InputSlotClass {
     PerVertex,
     PerInstance,
