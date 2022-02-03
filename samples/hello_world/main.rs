@@ -6,6 +6,7 @@ use os::Window;
 use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
+use gfx::Texture;
 
 use std::fs;
 

@@ -1,17 +1,18 @@
 // TODO:
-// - swap chain create info
-// - GPU index from Texture and Buffer
 // - Heaps? + free list?
 // - pipeline result error handling
 // - descriptor table shader visibility
 
 // - Render Target
 // - Depth Stencil Target
+// - Compute
+
 // - Topology
 // - Sampler
 // - Raster State
 // - Depth Stencil State
 // - Blend State
+
 // - docs on website
 // - Enumerate adapters
 // - Enumerate Device Info
@@ -23,6 +24,8 @@
 // - GPU Timer Query
 
 // DONE:
+// x srv index from Texture and Buffer
+// x swap chain create info
 // x render pass in swap chain
 // x rtv heaps in device not swap chain
 // x call super traits = use super::Trait as SuperTrait (to avoid)
