@@ -15,9 +15,6 @@ use std::ffi::CString;
 use std::result;
 use std::str;
 
-/// Indicates the number of backbuffers used for swap chains and command buffers.
-const NUM_BB: u32 = 2;
-
 pub struct Device {
     name: String,
     adapter: IDXGIAdapter1,
@@ -36,6 +33,7 @@ pub struct SwapChain {
     width: i32,
     height: i32,
     format: super::Format,
+    num_bb: u32,
     flags: u32,
     frame_index: i32,
     bb_index: i32,
@@ -45,7 +43,7 @@ pub struct SwapChain {
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
-    frame_fence_value: [u64; NUM_BB as usize],
+    frame_fence_value: Vec<u64>,
     readback_buffer: Option<ID3D12Resource>,
 }
 
@@ -112,6 +110,9 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGBA8u => DXGI_FORMAT_R8G8B8A8_UINT,
         super::Format::RGBA8i => DXGI_FORMAT_R8G8B8A8_SINT,
         super::Format::BGRA8n => DXGI_FORMAT_B8G8R8A8_UNORM,
+        super::Format::RGBA16u => DXGI_FORMAT_R16G16B16A16_UINT,
+        super::Format::RGBA16i => DXGI_FORMAT_R16G16B16A16_SINT,
+        super::Format::RGBA16f => DXGI_FORMAT_R16G16B16A16_FLOAT,
         super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
@@ -286,7 +287,8 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
 
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
-    device: &Device
+    device: &Device,
+    num_bb: u32
 ) -> Vec<Texture> {
     unsafe {
         // TODO: rtv offset / freelist
@@ -295,7 +297,7 @@ fn create_swap_chain_rtv(
         let rtv_handle = device.rtv_heap.GetCPUDescriptorHandleForHeapStart();
         // render targets for the swap chain
         let mut textures: Vec<Texture> = Vec::new();
-        for i in 0..NUM_BB {
+        for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = D3D12_CPU_DESCRIPTOR_HANDLE {
                 ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
@@ -593,7 +595,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_swap_chain(&self, win: &platform::Window) -> SwapChain {
+    fn create_swap_chain(&self, info: &super::SwapChainInfo, win: &platform::Window) -> SwapChain {
         unsafe {
             // set flags, these could be passed in
             let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
@@ -603,7 +605,7 @@ impl super::Device for Device {
             // create swap chain desc
             let rect = win.get_rect();
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
-                BufferCount: NUM_BB,
+                BufferCount: info.num_buffers,
                 Width: rect.width as u32,
                 Height: rect.height as u32,
                 Format: dxgi_format,
@@ -631,12 +633,12 @@ impl super::Device for Device {
             let swap_chain: IDXGISwapChain3 = swap_chain1.cast().unwrap();
 
             // create rtv heap and handles
-            let textures = create_swap_chain_rtv(&swap_chain, &self);
+            let textures = create_swap_chain_rtv(&swap_chain, &self, info.num_buffers);
             let data_size = (rect.width * rect.height * 4) as u64;
 
             // create render passes for the swap chain
             let mut passes = Vec::new();
-            for i in 0..NUM_BB as usize {
+            for i in 0..info.num_buffers as usize {
                 passes.push(self.create_render_pass(&super::RenderPassInfo {
                     render_targets: vec![textures[i].clone()],
                     rt_clear: Some(super::ClearColour {
@@ -656,6 +658,7 @@ impl super::Device for Device {
                 width: rect.width,
                 height: rect.height,
                 format: format,
+                num_bb: info.num_buffers,
                 flags: flags as u32,
                 bb_index: 0,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
@@ -665,19 +668,19 @@ impl super::Device for Device {
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
                 frame_index: 0,
-                frame_fence_value: [0, 0],
+                frame_fence_value: vec![0; info.num_buffers as usize],
                 readback_buffer: create_read_back_buffer(&self, data_size),
             }
         }
     }
 
-    fn create_cmd_buf(&self) -> CmdBuf {
+    fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
         unsafe {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
             let mut barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>> = Vec::new();
 
-            for _ in 0..NUM_BB as usize {
+            for _ in 0..num_buffers as usize {
                 // create command allocator
                 let command_allocator = self
                     .device
@@ -1267,7 +1270,7 @@ impl super::SwapChain<Device> for SwapChain {
 
                 self.swap_chain
                     .ResizeBuffers(
-                        NUM_BB,
+                        self.num_bb,
                         width as u32,
                         height as u32,
                         DXGI_FORMAT_UNKNOWN,
@@ -1276,7 +1279,7 @@ impl super::SwapChain<Device> for SwapChain {
                     .expect("hotline::gfx::d3d12: warning: present failed!");
 
                 let data_size = super::slice_pitch_for_format(self.format, self.width as u64, self.height as u64);
-                self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, &device);
+                self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, &device, self.num_bb);
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
                 self.width = width;
                 self.height = height;
@@ -1317,7 +1320,7 @@ impl super::SwapChain<Device> for SwapChain {
 
             // swap buffers
             self.frame_index = self.frame_index + 1;
-            self.bb_index = (self.bb_index + 1) % NUM_BB as i32;
+            self.bb_index = (self.bb_index + 1) % self.num_bb as i32;
         }
     }
 }

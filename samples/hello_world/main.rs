@@ -42,10 +42,14 @@ fn main() {
             height: 720,
         },
     });
-    let mut swap_chain = dev.create_swap_chain(&win);
+    let swap_chain_info = gfx::SwapChainInfo {
+        num_buffers: 2,
+        format: gfx::Format::RGBA8n
+    };
+    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
 
     // cmd buffer
-    let mut cmdbuffer = dev.create_cmd_buf();
+    let mut cmdbuffer = dev.create_cmd_buf(2);
 
     // vertex buffer
     let vertices = [
@@ -214,9 +218,9 @@ fn main() {
 
     // constant buffer
     let mut cbuffer: [f32; 64] = [0.0; 64];
-    cbuffer[0] = 1.0;
-    cbuffer[1] = 0.0;
-    cbuffer[2] = 1.0;
+    cbuffer[0] = 0.0;
+    cbuffer[1] = 1.0;
+    cbuffer[2] = 0.0;
     cbuffer[3] = 1.0;
 
     let info = gfx::BufferInfo {
@@ -244,7 +248,7 @@ fn main() {
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
         });
-        
+
         let mut pass = swap_chain.get_backbuffer_pass();
         cmdbuffer.begin_render_pass(&mut pass);
 

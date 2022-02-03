@@ -88,9 +88,18 @@ pub enum Format {
     RGBA8u,
     RGBA8i,
     BGRA8n,
+    RGBA16u,
+    RGBA16i,
+    RGBA16f,
     RGBA32u,
     RGBA32i,
     RGBA32f,
+}
+
+pub struct SwapChainInfo {
+    pub num_buffers: u32,
+    /// must be BGRA8n, RGBA8n or RGBA16f
+    pub format: Format,
 }
 
 /// Information to create a buffer through `Device::create_buffer`.
@@ -395,8 +404,8 @@ pub trait Device: 'static + Sized + Any {
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
     fn create() -> Self;
-    fn create_swap_chain(&self, window: &platform::Window) -> Self::SwapChain;
-    fn create_cmd_buf(&self) -> Self::CmdBuf;
+    fn create_swap_chain(&self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
+    fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
     fn create_buffer<T: Sized>(
         &mut self,
@@ -507,14 +516,14 @@ impl From<os::Rect<i32>> for ScissorRect {
     }
 }
 
-/// Utility function to take any sized type and return a u8 slice.
-/// This can be useful to pass `data` to `Device::create_buffer`.
+/// Take any sized type and return a u8 slice. This can be useful to pass `data` to `Device::create_buffer`.
 pub fn as_u8_slice<T: Sized>(p: &T) -> &[u8] {
     unsafe {
         ::std::slice::from_raw_parts((p as *const T) as *const u8, ::std::mem::size_of::<T>())
     }
 }
 
+/// Take any sized silce and convert to a slice of u8
 pub fn slice_as_u8_slice<T: Sized>(p: &[T]) -> &[u8] {
     unsafe {
         ::std::slice::from_raw_parts(
@@ -545,6 +554,9 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::RGB32u => 12,
         Format::RGB32i => 12,
         Format::RGB32f => 12,
+        Format::RGBA16u => 8,
+        Format::RGBA16i => 8,
+        Format::RGBA16f => 8,
         Format::RGBA32u => 16,
         Format::RGBA32i => 16,
         Format::RGBA32f => 16,
