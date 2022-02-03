@@ -19,22 +19,11 @@ pub enum ErrorType {
     NulError,
 }
 
-/// Errors to be passed back from FFI calls to various gfx backends
+/// Errors passed back from FFI calls to various gfx backends
 #[derive(Debug)]
 pub struct Error {
     pub error_type: ErrorType,
     pub msg: String,
-}
-
-/// Error will occur if a string passed to an FFI contains a null terminator within
-impl From<std::ffi::NulError> for Error {
-    fn from(err: std::ffi::NulError) -> Error {
-        let v = err.into_vec();
-        Error {
-            error_type: ErrorType::NulError,
-            msg: String::from_utf8(v).unwrap(),
-        }
-    }
 }
 
 /// Structure to specify viewport coordinates on a `CmdBuf`.
@@ -96,6 +85,7 @@ pub enum Format {
     RGBA32f,
 }
 
+/// Information to pass to `Device::create_swap_chain`
 pub struct SwapChainInfo {
     pub num_buffers: u32,
     /// must be BGRA8n, RGBA8n or RGBA16f
@@ -381,14 +371,10 @@ pub enum ResourceState {
     IndexBuffer,
 }
 
-/// An opaque Buffer type used for vertex, index, constant or unordered access.
-pub trait Buffer<D: Device>: 'static + Sized + Any {}
 /// An opaque Shader type
 pub trait Shader<D: Device>: 'static + Sized + Any {}
 /// An opaque Pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait Pipeline<D: Device>: 'static + Sized + Any {}
-/// An opaque Texture type
-pub trait Texture<D: Device>: 'static + Sized + Any {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: 'static + Sized + Any {}
 
@@ -470,6 +456,18 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
     fn debug_set_descriptor_heap(&self, device: &D);
 }
 
+/// An opaque Buffer type used for vertex, index, constant or unordered access.
+pub trait Buffer<D: Device>: 'static + Sized + Any {
+    /// Return the index to access in a shader ie) buffers[index].member... returns u32::MAX if there is no srv
+    fn get_srv_index(&self) -> u32;
+}
+
+/// An opaque Texture type
+pub trait Texture<D: Device>: 'static + Sized + Any {
+    /// Return the index to access in a shader ie) textures[index].sample... returns u32::MAX if there is no srv
+    fn get_srv_index(&self) -> u32;
+}
+
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
 /// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
 /// data can be obtained using `get_data`
@@ -490,30 +488,6 @@ pub struct ReadBackData {
     pub row_pitch: usize,
     /// Pitch of a slice (3D texture or array level, cubemap face etc)
     pub slice_pitch: usize,
-}
-
-impl From<os::Rect<i32>> for Viewport {
-    fn from(rect: os::Rect<i32>) -> Viewport {
-        Viewport {
-            x: rect.x as f32,
-            y: rect.y as f32,
-            width: rect.width as f32,
-            height: rect.height as f32,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        }
-    }
-}
-
-impl From<os::Rect<i32>> for ScissorRect {
-    fn from(rect: os::Rect<i32>) -> ScissorRect {
-        ScissorRect {
-            left: rect.x,
-            top: rect.y,
-            right: rect.width,
-            bottom: rect.height,
-        }
-    }
 }
 
 /// Take any sized type and return a u8 slice. This can be useful to pass `data` to `Device::create_buffer`.
@@ -592,4 +566,38 @@ pub fn align(value: u64, align: u64) -> u64 {
         return (div + 1) * align;
     }
     value
+}
+
+impl From<os::Rect<i32>> for Viewport {
+    fn from(rect: os::Rect<i32>) -> Viewport {
+        Viewport {
+            x: rect.x as f32,
+            y: rect.y as f32,
+            width: rect.width as f32,
+            height: rect.height as f32,
+            min_depth: 0.0,
+            max_depth: 1.0,
+        }
+    }
+}
+
+impl From<os::Rect<i32>> for ScissorRect {
+    fn from(rect: os::Rect<i32>) -> ScissorRect {
+        ScissorRect {
+            left: rect.x,
+            top: rect.y,
+            right: rect.width,
+            bottom: rect.height,
+        }
+    }
+}
+
+impl From<std::ffi::NulError> for Error {
+    fn from(err: std::ffi::NulError) -> Error {
+        let v = err.into_vec();
+        Error {
+            error_type: ErrorType::NulError,
+            msg: String::from_utf8(v).unwrap(),
+        }
+    }
 }

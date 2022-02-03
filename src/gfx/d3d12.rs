@@ -61,9 +61,10 @@ pub struct CmdBuf {
 
 pub struct Buffer {
     resource: ID3D12Resource,
+    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
-    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    srv_index: u32
 }
 
 pub struct Shader {
@@ -75,6 +76,7 @@ pub struct Texture {
     resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    srv_index: u32
 }
 
 #[derive(Clone)]
@@ -307,6 +309,7 @@ fn create_swap_chain_rtv(
                 resource: render_target.clone(),
                 srv: None,
                 rtv: Some(h),
+                srv_index: u32::MAX,
             });
         }
         textures
@@ -339,10 +342,8 @@ fn validate_data_size<T: Sized>(size_bytes: usize, data: Option<&[T]>) -> result
     Ok(())
 }
 
-impl super::Buffer<Device> for Buffer {}
 impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
-impl super::Texture<Device> for Texture {}
 impl super::RenderPass<Device> for RenderPass {}
 
 impl From<windows::core::Error> for super::Error {
@@ -940,6 +941,7 @@ impl super::Device for Device {
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
+            let mut srv_index: u32 = 0;
 
             match info.usage {
                 super::BufferUsage::Vertex => {
@@ -965,6 +967,7 @@ impl super::Device for Device {
                         .device
                         .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                         as usize;
+                    srv_index = (self.shader_heap_offset / descriptor_size) as u32;
                     self.shader_heap_offset += descriptor_size;
 
                     self.device.CreateConstantBufferView(
@@ -983,6 +986,7 @@ impl super::Device for Device {
                 vbv: vbv,
                 ibv: ibv,
                 srv: srv,
+                srv_index: srv_index
             })
         }
     }
@@ -1146,6 +1150,7 @@ impl super::Device for Device {
                 .device
                 .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
                 as usize;
+            let srv_index = (self.shader_heap_offset / descriptor_size) as u32;
             self.shader_heap_offset += descriptor_size;
 
             self.device.CreateShaderResourceView(
@@ -1173,6 +1178,7 @@ impl super::Device for Device {
                 resource: tex.unwrap(),
                 rtv: None,
                 srv: Some(handle),
+                srv_index: srv_index
             })
         }
     }
@@ -1567,6 +1573,18 @@ impl super::CmdBuf<Device> for CmdBuf {
                 slice_pitch: (swap_chain.width * swap_chain.height * 4) as usize,
             }
         }
+    }
+}
+
+impl super::Buffer<Device> for Buffer {
+    fn get_srv_index(&self) -> u32 {
+        self.srv_index
+    }
+}
+
+impl super::Texture<Device> for Texture {
+    fn get_srv_index(&self) -> u32 {
+        self.srv_index
     }
 }
 
