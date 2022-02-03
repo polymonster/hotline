@@ -114,8 +114,13 @@ fn swap_chain_buffer() {
     });
     win.bring_to_front();
 
-    let mut swap_chain = dev.create_swap_chain(&win);
-    let mut cmdbuffer = dev.create_cmd_buf();
+    let swap_chain_info = gfx::SwapChainInfo {
+        num_buffers: 2,
+        format: gfx::Format::RGBA8n
+    };
+
+    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+    let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let clears_colours: [gfx::ClearColour; 4] = [
         gfx::ClearColour {
@@ -206,8 +211,13 @@ fn draw_triangle() {
         },
     });
 
-    let mut swap_chain = dev.create_swap_chain(&win);
-    let mut cmdbuffer = dev.create_cmd_buf();
+    let swap_chain_info = gfx::SwapChainInfo {
+        num_buffers: 2,
+        format: gfx::Format::RGBA8n
+    };
+
+    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+    let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let vertices = [
         Vertex {
