@@ -10,12 +10,13 @@ use os::win32 as platform;
 /// Error types for different gfx backends and FFI calls
 #[derive(Debug)]
 pub enum ErrorType {
-    ShaderCompile,
     DataSize,
-    CreateBuffer,
-    CreateTexture,
+    ShaderCompile,
+    DescriptorLayout,
     Direct3D12,
     Vulkan,
+    Metal,
+    WebGPU,
     NulError,
 }
 
@@ -191,7 +192,7 @@ pub enum DescriptorTableType {
 pub enum ShaderVisibility {
     All,
     Vertex,
-    Fragment,
+    Fragment
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
@@ -402,7 +403,7 @@ pub trait Device: 'static + Sized + Any {
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
-    fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Self::Pipeline;
+    fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Result<Self::Pipeline, Error>;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
     fn execute(&self, cmd: &Self::CmdBuf);
 }

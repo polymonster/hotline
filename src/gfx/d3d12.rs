@@ -14,6 +14,7 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::result;
 use std::str;
+use std::iter::Map;
 
 pub struct Device {
     name: String,
@@ -194,14 +195,13 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
     }
 }
 
-fn print_d3d12_error_blob(blob: &ID3DBlob) {
+fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
-        let txt = String::from_raw_parts(
+        String::from_raw_parts(
             blob.GetBufferPointer() as *mut _,
             blob.GetBufferSize(),
             blob.GetBufferSize(),
-        );
-        println!("{}", txt);
+        )
     }
 }
 
@@ -385,10 +385,8 @@ impl Device {
     fn create_root_signature(
         &self,
         layout: &super::DescriptorLayout,
-    ) -> Result<ID3D12RootSignature> {
+    ) -> result::Result<ID3D12RootSignature, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
-        let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
-        let mut ranges: Vec<D3D12_DESCRIPTOR_RANGE> = Vec::new();
         // push constants
         if layout.push_constants.is_some() {
             let constants_set = layout.push_constants.as_ref();
@@ -407,9 +405,16 @@ impl Device {
             }
         }
         // tables for (SRV, UAV, CBV an Samplers)
+        // TODO: num
+        let mut visibility_ranges: [Vec<D3D12_DESCRIPTOR_RANGE>; 3] = [
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        ];
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
-            let mut descriptor_offset = 0;
+            // TODO: descriptor offset
+            // let mut descriptor_offset = 0;
             for table in table_info.unwrap() {
                 let count = if table.num_descriptors.is_some() {
                     table.num_descriptors.unwrap()
@@ -434,22 +439,33 @@ impl Device {
                     RegisterSpace: table.register_space,
                     OffsetInDescriptorsFromTableStart: 0,
                 };
-                ranges.push(range);
-                descriptor_offset = descriptor_offset + count;
+                println!("vis {}", table.visibility as usize);
+                visibility_ranges[table.visibility as usize].push(range);
             }
-            // TODO: table.visibility
-            root_params.push(D3D12_ROOT_PARAMETER {
-                ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
-                Anonymous: D3D12_ROOT_PARAMETER_0 {
-                    DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                        NumDescriptorRanges: ranges.len() as u32,
-                        pDescriptorRanges: ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
+            for i in 0..visibility_ranges.len() {
+                // skip ranges 
+                if visibility_ranges[i].len() == 0 {
+                    continue;
+                }
+                root_params.push(D3D12_ROOT_PARAMETER {
+                    ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
+                    Anonymous: D3D12_ROOT_PARAMETER_0 {
+                        DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
+                            NumDescriptorRanges: visibility_ranges[i].len() as u32,
+                            pDescriptorRanges: visibility_ranges[i].as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
+                        },
                     },
-                },
-                ShaderVisibility: D3D12_SHADER_VISIBILITY_PIXEL, //to_d3d12_shader_visibility(table.visibility),
-            })
+                    ShaderVisibility: match i {
+                        0 => D3D12_SHADER_VISIBILITY_ALL,
+                        1 => D3D12_SHADER_VISIBILITY_VERTEX,
+                        2 => D3D12_SHADER_VISIBILITY_PIXEL,
+                        _ => D3D12_SHADER_VISIBILITY_ALL
+                    },
+                })
+            }
         }
         // immutable samplers
+        let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
         if layout.static_samplers.is_some() {
             let samplers = layout.static_samplers.as_ref();
             for sampler in samplers.unwrap() {
@@ -485,7 +501,6 @@ impl Device {
         unsafe {
             let mut signature = None;
             let mut error = None;
-
             let _ = D3D12SerializeRootSignature(
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
@@ -493,14 +508,19 @@ impl Device {
                 &mut error,
             );
 
-            // print error
+            // return error
             if error.is_some() {
                 let blob = error.unwrap();
-                print_d3d12_error_blob(&blob);
+                return Err( super::Error {
+                    error_type: super::ErrorType::DescriptorLayout,
+                    msg: get_d3d12_error_blob_string(&blob)
+                });
             }
 
+            // create signature
             let sig = signature.unwrap();
-            self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())
+            let sig = self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())?;
+            Ok(sig)
         }
     }
 }
@@ -710,8 +730,8 @@ impl super::Device for Device {
     }
 
     // TODO: error handling
-    fn create_pipeline(&self, info: &super::PipelineInfo<Device>) -> Pipeline {
-        let root_signature = self.create_root_signature(&info.descriptor_layout).unwrap();
+    fn create_pipeline(&self, info: &super::PipelineInfo<Device>) -> result::Result<Pipeline, super::Error> {
+        let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
         // TODO: select which shaders
         let vs = &info.vs.as_ref().unwrap().blob;
@@ -778,10 +798,10 @@ impl super::Device for Device {
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         unsafe {
-            Pipeline {
-                pso: self.device.CreateGraphicsPipelineState(&desc).unwrap(),
+            Ok(Pipeline {
+                pso: self.device.CreateGraphicsPipelineState(&desc)?,
                 root_signature: root_signature,
-            }
+            })
         }
     }
 
