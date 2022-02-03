@@ -341,7 +341,7 @@ fn draw_triangle() {
                 register_space: 0,
             }]),
         },
-    });
+    }).expect("failed to create pipeline");
 
     let mut rbr = gfx_platform::ReadBackRequest {
         fence_value: u64::MAX,

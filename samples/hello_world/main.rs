@@ -189,7 +189,7 @@ fn main() {
                 register_space: 0,
             }]),
         },
-    });
+    }).expect("failed to create pipeline!");
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![

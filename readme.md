@@ -11,5 +11,15 @@
 - Data-driven and configurable.
 - Plugin based an extendible.
 
-This is very early stages of development, it is also my first major project in rust so it is very much a learning experience too.
+### Roadmap
+- API Frontend (gfx::, os::) / Backend (d3d12::, win32::)  <- In Progress!
+- Imgui support w/ Viewports (maybe alternatives, but multi-window 'viewports' is important)
+- API Frontend (av::) / Windows Media Foundation (HW Video / Audio Decoding)
+- Samples and Demos
+- Linux
+- Vulkan
+- macOS
+- Metal
+ 
+
 
