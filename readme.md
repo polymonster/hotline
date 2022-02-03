@@ -12,14 +12,15 @@
 - Plugin based an extendible.
 
 ### Roadmap
-- API Frontend (gfx::, os::) / Backend (d3d12::, win32::)  <- In Progress!
+- API (gfx::, os::) / Backend (d3d12::, win32::)  <- In Progress!
 - Imgui support w/ Viewports (maybe alternatives, but multi-window 'viewports' is important)
-- API Frontend (av::) / Windows Media Foundation (HW Video / Audio Decoding)
+- API (av::) / Windows Media Foundation (HW Video / Audio Decoding)
 - Samples and Demos
 - Linux
 - Vulkan
 - macOS
 - Metal
+- AV Foundation
  
 
 
