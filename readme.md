@@ -3,7 +3,8 @@
 ## Design Goals
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render graphs, code).
-- Concise graphics api frontend with low level feature access think somewhere in-between Metal and Direct3D12.
+- Concise low level graphics api... think somewhere in-between Metal and Direct3D12.
+- High level data driven graphics api for ease.
 - A focus on modern rendering (gpu-driven, multi-threaded, bindless, ray-tracing).
 - With flexibility to easily create and use different rendering strategies (deferred vs forward, gpu-driven vs cpu driven, etc).
 - Hardware accellerated video decoding.
@@ -12,14 +13,17 @@
 - Plugin based an extendible.
 
 ### Roadmap
-- API Frontend (gfx::, os::) / Backend (d3d12::, win32::)  <- In Progress!
+- API (gfx::, os::) / Backend (d3d12::, win32::)  <- In Progress!
 - Imgui support w/ Viewports (maybe alternatives, but multi-window 'viewports' is important)
-- API Frontend (av::) / Windows Media Foundation (HW Video / Audio Decoding)
+- High level graphics api (render graphs, data driven, Uber shaders)
+- Hot reloading
+- API (av::) / Windows Media Foundation (HW Video / Audio Decoding)
 - Samples and Demos
 - Linux
 - Vulkan
 - macOS
 - Metal
+- AV Foundation
  
 
 
