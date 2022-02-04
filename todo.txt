@@ -1,5 +1,4 @@
 // TODO:
-// - descriptor table shader visibility
 // - Heaps? + free list?
 
 // - Render Target
@@ -24,6 +23,7 @@
 // - GPU Timer Query
 
 // DONE:
+// x descriptor table shader visibility
 // x pipeline result error handling
 // x srv index from Texture and Buffer
 // x swap chain create info

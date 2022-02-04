@@ -14,7 +14,7 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::result;
 use std::str;
-use std::iter::Map;
+use std::collections::HashMap;
 
 pub struct Device {
     name: String,
@@ -386,7 +386,9 @@ impl Device {
         &self,
         layout: &super::DescriptorLayout,
     ) -> result::Result<ID3D12RootSignature, super::Error> {
+        
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
+
         // push constants
         if layout.push_constants.is_some() {
             let constants_set = layout.push_constants.as_ref();
@@ -404,17 +406,11 @@ impl Device {
                 });
             }
         }
+
         // tables for (SRV, UAV, CBV an Samplers)
-        // TODO: num
-        let mut visibility_ranges: [Vec<D3D12_DESCRIPTOR_RANGE>; 3] = [
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        ];
+        let mut visibility_map : HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> = HashMap::new();
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
-            // TODO: descriptor offset
-            // let mut descriptor_offset = 0;
             for table in table_info.unwrap() {
                 let count = if table.num_descriptors.is_some() {
                     table.num_descriptors.unwrap()
@@ -439,31 +435,30 @@ impl Device {
                     RegisterSpace: table.register_space,
                     OffsetInDescriptorsFromTableStart: 0,
                 };
-                println!("vis {}", table.visibility as usize);
-                visibility_ranges[table.visibility as usize].push(range);
-            }
-            for i in 0..visibility_ranges.len() {
-                // skip ranges 
-                if visibility_ranges[i].len() == 0 {
-                    continue;
+
+                let map = visibility_map.get_mut(&table.visibility);
+                if map.is_some() {
+                    map.unwrap().push(range);
                 }
+                else {
+                    visibility_map.insert(table.visibility, vec![range]);
+                }
+            }
+
+            for (visibility, ranges) in visibility_map.into_iter() {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
                         DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                            NumDescriptorRanges: visibility_ranges[i].len() as u32,
-                            pDescriptorRanges: visibility_ranges[i].as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
+                            NumDescriptorRanges: ranges.len() as u32,
+                            pDescriptorRanges: ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
                         },
                     },
-                    ShaderVisibility: match i {
-                        0 => D3D12_SHADER_VISIBILITY_ALL,
-                        1 => D3D12_SHADER_VISIBILITY_VERTEX,
-                        2 => D3D12_SHADER_VISIBILITY_PIXEL,
-                        _ => D3D12_SHADER_VISIBILITY_ALL
-                    },
-                })
+                    ShaderVisibility: to_d3d12_shader_visibility(visibility)
+                });
             }
         }
+
         // immutable samplers
         let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
         if layout.static_samplers.is_some() {
@@ -496,9 +491,9 @@ impl Device {
             pStaticSamplers: static_samplers.as_mut_ptr(),
             ..Default::default()
         };
-        
-        // create signature
+
         unsafe {
+            // serialise signature
             let mut signature = None;
             let mut error = None;
             let _ = D3D12SerializeRootSignature(
@@ -508,7 +503,7 @@ impl Device {
                 &mut error,
             );
 
-            // return error
+            // handle errors
             if error.is_some() {
                 let blob = error.unwrap();
                 return Err( super::Error {
