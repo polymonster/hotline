@@ -219,9 +219,9 @@ fn main() {
 
     // constant buffer
     let mut cbuffer: [f32; 64] = [0.0; 64];
-    cbuffer[0] = 0.0;
+    cbuffer[0] = 1.0;
     cbuffer[1] = 1.0;
-    cbuffer[2] = 0.0;
+    cbuffer[2] = 1.0;
     cbuffer[3] = 1.0;
 
     let info = gfx::BufferInfo {
