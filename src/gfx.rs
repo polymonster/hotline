@@ -21,7 +21,6 @@ pub enum ErrorType {
 }
 
 /// Errors passed back from FFI calls to various gfx backends
-#[derive(Debug)]
 pub struct Error {
     pub error_type: ErrorType,
     pub msg: String,
@@ -599,5 +598,11 @@ impl From<std::ffi::NulError> for Error {
             error_type: ErrorType::NulError,
             msg: String::from_utf8(v).unwrap(),
         }
+    }
+}
+
+impl std::fmt::Debug for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "\n{:?} Error: \n{}\n", self.error_type, self.msg)
     }
 }

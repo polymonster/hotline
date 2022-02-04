@@ -496,7 +496,7 @@ impl Device {
             pStaticSamplers: static_samplers.as_mut_ptr(),
             ..Default::default()
         };
-
+        
         // create signature
         unsafe {
             let mut signature = None;

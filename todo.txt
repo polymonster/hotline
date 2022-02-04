@@ -1,7 +1,6 @@
 // TODO:
-// - Heaps? + free list?
-// - pipeline result error handling
 // - descriptor table shader visibility
+// - Heaps? + free list?
 
 // - Render Target
 // - Depth Stencil Target
@@ -25,6 +24,7 @@
 // - GPU Timer Query
 
 // DONE:
+// x pipeline result error handling
 // x srv index from Texture and Buffer
 // x swap chain create info
 // x render pass in swap chain
