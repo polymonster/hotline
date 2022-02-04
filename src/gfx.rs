@@ -187,7 +187,7 @@ pub enum DescriptorTableType {
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq)]
 pub enum ShaderVisibility {
     All,
     Vertex,
