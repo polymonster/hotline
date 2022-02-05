@@ -370,16 +370,34 @@ pub enum ResourceState {
     IndexBuffer,
 }
 
+/// Information to create a desciptor heap
+pub struct HeapInfo {
+    pub heap_type: HeapType,
+    pub num_descriptors: usize
+}
+
+/// Options for heap types
+#[derive(Copy, Clone)]
+pub enum HeapType {
+    /// For shader resource view, constant buffer or unordered access
+    Shader,
+    RenderTarget,
+    DepthStencil,
+    Sampler
+}
+
 /// An opaque Shader type
-pub trait Shader<D: Device>: 'static + Sized + Any {}
+pub trait Shader<D: Device>: {}
 /// An opaque Pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
-pub trait Pipeline<D: Device>: 'static + Sized + Any {}
+pub trait Pipeline<D: Device>: {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
-pub trait RenderPass<D: Device>: 'static + Sized + Any {}
+pub trait RenderPass<D: Device>: {}
+/// An opaque shader heap type, use to create views of resources for binding and access in shaders
+pub trait Heap<D: Device>: {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
-pub trait Device: 'static + Sized + Any {
+pub trait Device: Sized + Any {
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
@@ -388,7 +406,9 @@ pub trait Device: 'static + Sized + Any {
     type Texture: Texture<Self>;
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
+    type Heap: Heap<Self>;
     fn create() -> Self;
+    fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
     fn create_swap_chain(&self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
@@ -422,7 +442,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
-pub trait CmdBuf<D: Device>: 'static + Sized + Any {
+pub trait CmdBuf<D: Device>: {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
     fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
@@ -456,13 +476,13 @@ pub trait CmdBuf<D: Device>: 'static + Sized + Any {
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
-pub trait Buffer<D: Device>: 'static + Sized + Any {
+pub trait Buffer<D: Device>: {
     /// Return the index to access in a shader ie) buffers[index].member... returns u32::MAX if there is no srv
     fn get_srv_index(&self) -> u32;
 }
 
 /// An opaque Texture type
-pub trait Texture<D: Device>: 'static + Sized + Any {
+pub trait Texture<D: Device>: {
     /// Return the index to access in a shader ie) textures[index].sample... returns u32::MAX if there is no srv
     fn get_srv_index(&self) -> u32;
 }
@@ -470,7 +490,7 @@ pub trait Texture<D: Device>: 'static + Sized + Any {
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
 /// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
 /// data can be obtained using `get_data`
-pub trait ReadBackRequest<D: Device>: 'static + Sized + Any {
+pub trait ReadBackRequest<D: Device>: {
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
     fn get_data(&self) -> Result<ReadBackData, &str>;
 }

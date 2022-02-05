@@ -1,5 +1,7 @@
 // TODO:
 // - Heaps? + free list?
+// - need `static on a trait?
+// - device info with default heap sizes
 
 // - Render Target
 // - Depth Stencil Target
