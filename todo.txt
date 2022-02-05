@@ -1,6 +1,5 @@
 // TODO:
 // - Heaps? + free list?
-// - need `static on a trait?
 // - device info with default heap sizes
 
 // - Render Target
@@ -15,6 +14,7 @@
 
 // - docs on website
 
+// - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
@@ -25,6 +25,7 @@
 // - GPU Timer Query
 
 // DONE:
+// x do we need `static on a trait? (for now removed)
 // x descriptor table shader visibility
 // x pipeline result error handling
 // x srv index from Texture and Buffer

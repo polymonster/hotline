@@ -38,7 +38,11 @@ fn create_d3d12_device() {
         window: false,
         num_buffers: 0,
     });
-    let _dev = gfx_platform::Device::create();
+    let _dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        shader_heap_size: 1,
+        render_target_heap_size: 1,
+        depth_stencil_heap_size: 1,
+    });
 }
 
 #[test]
@@ -102,7 +106,11 @@ fn swap_chain_buffer() {
         window: false,
         num_buffers: 0,
     });
-    let dev = gfx_platform::Device::create();
+    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        shader_heap_size: 0,
+        render_target_heap_size: 2,
+        depth_stencil_heap_size: 0,
+    });
     let mut win = app.create_window(os::WindowInfo {
         title: String::from("swap chain buffering"),
         rect: os::Rect {
@@ -153,7 +161,7 @@ fn swap_chain_buffer() {
     let mut count = 0;
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win, &mut cmdbuffer);
+        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
 
         cmdbuffer.reset(&swap_chain);
 
@@ -199,7 +207,11 @@ fn draw_triangle() {
         num_buffers: 0,
     });
 
-    let mut dev = gfx_platform::Device::create();
+    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        shader_heap_size: 0,
+        render_target_heap_size: 2,
+        depth_stencil_heap_size: 0,
+    });
 
     let mut win = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
@@ -356,7 +368,7 @@ fn draw_triangle() {
     let mut count = 0;
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win, &mut cmdbuffer);
+        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
 
         let window_rect = win.get_rect();
 

@@ -24,10 +24,9 @@ pub struct Device {
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
-    shader_heap: ID3D12DescriptorHeap,
-    shader_heap_offset: usize,
-    rtv_heap: ID3D12DescriptorHeap,
-    rtv_heap_offset: usize
+    shader_heap: Heap,
+    rtv_heap: Heap,
+    dsv_heap: Heap
 }
 
 pub struct SwapChain {
@@ -95,6 +94,8 @@ pub struct RenderPass {
 
 pub struct Heap {
     heap: ID3D12DescriptorHeap,
+    base_address: usize,
+    increment_size: usize,
     capacity: usize,
     offset: usize,
     free_list: Vec<usize>
@@ -211,6 +212,15 @@ fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESCRIPTOR
     }
 }
 
+fn to_d3d12_descriptor_heap_flags(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_FLAGS {
+    match heap_type {
+        super::HeapType::Shader => D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+        super::HeapType::RenderTarget => D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        super::HeapType::DepthStencil => D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
+        super::HeapType::Sampler => D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE
+    }
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -297,23 +307,39 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
     readback_buffer
 }
 
+fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
+    unsafe {
+        let d3d12_type = to_d3d12_descriptor_heap_type(info.heap_type);
+        let heap : ID3D12DescriptorHeap = device
+        .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+            Type: d3d12_type,
+            NumDescriptors: std::cmp::max(info.num_descriptors, 1) as u32,
+            Flags: to_d3d12_descriptor_heap_flags(info.heap_type),
+            ..Default::default()
+        }).expect("hotline::gfx::d3d12: failed to create heap");
+        let base_address = heap.GetCPUDescriptorHandleForHeapStart().ptr;
+        Heap {
+            heap: heap,
+            base_address: base_address as usize,
+            increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
+            capacity: info.num_descriptors,
+            offset: 0,
+            free_list: Vec::new()
+        }
+    }
+}
+
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
-    device: &Device,
+    device: &mut Device,
     num_bb: u32
 ) -> Vec<Texture> {
     unsafe {
-        // TODO: rtv offset / freelist
-        let rtv_descriptor_size =
-            device.device.GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV) as usize;
-        let rtv_handle = device.rtv_heap.GetCPUDescriptorHandleForHeapStart();
         // render targets for the swap chain
         let mut textures: Vec<Texture> = Vec::new();
         for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
-            let h = D3D12_CPU_DESCRIPTOR_HANDLE {
-                ptr: rtv_handle.ptr + i as usize * rtv_descriptor_size,
-            };
+            let h = device.rtv_heap.allocate();
             device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
             textures.push(Texture {
                 resource: render_target.clone(),
@@ -363,6 +389,27 @@ impl From<windows::core::Error> for super::Error {
             error_type: ErrorType::Direct3D12,
             msg: err.message().to_string_lossy(),
         }
+    }
+}
+
+impl Heap {
+    fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
+        unsafe {
+            let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
+            self.offset += self.increment_size;
+            D3D12_CPU_DESCRIPTOR_HANDLE { 
+                ptr: ptr 
+            }
+        }
+    }
+
+    fn get_handle_index(&self, handle: &D3D12_CPU_DESCRIPTOR_HANDLE) -> usize {
+        let ptr = handle.ptr - self.base_address;
+        ptr / self.increment_size
+    }
+
+    fn deallocate(&mut self) {
+        // TODO: dealloc and free list
     }
 }
 
@@ -541,7 +588,7 @@ impl super::Device for Device {
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
     type Heap = Heap;
-    fn create() -> Device {
+    fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
             let mut dxgi_factory_flags: u32 = 0;
@@ -588,23 +635,25 @@ impl super::Device for Device {
                 .CreateCommandQueue(&desc)
                 .expect("hotline::gfx::d3d12: failed to create command queue");
 
-            // TODO: NumDescriptors from info
-            // create shader heap (srv, cbv, uav).. need separates?
-            let shader_heap = device
-                .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
-                    NumDescriptors: 100,
-                    Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
-                    NodeMask: 0,
-                })
-                .expect("hotline::gfx::d3d12: failed to create shader heap");
+            // default heaps
 
-            let rtv_heap = device.CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                    NumDescriptors: 100,
-                    Type: D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
-                    ..Default::default()
-                })
-                .expect("hotline::gfx::d3d12: failed to create rtv heap");
+            // shader (srv, cbv, uav)
+            let shader_heap = create_heap(&device, &HeapInfo {
+                heap_type: super::HeapType::Shader,
+                num_descriptors: info.shader_heap_size
+            });
+
+            // rtv
+            let rtv_heap = create_heap(&device, &HeapInfo {
+                heap_type: super::HeapType::RenderTarget,
+                num_descriptors: info.render_target_heap_size
+            });
+
+            // dsv
+            let dsv_heap = create_heap(&device, &HeapInfo {
+                heap_type: super::HeapType::DepthStencil,
+                num_descriptors: info.shader_heap_size
+            });
 
             // initialise struct
             Device {
@@ -616,33 +665,17 @@ impl super::Device for Device {
                 command_list: command_list,
                 command_queue: command_queue,
                 shader_heap: shader_heap,
-                shader_heap_offset: 0,
                 rtv_heap: rtv_heap,
-                rtv_heap_offset: 0
+                dsv_heap: dsv_heap
             }
         }
     }
 
     fn create_heap(&self, info: &HeapInfo) -> Heap {
-        unsafe {
-            let heap = self.device
-            .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
-                Type: to_d3d12_descriptor_heap_type(info.heap_type),
-                NumDescriptors: info.num_descriptors as u32,
-                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
-                NodeMask: 0,
-            })
-            .expect("hotline::gfx::d3d12: failed to create heap");
-            Heap {
-                heap: heap,
-                capacity: info.num_descriptors,
-                offset: 0,
-                free_list: Vec::new()
-            }    
-        }
+        create_heap(&self.device, &info)
     }
 
-    fn create_swap_chain(&self, info: &super::SwapChainInfo, win: &platform::Window) -> SwapChain {
+    fn create_swap_chain(&mut self, info: &super::SwapChainInfo, win: &platform::Window) -> SwapChain {
         unsafe {
             // set flags, these could be passed in
             let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
@@ -680,7 +713,7 @@ impl super::Device for Device {
             let swap_chain: IDXGISwapChain3 = swap_chain1.cast().unwrap();
 
             // create rtv heap and handles
-            let textures = create_swap_chain_rtv(&swap_chain, &self, info.num_buffers);
+            let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
             let data_size = (rect.width * rect.height * 4) as u64;
 
             // create render passes for the swap chain
@@ -987,7 +1020,7 @@ impl super::Device for Device {
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-            let mut srv_index: u32 = 0;
+            let mut srv_index: u32 = 0; // TODO: index
 
             match info.usage {
                 super::BufferUsage::Vertex => {
@@ -1005,25 +1038,15 @@ impl super::Device for Device {
                     })
                 }
                 super::BufferUsage::ConstantBuffer => {
-                    let ptr = self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr
-                        + self.shader_heap_offset;
-                    let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
-
-                    let descriptor_size = self
-                        .device
-                        .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
-                        as usize;
-                    srv_index = (self.shader_heap_offset / descriptor_size) as u32;
-                    self.shader_heap_offset += descriptor_size;
-
+                    let h = self.shader_heap.allocate();
                     self.device.CreateConstantBufferView(
                         &D3D12_CONSTANT_BUFFER_VIEW_DESC {
                             BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
                             SizeInBytes: size_bytes as u32,
                         },
-                        &handle,
+                        &h,
                     );
-                    srv = Some(handle);
+                    srv = Some(h);
                 }
             }
 
@@ -1188,6 +1211,7 @@ impl super::Device for Device {
             
             // TODO: free list
             // create an srv for the texture
+            /*
             let ptr =
                 self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
             let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
@@ -1198,6 +1222,10 @@ impl super::Device for Device {
                 as usize;
             let srv_index = (self.shader_heap_offset / descriptor_size) as u32;
             self.shader_heap_offset += descriptor_size;
+            */
+
+            let h = self.shader_heap.allocate();
+            let hindex = self.shader_heap.get_handle_index(&h);
 
             self.device.CreateShaderResourceView(
                 &tex,
@@ -1217,14 +1245,14 @@ impl super::Device for Device {
                     },
                     Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                 },
-                &handle,
+                &h,
             );
 
             Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: None,
-                srv: Some(handle),
-                srv_index: srv_index
+                srv: Some(h),
+                srv_index: hindex as u32
             })
         }
     }
@@ -1312,7 +1340,7 @@ impl super::SwapChain<Device> for SwapChain {
         self.wait_for_frame(self.bb_index as usize);
     }
 
-    fn update(&mut self, device: &Device, window: &platform::Window, cmd: &mut CmdBuf) {
+    fn update(&mut self, device: &mut Device, window: &platform::Window, cmd: &mut CmdBuf) {
         let (width, height) = window.get_size();
         if width != self.width || height != self.height {
             unsafe {
@@ -1331,7 +1359,7 @@ impl super::SwapChain<Device> for SwapChain {
                     .expect("hotline::gfx::d3d12: warning: present failed!");
 
                 let data_size = super::slice_pitch_for_format(self.format, self.width as u64, self.height as u64);
-                self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, &device, self.num_bb);
+                self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, device, self.num_bb);
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
                 self.width = width;
                 self.height = height;
@@ -1398,10 +1426,10 @@ impl CmdBuf {
 impl super::CmdBuf<Device> for CmdBuf {
     fn debug_set_descriptor_heap(&self, device: &Device) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.clone()));
+            self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.heap.clone()));
             self.cmd().SetGraphicsRootDescriptorTable(
                 1,
-                &device.shader_heap.GetGPUDescriptorHandleForHeapStart(),
+                &device.shader_heap.heap.GetGPUDescriptorHandleForHeapStart(),
             );
         }
     }

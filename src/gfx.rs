@@ -85,6 +85,33 @@ pub enum Format {
     RGBA32f,
 }
 
+/// Information to create a device, it contains default heaps for resource views
+/// resources will be automatically allocated into these heaps, you can supply custom heaps if necessary
+pub struct DeviceInfo {
+    /// space for shader resource views, constant buffers and unordered access views
+    pub shader_heap_size: usize,
+    /// space for colour render targets
+    pub render_target_heap_size: usize,
+    /// space for depth stencil targets
+    pub depth_stencil_heap_size: usize,
+}
+
+/// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required
+pub struct HeapInfo {
+    pub heap_type: HeapType,
+    pub num_descriptors: usize
+}
+
+/// Options for heap types
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum HeapType {
+    /// For shader resource view, constant buffer or unordered access
+    Shader,
+    RenderTarget,
+    DepthStencil,
+    Sampler
+}
+
 /// Information to pass to `Device::create_swap_chain`
 pub struct SwapChainInfo {
     pub num_buffers: u32,
@@ -370,22 +397,6 @@ pub enum ResourceState {
     IndexBuffer,
 }
 
-/// Information to create a desciptor heap
-pub struct HeapInfo {
-    pub heap_type: HeapType,
-    pub num_descriptors: usize
-}
-
-/// Options for heap types
-#[derive(Copy, Clone)]
-pub enum HeapType {
-    /// For shader resource view, constant buffer or unordered access
-    Shader,
-    RenderTarget,
-    DepthStencil,
-    Sampler
-}
-
 /// An opaque Shader type
 pub trait Shader<D: Device>: {}
 /// An opaque Pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
@@ -407,9 +418,9 @@ pub trait Device: Sized + Any {
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
     type Heap: Heap<Self>;
-    fn create() -> Self;
+    fn create(info: &DeviceInfo) -> Self;
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
-    fn create_swap_chain(&self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
+    fn create_swap_chain(&mut self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
     fn create_buffer<T: Sized>(
@@ -430,7 +441,7 @@ pub trait Device: Sized + Any {
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
 pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &D, window: &platform::Window, cmd: &mut D::CmdBuf);
+    fn update(&mut self, device: &mut D, window: &platform::Window, cmd: &mut D::CmdBuf);
     fn get_backbuffer_index(&self) -> i32;
     fn get_backbuffer_texture(&self) -> &D::Texture;
     fn get_backbuffer_pass(&mut self) -> &mut D::RenderPass;
