@@ -31,7 +31,11 @@ fn main() {
     });
 
     // device
-    let mut dev = gfx_platform::Device::create();
+    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        shader_heap_size: 100,
+        render_target_heap_size: 100,
+        depth_stencil_heap_size: 100
+    });
 
     // window
     let mut win = app.create_window(os::WindowInfo {
@@ -236,7 +240,7 @@ fn main() {
     let mut ci = 0;
     while app.run() {
         win.update();
-        swap_chain.update(&dev, &win, &mut cmdbuffer);
+        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 
         let vp_rect = win.get_viewport_rect();
