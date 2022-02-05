@@ -32,7 +32,7 @@
 
 ## Contributing
 
-Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interseted in being more involved in development I am happy to take on people to help with project of all experience levels. I would be happy to mentor a limited number junior devs interested in graphics, or devs with more experience than me in Rust. This is my first major Rust project so I still have a lot to learn, but I have 15 years graphics programming experience to offer. You can contact me if interested via twitter, discord or email.
+Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interseted in being more involved in development I am happy to take on people to help with project of all experience levels. I would be happy to mentor a limited number junior devs interested in graphics, or work with experienced Rust devs to help me learn more about Rust. You can contact me if interested via [twitter](twitter.com/polymonster), [discord](https://discord.com/invite/3yjXwJ8wJC).
  
 
 
