@@ -93,6 +93,13 @@ pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
 }
 
+pub struct Heap {
+    heap: ID3D12DescriptorHeap,
+    capacity: usize,
+    offset: usize,
+    free_list: Vec<usize>
+}
+
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
@@ -195,6 +202,15 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
     }
 }
 
+fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_TYPE {
+    match heap_type {
+        super::HeapType::Shader => D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
+        super::HeapType::RenderTarget => D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
+        super::HeapType::DepthStencil => D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
+        super::HeapType::Sampler => D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER
+    }
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -229,23 +245,17 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
             let adapter = factory.EnumAdapters1(i)?;
             let desc = adapter.GetDesc1()?;
 
-            if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
-                != DXGI_ADAPTER_FLAG_NONE
-            {
-                // Don't select the Basic Render Driver adapter. If you want a
-                // software adapter, pass in "/warp" on the command line.
+            // skip sw adapter
+            if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) != DXGI_ADAPTER_FLAG_NONE {
                 continue;
             }
 
-            // Check to see whether the adapter supports Direct3D 12, but don't
-            // create the actual device yet.
             if D3D12CreateDevice(
                 &adapter,
                 D3D_FEATURE_LEVEL_12_1,
                 std::ptr::null_mut::<Option<ID3D12Device>>(),
             )
-            .is_ok()
-            {
+            .is_ok() {
                 return Ok(adapter);
             }
         }
@@ -345,6 +355,7 @@ fn validate_data_size<T: Sized>(size_bytes: usize, data: Option<&[T]>) -> result
 impl super::Shader<Device> for Shader {}
 impl super::Pipeline<Device> for Pipeline {}
 impl super::RenderPass<Device> for RenderPass {}
+impl super::Heap<Device> for Heap {}
 
 impl From<windows::core::Error> for super::Error {
     fn from(err: windows::core::Error) -> super::Error {
@@ -529,6 +540,7 @@ impl super::Device for Device {
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
+    type Heap = Heap;
     fn create() -> Device {
         unsafe {
             // enable debug layer
@@ -608,6 +620,25 @@ impl super::Device for Device {
                 rtv_heap: rtv_heap,
                 rtv_heap_offset: 0
             }
+        }
+    }
+
+    fn create_heap(&self, info: &HeapInfo) -> Heap {
+        unsafe {
+            let heap = self.device
+            .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
+                Type: to_d3d12_descriptor_heap_type(info.heap_type),
+                NumDescriptors: info.num_descriptors as u32,
+                Flags: D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
+                NodeMask: 0,
+            })
+            .expect("hotline::gfx::d3d12: failed to create heap");
+            Heap {
+                heap: heap,
+                capacity: info.num_descriptors,
+                offset: 0,
+                free_list: Vec::new()
+            }    
         }
     }
 
