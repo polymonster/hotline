@@ -29,6 +29,8 @@
 - macOS
 - Metal
 - AV Foundation
+- WASM
+- WebGPU
 
 ## Contributing
 
