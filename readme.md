@@ -19,7 +19,7 @@
 
 #### Future Work
 - Imgui support w/ Viewports (maybe alternatives, but multi-window 'viewports' is important)
-- Multi-threading support (async command bufefr generation and job dispatches)
+- Multi-threading support (async command buffer generation and job dispatches)
 - High level graphics api (render graphs, data driven, Uber shaders)
 - Hot reloading
 - API (av::) / Windows Media Foundation (HW Video / Audio Decoding)
@@ -29,6 +29,8 @@
 - macOS
 - Metal
 - AV Foundation
+- WASM
+- WebGPU
 
 ## Contributing
 
