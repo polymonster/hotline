@@ -358,7 +358,7 @@ bitflags! {
     }
 }
 
-/// Values to clear colour render targets at the start of a in a `RenderPass`
+/// Values to clear colour render targets at the start of a `RenderPass`
 #[derive(Copy, Clone)]
 pub struct ClearColour {
     pub r: f32,
