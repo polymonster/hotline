@@ -213,6 +213,7 @@ fn main() {
             array_levels: 1,
             mip_levels: 1,
             samples: 1,
+            usage: gfx::TextureUsage::SHADER_RESOURCE
         };
         let tex = dev.create_texture(&tex_info, Some(image.data.as_slice())).unwrap();
         textures.push(tex);
