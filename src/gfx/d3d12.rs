@@ -64,7 +64,7 @@ pub struct Buffer {
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
-    srv_index: u32
+    srv_index: usize
 }
 
 pub struct Shader {
@@ -76,7 +76,7 @@ pub struct Texture {
     resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    srv_index: u32
+    srv_index: usize
 }
 
 #[derive(Clone)]
@@ -141,7 +141,7 @@ fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     d3d12_flags
 }
 
-fn to_d3d12_shader_visibility(visibility: super::ShaderVisibility) -> D3D12_SHADER_VISIBILITY {
+fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D12_SHADER_VISIBILITY {
     match visibility {
         super::ShaderVisibility::All => D3D12_SHADER_VISIBILITY_ALL,
         super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
@@ -344,8 +344,8 @@ fn create_swap_chain_rtv(
             textures.push(Texture {
                 resource: render_target.clone(),
                 srv: None,
+                srv_index: usize::MAX,
                 rtv: Some(h),
-                srv_index: u32::MAX,
             });
         }
         textures
@@ -460,13 +460,15 @@ impl Device {
                             Num32BitValues: constants.num_values,
                         },
                     },
-                    ShaderVisibility: to_d3d12_shader_visibility(constants.visibility),
+                    ShaderVisibility: to_d3d12_shader_visibility(&constants.visibility),
                 });
             }
         }
 
         // tables for (SRV, UAV, CBV an Samplers)
         let mut visibility_map : HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> = HashMap::new();
+
+
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
             for table in table_info.unwrap() {
@@ -503,7 +505,7 @@ impl Device {
                 }
             }
 
-            for (visibility, ranges) in visibility_map.into_iter() {
+            for (visibility, ranges) in visibility_map.iter() {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
@@ -535,7 +537,7 @@ impl Device {
                     MaxLOD: sampler.max_lod,
                     ShaderRegister: sampler.shader_register,
                     RegisterSpace: sampler.register_space,
-                    ShaderVisibility: to_d3d12_shader_visibility(sampler.visibility),
+                    ShaderVisibility: to_d3d12_shader_visibility(&sampler.visibility),
                 })
             }
         }
@@ -1020,7 +1022,7 @@ impl super::Device for Device {
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-            let mut srv_index: u32 = 0; // TODO: index
+            let mut srv_index = usize::MAX;
 
             match info.usage {
                 super::BufferUsage::Vertex => {
@@ -1047,6 +1049,7 @@ impl super::Device for Device {
                         &h,
                     );
                     srv = Some(h);
+                    srv_index = self.shader_heap.get_handle_index(&h);
                 }
             }
 
@@ -1209,23 +1212,7 @@ impl super::Device for Device {
                 self.command_list.Reset(&self.command_allocator, None)?;
             }
             
-            // TODO: free list
-            // create an srv for the texture
-            /*
-            let ptr =
-                self.shader_heap.GetCPUDescriptorHandleForHeapStart().ptr + self.shader_heap_offset;
-            let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
-
-            let descriptor_size = self
-                .device
-                .GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV)
-                as usize;
-            let srv_index = (self.shader_heap_offset / descriptor_size) as u32;
-            self.shader_heap_offset += descriptor_size;
-            */
-
             let h = self.shader_heap.allocate();
-            let hindex = self.shader_heap.get_handle_index(&h);
 
             self.device.CreateShaderResourceView(
                 &tex,
@@ -1252,7 +1239,7 @@ impl super::Device for Device {
                 resource: tex.unwrap(),
                 rtv: None,
                 srv: Some(h),
-                srv_index: hindex as u32
+                srv_index: self.shader_heap.get_handle_index(&h)
             })
         }
     }
@@ -1651,13 +1638,13 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 impl super::Buffer<Device> for Buffer {
-    fn get_srv_index(&self) -> u32 {
+    fn get_srv_index(&self) -> usize {
         self.srv_index
     }
 }
 
 impl super::Texture<Device> for Texture {
-    fn get_srv_index(&self) -> u32 {
+    fn get_srv_index(&self) -> usize {
         self.srv_index
     }
 }
