@@ -1,0 +1,1 @@
+initSidebarItems({"fn":[["load_from_file","Loads an image from file returning information in the ImageData struct supported formats are (png, tga, bmp, jpg, gif)"],["write_to_file","Writes a buffer of image data to a file. The type of image format written is determined by filename ext supported image formats are (png, bmp, tga and jpg)."]],"struct":[["ImageData",""]]});
