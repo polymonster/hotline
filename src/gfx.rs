@@ -175,7 +175,7 @@ bitflags! {
         const NONE = 0b00000000;
         /// Generates shader with debug info
         const DEBUG = 0b00000001;
-        /// Skips optimization for easier debuggability or deterministic results
+        /// Skips optimization for easier debuggability, deterministic results and faster compilation
         const SKIP_OPTIMIZATION = 0b00000010;
     }
 }
@@ -329,6 +329,7 @@ pub struct TextureInfo {
     pub array_levels: u32,
     pub mip_levels: u32,
     pub samples: u32,
+    pub usage: TextureUsage
 }
 
 /// Describes the dimension of a texture
@@ -337,6 +338,24 @@ pub enum TextureType {
     Texture1D,
     Texture2D,
     Texture3D,
+}
+
+bitflags! {
+    /// Textures can be used in one or more of the following ways
+    pub struct TextureUsage: u32 {
+        /// Texture will be only used for data storage and not used on any GPU pipeline stages
+        const NONE = 0;
+        /// Texture will be sampled in a shader
+        const SHADER_RESOURCE = (1 << 0);
+        /// Used as a read-writable resource in compute shaders
+        const UNORDERED_ACCESS = (1 << 1);
+        /// Used as a colour render target
+        const RENDER_TARGET = (1 << 2);
+        /// Used as a depth stencil render target
+        const DEPTH_STENCIL_TARGET = (1 << 3);
+        /// Used as a target for hardware assisted video decoding operations
+        const VIDEO_DECODE_TARGET = (1 << 4);
+    }
 }
 
 /// Values to clear colour render targets at the start of a in a `RenderPass`
