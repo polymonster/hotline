@@ -1,7 +1,4 @@
 // TODO:
-// - Heaps? + free list?
-// - device info with default heap sizes
-
 // - Render Target
 // - Depth Stencil Target
 // - Compute
@@ -25,6 +22,8 @@
 // - GPU Timer Query
 
 // DONE:
+// x Heaps? + free list?
+// x device info with default heap sizes
 // x do we need `static on a trait? (for now removed)
 // x descriptor table shader visibility
 // x pipeline result error handling

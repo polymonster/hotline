@@ -489,13 +489,13 @@ pub trait CmdBuf<D: Device>: {
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
 pub trait Buffer<D: Device>: {
     /// Return the index to access in a shader ie) buffers[index].member... returns u32::MAX if there is no srv
-    fn get_srv_index(&self) -> u32;
+    fn get_srv_index(&self) -> usize;
 }
 
 /// An opaque Texture type
 pub trait Texture<D: Device>: {
     /// Return the index to access in a shader ie) textures[index].sample... returns u32::MAX if there is no srv
-    fn get_srv_index(&self) -> u32;
+    fn get_srv_index(&self) -> usize;
 }
 
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
