@@ -130,10 +130,9 @@ fn main() {
         .expect("failed to compile fragment shader");
 
     // pipeline
-    let pso = dev.create_pipeline(&gfx::PipelineInfo {
+    let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(vs),
         fs: Some(fs),
-        cs: None,
         input_layout: vec![
             gfx::InputElementInfo {
                 semantic: String::from("POSITION"),
@@ -213,7 +212,8 @@ fn main() {
             array_levels: 1,
             mip_levels: 1,
             samples: 1,
-            usage: gfx::TextureUsage::SHADER_RESOURCE
+            usage: gfx::TextureUsage::SHADER_RESOURCE,
+            initial_state: gfx::ResourceState::ShaderResource
         };
         let tex = dev.create_texture(&tex_info, Some(image.data.as_slice())).unwrap();
         textures.push(tex);
@@ -238,11 +238,62 @@ fn main() {
 
     let _constant_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&cbuffer)));
 
+    // render target
+    let rt_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
+        initial_state: gfx::ResourceState::ShaderResource
+    };
+    let render_target = dev.create_texture::<u8>(&rt_info, None).unwrap();
+
+    // pass for render target
+    let mut render_target_pass = dev.create_render_pass(&gfx::RenderPassInfo {
+        render_targets: vec![render_target.clone()],
+        rt_clear: Some(gfx::ClearColour {
+            r: 1.0,
+            g: 0.0,
+            b: 1.0,
+            a: 1.0,
+        }),
+        depth_stencil_target: None,
+        ds_clear: None,
+        resolve: false,
+        discard: false,
+    });
+
     let mut ci = 0;
     while app.run() {
         win.update();
         swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
+
+        // render target pass
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(render_target.clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::ShaderResource,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+        
+        cmdbuffer.begin_render_pass(&mut render_target_pass);
+
+        cmdbuffer.end_render_pass();
+
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(render_target.clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::ShaderResource,
+        });
+
+        // main pass
 
         let vp_rect = win.get_viewport_rect();
         let viewport = gfx::Viewport::from(vp_rect);

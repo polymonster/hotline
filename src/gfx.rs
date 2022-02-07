@@ -306,16 +306,23 @@ pub enum ComparisonFunc {
     Always,
 }
 
-/// Information to create a pipeline through `Device::create_pipeline`.
-pub struct PipelineInfo<D: Device> {
+/// Information to create a pipeline through `Device::create_render_pipeline`.
+pub struct RenderPipelineInfo<D: Device> {
     /// Vertex Shader
     pub vs: Option<D::Shader>,
     /// Fragment Shader
     pub fs: Option<D::Shader>,
+    /// Vertex shader input layout
+    pub input_layout: InputLayout,
+    /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
+    pub descriptor_layout: DescriptorLayout,
+}
+
+/// Information to create a compute pipeline through `Device::create_compute_pipeline`
+pub struct ComputePipelineInfo<D:Device> {
     /// Compute Shader
     pub cs: Option<D::Shader>,
-    pub input_layout: InputLayout,
-    pub descriptor_layout: DescriptorLayout,
+    pub descriptor_layout: DescriptorLayout
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -329,7 +336,9 @@ pub struct TextureInfo {
     pub array_levels: u32,
     pub mip_levels: u32,
     pub samples: u32,
-    pub usage: TextureUsage
+    pub usage: TextureUsage,
+    /// Initial state to start image transition barriers before state
+    pub initial_state: ResourceState
 }
 
 /// Describes the dimension of a texture
@@ -452,8 +461,9 @@ pub trait Device: Sized + Any {
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
-    fn create_pipeline(&self, info: &PipelineInfo<Self>) -> Result<Self::Pipeline, Error>;
+    fn create_render_pipeline(&self, info: &RenderPipelineInfo<Self>) -> Result<Self::Pipeline, Error>;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
+    fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>);
     fn execute(&self, cmd: &Self::CmdBuf);
 }
 

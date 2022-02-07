@@ -221,6 +221,17 @@ fn to_d3d12_descriptor_heap_flags(heap_type: super::HeapType) -> D3D12_DESCRIPTO
     }
 }
 
+fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FLAGS {
+    let mut flags = D3D12_RESOURCE_FLAG_NONE;
+    if usage.contains(super::TextureUsage::RENDER_TARGET) {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
+    }
+    if usage.contains(super::TextureUsage::DEPTH_STENCIL_TARGET) {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
+    }
+    flags
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -467,8 +478,6 @@ impl Device {
 
         // tables for (SRV, UAV, CBV an Samplers)
         let mut visibility_map : HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> = HashMap::new();
-
-
         if layout.tables.is_some() {
             let table_info = layout.tables.as_ref();
             for table in table_info.unwrap() {
@@ -790,8 +799,7 @@ impl super::Device for Device {
         }
     }
 
-    // TODO: error handling
-    fn create_pipeline(&self, info: &super::PipelineInfo<Device>) -> result::Result<Pipeline, super::Error> {
+    fn create_render_pipeline(&self, info: &super::RenderPipelineInfo<Device>) -> result::Result<Pipeline, super::Error> {
         let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
         // TODO: select which shaders
@@ -856,6 +864,8 @@ impl super::Device for Device {
             },
             ..Default::default()
         };
+
+        // TODO: formats from pass
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         unsafe {
@@ -1072,6 +1082,7 @@ impl super::Device for Device {
         let dxgi_format = to_dxgi_format(info.format);
         let size_bytes = size_for_format(info.format, info.width, info.height, info.depth) as usize;
         validate_data_size(size_bytes, data)?;
+        let initial_state = to_d3d12_resource_state(info.initial_state);
         unsafe {
             // create texture resource
             self.device
@@ -1098,9 +1109,9 @@ impl super::Device for Device {
                             Quality: 0,
                         },
                         Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                        Flags: to_d3d12_texture_usage_flags(info.usage),
                     },
-                    D3D12_RESOURCE_STATE_COPY_DEST,
+                    if data.is_some() { D3D12_RESOURCE_STATE_COPY_DEST } else { initial_state },
                     std::ptr::null(),
                     &mut tex,
                 )?;
@@ -1192,7 +1203,7 @@ impl super::Device for Device {
                 let barrier = transition_barrier(
                     &tex.clone().unwrap(),
                     D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                    initial_state,
                 );
 
                 // transition to shader resource
@@ -1212,34 +1223,48 @@ impl super::Device for Device {
                 self.command_list.Reset(&self.command_allocator, None)?;
             }
             
-            let h = self.shader_heap.allocate();
-
-            self.device.CreateShaderResourceView(
-                &tex,
-                &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                    Format: dxgi_format,
-                    ViewDimension: match info.tex_type {
-                        super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
-                        super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
-                        super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
-                    },
-                    Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                        Texture2D: D3D12_TEX2D_SRV {
-                            MipLevels: info.mip_levels,
-                            MostDetailedMip: 0,
-                            ..Default::default()
+            // create srv
+            let mut srv_handle = None;
+            let mut srv_index = usize::MAX;
+            if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
+                let h = self.shader_heap.allocate();
+                self.device.CreateShaderResourceView(
+                    &tex,
+                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                        Format: dxgi_format,
+                        ViewDimension: match info.tex_type {
+                            super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
+                            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
+                            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
                         },
+                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D12_TEX2D_SRV {
+                                MipLevels: info.mip_levels,
+                                MostDetailedMip: 0,
+                                ..Default::default()
+                            },
+                        },
+                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                     },
-                    Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                },
-                &h,
-            );
+                    &h,
+                );
+                srv_handle = Some(h);
+                srv_index = self.shader_heap.get_handle_index(&h);
+            }
+
+            // create rtv
+            let mut rtv_handle = None;
+            if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
+                let h = self.rtv_heap.allocate();
+                self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
+                rtv_handle = Some(h);
+            }
 
             Ok(Texture {
                 resource: tex.unwrap(),
-                rtv: None,
-                srv: Some(h),
-                srv_index: self.shader_heap.get_handle_index(&h)
+                rtv: rtv_handle,
+                srv: srv_handle,
+                srv_index: srv_index
             })
         }
     }
@@ -1288,8 +1313,11 @@ impl super::Device for Device {
         }
         RenderPass {
             rt: rt,
-            //ds: ds
         }
+    }
+
+    fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) {
+
     }
 
     fn execute(&self, cmd: &CmdBuf) {
