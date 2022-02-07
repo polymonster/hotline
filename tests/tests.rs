@@ -299,10 +299,9 @@ fn draw_triangle() {
     let fs =
         dev.create_shader(&fs_info, src.as_bytes()).expect("failed to compile fragment shader");
 
-    let pso = dev.create_pipeline(&gfx::PipelineInfo {
+    let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(vs),
         fs: Some(fs),
-        cs: None,
         input_layout: vec![
             gfx::InputElementInfo {
                 semantic: String::from("POSITION"),

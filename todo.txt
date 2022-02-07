@@ -1,16 +1,11 @@
 // TODO:
-// - Render Target
-// - Depth Stencil Target
 // - Compute
-
+// - Depth Stencil Target
 // - Topology
 // - Sampler
 // - Raster State
 // - Depth Stencil State
 // - Blend State
-
-// - docs on website
-
 // - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
 // - Shaders from IR
 // - pmfx Shaders
@@ -22,6 +17,8 @@
 // - GPU Timer Query
 
 // DONE:
+// x docs on website
+// x Render Target
 // x Heaps? + free list?
 // x device info with default heap sizes
 // x do we need `static on a trait? (for now removed)
