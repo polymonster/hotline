@@ -102,7 +102,8 @@ pub struct Heap {
 }
 
 pub struct ComputePipeline {
-
+    pso: ID3D12PipelineState,
+    root_signature: ID3D12RootSignature,
 }
 
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -1322,9 +1323,25 @@ impl super::Device for Device {
     }
 
     fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) -> result::Result<ComputePipeline, super::Error> {
-        Ok(ComputePipeline{
+        
+        let cs = &info.cs.as_ref().unwrap().blob;
+        let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
-        })
+        let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
+            CS: D3D12_SHADER_BYTECODE {
+                pShaderBytecode: unsafe { cs.GetBufferPointer() },
+                BytecodeLength: unsafe { cs.GetBufferSize() },
+            },
+            pRootSignature: Some(root_signature.clone()),
+            ..Default::default()
+        };
+
+        unsafe {
+            Ok(ComputePipeline{
+                pso: self.device.CreateComputePipelineState(&desc)?,
+                root_signature:root_signature
+            }) 
+        }
     }
 
     fn execute(&self, cmd: &CmdBuf) {
@@ -1549,12 +1566,21 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_render_pipeline_state(&self, pipeline: &RenderPipeline) {
+    fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRootSignature(&pipeline.root_signature);
             cmd.SetPipelineState(&pipeline.pso);
+            // TODO: topology
             cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        }
+    }
+
+    fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
+        let cmd = self.cmd();
+        unsafe {
+            cmd.SetComputeRootSignature(&pipeline.root_signature);
+            cmd.SetPipelineState(&pipeline.pso);
         }
     }
 
@@ -1721,5 +1747,5 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 }
 
 impl super::ComputePipeline<Device> for ComputePipeline {
-    
+
 }
