@@ -311,7 +311,7 @@ fn main() {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_pipeline_state(&pso);
+        cmdbuffer.set_render_pipeline_state(&pso);
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);

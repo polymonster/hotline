@@ -47,7 +47,7 @@ pub struct SwapChain {
     readback_buffer: Option<ID3D12Resource>,
 }
 
-pub struct Pipeline {
+pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
 }
@@ -99,6 +99,10 @@ pub struct Heap {
     capacity: usize,
     offset: usize,
     free_list: Vec<usize>
+}
+
+pub struct ComputePipeline {
+
 }
 
 fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -390,7 +394,7 @@ fn validate_data_size<T: Sized>(size_bytes: usize, data: Option<&[T]>) -> result
 }
 
 impl super::Shader<Device> for Shader {}
-impl super::Pipeline<Device> for Pipeline {}
+impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::RenderPass<Device> for RenderPass {}
 impl super::Heap<Device> for Heap {}
 
@@ -594,11 +598,12 @@ impl super::Device for Device {
     type CmdBuf = CmdBuf;
     type Buffer = Buffer;
     type Shader = Shader;
-    type Pipeline = Pipeline;
+    type RenderPipeline = RenderPipeline;
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
     type Heap = Heap;
+    type ComputePipeline = ComputePipeline;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -799,7 +804,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_render_pipeline(&self, info: &super::RenderPipelineInfo<Device>) -> result::Result<Pipeline, super::Error> {
+    fn create_render_pipeline(&self, info: &super::RenderPipelineInfo<Device>) -> result::Result<RenderPipeline, super::Error> {
         let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
         // TODO: select which shaders
@@ -869,7 +874,7 @@ impl super::Device for Device {
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
         unsafe {
-            Ok(Pipeline {
+            Ok(RenderPipeline {
                 pso: self.device.CreateGraphicsPipelineState(&desc)?,
                 root_signature: root_signature,
             })
@@ -1316,8 +1321,10 @@ impl super::Device for Device {
         }
     }
 
-    fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) {
+    fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) -> result::Result<ComputePipeline, super::Error> {
+        Ok(ComputePipeline{
 
+        })
     }
 
     fn execute(&self, cmd: &CmdBuf) {
@@ -1542,7 +1549,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_pipeline_state(&self, pipeline: &Pipeline) {
+    fn set_render_pipeline_state(&self, pipeline: &RenderPipeline) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRootSignature(&pipeline.root_signature);
@@ -1711,4 +1718,8 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
             //res.Unmap(0, std::ptr::null());
         }
     }
+}
+
+impl super::ComputePipeline<Device> for ComputePipeline {
+    
 }

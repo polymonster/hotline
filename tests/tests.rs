@@ -393,7 +393,7 @@ fn draw_triangle() {
         cmdbuffer.begin_render_pass(&mut pass);
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_pipeline_state(&pso);
+        cmdbuffer.set_render_pipeline_state(&pso);
 
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_instanced(3, 1, 0, 0);
