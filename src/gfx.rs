@@ -427,12 +427,14 @@ pub enum ResourceState {
 
 /// An opaque Shader type
 pub trait Shader<D: Device>: {}
-/// An opaque Pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
-pub trait Pipeline<D: Device>: {}
+/// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
+pub trait RenderPipeline<D: Device>: {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: {}
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
 pub trait Heap<D: Device>: {}
+/// An opaque compute pipeline type..
+pub trait ComputePipeline<D: Device>: {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
@@ -441,11 +443,12 @@ pub trait Device: Sized + Any {
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
     type Shader: Shader<Self>;
-    type Pipeline: Pipeline<Self>;
+    type RenderPipeline: RenderPipeline<Self>;
     type Texture: Texture<Self>;
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
     type Heap: Heap<Self>;
+    type ComputePipeline: ComputePipeline<Self>;
     fn create(info: &DeviceInfo) -> Self;
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
     fn create_swap_chain(&mut self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
@@ -461,9 +464,9 @@ pub trait Device: Sized + Any {
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
-    fn create_render_pipeline(&self, info: &RenderPipelineInfo<Self>) -> Result<Self::Pipeline, Error>;
+    fn create_render_pipeline(&self, info: &RenderPipelineInfo<Self>) -> Result<Self::RenderPipeline, Error>;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
-    fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>);
+    fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
 }
 
@@ -492,7 +495,7 @@ pub trait CmdBuf<D: Device>: {
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
-    fn set_pipeline_state(&self, pipeline: &D::Pipeline);
+    fn set_render_pipeline_state(&self, pipeline: &D::RenderPipeline);
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
