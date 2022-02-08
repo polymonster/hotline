@@ -6,14 +6,11 @@ use os::Window;
 use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
-use gfx::Texture;
 
 use std::fs;
 
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
-
-#[cfg(target_os = "windows")]
 use hotline::gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
@@ -123,11 +120,8 @@ fn main() {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs =
-        dev.create_shader(&vs_info, contents.as_bytes()).expect("failed to compile vertex shader");
-    let fs = dev
-        .create_shader(&fs_info, contents.as_bytes())
-        .expect("failed to compile fragment shader");
+    let vs = dev.create_shader(&vs_info, contents.as_bytes()).unwrap();
+    let fs = dev.create_shader(&fs_info, contents.as_bytes()).unwrap();
 
     // pipeline
     let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
@@ -268,6 +262,22 @@ fn main() {
         discard: false,
     });
 
+    // unordered access rw texture
+    let rw_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
+        initial_state: gfx::ResourceState::ShaderResource
+    };
+    let rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
+
+    // ..
     let mut ci = 0;
     while app.run() {
         win.update();
@@ -311,7 +321,7 @@ fn main() {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_render_pipeline_state(&pso);
+        cmdbuffer.set_render_pipeline(&pso);
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);

@@ -495,7 +495,8 @@ pub trait CmdBuf<D: Device>: {
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
-    fn set_render_pipeline_state(&self, pipeline: &D::RenderPipeline);
+    fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
+    fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
