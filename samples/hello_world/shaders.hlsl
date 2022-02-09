@@ -60,3 +60,21 @@ float4 PSMain(PSInput input) : SV_TARGET
 
     return final;
 }
+
+/*
+RWTexture2D<float4> rwtex : register(u1);
+
+[numthreads(16, 16, 1)]
+void CSMain(uint2 gid : SV_DispatchThreadID) {
+    float4 cur = texture0[1].Load(gid.x, gid.y);
+    rwtex.Store()
+}
+*/
+
+RWTexture2D<float> tex;
+
+[numthreads(16, 16, 1)]
+void CSMain(uint3 did : SV_DispatchThreadID)
+{
+    tex [did.xy] = float4(1.0, 1.0, 0.0, 1.0);
+}

@@ -118,10 +118,20 @@ fn main() {
         }),
     };
 
+    let cs_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: Some(gfx::ShaderCompileInfo {
+            entry_point: String::from("CSMain"),
+            target: String::from("cs_5_1"),
+            flags: gfx::ShaderCompileFlags::NONE,
+        }),
+    };
+
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
     let vs = dev.create_shader(&vs_info, contents.as_bytes()).unwrap();
     let fs = dev.create_shader(&fs_info, contents.as_bytes()).unwrap();
+    let cs = dev.create_shader(&cs_info, contents.as_bytes()).unwrap();
 
     // pipeline
     let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
