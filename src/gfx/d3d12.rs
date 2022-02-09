@@ -64,7 +64,7 @@ pub struct Buffer {
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
-    srv_index: usize
+    srv_index: usize,
 }
 
 pub struct Shader {
@@ -76,6 +76,7 @@ pub struct Texture {
     resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv_index: usize
 }
 
@@ -234,6 +235,9 @@ fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FL
     if usage.contains(super::TextureUsage::DEPTH_STENCIL_TARGET) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     }
+    if usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    }
     flags
 }
 
@@ -362,6 +366,7 @@ fn create_swap_chain_rtv(
                 srv: None,
                 srv_index: usize::MAX,
                 rtv: Some(h),
+                uav: None
             });
         }
         textures
@@ -1266,10 +1271,24 @@ impl super::Device for Device {
                 rtv_handle = Some(h);
             }
 
+            // create uav
+            let mut uav_handle = None;
+            if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
+                let h = self.shader_heap.allocate();
+                self.device.CreateUnorderedAccessView(
+                    &tex.clone().unwrap(), 
+                    None, 
+                    std::ptr::null_mut(),
+                    &h
+                );
+                uav_handle = Some(h);
+            }
+
             Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: rtv_handle,
                 srv: srv_handle,
+                uav: uav_handle,
                 srv_index: srv_index
             })
         }
