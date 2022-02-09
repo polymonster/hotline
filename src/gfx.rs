@@ -218,7 +218,8 @@ pub enum DescriptorTableType {
 pub enum ShaderVisibility {
     All,
     Vertex,
-    Fragment
+    Fragment,
+    Compute
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
@@ -321,7 +322,7 @@ pub struct RenderPipelineInfo<D: Device> {
 /// Information to create a compute pipeline through `Device::create_compute_pipeline`
 pub struct ComputePipelineInfo<D:Device> {
     /// Compute Shader
-    pub cs: Option<D::Shader>,
+    pub cs: D::Shader,
     pub descriptor_layout: DescriptorLayout
 }
 
@@ -513,9 +514,11 @@ pub trait CmdBuf<D: Device>: {
         base_vertex: i32,
         start_instance: u32,
     );
+    fn dispatch(&self, x: u32, y: u32, z: u32);
+
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 
-    /// debug funcs will be removed
+    /// TODO: set heaps function
     fn debug_set_descriptor_heap(&self, device: &D);
 }
 

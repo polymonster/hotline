@@ -19,7 +19,7 @@ PSInput VSMain(float4 position : POSITION, float4 color : COLOR)
     return result;
 }
 
-Texture2D texture0[5] : register(t0);
+Texture2D texture0[6] : register(t0);
 SamplerState sampler0 : register(s0);
 
 struct ccc
@@ -27,7 +27,7 @@ struct ccc
     float4 rgba;
 };
 
-ConstantBuffer<ccc> cbs[5] : register(b1);
+ConstantBuffer<ccc> cbs[6] : register(b1);
 
 float4 PSMain(PSInput input) : SV_TARGET
 {
@@ -61,20 +61,11 @@ float4 PSMain(PSInput input) : SV_TARGET
     return final;
 }
 
-/*
-RWTexture2D<float4> rwtex : register(u1);
-
-[numthreads(16, 16, 1)]
-void CSMain(uint2 gid : SV_DispatchThreadID) {
-    float4 cur = texture0[1].Load(gid.x, gid.y);
-    rwtex.Store()
-}
-*/
-
-RWTexture2D<float> tex;
+// ..
+RWTexture2D<float> rwtex[10] : register(u0);
 
 [numthreads(16, 16, 1)]
 void CSMain(uint3 did : SV_DispatchThreadID)
 {
-    tex [did.xy] = float4(1.0, 1.0, 0.0, 1.0);
+    rwtex[6][did.xy] = float4(1.0, 1.0, 0.0, 1.0);
 }
