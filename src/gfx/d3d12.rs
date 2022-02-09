@@ -152,6 +152,7 @@ fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D12_SHA
         super::ShaderVisibility::All => D3D12_SHADER_VISIBILITY_ALL,
         super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
         super::ShaderVisibility::Fragment => D3D12_SHADER_VISIBILITY_PIXEL,
+        super::ShaderVisibility::Compute => D3D12_SHADER_VISIBILITY_ALL,
     }
 }
 
@@ -1343,7 +1344,7 @@ impl super::Device for Device {
 
     fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) -> result::Result<ComputePipeline, super::Error> {
         
-        let cs = &info.cs.as_ref().unwrap().blob;
+        let cs = &info.cs.blob;
         let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
@@ -1643,6 +1644,12 @@ impl super::CmdBuf<Device> for CmdBuf {
                 base_vertex,
                 start_instance,
             );
+        }
+    }
+
+    fn dispatch(&self, x: u32, y: u32, z: u32) {
+        unsafe {
+            self.cmd().Dispatch(x, y, z);
         }
     }
 

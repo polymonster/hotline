@@ -133,6 +133,8 @@ fn main() {
     let fs = dev.create_shader(&fs_info, contents.as_bytes()).unwrap();
     let cs = dev.create_shader(&cs_info, contents.as_bytes()).unwrap();
 
+    let num_descriptors = 10;
+
     // pipeline
     let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(vs),
@@ -168,14 +170,14 @@ fn main() {
                 gfx::DescriptorTableInfo {
                     visibility: gfx::ShaderVisibility::Fragment,
                     table_type: gfx::DescriptorTableType::ShaderResource,
-                    num_descriptors: Some(5),
+                    num_descriptors: Some(num_descriptors),
                     shader_register: 0,
                     register_space: 0,
                 },
                 gfx::DescriptorTableInfo {
                     visibility: gfx::ShaderVisibility::Fragment,
                     table_type: gfx::DescriptorTableType::ConstantBuffer,
-                    num_descriptors: Some(5),
+                    num_descriptors: Some(num_descriptors),
                     shader_register: 1,
                     register_space: 0,
                 },
@@ -287,12 +289,33 @@ fn main() {
     };
     let rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
 
+    let compute_pipeline = dev.create_compute_pipeline(&gfx::ComputePipelineInfo{
+        cs: cs,
+        descriptor_layout: gfx::DescriptorLayout {
+            static_samplers: None,
+            push_constants: None,
+            tables: Some(vec![
+                gfx::DescriptorTableInfo {
+                    visibility: gfx::ShaderVisibility::Compute,
+                    table_type: gfx::DescriptorTableType::UnorderedAccess,
+                    num_descriptors: Some(num_descriptors),
+                    shader_register: 0,
+                    register_space: 0,
+                },
+            ]),
+        }
+    }).unwrap();
+
     // ..
     let mut ci = 0;
     while app.run() {
         win.update();
         swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
+
+        // compute pass
+        cmdbuffer.set_compute_pipeline(&compute_pipeline);
+        cmdbuffer.dispatch(512/16, 152/16, 1);
 
         // render target pass
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
