@@ -1370,6 +1370,10 @@ impl super::Device for Device {
             self.command_queue.ExecuteCommandLists(1, &mut Some(command_list));
         }
     }
+
+    fn get_shader_heap(&self) -> &Self::Heap {
+        &self.shader_heap
+    }
 }
 
 impl SwapChain {
@@ -1657,6 +1661,26 @@ impl super::CmdBuf<Device> for CmdBuf {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         unsafe {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
+        }
+    }
+
+    fn set_compute_heap(&self, slot: u32, heap: &Heap) {
+        unsafe {
+            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetComputeRootDescriptorTable(
+                slot,
+                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+            );
+        }
+    }
+
+    fn set_render_heap(&self, slot: u32, heap: &Heap) {
+        unsafe {
+            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetGraphicsRootDescriptorTable(
+                slot,
+                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+            );
         }
     }
 
