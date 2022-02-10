@@ -315,7 +315,8 @@ fn main() {
 
         // compute pass
         cmdbuffer.set_compute_pipeline(&compute_pipeline);
-        cmdbuffer.dispatch(512/16, 152/16, 1);
+        cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
+        cmdbuffer.dispatch(512/16, 512/16, 1);
 
         // render target pass
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
@@ -355,11 +356,10 @@ fn main() {
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_render_pipeline(&pso);
+        cmdbuffer.set_render_heap(1, dev.get_shader_heap());
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
-
-        cmdbuffer.debug_set_descriptor_heap(&dev);
 
         cmdbuffer.push_constants(0, 4, 0, constants.as_slice());
 

@@ -35,7 +35,7 @@ float4 PSMain(PSInput input) : SV_TARGET
     float4 r0 = texture0[0].Sample(sampler0, uv* 2.0);
     float4 r1 = texture0[1].Sample(sampler0, (uv * 2.0) + float2(0.0, 1.0));
     float4 r2 = texture0[2].Sample(sampler0, (uv * 2.0) + float2(1.0, 1.0));
-    float4 r3 = texture0[5].Sample(sampler0, (input.color.rg * 2.0) + float2(1.0, 0.0));
+    float4 r3 = texture0[6].Sample(sampler0, (input.color.rg * 2.0) + float2(1.0, 0.0));
 
     float4 final = float4(0.0, 0.0, 0.0, 0.0); 
 
@@ -62,10 +62,10 @@ float4 PSMain(PSInput input) : SV_TARGET
 }
 
 // ..
-RWTexture2D<float> rwtex[10] : register(u0);
+RWTexture2D<float4> rwtex[10] : register(u0);
 
 [numthreads(16, 16, 1)]
 void CSMain(uint3 did : SV_DispatchThreadID)
 {
-    rwtex[6][did.xy] = float4(1.0, 1.0, 0.0, 1.0);
+    rwtex[6][did.xy] = float4(0.0, 1.0, 1.0, 1.0);
 }

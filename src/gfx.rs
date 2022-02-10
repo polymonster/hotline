@@ -469,6 +469,7 @@ pub trait Device: Sized + Any {
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
     fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
+    fn get_shader_heap(&self) -> &Self::Heap;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -498,6 +499,8 @@ pub trait CmdBuf<D: Device>: {
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
+    fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
+    fn set_render_heap(&self, slot: u32, heap: &D::Heap);
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
