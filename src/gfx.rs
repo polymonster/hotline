@@ -26,6 +26,12 @@ pub struct Error {
     pub msg: String,
 }
 
+pub struct GroupSize {
+    pub x: u32,
+    pub y: u32,
+    pub z: u32
+}
+
 /// Structure to specify viewport coordinates on a `CmdBuf`.
 #[derive(Copy, Clone)]
 pub struct Viewport {
@@ -492,6 +498,8 @@ pub trait CmdBuf<D: Device>: {
     fn close(&mut self, swap_chain: &D::SwapChain);
     fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
     fn end_render_pass(&self);
+    fn begin_event(&self, colour: u32, name: &str);
+    fn end_event(&self);
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
@@ -501,6 +509,7 @@ pub trait CmdBuf<D: Device>: {
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
     fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
     fn set_render_heap(&self, slot: u32, heap: &D::Heap);
+    fn set_marker(&self, colour: u32, name: &str);
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     fn draw_instanced(
         &self,
@@ -517,12 +526,8 @@ pub trait CmdBuf<D: Device>: {
         base_vertex: i32,
         start_instance: u32,
     );
-    fn dispatch(&self, x: u32, y: u32, z: u32);
-
+    fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
-
-    /// TODO: set heaps function
-    fn debug_set_descriptor_heap(&self, device: &D);
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.

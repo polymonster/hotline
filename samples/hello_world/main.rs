@@ -314,11 +314,15 @@ fn main() {
         cmdbuffer.reset(&swap_chain);
 
         // compute pass
+        cmdbuffer.begin_event(0xff00ffff, "compute_pass");
+        cmdbuffer.set_marker(0xff00ffff, "compute_pass");
         cmdbuffer.set_compute_pipeline(&compute_pipeline);
         cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
         cmdbuffer.dispatch(512/16, 512/16, 1);
+        cmdbuffer.end_event();
 
         // render target pass
+        cmdbuffer.set_marker(0x00ffffff, "render_target_pass");
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(render_target.clone()),
             buffer: None,
@@ -338,7 +342,7 @@ fn main() {
         });
 
         // main pass
-
+        cmdbuffer.set_marker(0xffff00ff, "main_pass");
         let vp_rect = win.get_viewport_rect();
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
