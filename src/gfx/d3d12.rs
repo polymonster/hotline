@@ -1487,16 +1487,6 @@ impl CmdBuf {
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
-    fn debug_set_descriptor_heap(&self, device: &Device) {
-        unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(device.shader_heap.heap.clone()));
-            self.cmd().SetGraphicsRootDescriptorTable(
-                1,
-                &device.shader_heap.heap.GetGPUDescriptorHandleForHeapStart(),
-            );
-        }
-    }
-
     fn reset(&mut self, swap_chain: &SwapChain) {
         let prev_bb = self.bb_index;
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
@@ -1527,6 +1517,21 @@ impl super::CmdBuf<Device> for CmdBuf {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.EndRenderPass();
+        }
+    }
+
+    fn begin_event(&self, colour: u32, name: &str) {
+        let cmd = &self.command_list[self.bb_index];
+        unsafe {
+            let null_name = CString::new(name).unwrap();
+            cmd.BeginEvent(colour, null_name.as_ptr() as *const core::ffi::c_void, name.len() as u32);
+        }
+    }
+
+    fn end_event(&self) {
+        let cmd = &self.command_list[self.bb_index];
+        unsafe {
+            cmd.EndEvent();
         }
     }
 
@@ -1608,6 +1613,34 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn set_compute_heap(&self, slot: u32, heap: &Heap) {
+        unsafe {
+            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetComputeRootDescriptorTable(
+                slot,
+                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+            );
+        }
+    }
+
+    fn set_render_heap(&self, slot: u32, heap: &Heap) {
+        unsafe {
+            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetGraphicsRootDescriptorTable(
+                slot,
+                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+            );
+        }
+    }
+
+    fn set_marker(&self, colour: u32, name: &str) {
+        let cmd = &self.command_list[self.bb_index];
+        unsafe {
+            let null_name = CString::new(name).unwrap();
+            cmd.SetMarker(colour, null_name.as_ptr() as *const core::ffi::c_void, name.len() as u32);
+        }
+    }   
+
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         let cmd = self.cmd();
         unsafe {
@@ -1651,9 +1684,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch(&self, x: u32, y: u32, z: u32) {
+    fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {
         unsafe {
-            self.cmd().Dispatch(x, y, z);
+            self.cmd().Dispatch(group_count_x, group_count_y, group_count_z);
         }
     }
 
@@ -1661,26 +1694,6 @@ impl super::CmdBuf<Device> for CmdBuf {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         unsafe {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
-        }
-    }
-
-    fn set_compute_heap(&self, slot: u32, heap: &Heap) {
-        unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
-            self.cmd().SetComputeRootDescriptorTable(
-                slot,
-                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
-            );
-        }
-    }
-
-    fn set_render_heap(&self, slot: u32, heap: &Heap) {
-        unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
-            self.cmd().SetGraphicsRootDescriptorTable(
-                slot,
-                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
-            );
         }
     }
 
