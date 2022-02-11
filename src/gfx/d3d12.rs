@@ -15,10 +15,11 @@ use std::ffi::CString;
 use std::result;
 use std::str;
 use std::collections::HashMap;
+use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
 
 pub struct Device {
-    name: String,
-    adapter: IDXGIAdapter1,
+    _adapter: IDXGIAdapter1,
+    adapter_info: super::AdapterInfo,
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
     command_allocator: ID3D12CommandAllocator,
@@ -270,13 +271,43 @@ fn transition_barrier(
     }
 }
 
-fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
+fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<(IDXGIAdapter1, super::AdapterInfo)> {
     unsafe {
+        let mut adapter_info = super::AdapterInfo {
+            name: String::from(""),
+            description:  String::from(""),
+            dedicated_video_memory: 0,
+            dedicated_system_memory: 0,
+            shared_system_memory: 0,
+            available: vec![]
+        };
+
+        // enumerate info
+        for i in 0.. {
+            let adapter = factory.EnumAdapters1(i);
+            if !adapter.is_ok() {
+                break;
+            }
+            let desc = adapter.unwrap().GetDesc1()?;
+
+            // decode utf-16 dfescription
+            let decoded1 = decode_utf16(desc.Description)
+            .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
+            .collect::<String>();
+
+            // trim utf-16 nul terminators
+            let x: &[_] = &['\0', '\0'];
+            let decoded = decoded1.trim_matches(x);
+
+            adapter_info.available.push(decoded.to_string());
+        }
+        
+        // select adapter
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i)?;
             let desc = adapter.GetDesc1()?;
 
-            // skip sw adapter
+            // skip sw adapter?
             if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) != DXGI_ADAPTER_FLAG_NONE {
                 continue;
             }
@@ -287,7 +318,13 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<IDXGIAdapter1> {
                 std::ptr::null_mut::<Option<ID3D12Device>>(),
             )
             .is_ok() {
-                return Ok(adapter);
+                // fill adapter info out
+                adapter_info.name = String::from("hotline::d3d12::Device");
+                adapter_info.description = adapter_info.available[i as usize].to_string();
+                adapter_info.dedicated_video_memory = desc.DedicatedVideoMemory;
+                adapter_info.dedicated_system_memory = desc.DedicatedSystemMemory;
+                adapter_info.shared_system_memory = desc.SharedSystemMemory;
+                return Ok((adapter, adapter_info));
             }
         }
     }
@@ -629,7 +666,7 @@ impl super::Device for Device {
                 .expect("hotline::gfx::d3d12: failed to create dxgi factory");
 
             // create adapter
-            let adapter = get_hardware_adapter(&dxgi_factory)
+            let (adapter, adapter_info) = get_hardware_adapter(&dxgi_factory)
                 .expect("hotline::gfx::d3d12: failed to get hardware adapter");
 
             // create device
@@ -680,8 +717,8 @@ impl super::Device for Device {
 
             // initialise struct
             Device {
-                name: String::from("d3d12 device"),
-                adapter: adapter,
+                _adapter: adapter,
+                adapter_info: adapter_info,
                 device: device,
                 dxgi_factory: dxgi_factory,
                 command_allocator: command_allocator,
@@ -1373,6 +1410,10 @@ impl super::Device for Device {
 
     fn get_shader_heap(&self) -> &Self::Heap {
         &self.shader_heap
+    }
+
+    fn get_adapter_info(&self) -> &AdapterInfo {
+        &self.adapter_info
     }
 }
 
