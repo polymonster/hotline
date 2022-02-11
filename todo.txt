@@ -1,8 +1,4 @@
 // TODO:
-// - GPU Marker
-// - GPU Timer Query
-// - Enumerate adapters
-// - Enumerate Device Info
 
 // - Depth Stencil Target
 // - Topology
@@ -15,8 +11,12 @@
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
+// - GPU Timer Query
 
 // DONE:
+// x Enumerate adapters
+// x Enumerate Device Info
+// x GPU Marker
 // x Compute
 // x docs on website
 // x Render Target

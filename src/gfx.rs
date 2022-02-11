@@ -102,6 +102,18 @@ pub struct DeviceInfo {
     pub depth_stencil_heap_size: usize,
 }
 
+/// Information returned from `Device::get_adapter_info`
+pub struct AdapterInfo {
+    /// The chosen adapter a device was created with
+    pub name: String,
+    pub description: String,
+    pub dedicated_video_memory: usize,
+    pub dedicated_system_memory: usize,
+    pub shared_system_memory: usize,
+    /// List of available adapter descriptons
+    pub available: Vec<String>
+}
+
 /// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required
 pub struct HeapInfo {
     pub heap_type: HeapType,
@@ -476,6 +488,7 @@ pub trait Device: Sized + Any {
     fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
     fn get_shader_heap(&self) -> &Self::Heap;
+    fn get_adapter_info(&self) -> &AdapterInfo;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -679,5 +692,30 @@ impl From<std::ffi::NulError> for Error {
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\n{:?} Error: \n{}\n", self.error_type, self.msg)
+    }
+}
+
+impl std::fmt::Display for AdapterInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut available = String::from("");
+        for adapter in &self.available {
+            available += adapter;
+            available += "\n  ";
+        }
+write!(f, "{}:
+  {}
+  Video Memory: {}(mb)
+  System Memory: {}(mb)
+  Shared System Memory: {}(mb)
+Available Adapters:
+  {}
+", 
+            self.name, 
+            self.description, 
+            self.dedicated_video_memory/1024/1024,
+            self.dedicated_system_memory/1024/1024,
+            self.shared_system_memory/1024/1024,
+            available
+        )
     }
 }
