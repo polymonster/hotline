@@ -3,13 +3,20 @@ use crate::os::Window;
 #[cfg(target_os = "windows")]
 use crate::os::win32 as platform;
 
+use super::*;
+use super::Device as SuperDevice;
+
 use windows::{
-    core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
-    Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
-    Win32::System::Threading::*, Win32::System::WindowsProgramming::*,
+    core::*, Win32::Foundation::*, 
+    Win32::Graphics::Direct3D::Fxc::*, 
+    Win32::Graphics::Direct3D::*,
+    Win32::Graphics::Direct3D12::*, 
+    Win32::Graphics::Dxgi::Common::*, 
+    Win32::Graphics::Dxgi::*,
+    Win32::System::Threading::*, 
+    Win32::System::WindowsProgramming::*,
 };
 
-use super::*;
 use std::ffi::CStr;
 use std::ffi::CString;
 use std::result;
@@ -292,8 +299,8 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<(IDXGIAdapter1, super
 
             // decode utf-16 dfescription
             let decoded1 = decode_utf16(desc.Description)
-            .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
-            .collect::<String>();
+                .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
+                .collect::<String>();
 
             // trim utf-16 nul terminators
             let x: &[_] = &['\0', '\0'];
@@ -635,6 +642,26 @@ impl Device {
             Ok(sig)
         }
     }
+
+    fn create_render_passes_for_swap_chain(&self, num_buffers: u32, textures: &Vec<Texture>) -> Vec<RenderPass> {
+        let mut passes = Vec::new();
+        for i in 0..num_buffers as usize {
+            passes.push(self.create_render_pass(&super::RenderPassInfo {
+                render_targets: vec![textures[i].clone()],
+                rt_clear: Some(super::ClearColour {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 1.0,
+                }),
+                depth_stencil_target: None,
+                ds_clear: None,
+                resolve: false,
+                discard: false,
+            }));
+        }
+        passes
+    }
 }
 
 impl super::Device for Device {
@@ -775,24 +802,7 @@ impl super::Device for Device {
             // create rtv heap and handles
             let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
             let data_size = (rect.width * rect.height * 4) as u64;
-
-            // create render passes for the swap chain
-            let mut passes = Vec::new();
-            for i in 0..info.num_buffers as usize {
-                passes.push(self.create_render_pass(&super::RenderPassInfo {
-                    render_targets: vec![textures[i].clone()],
-                    rt_clear: Some(super::ClearColour {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        a: 1.0,
-                    }),
-                    depth_stencil_target: None,
-                    ds_clear: None,
-                    resolve: false,
-                    discard: false,
-                }));
-            }
+            let passes = self.create_render_passes_for_swap_chain(info.num_buffers, &textures);
 
             SwapChain {
                 width: rect.width,
@@ -1464,6 +1474,7 @@ impl super::SwapChain<Device> for SwapChain {
 
                 let data_size = super::slice_pitch_for_format(self.format, self.width as u64, self.height as u64);
                 self.backbuffer_textures = create_swap_chain_rtv(&self.swap_chain, device, self.num_bb);
+                self.backbuffer_passes = device.create_render_passes_for_swap_chain(self.num_bb, &self.backbuffer_textures);
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
                 self.width = width;
                 self.height = height;
