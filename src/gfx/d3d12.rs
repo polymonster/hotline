@@ -58,6 +58,7 @@ pub struct SwapChain {
 pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
+    topology: D3D_PRIMITIVE_TOPOLOGY
 }
 
 pub struct CmdBuf {
@@ -248,6 +249,38 @@ fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FL
         flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
     flags
+}
+
+fn to_d3d12_primitive_topology(topology: super::Topology, patch_index: u32) -> D3D_PRIMITIVE_TOPOLOGY {
+    match topology {
+        super::Topology::Undefined => D3D_PRIMITIVE_TOPOLOGY_UNDEFINED,
+        super::Topology::PointList => D3D_PRIMITIVE_TOPOLOGY_POINTLIST,
+        super::Topology::LineList => D3D_PRIMITIVE_TOPOLOGY_LINELIST,
+        super::Topology::LineStrip => D3D_PRIMITIVE_TOPOLOGY_LINESTRIP,
+        super::Topology::TriangleList => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+        super::Topology::TriangleStrip => D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP,
+        super::Topology::LineListAdj => D3D_PRIMITIVE_TOPOLOGY_LINELIST_ADJ,
+        super::Topology::LineStripAdj => D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ,
+        super::Topology::TriangleListAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ,
+        super::Topology::TriangleStripAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ,
+        super::Topology::PatchList => D3D_PRIMITIVE_TOPOLOGY(33 + patch_index as i32)
+    }
+}
+
+fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PRIMITIVE_TOPOLOGY_TYPE {
+    match topology {
+        super::Topology::Undefined => D3D12_PRIMITIVE_TOPOLOGY_TYPE_UNDEFINED,
+        super::Topology::PointList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT,
+        super::Topology::LineList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
+        super::Topology::LineStrip => D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
+        super::Topology::TriangleList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        super::Topology::TriangleStrip => D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        super::Topology::LineListAdj => D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
+        super::Topology::LineStripAdj => D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
+        super::Topology::TriangleListAdj => D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        super::Topology::TriangleStripAdj => D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+        super::Topology::PatchList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_PATCH
+    }
 }
 
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
@@ -915,7 +948,7 @@ impl super::Device for Device {
             },
             DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
             SampleMask: u32::max_value(),
-            PrimitiveTopologyType: D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+            PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
             NumRenderTargets: 1,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
@@ -924,6 +957,11 @@ impl super::Device for Device {
             ..Default::default()
         };
 
+        // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
+
+        // TODO: topology
+        //cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
         // TODO: formats from pass
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
 
@@ -931,6 +969,7 @@ impl super::Device for Device {
             Ok(RenderPipeline {
                 pso: self.device.CreateGraphicsPipelineState(&desc)?,
                 root_signature: root_signature,
+                topology: to_d3d12_primitive_topology(info.topology, info.patch_index)
             })
         }
     }
@@ -1652,8 +1691,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unsafe {
             cmd.SetGraphicsRootSignature(&pipeline.root_signature);
             cmd.SetPipelineState(&pipeline.pso);
-            // TODO: topology
-            cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+            cmd.IASetPrimitiveTopology(pipeline.topology)
         }
     }
 
