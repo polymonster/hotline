@@ -352,6 +352,8 @@ fn draw_triangle() {
                 register_space: 0,
             }]),
         },
+        topology: gfx::Topology::TriangleList,
+        patch_index: 0
     }).expect("failed to create pipeline");
 
     let mut rbr = gfx_platform::ReadBackRequest {

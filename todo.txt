@@ -1,5 +1,4 @@
 // TODO:
-// - Topology
 // - Raster State
 // - Depth Stencil State
 // - Blend State
@@ -18,6 +17,7 @@
 
 
 // DONE:
+// x Topology
 // x Crash on resize
 // x Enumerate adapters
 // x Enumerate Device Info

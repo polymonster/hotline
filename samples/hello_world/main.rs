@@ -199,6 +199,8 @@ fn main() {
                 register_space: 0,
             }]),
         },
+        topology: gfx::Topology::TriangleList,
+        patch_index: 0
     }).expect("failed to create pipeline!");
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();

@@ -335,6 +335,27 @@ pub struct RenderPipelineInfo<D: Device> {
     pub input_layout: InputLayout,
     /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
     pub descriptor_layout: DescriptorLayout,
+    /// Primitive topolgy oof the input assembler
+    pub topology: Topology,
+    /// only required for Topology::PatchList use 0 as default
+    pub patch_index: u32 
+}
+
+/// Indicates how the pipeline interprets vertex data at the input assembler stage
+/// This will be also used to infer primitive topology types for geometry or hull shaders
+#[derive(Copy, Clone)]
+pub enum Topology {
+    Undefined,
+    PointList,
+    LineList,
+    LineStrip,
+    TriangleList,
+    TriangleStrip,
+    LineListAdj,
+    LineStripAdj,
+    TriangleListAdj,
+    TriangleStripAdj,
+    PatchList
 }
 
 /// Information to create a compute pipeline through `Device::create_compute_pipeline`
