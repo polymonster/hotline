@@ -1,19 +1,24 @@
 // TODO:
-
-// - Depth Stencil Target
 // - Topology
-// - Sampler
 // - Raster State
 // - Depth Stencil State
 // - Blend State
+
+// - Depth Stencil Target
 // - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
 // - GPU Timer Query
+// - Draw Instanced
+// - Draw Indirect
+// - Stencil Ref
+// - Select adapter from name
+
 
 // DONE:
+// x Crash on resize
 // x Enumerate adapters
 // x Enumerate Device Info
 // x GPU Marker
