@@ -337,6 +337,8 @@ pub struct RenderPipelineInfo<D: Device> {
     pub descriptor_layout: DescriptorLayout,
     /// Control rasterisation of primitives
     pub raster_info: RasterInfo,
+    /// Control depth test and stencil oprations
+    pub depth_stencil_info: DepthStencilInfo,
     /// Primitive topolgy oof the input assembler
     pub topology: Topology,
     /// only required for Topology::PatchList use 0 as default
@@ -392,15 +394,29 @@ pub enum CullMode {
 pub struct DepthStencilInfo {
     /// Enable depth testing
     pub depth_enabled: bool,
-    /// Enable depth writes 1, disable depth writes 0 
-    pub depth_write_mask: u32,
+    /// Choose to write or not write to the depth buffer
+    pub depth_write_mask: DepthWriteMask,
     pub depth_func: ComparisonFunc,
     /// Enable stencil testing
     pub stencil_enabled: bool,
     pub stencil_read_mask: u8,
     pub stencil_write_mask: u8,
-    pub front_face: StencilOp,
-    pub back_face: StencilOp
+    pub front_face: StencilInfo,
+    pub back_face: StencilInfo
+}
+
+/// Write to the depth buffer, or omit writes and just perform depth testing
+pub enum DepthWriteMask {
+    Zero,
+    All
+}
+
+/// Stencil info for various outcomes of the depth stencil test
+pub struct StencilInfo {
+    pub fail: StencilOp,
+    pub depth_fail: StencilOp,
+    pub pass: StencilOp,
+    pub func: ComparisonFunc
 }
 
 /// Stencil operations

@@ -190,18 +190,22 @@ fn to_d3d12_address_mode(mode: super::SamplerAddressMode) -> D3D12_TEXTURE_ADDRE
     }
 }
 
+fn to_d3d12_comparison_func(func: super::ComparisonFunc) -> D3D12_COMPARISON_FUNC {
+    match func {
+        super::ComparisonFunc::Never => D3D12_COMPARISON_FUNC_NEVER,
+        super::ComparisonFunc::Less => D3D12_COMPARISON_FUNC_LESS,
+        super::ComparisonFunc::Equal => D3D12_COMPARISON_FUNC_EQUAL,
+        super::ComparisonFunc::LessEqual => D3D12_COMPARISON_FUNC_LESS_EQUAL,
+        super::ComparisonFunc::Greater => D3D12_COMPARISON_FUNC_GREATER,
+        super::ComparisonFunc::NotEqual => D3D12_COMPARISON_FUNC_NOT_EQUAL,
+        super::ComparisonFunc::GreaterEqual => D3D12_COMPARISON_FUNC_GREATER_EQUAL,
+        super::ComparisonFunc::Always => D3D12_COMPARISON_FUNC_ALWAYS,
+    }
+}
+
 fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D12_COMPARISON_FUNC {
     if func.is_some() {
-        return match func.unwrap() {
-            super::ComparisonFunc::Never => D3D12_COMPARISON_FUNC_NEVER,
-            super::ComparisonFunc::Less => D3D12_COMPARISON_FUNC_LESS,
-            super::ComparisonFunc::Equal => D3D12_COMPARISON_FUNC_EQUAL,
-            super::ComparisonFunc::LessEqual => D3D12_COMPARISON_FUNC_LESS_EQUAL,
-            super::ComparisonFunc::Greater => D3D12_COMPARISON_FUNC_GREATER,
-            super::ComparisonFunc::NotEqual => D3D12_COMPARISON_FUNC_NOT_EQUAL,
-            super::ComparisonFunc::GreaterEqual => D3D12_COMPARISON_FUNC_GREATER_EQUAL,
-            super::ComparisonFunc::Always => D3D12_COMPARISON_FUNC_ALWAYS,
-        };
+        return to_d3d12_comparison_func(func.unwrap())
     }
     D3D12_COMPARISON_FUNC_ALWAYS
 }
@@ -295,6 +299,26 @@ fn to_d3d12_cull_mode(cull_mode: &super::CullMode) -> D3D12_CULL_MODE {
         super::CullMode::None => D3D12_CULL_MODE_NONE,
         super::CullMode::Front => D3D12_CULL_MODE_FRONT,
         super::CullMode::Back => D3D12_CULL_MODE_BACK,
+    }
+}
+
+fn to_d3d12_write_mask(mask: &super::DepthWriteMask) -> D3D12_DEPTH_WRITE_MASK {
+    match mask {
+        super::DepthWriteMask::Zero => D3D12_DEPTH_WRITE_MASK_ZERO,
+        super::DepthWriteMask::All => D3D12_DEPTH_WRITE_MASK_ALL
+    }
+}
+
+fn to_d3d12_stencil_op(op: &super::StencilOp) -> D3D12_STENCIL_OP {
+    match op {
+        super::StencilOp::Keep => D3D12_STENCIL_OP_KEEP,
+        super::StencilOp::Zero => D3D12_STENCIL_OP_ZERO,
+        super::StencilOp::Replace => D3D12_STENCIL_OP_REPLACE,
+        super::StencilOp::IncrSat => D3D12_STENCIL_OP_INCR_SAT,
+        super::StencilOp::DecrSat => D3D12_STENCIL_OP_DECR_SAT,
+        super::StencilOp::Invert => D3D12_STENCIL_OP_INVERT,
+        super::StencilOp::Incr => D3D12_STENCIL_OP_INCR,
+        super::StencilOp::Decr => D3D12_STENCIL_OP_DECR,
     }
 }
 
@@ -921,6 +945,7 @@ impl super::Device for Device {
         };
 
         let raster = &info.raster_info;
+        let depth_stencil = &info.depth_stencil_info;
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
@@ -975,20 +1000,35 @@ impl super::Device for Device {
                     D3D12_RENDER_TARGET_BLEND_DESC::default(),
                 ],
             },
-            DepthStencilState: D3D12_DEPTH_STENCIL_DESC::default(),
-            SampleMask: u32::max_value(),
+            DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
+                DepthEnable: BOOL::from(depth_stencil.depth_enabled),
+                DepthWriteMask: to_d3d12_write_mask(&depth_stencil.depth_write_mask),
+                DepthFunc: to_d3d12_comparison_func(depth_stencil.depth_func),
+                StencilEnable: BOOL::from(depth_stencil.stencil_enabled),
+                StencilReadMask: depth_stencil.stencil_read_mask,
+                StencilWriteMask: depth_stencil.stencil_write_mask,
+                FrontFace: D3D12_DEPTH_STENCILOP_DESC {
+                    StencilFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.fail),
+                    StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.depth_fail),
+                    StencilPassOp: to_d3d12_stencil_op(&depth_stencil.front_face.pass),
+                    StencilFunc: to_d3d12_comparison_func(depth_stencil.front_face.func),
+                },
+                BackFace: D3D12_DEPTH_STENCILOP_DESC {
+                    StencilFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.fail),
+                    StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.depth_fail),
+                    StencilPassOp: to_d3d12_stencil_op(&depth_stencil.back_face.pass),
+                    StencilFunc: to_d3d12_comparison_func(depth_stencil.back_face.func),
+                },
+            },
+            SampleMask: u32::max_value(), // TODO:
             PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
-            NumRenderTargets: 1,
+            NumRenderTargets: 1, // TODO:
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,
             },
             ..Default::default()
         };
-
-        // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-        // TODO: topology
-        //cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
         // TODO: formats from pass
         desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;

@@ -212,6 +212,26 @@ fn main() {
             forced_sample_count: 0,
             conservative_raster_mode: false
         },
+        depth_stencil_info: gfx::DepthStencilInfo {
+            depth_enabled: false,
+            depth_write_mask: gfx::DepthWriteMask::Zero,
+            depth_func: gfx::ComparisonFunc::Always,
+            stencil_enabled: false,
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            front_face: gfx::StencilInfo {
+                fail: gfx::StencilOp::Keep,
+                depth_fail: gfx::StencilOp::Keep,
+                pass: gfx::StencilOp::Keep,
+                func: gfx::ComparisonFunc::Always,
+            },
+            back_face: gfx::StencilInfo {
+                fail: gfx::StencilOp::Keep,
+                depth_fail: gfx::StencilOp::Keep,
+                pass: gfx::StencilOp::Keep,
+                func: gfx::ComparisonFunc::Always,
+            },
+        },
         topology: gfx::Topology::TriangleList,
         patch_index: 0
     }).expect("failed to create pipeline!");
