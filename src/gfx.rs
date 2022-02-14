@@ -358,6 +358,124 @@ pub enum Topology {
     PatchList
 }
 
+/// Information to control the rasterisation mode of primitives when using a `RenderPipeline`
+pub struct RasterInfo {
+    pub fill_mode: FillMode,
+    pub cull_mode: CullMode,
+    pub front_ccw: bool,
+    pub depth_bias: i32,
+    pub depth_bias_clamp: f32,
+    pub slope_scaled_depth_bias: f32,
+    pub depth_clip_enable: bool,
+    pub multisample_enable: bool,
+    pub antialiased_line_enable: bool,
+    pub forced_sample_count: u32,
+    pub conservative_raster_mode: bool
+}
+
+/// Polygon fillmode
+pub enum FillMode {
+    Wireframe,
+    Solid
+}
+
+/// Polygon cull mode
+pub enum CullMode {
+    None,
+    Front,
+    Back
+}
+
+/// Information to control the depth and stencil testing of primitves when using a `RenderPipeline`
+pub struct DepthStencilInfo {
+    pub depth_enabled: bool, 
+    pub depth_write_mask: u32,
+    pub depth_func: ComparisonFunc,
+    pub stencil_enabled: bool,
+    pub stencil_read_mask: u8,
+    pub stencil_write_mask: u8,
+    pub front_face: StencilOp,
+    pub back_face: StencilOp
+}
+
+/// Stencil operations
+pub enum StencilOp {
+    Keep,
+    Zero,
+    Replace,
+    IncrSat,
+    DecrSat,
+    Invert,
+    Incr,
+    Decr
+}
+
+pub struct BlendInfo {
+    pub alpha_to_coverage_enabled: bool,
+    pub independant_blend_enabled: bool,
+    pub render_target: Vec<RenderTargetBlendInfo>
+}
+
+pub struct RenderTargetBlendInfo {
+    pub blend_enabled: bool,
+    pub logic_op_enabled: bool,
+    pub src_blend: BlendFactor,
+    pub dst_blend: BlendFactor,
+    pub blend_op: BlendOp,
+    pub src_blend_alpha: BlendFactor,
+    pub dst_blend_alpha: BlendFactor,
+    pub blend_op_alpha: BlendOp,
+    pub logic_op: LogicOp,
+    pub write_mask: u8
+}
+
+pub enum BlendFactor {
+    Zero,
+    One,
+    SrcColour,
+    InvSrcColour,
+    SrcAlpha,
+    InvSrcAlpha,
+    DstAlpha,
+    InvDstAlpha,
+    DstColour,
+    InvDstColour,
+    SrcAlphaSat,
+    BlendFactor,
+    InvBlendFactor,
+    Src1Colour,
+    InvSrc1Colour,
+    Src1Alpha,
+    InvSrc1Alpha
+}
+
+pub enum BlendOp {
+    Add,
+    Subtract,
+    RevSubtract,
+    Min,
+    Max
+}
+
+pub enum LogicOp {
+    Clear,
+    Set,
+    Copy,
+    CopyInverted,
+    NoOp,
+    Invert,
+    And,
+    Nand,
+    Or,
+    Nor,
+    Xor,
+    Equiv,
+    AndReverse,
+    Inverted,
+    OrReverse,
+    OrInverted
+}
+
 /// Information to create a compute pipeline through `Device::create_compute_pipeline`
 pub struct ComputePipelineInfo<D:Device> {
     /// Compute Shader

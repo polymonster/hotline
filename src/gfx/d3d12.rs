@@ -958,7 +958,6 @@ impl super::Device for Device {
         };
 
         // D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST
-
         // TODO: topology
         //cmd.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
