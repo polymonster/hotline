@@ -335,10 +335,12 @@ pub struct RenderPipelineInfo<D: Device> {
     pub input_layout: InputLayout,
     /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
     pub descriptor_layout: DescriptorLayout,
+    /// Control rasterisation of primitives
+    pub raster_info: RasterInfo,
     /// Primitive topolgy oof the input assembler
     pub topology: Topology,
     /// only required for Topology::PatchList use 0 as default
-    pub patch_index: u32 
+    pub patch_index: u32
 }
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage
@@ -388,9 +390,12 @@ pub enum CullMode {
 
 /// Information to control the depth and stencil testing of primitves when using a `RenderPipeline`
 pub struct DepthStencilInfo {
-    pub depth_enabled: bool, 
+    /// Enable depth testing
+    pub depth_enabled: bool,
+    /// Enable depth writes 1, disable depth writes 0 
     pub depth_write_mask: u32,
     pub depth_func: ComparisonFunc,
+    /// Enable stencil testing
     pub stencil_enabled: bool,
     pub stencil_read_mask: u8,
     pub stencil_write_mask: u8,
@@ -410,12 +415,16 @@ pub enum StencilOp {
     Decr
 }
 
+/// Information to control blending operations on render targets
 pub struct BlendInfo {
     pub alpha_to_coverage_enabled: bool,
+    /// Separate blending on colour and alpha channels
     pub independant_blend_enabled: bool,
+    /// Separate blend operations for each bout render targets
     pub render_target: Vec<RenderTargetBlendInfo>
 }
 
+/// Blending operations for a single render target
 pub struct RenderTargetBlendInfo {
     pub blend_enabled: bool,
     pub logic_op_enabled: bool,
@@ -429,6 +438,7 @@ pub struct RenderTargetBlendInfo {
     pub write_mask: u8
 }
 
+/// Controls how the source and destination terms in blend equation are derrived
 pub enum BlendFactor {
     Zero,
     One,
@@ -449,6 +459,7 @@ pub enum BlendFactor {
     InvSrc1Alpha
 }
 
+/// Controls how the source and destination terms are combined: final = src (op) dest
 pub enum BlendOp {
     Add,
     Subtract,
@@ -457,6 +468,7 @@ pub enum BlendOp {
     Max
 }
 
+/// The logical operation to configure for a render target
 pub enum LogicOp {
     Clear,
     Set,

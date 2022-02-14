@@ -1,5 +1,4 @@
 // TODO:
-// - Raster State
 // - Depth Stencil State
 // - Blend State
 
@@ -19,6 +18,7 @@
 
 
 // DONE:
+// x Raster State
 // x Topology
 // x Crash on resize
 // x Enumerate adapters
@@ -36,7 +36,7 @@
 // x swap chain create info
 // x render pass in swap chain
 // x rtv heaps in device not swap chain
-// x call super traits = use super::Trait as SuperTrait (to avoid)
+// x call super traits = use super::Trait as SuperTrait (to avoid ambiguity)
 // x render pass result error handling
 // x texture result error handling
 // x shaders result / error handling
