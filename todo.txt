@@ -3,6 +3,7 @@
 // - Blend State
 
 // - Render Target Formats From Pass
+// - state / info defaults
 
 // - Depth Stencil Target
 // - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
