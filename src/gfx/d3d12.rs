@@ -283,6 +283,21 @@ fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PRIMITIV
     }
 }
 
+fn to_d3d12_fill_mode(fill_mode: &super::FillMode) -> D3D12_FILL_MODE {
+    match fill_mode {
+        super::FillMode::Wireframe => D3D12_FILL_MODE_WIREFRAME,
+        super::FillMode::Solid => D3D12_FILL_MODE_SOLID,
+    }
+}
+
+fn to_d3d12_cull_mode(cull_mode: &super::CullMode) -> D3D12_CULL_MODE {
+    match cull_mode {
+        super::CullMode::None => D3D12_CULL_MODE_NONE,
+        super::CullMode::Front => D3D12_CULL_MODE_FRONT,
+        super::CullMode::Back => D3D12_CULL_MODE_BACK,
+    }
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -905,6 +920,8 @@ impl super::Device for Device {
             NumElements: elems.len() as u32,
         };
 
+        let raster = &info.raster_info;
+
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
             pRootSignature: Some(root_signature.clone()),
@@ -917,9 +934,21 @@ impl super::Device for Device {
                 BytecodeLength: unsafe { ps.GetBufferSize() },
             },
             RasterizerState: D3D12_RASTERIZER_DESC {
-                FillMode: D3D12_FILL_MODE_SOLID,
-                CullMode: D3D12_CULL_MODE_NONE,
-                ..Default::default()
+                FillMode: to_d3d12_fill_mode(&raster.fill_mode),
+                CullMode: to_d3d12_cull_mode(&raster.cull_mode),
+                FrontCounterClockwise: BOOL::from(raster.front_ccw),
+                DepthBias: raster.depth_bias,
+                DepthBiasClamp: raster.depth_bias_clamp,
+                SlopeScaledDepthBias: raster.slope_scaled_depth_bias,
+                DepthClipEnable: BOOL::from(raster.front_ccw),
+                MultisampleEnable: BOOL::from(raster.front_ccw),
+                AntialiasedLineEnable: BOOL::from(raster.front_ccw),
+                ForcedSampleCount: raster.forced_sample_count,
+                ConservativeRaster: if raster.conservative_raster_mode { 
+                    D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON 
+                } else { 
+                    D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF 
+                }
             },
             BlendState: D3D12_BLEND_DESC {
                 AlphaToCoverageEnable: false.into(),

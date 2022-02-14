@@ -352,6 +352,19 @@ fn draw_triangle() {
                 register_space: 0,
             }]),
         },
+        raster_info: gfx::RasterInfo {
+            fill_mode: gfx::FillMode::Solid,
+            cull_mode: gfx::CullMode::None,
+            front_ccw: false,
+            depth_bias: 0,
+            depth_bias_clamp: 0.0,
+            slope_scaled_depth_bias: 0.0,
+            depth_clip_enable: false,
+            multisample_enable: false,
+            antialiased_line_enable: false,
+            forced_sample_count: 0,
+            conservative_raster_mode: false
+        },
         topology: gfx::Topology::TriangleList,
         patch_index: 0
     }).expect("failed to create pipeline");
