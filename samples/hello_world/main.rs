@@ -246,7 +246,7 @@ fn main() {
                     dst_blend_alpha: gfx::BlendFactor::Zero,
                     blend_op_alpha: gfx::BlendOp::Add,
                     logic_op: gfx::LogicOp::Clear,
-                    write_mask: 0
+                    write_mask: gfx::WriteMask::ALL
                 }
             ]
         },

@@ -196,6 +196,15 @@ bitflags! {
         /// Skips optimization for easier debuggability, deterministic results and faster compilation
         const SKIP_OPTIMIZATION = 0b00000010;
     }
+
+    /// Write mask flags
+    pub struct WriteMask : u8 {
+        const RED = 1<<0;
+        const GREEN = 1<<1;
+        const BLUE = 1<<2;
+        const ALPHA = 1<<3;
+        const ALL = (1<<4)-1;
+    }
 }
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
@@ -453,7 +462,7 @@ pub struct RenderTargetBlendInfo {
     pub dst_blend_alpha: BlendFactor,
     pub blend_op_alpha: BlendOp,
     pub logic_op: LogicOp,
-    pub write_mask: u8
+    pub write_mask: WriteMask
 }
 
 /// Controls how the source and destination terms in blend equation are derrived
@@ -486,7 +495,7 @@ pub enum BlendOp {
     Max
 }
 
-/// The logical operation to configure for a render target
+/// The logical operation to configure for a render target blend with logic op enabled
 pub enum LogicOp {
     Clear,
     Set,
@@ -501,7 +510,7 @@ pub enum LogicOp {
     Xor,
     Equiv,
     AndReverse,
-    Inverted,
+    AndInverted,
     OrReverse,
     OrInverted
 }
@@ -858,6 +867,12 @@ impl From<std::ffi::NulError> for Error {
     }
 }
 
+impl From<WriteMask> for u8 {
+    fn from(mask: WriteMask) -> u8 {
+        mask.bits
+    }
+}
+
 impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "\n{:?} Error: \n{}\n", self.error_type, self.msg)
@@ -871,14 +886,14 @@ impl std::fmt::Display for AdapterInfo {
             available += adapter;
             available += "\n  ";
         }
-write!(f, "{}:
+write!(f, 
+"{}:
   {}
   Video Memory: {}(mb)
   System Memory: {}(mb)
   Shared System Memory: {}(mb)
 Available Adapters:
-  {}
-", 
+  {}", 
             self.name, 
             self.description, 
             self.dedicated_video_memory/1024/1024,
