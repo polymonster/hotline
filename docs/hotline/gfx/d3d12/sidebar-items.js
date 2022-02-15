@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["Buffer",""],["CmdBuf",""],["Device",""],["Heap",""],["Pipeline",""],["ReadBackRequest",""],["RenderPass",""],["Shader",""],["SwapChain",""],["Texture",""]]});
+initSidebarItems({"struct":[["Buffer",""],["CmdBuf",""],["ComputePipeline",""],["Device",""],["Heap",""],["ReadBackRequest",""],["RenderPass",""],["RenderPipeline",""],["Shader",""],["SwapChain",""],["Texture",""]]});

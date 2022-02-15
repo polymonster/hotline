@@ -1,11 +1,11 @@
 // TODO:
-// - Blend State
-
 // - Render Target Formats From Pass
 // - state / info defaults
+// - Select adapter from name
 
 // - Depth Stencil Target
 // - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
+
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
@@ -14,10 +14,11 @@
 // - Draw Instanced
 // - Draw Indirect
 // - Stencil Ref
-// - Select adapter from name
 
+// - Math lib
 
 // DONE:
+// x Blend State
 // x Depth Stencil State
 // x Raster State
 // x Topology
