@@ -1,5 +1,4 @@
 // TODO:
-// - Depth Stencil State
 // - Blend State
 
 // - Render Target Formats From Pass
@@ -19,6 +18,7 @@
 
 
 // DONE:
+// x Depth Stencil State
 // x Raster State
 // x Topology
 // x Crash on resize

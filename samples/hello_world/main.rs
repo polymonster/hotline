@@ -232,6 +232,24 @@ fn main() {
                 func: gfx::ComparisonFunc::Always,
             },
         },
+        blend_info: gfx::BlendInfo {
+            alpha_to_coverage_enabled: false,
+            independant_blend_enabled: false,
+            render_target: vec![
+                gfx::RenderTargetBlendInfo {
+                    blend_enabled: false,
+                    logic_op_enabled: false,
+                    src_blend: gfx::BlendFactor::Zero,
+                    dst_blend: gfx::BlendFactor::Zero,
+                    blend_op: gfx::BlendOp::Add,
+                    src_blend_alpha: gfx::BlendFactor::Zero,
+                    dst_blend_alpha: gfx::BlendFactor::Zero,
+                    blend_op_alpha: gfx::BlendOp::Add,
+                    logic_op: gfx::LogicOp::Clear,
+                    write_mask: 0
+                }
+            ]
+        },
         topology: gfx::Topology::TriangleList,
         patch_index: 0
     }).expect("failed to create pipeline!");

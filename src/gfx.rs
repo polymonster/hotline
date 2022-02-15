@@ -339,6 +339,8 @@ pub struct RenderPipelineInfo<D: Device> {
     pub raster_info: RasterInfo,
     /// Control depth test and stencil oprations
     pub depth_stencil_info: DepthStencilInfo,
+    /// Control blending settings for the output merge stage
+    pub blend_info: BlendInfo,
     /// Primitive topolgy oof the input assembler
     pub topology: Topology,
     /// only required for Topology::PatchList use 0 as default
