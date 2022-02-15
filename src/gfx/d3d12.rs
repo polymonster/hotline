@@ -1899,9 +1899,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32) {
+    fn dispatch(&self, group_count: Size3, thread_count: Size3) {
         unsafe {
-            self.cmd().Dispatch(group_count_x, group_count_y, group_count_z);
+            self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
         }
     }
 

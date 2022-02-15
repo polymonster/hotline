@@ -26,7 +26,8 @@ pub struct Error {
     pub msg: String,
 }
 
-pub struct GroupSize {
+/// 3-Dimensional struct for compute shader thread count / thread group size
+pub struct Size3 {
     pub x: u32,
     pub y: u32,
     pub z: u32
@@ -197,7 +198,7 @@ bitflags! {
         const SKIP_OPTIMIZATION = 0b00000010;
     }
 
-    /// Write mask flags
+    /// Render target write mask flags
     pub struct WriteMask : u8 {
         const RED = 1<<0;
         const GREEN = 1<<1;
@@ -717,7 +718,8 @@ pub trait CmdBuf<D: Device>: {
         base_vertex: i32,
         start_instance: u32,
     );
-    fn dispatch(&self, group_count_x: u32, group_count_y: u32, group_count_z: u32);
+    /// Thread count is required for metal, in hlsl it is specified in the shader
+    fn dispatch(&self, group_count: Size3, thread_count: Size3);
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 }
 

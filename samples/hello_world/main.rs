@@ -370,7 +370,14 @@ fn main() {
         // compute pass
         cmdbuffer.set_compute_pipeline(&compute_pipeline);
         cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
-        cmdbuffer.dispatch(512/16, 512/16, 1);
+        cmdbuffer.dispatch(
+            gfx::Size3 {
+                x:512/16, y:512/16, z:1
+            },
+            gfx::Size3 {
+                x:512, y:512, z:1
+            },
+        );
 
         // render target pass
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
