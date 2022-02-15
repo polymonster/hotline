@@ -322,6 +322,27 @@ fn to_d3d12_stencil_op(op: &super::StencilOp) -> D3D12_STENCIL_OP {
     }
 }
 
+fn to_d3d12_render_target_blend(blend_info: &Vec<super::RenderTargetBlendInfo>) -> [D3D12_RENDER_TARGET_BLEND_DESC; 8] {
+    let mut rtb : [D3D12_RENDER_TARGET_BLEND_DESC; 8] = [D3D12_RENDER_TARGET_BLEND_DESC::default(); 8];
+    let mut i = 0;
+    for b in blend_info {
+        rtb[i] = D3D12_RENDER_TARGET_BLEND_DESC {
+            BlendEnable: BOOL::from(b.blend_enabled),
+            LogicOpEnable: BOOL::from(b.logic_op_enabled),
+            SrcBlend: D3D12_BLEND_ONE,
+            DestBlend: D3D12_BLEND_ZERO,
+            BlendOp: D3D12_BLEND_OP_ADD,
+            SrcBlendAlpha: D3D12_BLEND_ONE,
+            DestBlendAlpha: D3D12_BLEND_ZERO,
+            BlendOpAlpha: D3D12_BLEND_OP_ADD,
+            LogicOp: D3D12_LOGIC_OP_NOOP,
+            RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
+        };
+        i += 1;
+    }
+    rtb
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -946,6 +967,7 @@ impl super::Device for Device {
 
         let raster = &info.raster_info;
         let depth_stencil = &info.depth_stencil_info;
+        let blend = &info.blend_info;
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
@@ -976,29 +998,9 @@ impl super::Device for Device {
                 }
             },
             BlendState: D3D12_BLEND_DESC {
-                AlphaToCoverageEnable: false.into(),
-                IndependentBlendEnable: false.into(),
-                RenderTarget: [
-                    D3D12_RENDER_TARGET_BLEND_DESC {
-                        BlendEnable: false.into(),
-                        LogicOpEnable: false.into(),
-                        SrcBlend: D3D12_BLEND_ONE,
-                        DestBlend: D3D12_BLEND_ZERO,
-                        BlendOp: D3D12_BLEND_OP_ADD,
-                        SrcBlendAlpha: D3D12_BLEND_ONE,
-                        DestBlendAlpha: D3D12_BLEND_ZERO,
-                        BlendOpAlpha: D3D12_BLEND_OP_ADD,
-                        LogicOp: D3D12_LOGIC_OP_NOOP,
-                        RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
-                    },
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                    D3D12_RENDER_TARGET_BLEND_DESC::default(),
-                ],
+                AlphaToCoverageEnable: BOOL::from(blend.alpha_to_coverage_enabled),
+                IndependentBlendEnable: BOOL::from(blend.independant_blend_enabled),
+                RenderTarget: to_d3d12_render_target_blend(&blend.render_target),
             },
             DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
                 DepthEnable: BOOL::from(depth_stencil.depth_enabled),
