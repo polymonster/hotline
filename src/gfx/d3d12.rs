@@ -267,7 +267,9 @@ fn to_d3d12_primitive_topology(topology: super::Topology, patch_index: u32) -> D
         super::Topology::LineStripAdj => D3D_PRIMITIVE_TOPOLOGY_LINESTRIP_ADJ,
         super::Topology::TriangleListAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ,
         super::Topology::TriangleStripAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ,
-        super::Topology::PatchList => D3D_PRIMITIVE_TOPOLOGY(33 + patch_index as i32)
+        super::Topology::PatchList => D3D_PRIMITIVE_TOPOLOGY(
+            D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST.0 as i32 + patch_index as i32
+        )
     }
 }
 
@@ -329,18 +331,71 @@ fn to_d3d12_render_target_blend(blend_info: &Vec<super::RenderTargetBlendInfo>) 
         rtb[i] = D3D12_RENDER_TARGET_BLEND_DESC {
             BlendEnable: BOOL::from(b.blend_enabled),
             LogicOpEnable: BOOL::from(b.logic_op_enabled),
-            SrcBlend: D3D12_BLEND_ONE,
-            DestBlend: D3D12_BLEND_ZERO,
-            BlendOp: D3D12_BLEND_OP_ADD,
-            SrcBlendAlpha: D3D12_BLEND_ONE,
-            DestBlendAlpha: D3D12_BLEND_ZERO,
-            BlendOpAlpha: D3D12_BLEND_OP_ADD,
-            LogicOp: D3D12_LOGIC_OP_NOOP,
-            RenderTargetWriteMask: D3D12_COLOR_WRITE_ENABLE_ALL.0 as u8,
+            SrcBlend: to_d3d12_blend_factor(&b.src_blend),
+            DestBlend: to_d3d12_blend_factor(&b.dst_blend),
+            BlendOp: to_d3d12_blend_op(&b.blend_op),
+            SrcBlendAlpha: to_d3d12_blend_factor(&b.src_blend_alpha),
+            DestBlendAlpha: to_d3d12_blend_factor(&b.dst_blend_alpha),
+            BlendOpAlpha: to_d3d12_blend_op(&b.blend_op_alpha),
+            LogicOp: to_d3d12_logic_op(&b.logic_op),
+            RenderTargetWriteMask: u8::from(b.write_mask)
         };
         i += 1;
     }
     rtb
+}
+
+fn to_d3d12_blend_factor(factor: &super::BlendFactor) -> D3D12_BLEND {
+    match factor {
+        super::BlendFactor::Zero => D3D12_BLEND_ZERO,
+        super::BlendFactor::One => D3D12_BLEND_ONE,
+        super::BlendFactor::SrcColour => D3D12_BLEND_SRC_COLOR,
+        super::BlendFactor::InvSrcColour => D3D12_BLEND_INV_SRC_COLOR,
+        super::BlendFactor::SrcAlpha => D3D12_BLEND_SRC_ALPHA,
+        super::BlendFactor::InvSrcAlpha => D3D12_BLEND_INV_SRC_ALPHA,
+        super::BlendFactor::DstAlpha => D3D12_BLEND_DEST_ALPHA,
+        super::BlendFactor::InvDstAlpha => D3D12_BLEND_INV_DEST_ALPHA,
+        super::BlendFactor::DstColour => D3D12_BLEND_DEST_COLOR,
+        super::BlendFactor::InvDstColour => D3D12_BLEND_INV_DEST_COLOR,
+        super::BlendFactor::SrcAlphaSat => D3D12_BLEND_SRC_ALPHA_SAT,
+        super::BlendFactor::BlendFactor => D3D12_BLEND_BLEND_FACTOR,
+        super::BlendFactor::InvBlendFactor => D3D12_BLEND_INV_BLEND_FACTOR,
+        super::BlendFactor::Src1Colour => D3D12_BLEND_SRC1_COLOR,
+        super::BlendFactor::InvSrc1Colour => D3D12_BLEND_INV_SRC1_COLOR,
+        super::BlendFactor::Src1Alpha => D3D12_BLEND_SRC1_ALPHA,
+        super::BlendFactor::InvSrc1Alpha => D3D12_BLEND_INV_SRC1_ALPHA,
+    }
+}
+
+fn to_d3d12_blend_op(op: &super::BlendOp) -> D3D12_BLEND_OP {
+    match op {
+        super::BlendOp::Add => D3D12_BLEND_OP_ADD,
+        super::BlendOp::Subtract => D3D12_BLEND_OP_SUBTRACT,
+        super::BlendOp::RevSubtract => D3D12_BLEND_OP_REV_SUBTRACT,
+        super::BlendOp::Min => D3D12_BLEND_OP_MIN,
+        super::BlendOp::Max => D3D12_BLEND_OP_MAX,
+    }
+}
+
+fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
+    match op {
+        super::LogicOp::Clear => D3D12_LOGIC_OP_CLEAR,
+        super::LogicOp::Set => D3D12_LOGIC_OP_SET,
+        super::LogicOp::Copy => D3D12_LOGIC_OP_COPY,
+        super::LogicOp::CopyInverted => D3D12_LOGIC_OP_COPY_INVERTED,
+        super::LogicOp::NoOp => D3D12_LOGIC_OP_NOOP,
+        super::LogicOp::Invert => D3D12_LOGIC_OP_INVERT,
+        super::LogicOp::And => D3D12_LOGIC_OP_AND,
+        super::LogicOp::Nand => D3D12_LOGIC_OP_NAND, 
+        super::LogicOp::Or => D3D12_LOGIC_OP_OR,
+        super::LogicOp::Nor => D3D12_LOGIC_OP_NOR,
+        super::LogicOp::Xor => D3D12_LOGIC_OP_XOR,
+        super::LogicOp::Equiv => D3D12_LOGIC_OP_EQUIV,
+        super::LogicOp::AndReverse => D3D12_LOGIC_OP_AND_REVERSE,
+        super::LogicOp::AndInverted => D3D12_LOGIC_OP_AND_INVERTED,
+        super::LogicOp::OrReverse => D3D12_LOGIC_OP_OR_REVERSE,
+        super::LogicOp::OrInverted => D3D12_LOGIC_OP_OR_INVERTED,
+    }
 }
 
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
