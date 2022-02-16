@@ -1,7 +1,5 @@
 // TODO:
-// - Render Target Formats From Pass
 // - state / info defaults
-// - Select adapter from name
 
 // - Depth Stencil Target
 // - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
@@ -14,10 +12,14 @@
 // - Draw Instanced
 // - Draw Indirect
 // - Stencil Ref
+// - MRT
+// - MSAA
 
 // - Math lib
 
 // DONE:
+// x Render Target Formats From Pass
+// x Select adapter from name
 // x winpixeventruntime
 // x Blend State
 // x Depth Stencil State

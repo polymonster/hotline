@@ -13,6 +13,7 @@ pub enum ErrorType {
     DataSize,
     ShaderCompile,
     DescriptorLayout,
+    RenderPass,
     Direct3D12,
     Vulkan,
     Metal,
@@ -339,7 +340,7 @@ pub enum ComparisonFunc {
 }
 
 /// Information to create a pipeline through `Device::create_render_pipeline`.
-pub struct RenderPipelineInfo<D: Device> {
+pub struct RenderPipelineInfo<'a, D: Device> {
     /// Vertex Shader
     pub vs: Option<D::Shader>,
     /// Fragment Shader
@@ -357,7 +358,10 @@ pub struct RenderPipelineInfo<D: Device> {
     /// Primitive topolgy oof the input assembler
     pub topology: Topology,
     /// only required for Topology::PatchList use 0 as default
-    pub patch_index: u32
+    pub patch_index: u32,
+    /// A valid render pass, you can share pipelines across passes providing the render target
+    /// formats and sample count are the same of the passes you wish to use the pipeline on
+    pub pass: &'a D::RenderPass
 }
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage
@@ -666,7 +670,7 @@ pub trait Device: Sized + Any {
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
     fn create_render_pipeline(&self, info: &RenderPipelineInfo<Self>) -> Result<Self::RenderPipeline, Error>;
-    fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Self::RenderPass;
+    fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error>;
     fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
     fn get_shader_heap(&self) -> &Self::Heap;
@@ -679,7 +683,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn update(&mut self, device: &mut D, window: &platform::Window, cmd: &mut D::CmdBuf);
     fn get_backbuffer_index(&self) -> i32;
     fn get_backbuffer_texture(&self) -> &D::Texture;
-    fn get_backbuffer_pass(&mut self) -> &mut D::RenderPass;
+    fn get_backbuffer_pass(&mut self) -> &D::RenderPass;
+    fn get_backbuffer_pass_mut(&mut self) -> &mut D::RenderPass;
     fn swap(&mut self, device: &D);
 }
 
