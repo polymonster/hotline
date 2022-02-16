@@ -29,6 +29,7 @@ fn main() {
 
     // device
     let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        adapter_name: None,
         shader_heap_size: 100,
         render_target_heap_size: 100,
         depth_stencil_heap_size: 100
@@ -384,6 +385,7 @@ fn main() {
         cmdbuffer.end_event();
 
         // render target pass
+        cmdbuffer.begin_event(0xff0000ff, "Render Target Pass");
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(render_target.clone()),
             buffer: None,
@@ -392,7 +394,6 @@ fn main() {
         });
         
         cmdbuffer.begin_render_pass(&mut render_target_pass);
-
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
@@ -401,8 +402,10 @@ fn main() {
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::ShaderResource,
         });
+        cmdbuffer.end_event();
 
         // main pass
+        cmdbuffer.begin_event(0xff0000ff, "Main Pass");
         let vp_rect = win.get_viewport_rect();
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
@@ -437,6 +440,7 @@ fn main() {
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::Present,
         });
+        cmdbuffer.end_event();
 
         cmdbuffer.close(&swap_chain);
 

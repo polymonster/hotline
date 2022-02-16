@@ -491,7 +491,7 @@ fn transition_barrier(
     }
 }
 
-fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<(IDXGIAdapter1, super::AdapterInfo)> {
+fn get_hardware_adapter(factory: &IDXGIFactory4, adapter_name: &Option<String>) -> Result<(IDXGIAdapter1, super::AdapterInfo)> {
     unsafe {
         let mut adapter_info = super::AdapterInfo {
             name: String::from(""),
@@ -503,6 +503,7 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<(IDXGIAdapter1, super
         };
 
         // enumerate info
+        let mut selected_index = -1;
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i);
             if !adapter.is_ok() {
@@ -518,34 +519,45 @@ fn get_hardware_adapter(factory: &IDXGIFactory4) -> Result<(IDXGIAdapter1, super
             // trim utf-16 nul terminators
             let x: &[_] = &['\0', '\0'];
             let decoded = decoded1.trim_matches(x);
-
             adapter_info.available.push(decoded.to_string());
+
+            if adapter_name.is_some() {
+                let s = adapter_name.as_ref().unwrap().to_string();
+                if s == decoded.to_string() {
+                    selected_index = i as i32;
+                }
+            }
+            else {
+                // auto select first non software adapter
+                if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE {
+                    if selected_index == -1 {
+                        selected_index = i as i32;
+                    }
+                }
+            }
+        }
+
+        // default to adapter 0
+        if selected_index == -1 {
+            selected_index = 0;
         }
         
-        // select adapter
-        for i in 0.. {
-            let adapter = factory.EnumAdapters1(i)?;
-            let desc = adapter.GetDesc1()?;
+        let adapter = factory.EnumAdapters1(selected_index as u32)?;
+        let desc = adapter.GetDesc1()?;
 
-            // skip sw adapter?
-            if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE) != DXGI_ADAPTER_FLAG_NONE {
-                continue;
-            }
-
-            if D3D12CreateDevice(
-                &adapter,
-                D3D_FEATURE_LEVEL_12_1,
-                std::ptr::null_mut::<Option<ID3D12Device>>(),
-            )
-            .is_ok() {
-                // fill adapter info out
-                adapter_info.name = String::from("hotline::d3d12::Device");
-                adapter_info.description = adapter_info.available[i as usize].to_string();
-                adapter_info.dedicated_video_memory = desc.DedicatedVideoMemory;
-                adapter_info.dedicated_system_memory = desc.DedicatedSystemMemory;
-                adapter_info.shared_system_memory = desc.SharedSystemMemory;
-                return Ok((adapter, adapter_info));
-            }
+        if D3D12CreateDevice(
+            &adapter,
+            D3D_FEATURE_LEVEL_12_1,
+            std::ptr::null_mut::<Option<ID3D12Device>>(),
+        )
+        .is_ok() {
+            // fill adapter info out
+            adapter_info.name = String::from("hotline::d3d12::Device");
+            adapter_info.description = adapter_info.available[selected_index as usize].to_string();
+            adapter_info.dedicated_video_memory = desc.DedicatedVideoMemory;
+            adapter_info.dedicated_system_memory = desc.DedicatedSystemMemory;
+            adapter_info.shared_system_memory = desc.SharedSystemMemory;
+            return Ok((adapter, adapter_info));
         }
     }
     unreachable!()
@@ -906,7 +918,7 @@ impl super::Device for Device {
                 .expect("hotline::gfx::d3d12: failed to create dxgi factory");
 
             // create adapter
-            let (adapter, adapter_info) = get_hardware_adapter(&dxgi_factory)
+            let (adapter, adapter_info) = get_hardware_adapter(&dxgi_factory, &info.adapter_name)
                 .expect("hotline::gfx::d3d12: failed to get hardware adapter");
 
             // create device
