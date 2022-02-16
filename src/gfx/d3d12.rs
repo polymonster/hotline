@@ -6,6 +6,13 @@ use crate::os::win32 as platform;
 use super::*;
 use super::Device as SuperDevice;
 
+use std::ffi::CStr;
+use std::ffi::CString;
+use std::result;
+use std::str;
+use std::collections::HashMap;
+use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
+
 use windows::{
     core::*, 
     Win32::Foundation::*, 
@@ -22,13 +29,6 @@ use windows::{
 type BeginEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
 type EndEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void) -> i32;
 type SetMarkerOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
-
-use std::ffi::CStr;
-use std::ffi::CString;
-use std::result;
-use std::str;
-use std::collections::HashMap;
-use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
 
 #[derive(Copy, Clone)]
 struct WinPixEventRuntime {
@@ -165,6 +165,8 @@ pub struct ReadBackRequest {
 
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
+    rt_formats: Vec<DXGI_FORMAT>,
+    sample_count: u32
 }
 
 pub struct Heap {
@@ -622,7 +624,7 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
     device: &mut Device,
-    num_bb: u32
+    num_bb: u32,
 ) -> Vec<Texture> {
     unsafe {
         // render targets for the swap chain
@@ -883,7 +885,7 @@ impl Device {
                 ds_clear: None,
                 resolve: false,
                 discard: false,
-            }));
+            }).unwrap());
         }
         passes
     }
@@ -1158,24 +1160,24 @@ impl super::Device for Device {
             },
             SampleMask: u32::max_value(), // TODO:
             PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
-            NumRenderTargets: 1, // TODO:
+            NumRenderTargets: info.pass.rt_formats.len() as u32,
             SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
+                Count: info.pass.sample_count,
                 Quality: 0,
             },
             ..Default::default()
         };
 
-        // TODO: formats from pass
-        desc.RTVFormats[0] = DXGI_FORMAT_R8G8B8A8_UNORM;
-
-        unsafe {
-            Ok(RenderPipeline {
-                pso: self.device.CreateGraphicsPipelineState(&desc)?,
-                root_signature: root_signature,
-                topology: to_d3d12_primitive_topology(info.topology, info.patch_index)
-            })
+        // Set formats from pass
+        for i in 0..info.pass.rt_formats.len() {
+            desc.RTVFormats[i] = info.pass.rt_formats[i];
         }
+
+        Ok(RenderPipeline {
+            pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
+            root_signature: root_signature,
+            topology: to_d3d12_primitive_topology(info.topology, info.patch_index)
+        })
     }
 
     fn create_shader<T: Sized>(
@@ -1585,8 +1587,9 @@ impl super::Device for Device {
         }
     }
 
-    fn create_render_pass(&self, info: &super::RenderPassInfo<Device>) -> RenderPass {
+    fn create_render_pass(&self, info: &super::RenderPassInfo<Device>) -> result::Result<RenderPass, super::Error> {
         let mut rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC> = Vec::new();
+        let mut formats: Vec<DXGI_FORMAT> = Vec::new();
         let mut begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
         let mut clear_col = ClearColour {
             r: 0.0,
@@ -1601,13 +1604,30 @@ impl super::Device for Device {
         } else if info.discard {
             begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
         }
+        let mut sample_count = None;
         for target in &info.render_targets {
+            let desc = unsafe { target.resource.GetDesc() };
+            let dxgi_format = desc.Format;
+            let target_sample_count = desc.SampleDesc.Count;
+            if sample_count.is_none() {
+                sample_count = Some(target_sample_count);
+            }
+            else {
+                if sample_count.unwrap() != target_sample_count {
+                    return Err( super::Error {
+                        error_type: super::ErrorType::RenderPass,
+                        msg: format!("Sample counts must match on all targets: expected {} samples, found {}", 
+                        sample_count.unwrap(),
+                        target_sample_count
+                    )});
+                }
+            }
             let begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
                 Type: begin_type,
                 Anonymous: D3D12_RENDER_PASS_BEGINNING_ACCESS_0 {
                     Clear: D3D12_RENDER_PASS_BEGINNING_ACCESS_CLEAR_PARAMETERS {
                         ClearValue: D3D12_CLEAR_VALUE {
-                            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+                            Format: dxgi_format,
                             Anonymous: D3D12_CLEAR_VALUE_0 {
                                 Color: [clear_col.r, clear_col.g, clear_col.b, clear_col.a],
                             },
@@ -1621,15 +1641,18 @@ impl super::Device for Device {
                     Resolve: Default::default(),
                 },
             };
+            formats.push(dxgi_format);
             rt.push(D3D12_RENDER_PASS_RENDER_TARGET_DESC {
                 cpuDescriptor: target.rtv.unwrap(),
                 BeginningAccess: begin,
                 EndingAccess: end,
             })
         }
-        RenderPass {
+        Ok(RenderPass {
             rt: rt,
-        }
+            rt_formats: formats,
+            sample_count: sample_count.unwrap()
+        })
     }
 
     fn create_compute_pipeline(&self, info: &super::ComputePipelineInfo<Self>) -> result::Result<ComputePipeline, super::Error> {
@@ -1736,7 +1759,11 @@ impl super::SwapChain<Device> for SwapChain {
         return &self.backbuffer_textures[self.bb_index as usize];
     }
 
-    fn get_backbuffer_pass(&mut self) -> &mut RenderPass {
+    fn get_backbuffer_pass(&mut self) -> &RenderPass {
+        return &self.backbuffer_passes[self.bb_index as usize];
+    }
+
+    fn get_backbuffer_pass_mut(&mut self) -> &mut RenderPass {
         return &mut self.backbuffer_passes[self.bb_index as usize];
     }
 

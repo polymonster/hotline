@@ -252,7 +252,8 @@ fn main() {
             ]
         },
         topology: gfx::Topology::TriangleList,
-        patch_index: 0
+        patch_index: 0,
+        pass: swap_chain.get_backbuffer_pass()
     }).expect("failed to create pipeline!");
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
@@ -327,7 +328,7 @@ fn main() {
         ds_clear: None,
         resolve: false,
         discard: false,
-    });
+    }).unwrap();
 
     // unordered access rw texture
     let rw_info = gfx::TextureInfo {
@@ -417,7 +418,7 @@ fn main() {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
-        let mut pass = swap_chain.get_backbuffer_pass();
+        let mut pass = swap_chain.get_backbuffer_pass_mut();
         cmdbuffer.begin_render_pass(&mut pass);
 
         cmdbuffer.set_viewport(&viewport);
