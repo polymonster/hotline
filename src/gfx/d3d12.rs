@@ -7,7 +7,8 @@ use super::*;
 use super::Device as SuperDevice;
 
 use windows::{
-    core::*, Win32::Foundation::*, 
+    core::*, 
+    Win32::Foundation::*, 
     Win32::Graphics::Direct3D::Fxc::*, 
     Win32::Graphics::Direct3D::*,
     Win32::Graphics::Direct3D12::*, 
@@ -15,7 +16,12 @@ use windows::{
     Win32::Graphics::Dxgi::*,
     Win32::System::Threading::*, 
     Win32::System::WindowsProgramming::*,
+    Win32::System::LibraryLoader::*
 };
+
+type BeginEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
+type EndEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void) -> i32;
+type SetMarkerOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
 
 use std::ffi::CStr;
 use std::ffi::CString;
@@ -23,6 +29,63 @@ use std::result;
 use std::str;
 use std::collections::HashMap;
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
+
+#[derive(Copy, Clone)]
+struct WinPixEventRuntime {
+    begin_event: BeginEventOnCommandList,
+    end_event: EndEventOnCommandList,
+    set_marker: SetMarkerOnCommandList,
+}
+
+impl WinPixEventRuntime {
+    pub fn create() -> Option<WinPixEventRuntime> {
+        unsafe {
+            let module = LoadLibraryA("WinPixEventRuntime.dll\0");
+            
+            let p_begin_event = GetProcAddress(module, "PIXBeginEventOnCommandList\0");
+            let p_end_event = GetProcAddress(module, "PIXEndEventOnCommandList\0");
+            let p_set_marker = GetProcAddress(module, "PIXSetMarkerOnCommandList\0");
+
+            if p_begin_event.is_some() && p_end_event.is_some() && p_set_marker.is_some() {
+                return Some(WinPixEventRuntime {
+                    begin_event: std::mem::transmute::<*const usize, BeginEventOnCommandList>(
+                        p_begin_event.unwrap() as *const usize),
+                    end_event: std::mem::transmute::<*const usize, EndEventOnCommandList>(
+                        p_end_event.unwrap() as *const usize),
+                    set_marker: std::mem::transmute::<*const usize, SetMarkerOnCommandList>(
+                        p_set_marker.unwrap() as *const usize),
+                });
+            }
+            None
+        }
+    }
+
+    pub fn begin_event_on_command_list(&self, command_list: ID3D12GraphicsCommandList, color: u64, name: &str) {
+        unsafe {
+            let null_name = CString::new(name).unwrap();
+            let fn_begin_event : BeginEventOnCommandList = self.begin_event;
+            let p_cmd_list = std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+            fn_begin_event(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
+        }
+    }
+
+    pub fn end_event_on_command_list(&self, command_list: ID3D12GraphicsCommandList) {
+        unsafe {
+            let fn_end_event : EndEventOnCommandList = self.end_event;
+            let p_cmd_list = std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+            fn_end_event(p_cmd_list);
+        }
+    }
+
+    pub fn set_marker_on_command_list(&self, command_list: ID3D12GraphicsCommandList, color: u64, name: &str) {
+        unsafe {
+            let null_name = CString::new(name).unwrap();
+            let fn_set_marker : SetMarkerOnCommandList = self.set_marker;
+            let p_cmd_list = std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+            fn_set_marker(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
+        }
+    }
+}
 
 pub struct Device {
     _adapter: IDXGIAdapter1,
@@ -32,9 +95,10 @@ pub struct Device {
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
+    pix: Option<WinPixEventRuntime>,
     shader_heap: Heap,
     rtv_heap: Heap,
-    dsv_heap: Heap
+    dsv_heap: Heap,
 }
 
 pub struct SwapChain {
@@ -65,6 +129,7 @@ pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
+    pix: Option<WinPixEventRuntime>,
     in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>,
 }
 
@@ -899,6 +964,7 @@ impl super::Device for Device {
                 command_allocator: command_allocator,
                 command_list: command_list,
                 command_queue: command_queue,
+                pix: WinPixEventRuntime::create(),
                 shader_heap: shader_heap,
                 rtv_heap: rtv_heap,
                 dsv_heap: dsv_heap
@@ -1001,6 +1067,7 @@ impl super::Device for Device {
                 bb_index: 1,
                 command_allocator: command_allocators,
                 command_list: command_lists,
+                pix: self.pix,
                 in_flight_barriers: barriers,
             }
         }
@@ -1738,16 +1805,15 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn begin_event(&self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
-        unsafe {
-            let null_name = CString::new(name).unwrap();
-            cmd.BeginEvent(colour, null_name.as_ptr() as *const core::ffi::c_void, name.len() as u32);
+        if self.pix.is_some() {
+            self.pix.unwrap().begin_event_on_command_list(cmd.clone(), colour as u64, name);
         }
     }
 
     fn end_event(&self) {
         let cmd = &self.command_list[self.bb_index];
-        unsafe {
-            cmd.EndEvent();
+        if self.pix.is_some() {
+            self.pix.unwrap().end_event_on_command_list(cmd.clone());
         }
     }
 
@@ -1850,9 +1916,8 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_marker(&self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
-        unsafe {
-            let null_name = CString::new(name).unwrap();
-            cmd.SetMarker(colour, null_name.as_ptr() as *const core::ffi::c_void, name.len() as u32);
+        if self.pix.is_some() {
+            self.pix.unwrap().set_marker_on_command_list(cmd.clone(), colour as u64, name);
         }
     }   
 
