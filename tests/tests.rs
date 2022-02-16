@@ -39,6 +39,7 @@ fn create_d3d12_device() {
         num_buffers: 0,
     });
     let _dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        adapter_name: None,
         shader_heap_size: 1,
         render_target_heap_size: 1,
         depth_stencil_heap_size: 1,
@@ -107,6 +108,7 @@ fn swap_chain_buffer() {
         num_buffers: 0,
     });
     let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        adapter_name: None,
         shader_heap_size: 0,
         render_target_heap_size: 2,
         depth_stencil_heap_size: 0,
@@ -208,6 +210,7 @@ fn draw_triangle() {
     });
 
     let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+        adapter_name: None,
         shader_heap_size: 0,
         render_target_heap_size: 2,
         depth_stencil_heap_size: 0,

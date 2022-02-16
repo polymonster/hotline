@@ -95,6 +95,9 @@ pub enum Format {
 /// Information to create a device, it contains default heaps for resource views
 /// resources will be automatically allocated into these heaps, you can supply custom heaps if necessary
 pub struct DeviceInfo {
+    /// optional adapter to choose a specific adapter in the scenario of a multi-adapter system
+    /// if None is supplied the first non-software emulation adapter would be selected
+    pub adapter_name: Option<String>,
     /// space for shader resource views, constant buffers and unordered access views
     pub shader_heap_size: usize,
     /// space for colour render targets
