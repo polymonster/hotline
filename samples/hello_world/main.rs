@@ -368,6 +368,9 @@ fn main() {
         cmdbuffer.reset(&swap_chain);
 
         // compute pass
+        cmdbuffer.set_marker(0xff00ffff, "START!!!");
+
+        cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
         cmdbuffer.set_compute_pipeline(&compute_pipeline);
         cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
         cmdbuffer.dispatch(
@@ -378,6 +381,7 @@ fn main() {
                 x:512, y:512, z:1
             },
         );
+        cmdbuffer.end_event();
 
         // render target pass
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
