@@ -688,8 +688,16 @@ impl From<windows::core::Error> for super::Error {
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         unsafe {
-            let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
-            self.offset += self.increment_size;
+            let mut ptr = 0;
+            if self.free_list.is_empty() {
+                // allocates a new handle
+                ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
+                self.offset += self.increment_size;
+            }
+            else {
+                // pulls new handle from the free list
+                ptr = self.free_list.pop().unwrap();
+            }
             D3D12_CPU_DESCRIPTOR_HANDLE { 
                 ptr: ptr 
             }
@@ -701,8 +709,8 @@ impl Heap {
         ptr / self.increment_size
     }
 
-    fn deallocate(&mut self) {
-        // TODO: dealloc and free list
+    fn deallocate(&mut self, handle: &D3D12_CPU_DESCRIPTOR_HANDLE) {
+        self.free_list.push(handle.ptr);
     }
 }
 
@@ -1726,6 +1734,15 @@ impl super::SwapChain<Device> for SwapChain {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
+
+                // clean up rtv handles
+                for bb_tex in &self.backbuffer_textures {
+                    if bb_tex.rtv.is_some() {
+                        device.rtv_heap.deallocate(&bb_tex.rtv.unwrap());
+                    } 
+                }
+
+                // clean up texture resource
                 self.backbuffer_textures.clear();
 
                 self.swap_chain
