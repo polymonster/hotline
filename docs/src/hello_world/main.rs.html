@@ -446,6 +446,15 @@
 <span id="446">446</span>
 <span id="447">447</span>
 <span id="448">448</span>
+<span id="449">449</span>
+<span id="450">450</span>
+<span id="451">451</span>
+<span id="452">452</span>
+<span id="453">453</span>
+<span id="454">454</span>
+<span id="455">455</span>
+<span id="456">456</span>
+<span id="457">457</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">hotline</span>::<span class="kw-2">*</span>;
 
 <span class="kw">use</span> <span class="ident">os::App</span>;
@@ -477,6 +486,7 @@
 
     <span class="comment">// device</span>
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">gfx_platform::Device::create</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::DeviceInfo</span>{
+        <span class="ident">adapter_name</span>: <span class="prelude-val">None</span>,
         <span class="ident">shader_heap_size</span>: <span class="number">100</span>,
         <span class="ident">render_target_heap_size</span>: <span class="number">100</span>,
         <span class="ident">depth_stencil_heap_size</span>: <span class="number">100</span>
@@ -699,7 +709,8 @@
             ]
         },
         <span class="ident">topology</span>: <span class="ident">gfx::Topology::TriangleList</span>,
-        <span class="ident">patch_index</span>: <span class="number">0</span>
+        <span class="ident">patch_index</span>: <span class="number">0</span>,
+        <span class="ident">pass</span>: <span class="ident">swap_chain</span>.<span class="ident">get_backbuffer_pass</span>()
     }).<span class="ident">expect</span>(<span class="string">&quot;failed to create pipeline!&quot;</span>);
 
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">textures</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">gfx::d3d12::Texture</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
@@ -774,7 +785,7 @@
         <span class="ident">ds_clear</span>: <span class="prelude-val">None</span>,
         <span class="ident">resolve</span>: <span class="bool-val">false</span>,
         <span class="ident">discard</span>: <span class="bool-val">false</span>,
-    });
+    }).<span class="ident">unwrap</span>();
 
     <span class="comment">// unordered access rw texture</span>
     <span class="kw">let</span> <span class="ident">rw_info</span> <span class="op">=</span> <span class="ident">gfx::TextureInfo</span> {
@@ -816,6 +827,9 @@
         <span class="ident">cmdbuffer</span>.<span class="ident">reset</span>(<span class="kw-2">&amp;</span><span class="ident">swap_chain</span>);
 
         <span class="comment">// compute pass</span>
+        <span class="ident">cmdbuffer</span>.<span class="ident">set_marker</span>(<span class="number">0xff00ffff</span>, <span class="string">&quot;START!!!&quot;</span>);
+
+        <span class="ident">cmdbuffer</span>.<span class="ident">begin_event</span>(<span class="number">0xff0000ff</span>, <span class="string">&quot;Compute Pass&quot;</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">set_compute_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">compute_pipeline</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">set_compute_heap</span>(<span class="number">0</span>, <span class="ident">dev</span>.<span class="ident">get_shader_heap</span>());
         <span class="ident">cmdbuffer</span>.<span class="ident">dispatch</span>(
@@ -826,8 +840,10 @@
                 <span class="ident">x</span>:<span class="number">512</span>, <span class="ident">y</span>:<span class="number">512</span>, <span class="ident">z</span>:<span class="number">1</span>
             },
         );
+        <span class="ident">cmdbuffer</span>.<span class="ident">end_event</span>();
 
         <span class="comment">// render target pass</span>
+        <span class="ident">cmdbuffer</span>.<span class="ident">begin_event</span>(<span class="number">0xff0000ff</span>, <span class="string">&quot;Render Target Pass&quot;</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">transition_barrier</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::TransitionBarrier</span> {
             <span class="ident">texture</span>: <span class="prelude-val">Some</span>(<span class="ident">render_target</span>.<span class="ident">clone</span>()),
             <span class="ident">buffer</span>: <span class="prelude-val">None</span>,
@@ -836,7 +852,6 @@
         });
         
         <span class="ident">cmdbuffer</span>.<span class="ident">begin_render_pass</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">render_target_pass</span>);
-
         <span class="ident">cmdbuffer</span>.<span class="ident">end_render_pass</span>();
 
         <span class="ident">cmdbuffer</span>.<span class="ident">transition_barrier</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::TransitionBarrier</span> {
@@ -845,8 +860,10 @@
             <span class="ident">state_before</span>: <span class="ident">gfx::ResourceState::RenderTarget</span>,
             <span class="ident">state_after</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>,
         });
+        <span class="ident">cmdbuffer</span>.<span class="ident">end_event</span>();
 
         <span class="comment">// main pass</span>
+        <span class="ident">cmdbuffer</span>.<span class="ident">begin_event</span>(<span class="number">0xff0000ff</span>, <span class="string">&quot;Main Pass&quot;</span>);
         <span class="kw">let</span> <span class="ident">vp_rect</span> <span class="op">=</span> <span class="ident">win</span>.<span class="ident">get_viewport_rect</span>();
         <span class="kw">let</span> <span class="ident">viewport</span> <span class="op">=</span> <span class="ident">gfx::Viewport::from</span>(<span class="ident">vp_rect</span>);
         <span class="kw">let</span> <span class="ident">scissor</span> <span class="op">=</span> <span class="ident">gfx::ScissorRect::from</span>(<span class="ident">vp_rect</span>);
@@ -858,7 +875,7 @@
             <span class="ident">state_after</span>: <span class="ident">gfx::ResourceState::RenderTarget</span>,
         });
 
-        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pass</span> <span class="op">=</span> <span class="ident">swap_chain</span>.<span class="ident">get_backbuffer_pass</span>();
+        <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">pass</span> <span class="op">=</span> <span class="ident">swap_chain</span>.<span class="ident">get_backbuffer_pass_mut</span>();
         <span class="ident">cmdbuffer</span>.<span class="ident">begin_render_pass</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">pass</span>);
 
         <span class="ident">cmdbuffer</span>.<span class="ident">set_viewport</span>(<span class="kw-2">&amp;</span><span class="ident">viewport</span>);
@@ -881,6 +898,7 @@
             <span class="ident">state_before</span>: <span class="ident">gfx::ResourceState::RenderTarget</span>,
             <span class="ident">state_after</span>: <span class="ident">gfx::ResourceState::Present</span>,
         });
+        <span class="ident">cmdbuffer</span>.<span class="ident">end_event</span>();
 
         <span class="ident">cmdbuffer</span>.<span class="ident">close</span>(<span class="kw-2">&amp;</span><span class="ident">swap_chain</span>);
 
