@@ -169,19 +169,7 @@ fn swap_chain_buffer() {
 
         let col = &clears_colours[i];
 
-        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some(gfx::ClearColour {
-                r: 0.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil_target: None,
-            ds_clear: None,
-            resolve: false,
-            discard: false,
-        });
+        let mut pass = swap_chain.get_backbuffer_pass_mut();
 
         cmdbuffer.begin_render_pass(&mut pass);
         cmdbuffer.end_render_pass();
@@ -407,7 +395,8 @@ fn draw_triangle() {
             ]
         },
         topology: gfx::Topology::TriangleList,
-        patch_index: 0
+        patch_index: 0,
+        pass: swap_chain.get_backbuffer_pass()
     }).expect("failed to create pipeline");
 
     let mut rbr = gfx_platform::ReadBackRequest {
@@ -432,19 +421,7 @@ fn draw_triangle() {
 
         cmdbuffer.reset(&swap_chain);
 
-        let mut pass = dev.create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![swap_chain.get_backbuffer_texture().clone()],
-            rt_clear: Some(gfx::ClearColour {
-                r: 0.0,
-                g: 1.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil_target: None,
-            ds_clear: None,
-            resolve: false,
-            discard: false,
-        });
+        let mut pass = swap_chain.get_backbuffer_pass_mut();
 
         cmdbuffer.begin_render_pass(&mut pass);
         cmdbuffer.set_viewport(&viewport);
