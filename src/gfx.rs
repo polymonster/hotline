@@ -893,8 +893,9 @@ impl std::fmt::Display for AdapterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut available = String::from("");
         for adapter in &self.available {
+            available += "  ";
             available += adapter;
-            available += "\n  ";
+            available += "\n";
         }
 write!(f, 
 "{}:
@@ -903,7 +904,7 @@ write!(f,
   System Memory: {}(mb)
   Shared System Memory: {}(mb)
 Available Adapters:
-  {}", 
+{}", 
             self.name, 
             self.description, 
             self.dedicated_video_memory/1024/1024,
@@ -911,5 +912,95 @@ Available Adapters:
             self.shared_system_memory/1024/1024,
             available
         )
+    }
+}
+
+impl Default for RasterInfo {
+    fn default() -> Self { 
+        RasterInfo {
+            fill_mode: FillMode::Solid,
+            cull_mode: CullMode::None,
+            front_ccw: false,
+            depth_bias: 0,
+            depth_bias_clamp: 0.0,
+            slope_scaled_depth_bias: 0.0,
+            depth_clip_enable: false,
+            multisample_enable: false,
+            antialiased_line_enable: false,
+            forced_sample_count: 0,
+            conservative_raster_mode: false
+        }
+    }
+}
+
+impl Default for SamplerInfo {
+    fn default() -> Self { 
+        SamplerInfo {
+            visibility: ShaderVisibility::Fragment,
+            filter: SamplerFilter::Linear,
+            address_u: SamplerAddressMode::Wrap,
+            address_v: SamplerAddressMode::Wrap,
+            address_w: SamplerAddressMode::Wrap,
+            comparison: None,
+            border_colour: None,
+            mip_lod_bias: 0.0,
+            max_aniso: 0,
+            min_lod: -1.0,
+            max_lod: -1.0,
+            shader_register: 0,
+            register_space: 0,
+        }
+    }
+}
+
+impl Default for DepthStencilInfo {
+    fn default() -> Self { 
+        DepthStencilInfo {
+            depth_enabled: false,
+            depth_write_mask: DepthWriteMask::Zero,
+            depth_func: ComparisonFunc::Always,
+            stencil_enabled: false,
+            stencil_read_mask: 0,
+            stencil_write_mask: 0,
+            front_face: StencilInfo {
+                fail: StencilOp::Keep,
+                depth_fail: StencilOp::Keep,
+                pass: StencilOp::Keep,
+                func: ComparisonFunc::Always,
+            },
+            back_face: StencilInfo {
+                fail: StencilOp::Keep,
+                depth_fail: StencilOp::Keep,
+                pass: StencilOp::Keep,
+                func: ComparisonFunc::Always,
+            }
+        }
+    }
+}
+
+impl Default for BlendInfo {
+    fn default() -> Self { 
+        BlendInfo {
+            alpha_to_coverage_enabled: false,
+            independant_blend_enabled: false,
+            render_target: Vec::new()
+        }
+    }
+}
+
+impl Default for RenderTargetBlendInfo {
+    fn default() -> Self { 
+        RenderTargetBlendInfo {
+            blend_enabled: false,
+            logic_op_enabled: false,
+            src_blend: BlendFactor::Zero,
+            dst_blend: BlendFactor::Zero,
+            blend_op: BlendOp::Add,
+            src_blend_alpha: BlendFactor::Zero,
+            dst_blend_alpha: BlendFactor::Zero,
+            blend_op_alpha: BlendOp::Add,
+            logic_op: LogicOp::Clear,
+            write_mask: WriteMask::ALL
+        }
     }
 }
