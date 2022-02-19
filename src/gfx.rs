@@ -91,6 +91,11 @@ pub enum Format {
     RGBA32u,
     RGBA32i,
     RGBA32f,
+    D32fS8X24u,
+    D32f,
+    D24nS8u,
+    D16n,
+
 }
 
 /// Information to create a device, it contains default heaps for resource views
@@ -565,8 +570,8 @@ bitflags! {
         const UNORDERED_ACCESS = (1 << 1);
         /// Used as a colour render target
         const RENDER_TARGET = (1 << 2);
-        /// Used as a depth stencil render target
-        const DEPTH_STENCIL_TARGET = (1 << 3);
+        /// Used as a depth stencil buffer
+        const DEPTH_STENCIL = (1 << 3);
         /// Used as a target for hardware assisted video decoding operations
         const VIDEO_DECODE_TARGET = (1 << 4);
     }
@@ -596,7 +601,7 @@ pub struct RenderPassInfo<D: Device> {
     /// Colour to clear render target when the pass starts, use None to preserve previous contents
     pub rt_clear: Option<ClearColour>,
     /// A texture which was created with depth stencil flags
-    pub depth_stencil_target: Option<D::Texture>,
+    pub depth_stencil: Option<D::Texture>,
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
     pub ds_clear: Option<ClearDepthStencil>,
     /// Choose to resolve multi-sample AA targets,
@@ -618,6 +623,10 @@ pub struct TransitionBarrier<D: Device> {
 pub enum ResourceState {
     /// Used for texture only to be written to from fragment shaders
     RenderTarget,
+    /// Used for a texture to be used as a depth stencil buffer
+    DepthStencil,
+    /// Used for when depth testing is enabled, but depth writes are disabled
+    DepthStencilReadOnly,
     /// Used for swap chain textures only, required before calling swap
     Present,
     /// Access for read/write from shaders
@@ -809,6 +818,10 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::RGBA32u => 16,
         Format::RGBA32i => 16,
         Format::RGBA32f => 16,
+        Format::D32fS8X24u => 8,
+        Format::D32f => 16,
+        Format::D24nS8u => 32,
+        Format::D16n => 2,
     }
 }
 

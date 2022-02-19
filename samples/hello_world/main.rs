@@ -28,7 +28,7 @@ fn main() {
     });
 
     // device
-    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
         shader_heap_size: 100,
         render_target_heap_size: 100,
@@ -272,6 +272,21 @@ fn main() {
     };
     let render_target = dev.create_texture::<u8>(&rt_info, None).unwrap();
 
+    // depth stencil target
+    let ds_info = gfx::TextureInfo {
+        format: gfx::Format::D24nS8u,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::DEPTH_STENCIL,
+        initial_state: gfx::ResourceState::DepthStencil
+    };
+    let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
+
     // pass for render target
     let mut render_target_pass = dev.create_render_pass(&gfx::RenderPassInfo {
         render_targets: vec![render_target.clone()],
@@ -281,7 +296,7 @@ fn main() {
             b: 1.0,
             a: 1.0,
         }),
-        depth_stencil_target: None,
+        depth_stencil: None, //Some(depth_stencil),
         ds_clear: None,
         resolve: false,
         discard: false,

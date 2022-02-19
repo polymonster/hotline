@@ -149,6 +149,7 @@ pub struct Shader {
 pub struct Texture {
     resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv_index: usize
@@ -166,6 +167,8 @@ pub struct ReadBackRequest {
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
     rt_formats: Vec<DXGI_FORMAT>,
+    ds: Option<D3D12_RENDER_PASS_DEPTH_STENCIL_DESC>,
+    ds_format: DXGI_FORMAT,
     sample_count: u32
 }
 
@@ -173,7 +176,7 @@ pub struct Heap {
     heap: ID3D12DescriptorHeap,
     base_address: usize,
     increment_size: usize,
-    capacity: usize,
+    capacity: usize, // TODO: use and check when allocating
     offset: usize,
     free_list: Vec<usize>
 }
@@ -209,6 +212,10 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGBA32u => DXGI_FORMAT_R32G32B32A32_UINT,
         super::Format::RGBA32i => DXGI_FORMAT_R32G32B32A32_SINT,
         super::Format::RGBA32f => DXGI_FORMAT_R32G32B32A32_FLOAT,
+        super::Format::D32fS8X24u => DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+        super::Format::D32f => DXGI_FORMAT_D32_FLOAT,
+        super::Format::D24nS8u => DXGI_FORMAT_D24_UNORM_S8_UINT,
+        super::Format::D16n => DXGI_FORMAT_D16_UNORM,
     }
 }
 
@@ -283,10 +290,10 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
         super::ResourceState::Present => D3D12_RESOURCE_STATE_PRESENT,
         super::ResourceState::UnorderedAccess => D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
         super::ResourceState::ShaderResource => D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
-        super::ResourceState::VertexConstantBuffer => {
-            D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
-        }
+        super::ResourceState::VertexConstantBuffer => D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER,
         super::ResourceState::IndexBuffer => D3D12_RESOURCE_STATE_INDEX_BUFFER,
+        super::ResourceState::DepthStencil => D3D12_RESOURCE_STATE_DEPTH_WRITE,
+        super::ResourceState::DepthStencilReadOnly => D3D12_RESOURCE_STATE_DEPTH_READ,
     }
 }
 
@@ -313,7 +320,7 @@ fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FL
     if usage.contains(super::TextureUsage::RENDER_TARGET) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
     }
-    if usage.contains(super::TextureUsage::DEPTH_STENCIL_TARGET) {
+    if usage.contains(super::TextureUsage::DEPTH_STENCIL) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
     }
     if usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
@@ -638,7 +645,8 @@ fn create_swap_chain_rtv(
                 srv: None,
                 srv_index: usize::MAX,
                 rtv: Some(h),
-                uav: None
+                uav: None,
+                dsv: None
             });
         }
         textures
@@ -889,7 +897,7 @@ impl Device {
                     b: 1.0,
                     a: 1.0,
                 }),
-                depth_stencil_target: None,
+                depth_stencil: None,
                 ds_clear: None,
                 resolve: false,
                 discard: false,
@@ -1572,6 +1580,14 @@ impl super::Device for Device {
                 rtv_handle = Some(h);
             }
 
+            // create dsv
+            let mut dsv_handle = None;
+            if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
+                //let h = self.rtv_heap.allocate();
+                //self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
+                //rtv_handle = Some(h);
+            }
+
             // create uav
             let mut uav_handle = None;
             if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
@@ -1588,6 +1604,7 @@ impl super::Device for Device {
             Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: rtv_handle,
+                dsv: dsv_handle,
                 srv: srv_handle,
                 uav: uav_handle,
                 srv_index: srv_index
@@ -1656,8 +1673,97 @@ impl super::Device for Device {
                 EndingAccess: end,
             })
         }
+
+        let mut ds = None;
+        let mut ds_format = DXGI_FORMAT_UNKNOWN;
+        if info.depth_stencil.is_some() {
+            let mut clear_depth = 0.0;
+            let mut depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
+            if info.ds_clear.is_some() {
+                let ds_clear = info.ds_clear.as_ref().unwrap();
+                if ds_clear.depth.is_some() {
+                    depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
+                    clear_depth = *ds_clear.depth.as_ref().unwrap();
+                }
+            } else if info.discard {
+                depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
+            }
+
+            let mut clear_stencil = 0x0;
+            let mut stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
+            if info.ds_clear.is_some() {
+                let ds_clear = info.ds_clear.as_ref().unwrap();
+                if ds_clear.stencil.is_some() {
+                    stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
+                    clear_stencil = *ds_clear.stencil.as_ref().unwrap();
+                }
+            } else if info.discard {
+                stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
+            }
+
+            let depth_stencil = info.depth_stencil.as_ref().unwrap();
+            let desc = unsafe { depth_stencil.resource.GetDesc() };
+            ds_format = desc.Format;
+
+            let depth_begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
+                Type: depth_begin_type,
+                Anonymous: D3D12_RENDER_PASS_BEGINNING_ACCESS_0 {
+                    Clear: D3D12_RENDER_PASS_BEGINNING_ACCESS_CLEAR_PARAMETERS {
+                        ClearValue: D3D12_CLEAR_VALUE {
+                            Format: ds_format,
+                            Anonymous: D3D12_CLEAR_VALUE_0 {
+                                DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
+                                    Depth: clear_depth,
+                                    Stencil: clear_stencil
+                                }
+                            },
+                        },
+                    },
+                },
+            };
+            let depth_end = D3D12_RENDER_PASS_ENDING_ACCESS {
+                Type: end_type,
+                Anonymous: D3D12_RENDER_PASS_ENDING_ACCESS_0 {
+                    Resolve: Default::default(),
+                },
+            };
+
+            let stencil_begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
+                Type: stencil_begin_type,
+                Anonymous: D3D12_RENDER_PASS_BEGINNING_ACCESS_0 {
+                    Clear: D3D12_RENDER_PASS_BEGINNING_ACCESS_CLEAR_PARAMETERS {
+                        ClearValue: D3D12_CLEAR_VALUE {
+                            Format: ds_format,
+                            Anonymous: D3D12_CLEAR_VALUE_0 {
+                                DepthStencil: D3D12_DEPTH_STENCIL_VALUE {
+                                    Depth: clear_depth,
+                                    Stencil: clear_stencil
+                                }
+                            },
+                        },
+                    },
+                },
+            };
+            let stencil_end = D3D12_RENDER_PASS_ENDING_ACCESS {
+                Type: end_type,
+                Anonymous: D3D12_RENDER_PASS_ENDING_ACCESS_0 {
+                    Resolve: Default::default(),
+                },
+            };
+
+            ds = Some( D3D12_RENDER_PASS_DEPTH_STENCIL_DESC {
+                cpuDescriptor: info.depth_stencil.as_ref().unwrap().dsv.unwrap(),
+                DepthBeginningAccess: depth_begin,
+                StencilBeginningAccess: stencil_begin,
+                DepthEndingAccess: depth_end,
+                StencilEndingAccess: stencil_end
+            });
+        }
+
         Ok(RenderPass {
             rt: rt,
+            ds: ds,
+            ds_format: ds_format,
             rt_formats: formats,
             sample_count: sample_count.unwrap()
         })
