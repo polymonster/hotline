@@ -1,8 +1,6 @@
 // TODO:
-// - state / info defaults
-
 // - Depth Stencil Target
-// - Handling destory texture / buffer calls, need to be not bound to drop because of in flight command buffers
+// - change get srv handle to be Option instead of sential -1
 
 // - Shaders from IR
 // - pmfx Shaders
@@ -14,10 +12,11 @@
 // - Stencil Ref
 // - MRT
 // - MSAA
-
 // - Math lib
+// - Samples
 
 // DONE:
+// - state / info defaults
 // x Render Target Formats From Pass
 // x Select adapter from name
 // x winpixeventruntime
