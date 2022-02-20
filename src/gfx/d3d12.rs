@@ -1946,40 +1946,26 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
-    fn set_depth_stencil_debug(&self, depth_stencil: &Texture) {
-        unsafe {
-            self.cmd().OMSetRenderTargets(0, std::ptr::null_mut(), false, depth_stencil.dsv.as_ref().unwrap());
-        }
-    }
-
     fn begin_render_pass(&self, render_pass: &mut RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
-
+            // TODO: fix this branch
             if render_pass.ds.is_some() {
-
-                /*
                 cmd4.BeginRenderPass(
                     render_pass.rt.len() as u32,
                     render_pass.rt.as_mut_ptr(),
                     render_pass.ds.as_ref().unwrap(),
-                    //std::ptr::null_mut(),
                     D3D12_RENDER_PASS_FLAG_NONE,
                 );
-                */
-
-                // cmd4.OMSetRenderTargets(0, std::ptr::null_mut(), false, &render_pass.ds.as_ref().unwrap().cpuDescriptor);
             }
             else {
-
+                cmd4.BeginRenderPass(
+                    render_pass.rt.len() as u32,
+                    render_pass.rt.as_mut_ptr(),
+                    std::ptr::null_mut(),
+                    D3D12_RENDER_PASS_FLAG_NONE,
+                );
             }
-
-            cmd4.BeginRenderPass(
-                render_pass.rt.len() as u32,
-                render_pass.rt.as_mut_ptr(),
-                std::ptr::null_mut(),
-                D3D12_RENDER_PASS_FLAG_NONE,
-            );
         }
     }
 

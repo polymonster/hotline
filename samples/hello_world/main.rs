@@ -287,7 +287,7 @@ fn main() {
     };
     let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
 
-    // pass for render target
+    // pass for render target with depth stencil
     let mut render_target_pass = dev.create_render_pass(&gfx::RenderPassInfo {
         render_targets: vec![render_target.clone()],
         rt_clear: Some(gfx::ClearColour {
@@ -296,8 +296,11 @@ fn main() {
             b: 1.0,
             a: 1.0,
         }),
-        depth_stencil: None,
-        ds_clear: None,
+        depth_stencil: Some(depth_stencil.clone()),
+        ds_clear: Some( gfx::ClearDepthStencil {
+            depth: Some(1.0),
+            stencil: None
+        }),
         resolve: false,
         discard: false,
     }).unwrap();
@@ -340,8 +343,6 @@ fn main() {
         win.update();
         swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
-
-        cmdbuffer.set_depth_stencil_debug(&depth_stencil);
 
         // compute pass
         cmdbuffer.set_marker(0xff00ffff, "START!!!");
