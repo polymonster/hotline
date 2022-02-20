@@ -1,6 +1,5 @@
 // TODO:
-// - change get srv handle to be Option instead of sential -1
-
+// - Readback request doesnt unmap
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
@@ -15,6 +14,7 @@
 // - Samples
 
 // DONE:
+// x change get srv handle to be Option instead of sential -1
 // x Depth Stencil Target
 // x Depth stencil heap
 // x state / info defaults
