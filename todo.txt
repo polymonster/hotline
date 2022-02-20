@@ -1,6 +1,4 @@
 // TODO:
-// - Depth Stencil Target
-// - Depth stencil heap
 // - change get srv handle to be Option instead of sential -1
 
 // - Shaders from IR
@@ -17,7 +15,9 @@
 // - Samples
 
 // DONE:
-// - state / info defaults
+// x Depth Stencil Target
+// x Depth stencil heap
+// x state / info defaults
 // x Render Target Formats From Pass
 // x Select adapter from name
 // x winpixeventruntime
