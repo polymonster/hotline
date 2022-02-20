@@ -982,7 +982,7 @@ impl super::Device for Device {
             // dsv
             let dsv_heap = create_heap(&device, &HeapInfo {
                 heap_type: super::HeapType::DepthStencil,
-                num_descriptors: info.shader_heap_size
+                num_descriptors: info.depth_stencil_heap_size
             });
 
             // initialise struct
@@ -1583,9 +1583,9 @@ impl super::Device for Device {
             // create dsv
             let mut dsv_handle = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
-                //let h = self.rtv_heap.allocate();
-                //self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
-                //rtv_handle = Some(h);
+                let h = self.dsv_heap.allocate();
+                self.device.CreateDepthStencilView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
+                dsv_handle = Some(h);
             }
 
             // create uav
@@ -1946,11 +1946,36 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
+    fn set_depth_stencil_debug(&self, depth_stencil: &Texture) {
+        unsafe {
+            self.cmd().OMSetRenderTargets(0, std::ptr::null_mut(), false, depth_stencil.dsv.as_ref().unwrap());
+        }
+    }
+
     fn begin_render_pass(&self, render_pass: &mut RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
+
+            if render_pass.ds.is_some() {
+
+                /*
+                cmd4.BeginRenderPass(
+                    render_pass.rt.len() as u32,
+                    render_pass.rt.as_mut_ptr(),
+                    render_pass.ds.as_ref().unwrap(),
+                    //std::ptr::null_mut(),
+                    D3D12_RENDER_PASS_FLAG_NONE,
+                );
+                */
+
+                // cmd4.OMSetRenderTargets(0, std::ptr::null_mut(), false, &render_pass.ds.as_ref().unwrap().cpuDescriptor);
+            }
+            else {
+
+            }
+
             cmd4.BeginRenderPass(
-                1,
+                render_pass.rt.len() as u32,
                 render_pass.rt.as_mut_ptr(),
                 std::ptr::null_mut(),
                 D3D12_RENDER_PASS_FLAG_NONE,
