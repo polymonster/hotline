@@ -296,7 +296,7 @@ fn main() {
             b: 1.0,
             a: 1.0,
         }),
-        depth_stencil: None, //Some(depth_stencil),
+        depth_stencil: None,
         ds_clear: None,
         resolve: false,
         discard: false,
@@ -340,6 +340,8 @@ fn main() {
         win.update();
         swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
+
+        cmdbuffer.set_depth_stencil_debug(&depth_stencil);
 
         // compute pass
         cmdbuffer.set_marker(0xff00ffff, "START!!!");

@@ -738,6 +738,8 @@ pub trait CmdBuf<D: Device>: {
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&self, group_count: Size3, thread_count: Size3);
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
+
+    fn set_depth_stencil_debug(&self, depth_stencil: &D::Texture);
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
