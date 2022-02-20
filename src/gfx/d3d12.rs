@@ -135,10 +135,11 @@ pub struct CmdBuf {
 
 pub struct Buffer {
     resource: ID3D12Resource,
-    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
-    srv_index: usize,
+    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    srv_index: Option<usize>,
 }
 
 pub struct Shader {
@@ -152,7 +153,7 @@ pub struct Texture {
     dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    srv_index: usize
+    srv_index: Option<usize>
 }
 
 #[derive(Clone)]
@@ -176,7 +177,7 @@ pub struct Heap {
     heap: ID3D12DescriptorHeap,
     base_address: usize,
     increment_size: usize,
-    capacity: usize, // TODO: use and check when allocating
+    capacity: usize,
     offset: usize,
     free_list: Vec<usize>
 }
@@ -617,11 +618,12 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
             ..Default::default()
         }).expect("hotline::gfx::d3d12: failed to create heap");
         let base_address = heap.GetCPUDescriptorHandleForHeapStart().ptr;
+        let incr = device.GetDescriptorHandleIncrementSize(d3d12_type) as usize;
         Heap {
             heap: heap,
             base_address: base_address as usize,
             increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
-            capacity: info.num_descriptors,
+            capacity: info.num_descriptors * incr,
             offset: 0,
             free_list: Vec::new()
         }
@@ -643,7 +645,7 @@ fn create_swap_chain_rtv(
             textures.push(Texture {
                 resource: render_target.clone(),
                 srv: None,
-                srv_index: usize::MAX,
+                srv_index: None,
                 rtv: Some(h),
                 uav: None,
                 dsv: None
@@ -696,18 +698,20 @@ impl From<windows::core::Error> for super::Error {
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         unsafe {
-            let mut ptr = 0;
             if self.free_list.is_empty() {
                 // allocates a new handle
-                ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
+                if self.offset >= self.capacity {
+                    panic!("hotline::gfx::d3d12: heap is full!");
+                }
+                let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
                 self.offset += self.increment_size;
+                return D3D12_CPU_DESCRIPTOR_HANDLE {
+                    ptr: ptr
+                }
             }
-            else {
-                // pulls new handle from the free list
-                ptr = self.free_list.pop().unwrap();
-            }
-            D3D12_CPU_DESCRIPTOR_HANDLE { 
-                ptr: ptr 
+            // pulls new handle from the free list
+            D3D12_CPU_DESCRIPTOR_HANDLE {
+                ptr: self.free_list.pop().unwrap()
             }
         }
     }
@@ -1188,6 +1192,7 @@ impl super::Device for Device {
         for i in 0..info.pass.rt_formats.len() {
             desc.RTVFormats[i] = info.pass.rt_formats[i];
         }
+        desc.DSVFormat = info.pass.ds_format;
 
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
@@ -1352,7 +1357,7 @@ impl super::Device for Device {
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
-            let mut srv_index = usize::MAX;
+            let mut srv_index = None;
 
             match info.usage {
                 super::BufferUsage::Vertex => {
@@ -1379,7 +1384,7 @@ impl super::Device for Device {
                         &h,
                     );
                     srv = Some(h);
-                    srv_index = self.shader_heap.get_handle_index(&h);
+                    srv_index = Some(self.shader_heap.get_handle_index(&h));
                 }
             }
 
@@ -1388,6 +1393,7 @@ impl super::Device for Device {
                 vbv: vbv,
                 ibv: ibv,
                 srv: srv,
+                uav: None,
                 srv_index: srv_index
             })
         }
@@ -1545,7 +1551,7 @@ impl super::Device for Device {
             
             // create srv
             let mut srv_handle = None;
-            let mut srv_index = usize::MAX;
+            let mut srv_index = None;
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateShaderResourceView(
@@ -1569,7 +1575,7 @@ impl super::Device for Device {
                     &h,
                 );
                 srv_handle = Some(h);
-                srv_index = self.shader_heap.get_handle_index(&h);
+                srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
 
             // create rtv
@@ -2137,7 +2143,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch(&self, group_count: Size3, thread_count: Size3) {
+    fn dispatch(&self, group_count: Size3, _thread_count: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
         }
@@ -2215,13 +2221,13 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 impl super::Buffer<Device> for Buffer {
-    fn get_srv_index(&self) -> usize {
+    fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
     }
 }
 
 impl super::Texture<Device> for Texture {
-    fn get_srv_index(&self) -> usize {
+    fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
     }
 }
