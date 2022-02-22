@@ -219,27 +219,27 @@ bitflags! {
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
 pub struct DescriptorLayout {
-    pub tables: Option<Vec<DescriptorTableInfo>>,
+    pub bindings: Option<Vec<DescriptorBinding>>,
     pub push_constants: Option<Vec<PushConstantInfo>>,
     pub static_samplers: Option<Vec<SamplerInfo>>,
 }
 
 /// Describes a range of resources for access on the GPU.
-pub struct DescriptorTableInfo {
+pub struct DescriptorBinding {
     /// The shader stage the resources will be accessible to
     pub visibility: ShaderVisibility,
     /// Register index to bind to (supplied in shader)
     pub shader_register: u32,
     /// Register space to bind to (supplied in shader)
     pub register_space: u32,
-    /// Type of resources in this table
-    pub table_type: DescriptorTableType,
+    /// Type of resources in this descriptor binding
+    pub binding_type: DescriptorType,
     /// Number of descriptors in this table, use `None` for unbounded
     pub num_descriptors: Option<u32>,
 }
 
-/// Describes the type of descriptor table to create.
-pub enum DescriptorTableType {
+/// Describes the type of descriptor binding to create.
+pub enum DescriptorType {
     /// Used for textures or structured buffers
     ShaderResource,
     /// Used for cbuffers

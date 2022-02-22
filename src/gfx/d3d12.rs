@@ -778,41 +778,41 @@ impl Device {
             }
         }
 
-        // tables for (SRV, UAV, CBV an Samplers)
+        // bindings for (SRV, UAV, CBV an Samplers)
         let mut visibility_map : HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> = HashMap::new();
-        if layout.tables.is_some() {
-            let table_info = layout.tables.as_ref();
-            for table in table_info.unwrap() {
-                let count = if table.num_descriptors.is_some() {
-                    table.num_descriptors.unwrap()
+        if layout.bindings.is_some() {
+            let bindings = layout.bindings.as_ref();
+            for binding in bindings.unwrap() {
+                let count = if binding.num_descriptors.is_some() {
+                    binding.num_descriptors.unwrap()
                 } else {
                     u32::MAX
                 };
                 let range = D3D12_DESCRIPTOR_RANGE {
-                    RangeType: match table.table_type {
-                        super::DescriptorTableType::ShaderResource => {
+                    RangeType: match binding.binding_type {
+                        super::DescriptorType::ShaderResource => {
                             D3D12_DESCRIPTOR_RANGE_TYPE_SRV
                         }
-                        super::DescriptorTableType::UnorderedAccess => {
+                        super::DescriptorType::UnorderedAccess => {
                             D3D12_DESCRIPTOR_RANGE_TYPE_UAV
                         }
-                        super::DescriptorTableType::ConstantBuffer => {
+                        super::DescriptorType::ConstantBuffer => {
                             D3D12_DESCRIPTOR_RANGE_TYPE_CBV
                         }
-                        super::DescriptorTableType::Sampler => D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+                        super::DescriptorType::Sampler => D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
                     },
                     NumDescriptors: count,
-                    BaseShaderRegister: table.shader_register,
-                    RegisterSpace: table.register_space,
+                    BaseShaderRegister: binding.shader_register,
+                    RegisterSpace: binding.register_space,
                     OffsetInDescriptorsFromTableStart: 0,
                 };
 
-                let map = visibility_map.get_mut(&table.visibility);
+                let map = visibility_map.get_mut(&binding.visibility);
                 if map.is_some() {
                     map.unwrap().push(range);
                 }
                 else {
-                    visibility_map.insert(table.visibility, vec![range]);
+                    visibility_map.insert(binding.visibility, vec![range]);
                 }
             }
 
