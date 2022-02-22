@@ -320,9 +320,9 @@ fn draw_triangle() {
                 shader_register: 0,
                 register_space: 0,
             }]),
-            tables: Some(vec![gfx::DescriptorTableInfo {
+            bindings: Some(vec![gfx::DescriptorBinding {
                 visibility: gfx::ShaderVisibility::Fragment,
-                table_type: gfx::DescriptorTableType::ShaderResource,
+                binding_type: gfx::DescriptorType::ShaderResource,
                 num_descriptors: Some(1),
                 shader_register: 0,
                 register_space: 0,

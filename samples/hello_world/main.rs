@@ -9,6 +9,8 @@ use gfx::SwapChain;
 
 use std::fs;
 
+use imgui_sys;
+
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
 use hotline::gfx::d3d12 as gfx_platform;
@@ -19,7 +21,16 @@ struct Vertex {
     color: [f32; 4],
 }
 
+fn imgui_test() {
+    unsafe {
+        imgui_sys::igCreateContext(std::ptr::null_mut());
+        let io = imgui_sys::igGetIO();
+    }
+}
+
 fn main() {
+    imgui_test();
+
     // app
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
@@ -168,17 +179,17 @@ fn main() {
                 shader_register: 0,
                 register_space: 0,
             }]),
-            tables: Some(vec![
-                gfx::DescriptorTableInfo {
+            bindings: Some(vec![
+                gfx::DescriptorBinding {
                     visibility: gfx::ShaderVisibility::Fragment,
-                    table_type: gfx::DescriptorTableType::ShaderResource,
+                    binding_type: gfx::DescriptorType::ShaderResource,
                     num_descriptors: Some(num_descriptors),
                     shader_register: 0,
                     register_space: 0,
                 },
-                gfx::DescriptorTableInfo {
+                gfx::DescriptorBinding {
                     visibility: gfx::ShaderVisibility::Fragment,
-                    table_type: gfx::DescriptorTableType::ConstantBuffer,
+                    binding_type: gfx::DescriptorType::ConstantBuffer,
                     num_descriptors: Some(num_descriptors),
                     shader_register: 1,
                     register_space: 0,
@@ -325,10 +336,10 @@ fn main() {
         descriptor_layout: gfx::DescriptorLayout {
             static_samplers: None,
             push_constants: None,
-            tables: Some(vec![
-                gfx::DescriptorTableInfo {
+            bindings: Some(vec![
+                gfx::DescriptorBinding {
                     visibility: gfx::ShaderVisibility::Compute,
-                    table_type: gfx::DescriptorTableType::UnorderedAccess,
+                    binding_type: gfx::DescriptorType::UnorderedAccess,
                     num_descriptors: Some(num_descriptors),
                     shader_register: 0,
                     register_space: 0,
