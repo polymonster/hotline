@@ -1685,6 +1685,37 @@ impl super::Device for Device {
         if info.depth_stencil.is_some() {
             let mut clear_depth = 0.0;
             let mut depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
+            let mut clear_stencil = 0x0;
+            let mut stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
+
+            match &info.ds_clear {
+                None => {
+                    if info.discard {
+                        depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
+                        stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
+                    }
+                },
+                Some(ds_clear) => {
+                    match &ds_clear.depth {
+                        Some(depth) => {
+                            depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
+                            clear_depth = *depth
+                        }
+                        None => ()
+                    }
+                    match &ds_clear.stencil {
+                        Some(stencil) => {
+                            stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
+                            clear_stencil = *stencil
+                        }
+                        None => ()
+                    }
+                }
+            }
+
+            /*
+            let mut clear_depth = 0.0;
+            let mut depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
             if info.ds_clear.is_some() {
                 let ds_clear = info.ds_clear.as_ref().unwrap();
                 if ds_clear.depth.is_some() {
@@ -1706,7 +1737,9 @@ impl super::Device for Device {
             } else if info.discard {
                 stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
             }
+            */
 
+            // TODO: if no depth stencil?
             let depth_stencil = info.depth_stencil.as_ref().unwrap();
             let desc = unsafe { depth_stencil.resource.GetDesc() };
             ds_format = desc.Format;

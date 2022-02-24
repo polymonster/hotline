@@ -928,6 +928,18 @@ Available Adapters:
     }
 }
 
+impl Default for DeviceInfo {
+    fn default() -> Self { 
+        DeviceInfo {
+            adapter_name: None,
+            shader_heap_size: 0,
+            depth_stencil_heap_size: 0,
+            render_target_heap_size: 0
+        }
+    }
+}
+
+
 impl Default for RasterInfo {
     fn default() -> Self { 
         RasterInfo {
@@ -1014,6 +1026,16 @@ impl Default for RenderTargetBlendInfo {
             blend_op_alpha: BlendOp::Add,
             logic_op: LogicOp::Clear,
             write_mask: WriteMask::ALL
+        }
+    }
+}
+
+impl Default for DescriptorLayout {
+    fn default() -> Self { 
+        DescriptorLayout {
+            push_constants: None,
+            bindings: None,
+            static_samplers: None
         }
     }
 }
