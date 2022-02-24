@@ -190,21 +190,21 @@ fn swap_chain_buffer() {
 }
 
 #[test]
-fn draw_triangle() {
+fn draw_triangle() -> Result<(), gfx::Error> {
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("draw_triangle"),
         window: false,
         num_buffers: 0,
     });
 
-    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
-        adapter_name: None,
-        shader_heap_size: 0,
-        render_target_heap_size: 2,
-        depth_stencil_heap_size: 0,
+    let num_buffers = 2;
+
+    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo{
+        render_target_heap_size: num_buffers,
+        ..Default::default()
     });
 
-    let mut win = app.create_window(os::WindowInfo {
+    let mut window = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
         rect: os::Rect {
             x: 0,
@@ -215,12 +215,12 @@ fn draw_triangle() {
     });
 
     let swap_chain_info = gfx::SwapChainInfo {
-        num_buffers: 2,
+        num_buffers: num_buffers as u32,
         format: gfx::Format::RGBA8n
     };
 
-    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
-    let mut cmdbuffer = dev.create_cmd_buf(2);
+    let mut swap_chain = device.create_swap_chain(&swap_chain_info, &window);
+    let mut cmd = device.create_cmd_buf(2);
 
     let vertices = [
         Vertex {
@@ -244,7 +244,7 @@ fn draw_triangle() {
         num_elements: 3,
     };
 
-    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices))).unwrap();
+    let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
     let src = "
         struct PSInput
@@ -286,11 +286,10 @@ fn draw_triangle() {
         }),
     };
 
-    let vs = dev.create_shader(&vs_info, src.as_bytes()).expect("failed to compile vertex shader");
-    let fs =
-        dev.create_shader(&fs_info, src.as_bytes()).expect("failed to compile fragment shader");
+    let vs = device.create_shader(&vs_info, src.as_bytes())?;
+    let fs = device.create_shader(&fs_info, src.as_bytes())?;
 
-    let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
+    let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(vs),
         fs: Some(fs),
         input_layout: vec![
@@ -313,152 +312,54 @@ fn draw_triangle() {
                 step_rate: 0,
             },
         ],
-        descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![gfx::PushConstantInfo {
-                visibility: gfx::ShaderVisibility::Fragment,
-                num_values: 4,
-                shader_register: 0,
-                register_space: 0,
-            }]),
-            bindings: Some(vec![gfx::DescriptorBinding {
-                visibility: gfx::ShaderVisibility::Fragment,
-                binding_type: gfx::DescriptorType::ShaderResource,
-                num_descriptors: Some(1),
-                shader_register: 0,
-                register_space: 0,
-            }]),
-            static_samplers: Some(vec![gfx::SamplerInfo {
-                visibility: gfx::ShaderVisibility::Fragment,
-                filter: gfx::SamplerFilter::Linear,
-                address_u: gfx::SamplerAddressMode::Wrap,
-                address_v: gfx::SamplerAddressMode::Wrap,
-                address_w: gfx::SamplerAddressMode::Wrap,
-                comparison: None,
-                border_colour: None,
-                mip_lod_bias: 0.0,
-                max_aniso: 0,
-                min_lod: -1.0,
-                max_lod: -1.0,
-                shader_register: 0,
-                register_space: 0,
-            }]),
-        },
-        raster_info: gfx::RasterInfo {
-            fill_mode: gfx::FillMode::Solid,
-            cull_mode: gfx::CullMode::None,
-            front_ccw: false,
-            depth_bias: 0,
-            depth_bias_clamp: 0.0,
-            slope_scaled_depth_bias: 0.0,
-            depth_clip_enable: false,
-            multisample_enable: false,
-            antialiased_line_enable: false,
-            forced_sample_count: 0,
-            conservative_raster_mode: false
-        },
-        depth_stencil_info: gfx::DepthStencilInfo {
-            depth_enabled: false,
-            depth_write_mask: gfx::DepthWriteMask::Zero,
-            depth_func: gfx::ComparisonFunc::Always,
-            stencil_enabled: false,
-            stencil_read_mask: 0,
-            stencil_write_mask: 0,
-            front_face: gfx::StencilInfo {
-                fail: gfx::StencilOp::Keep,
-                depth_fail: gfx::StencilOp::Keep,
-                pass: gfx::StencilOp::Keep,
-                func: gfx::ComparisonFunc::Always,
-            },
-            back_face: gfx::StencilInfo {
-                fail: gfx::StencilOp::Keep,
-                depth_fail: gfx::StencilOp::Keep,
-                pass: gfx::StencilOp::Keep,
-                func: gfx::ComparisonFunc::Always,
-            },
-        },
+        descriptor_layout: gfx::DescriptorLayout::default(),
+        raster_info: gfx::RasterInfo::default(),
+        depth_stencil_info: gfx::DepthStencilInfo::default(),
         blend_info: gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
             independant_blend_enabled: false,
             render_target: vec![
-                gfx::RenderTargetBlendInfo {
-                    blend_enabled: false,
-                    logic_op_enabled: false,
-                    src_blend: gfx::BlendFactor::Zero,
-                    dst_blend: gfx::BlendFactor::Zero,
-                    blend_op: gfx::BlendOp::Add,
-                    src_blend_alpha: gfx::BlendFactor::Zero,
-                    dst_blend_alpha: gfx::BlendFactor::Zero,
-                    blend_op_alpha: gfx::BlendOp::Add,
-                    logic_op: gfx::LogicOp::Clear,
-                    write_mask: gfx::WriteMask::ALL
-                }
+                gfx::RenderTargetBlendInfo::default()
             ]
         },
         topology: gfx::Topology::TriangleList,
         patch_index: 0,
         pass: swap_chain.get_backbuffer_pass()
-    }).expect("failed to create pipeline");
+    })?;
 
-    let mut rbr = gfx_platform::ReadBackRequest {
-        fence_value: u64::MAX,
-        resource: None,
-        size: 0,
-        row_pitch: 0,
-        slice_pitch: 0,
-    };
 
-    let mut written = false;
-    let mut ci = 0;
-    let mut count = 0;
     while app.run() {
-        win.update();
-        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
+        // update window and swap chain
+        window.update();
+        swap_chain.update(&mut device, &window, &mut cmd);
 
-        let window_rect = win.get_rect();
-
+        // update viewport from window size
+        let window_rect = window.get_rect();
         let viewport = gfx::Viewport::from(window_rect);
         let scissor = gfx::ScissorRect::from(window_rect);
 
-        cmdbuffer.reset(&swap_chain);
+        // build command buffer and make draw calls
+        cmd.reset(&swap_chain);
+        cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
+        cmd.set_viewport(&viewport);
+        cmd.set_scissor_rect(&scissor);
+        cmd.set_render_pipeline(&pso);
+        cmd.set_vertex_buffer(&vertex_buffer, 0);
+        cmd.draw_instanced(3, 1, 0, 0);
+        cmd.end_render_pass();
+        cmd.close(&swap_chain);
 
-        let mut pass = swap_chain.get_backbuffer_pass_mut();
+        // execute command buffer
+        device.execute(&cmd);
 
-        cmdbuffer.begin_render_pass(&mut pass);
-        cmdbuffer.set_viewport(&viewport);
-        cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_render_pipeline(&pso);
+        // swap for the next frame
+        swap_chain.swap(&device);
 
-        cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
-        cmdbuffer.draw_instanced(3, 1, 0, 0);
-
-        /*
-        if !rbr.resource.is_some() && !written {
-            rbr = cmdbuffer.read_back_backbuffer(&swap_chain);
-        } else {
-            if rbr.is_complete(&swap_chain) && rbr.resource.is_some() {
-                let data = rbr.get_data().unwrap();
-                image::write_to_file(String::from("my_triangle"), 1280, 720, 4, &data.data)
-                    .unwrap();
-
-                rbr.resource = None;
-                written = true;
-            }
-        }
-        */
-
-        cmdbuffer.end_render_pass();
-        cmdbuffer.close(&swap_chain);
-
-        dev.execute(&cmdbuffer);
-        swap_chain.swap(&dev);
-
-        std::thread::sleep_ms(128);
-        ci = (ci + 1) % 4;
-        count = count + 1;
         break;
     }
 
-    cmdbuffer.reset(&swap_chain);
+    cmd.reset(&swap_chain);
+    Ok(())
 }
 
 #[test]
