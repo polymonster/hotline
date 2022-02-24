@@ -6,7 +6,7 @@
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render graphs, code).
 - Concise low level graphics api... think somewhere in-between Metal and Direct3D12.
-- High level data driven graphics api for ease of and speed.
+- High level data driven graphics api for ease of use and speed.
 - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless, ray-tracing).
 - Flexibility to easily create and use different rendering strategies (deferred vs forward, gpu-driven vs cpu driven, etc).
 - Hardware accellerated video decoding.
