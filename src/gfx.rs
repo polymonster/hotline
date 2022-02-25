@@ -459,7 +459,7 @@ pub enum StencilOp {
 pub struct BlendInfo {
     pub alpha_to_coverage_enabled: bool,
     /// Separate blending on colour and alpha channels
-    pub independant_blend_enabled: bool,
+    pub independent_blend_enabled: bool,
     /// Separate blend operations for each bout render targets
     pub render_target: Vec<RenderTargetBlendInfo>
 }
@@ -1007,7 +1007,7 @@ impl Default for BlendInfo {
     fn default() -> Self { 
         BlendInfo {
             alpha_to_coverage_enabled: false,
-            independant_blend_enabled: false,
+            independent_blend_enabled: false,
             render_target: Vec::new()
         }
     }

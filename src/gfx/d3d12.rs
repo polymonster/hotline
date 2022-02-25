@@ -1155,7 +1155,7 @@ impl super::Device for Device {
             },
             BlendState: D3D12_BLEND_DESC {
                 AlphaToCoverageEnable: BOOL::from(blend.alpha_to_coverage_enabled),
-                IndependentBlendEnable: BOOL::from(blend.independant_blend_enabled),
+                IndependentBlendEnable: BOOL::from(blend.independent_blend_enabled),
                 RenderTarget: to_d3d12_render_target_blend(&blend.render_target),
             },
             DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
@@ -1712,32 +1712,6 @@ impl super::Device for Device {
                     }
                 }
             }
-
-            /*
-            let mut clear_depth = 0.0;
-            let mut depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
-            if info.ds_clear.is_some() {
-                let ds_clear = info.ds_clear.as_ref().unwrap();
-                if ds_clear.depth.is_some() {
-                    depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
-                    clear_depth = *ds_clear.depth.as_ref().unwrap();
-                }
-            } else if info.discard {
-                depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
-            }
-
-            let mut clear_stencil = 0x0;
-            let mut stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
-            if info.ds_clear.is_some() {
-                let ds_clear = info.ds_clear.as_ref().unwrap();
-                if ds_clear.stencil.is_some() {
-                    stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_CLEAR;
-                    clear_stencil = *ds_clear.stencil.as_ref().unwrap();
-                }
-            } else if info.discard {
-                stencil_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_DISCARD;
-            }
-            */
 
             // TODO: if no depth stencil?
             let depth_stencil = info.depth_stencil.as_ref().unwrap();
