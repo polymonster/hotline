@@ -317,7 +317,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         depth_stencil_info: gfx::DepthStencilInfo::default(),
         blend_info: gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
-            independant_blend_enabled: false,
+            independent_blend_enabled: false,
             render_target: vec![
                 gfx::RenderTargetBlendInfo::default()
             ]
