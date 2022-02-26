@@ -1,5 +1,5 @@
 // TODO:
-// - spelling mistake independent.
+// - Imgui
 // - Readback request doesnt unmap
 // - Shaders from IR
 // - pmfx Shaders
@@ -15,6 +15,7 @@
 // - Samples
 
 // DONE:
+// - spelling mistake independent.
 // x change get srv handle to be Option instead of sential -1
 // x Depth Stencil Target
 // x Depth stencil heap
