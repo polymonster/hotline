@@ -9,8 +9,6 @@ use gfx::SwapChain;
 
 use std::fs;
 
-use imgui_sys;
-
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
 use hotline::gfx::d3d12 as gfx_platform;
@@ -21,15 +19,8 @@ struct Vertex {
     color: [f32; 4],
 }
 
-fn imgui_test() {
-    unsafe {
-        imgui_sys::igCreateContext(std::ptr::null_mut());
-        let io = imgui_sys::igGetIO();
-    }
-}
-
 fn main() {
-    imgui_test();
+    imgui::setup();
 
     // app
     let app = os_platform::App::create(os::AppInfo {
