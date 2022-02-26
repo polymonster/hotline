@@ -186,6 +186,18 @@ impl super::Window<App> for Window {
             self.info.rect.y = win_rect.top;
         }
     }
+
+    fn as_ptr(&self) -> *const Self {
+        unsafe {
+            std::mem::transmute(self)
+        }
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut Self {
+        unsafe {
+            std::mem::transmute(self)
+        }
+    }
 }
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {

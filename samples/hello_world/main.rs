@@ -20,8 +20,6 @@ struct Vertex {
 }
 
 fn main() {
-    imgui::setup();
-
     // app
     let app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
@@ -53,6 +51,11 @@ fn main() {
         format: gfx::Format::RGBA8n
     };
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+
+    //
+    imgui::setup(&imgui::ImGuiInfo {
+        main_window: win.as_mut_ptr()
+    });
 
     // cmd buffer
     let mut cmdbuffer = dev.create_cmd_buf(2);

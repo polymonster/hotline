@@ -62,4 +62,8 @@ pub trait Window<A: App>: Any + Sized {
     fn update(&mut self);
     /// Close the window
     fn close(&mut self);
+    /// const pointer
+    fn as_ptr(&self) -> *const Self;
+    /// mut pointer
+    fn as_mut_ptr(&mut self) -> *mut Self;
 }
