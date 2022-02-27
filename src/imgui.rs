@@ -141,12 +141,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
                 output.uv  = input.uv;
                 return output;
             }
-            struct PS_INPUT
-            {
-              float4 pos : SV_POSITION;
-              float4 col : COLOR0;
-              float2 uv  : TEXCOORD0;
-            };
+
             SamplerState sampler0 : register(s0);
             Texture2D texture0 : register(t0);
             
@@ -466,7 +461,7 @@ pub fn setup(info: &ImGuiInfo) {
         }
 
         setup_platform(info);
-        setup_renderer(info);
+        setup_renderer(info).unwrap();
     }
 }
 
