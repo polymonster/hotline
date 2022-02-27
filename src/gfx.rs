@@ -684,6 +684,8 @@ pub trait Device: Sized + Any {
     fn execute(&self, cmd: &Self::CmdBuf);
     fn get_shader_heap(&self) -> &Self::Heap;
     fn get_adapter_info(&self) -> &AdapterInfo;
+    fn as_ptr(&self) -> *const Self;
+    fn as_mut_ptr(&mut self) -> *mut Self;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -695,6 +697,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn get_backbuffer_pass(&mut self) -> &D::RenderPass;
     fn get_backbuffer_pass_mut(&mut self) -> &mut D::RenderPass;
     fn swap(&mut self, device: &D);
+    fn as_ptr(&self) -> *const Self;
+    fn as_mut_ptr(&mut self) -> *mut Self;
 }
 
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
