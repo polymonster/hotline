@@ -52,15 +52,8 @@ fn main() {
     };
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
 
-    //
-    imgui::setup(&imgui::ImGuiInfo {
-        main_window: win.as_mut_ptr(),
-        swap_chain: swap_chain.as_mut_ptr(),
-        device: dev.as_mut_ptr(),
-        fonts: vec![
-            String::from("..\\..\\samples\\hello_world\\Roboto-Medium.ttf")
-        ]
-    });
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
 
     // cmd buffer
     let mut cmdbuffer = dev.create_cmd_buf(2);
@@ -107,8 +100,6 @@ fn main() {
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices))).unwrap();
 
     // shaders
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
     let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
     let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
@@ -347,6 +338,16 @@ fn main() {
         }
     }).unwrap();
 
+    //
+    imgui::setup(&imgui::ImGuiInfo {
+        main_window: win.as_mut_ptr(),
+        swap_chain: swap_chain.as_mut_ptr(),
+        device: dev.as_mut_ptr(),
+        fonts: vec![
+            asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
+        ]
+    });
+
     // ..
     let mut ci = 0;
     while app.run() {
@@ -430,9 +431,9 @@ fn main() {
      
         cmdbuffer.close(&swap_chain);
 
-        //imgui::new_frame();
-        //imgui::demo();
-        //imgui::render();
+        imgui::new_frame();
+        imgui::demo();
+        imgui::render();
 
         dev.execute(&cmdbuffer);
 

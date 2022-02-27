@@ -1908,7 +1908,7 @@ impl super::SwapChain<Device> for SwapChain {
         return &self.backbuffer_textures[self.bb_index as usize];
     }
 
-    fn get_backbuffer_pass(&mut self) -> &RenderPass {
+    fn get_backbuffer_pass(&self) -> &RenderPass {
         return &self.backbuffer_passes[self.bb_index as usize];
     }
 
