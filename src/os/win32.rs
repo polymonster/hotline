@@ -8,6 +8,7 @@ pub struct App {
     hinstance: HINSTANCE,
 }
 
+#[derive(Clone)]
 pub struct Window {
     info: super::WindowInfo,
     hwnd: HWND,
