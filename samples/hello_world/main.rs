@@ -56,7 +56,10 @@ fn main() {
     imgui::setup(&imgui::ImGuiInfo {
         main_window: win.as_mut_ptr(),
         swap_chain: swap_chain.as_mut_ptr(),
-        device: dev.as_mut_ptr()
+        device: dev.as_mut_ptr(),
+        fonts: vec![
+            String::from("..\\..\\samples\\hello_world\\Roboto-Medium.ttf")
+        ]
     });
 
     // cmd buffer
