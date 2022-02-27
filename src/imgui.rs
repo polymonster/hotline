@@ -4,6 +4,11 @@ use imgui_sys::*;
 use crate::os::win32 as os_platform;
 use crate::gfx::d3d12 as gfx_platform;
 
+use crate::os::Window;
+
+use std::ffi::CStr;
+use std::ffi::CString;
+
 #[derive(Clone)]
 struct ImGuiPlatform {
     window: *mut os_platform::Window,
@@ -36,7 +41,8 @@ struct ImGuiViewport {
 pub struct ImGuiInfo {
     pub main_window: *mut os_platform::Window,
     pub device: *mut gfx_platform::Device,
-    pub swap_chain: *mut gfx_platform::SwapChain
+    pub swap_chain: *mut gfx_platform::SwapChain,
+    pub fonts: Vec<String>
 }
 
 static mut platform_data : ImGuiPlatform = ImGuiPlatform {
@@ -59,10 +65,20 @@ static mut renderer_data : ImGuiRenderer = ImGuiRenderer {
     pipeline: None
 };
 
+fn create_fonts_texture() {
+    unsafe {
+        let io = &*igGetIO();
+        let mut out_pixels : *mut u8 = std::ptr::null_mut();
+        let mut out_width = 0;
+        let mut out_height = 0;
+        let mut out_bytes_per_pixel = 0;
+        ImFontAtlas_GetTexDataAsRGBA32(io.Fonts, &mut out_pixels, &mut out_width, &mut out_height, &mut out_bytes_per_pixel);
+    }
+}
+
 fn setup_renderer_interface() {
     unsafe {
         /*
-        ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
         platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
         platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
         platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
@@ -72,10 +88,9 @@ fn setup_renderer_interface() {
     }
 }
 
-
 fn setup_renderer(info: &ImGuiInfo) {
     unsafe {
-        let mut io = *imgui_sys::igGetIO();
+        let mut io = &mut *igGetIO();
         io.BackendRendererUserData = std::mem::transmute(&renderer_data.clone());
         io.BackendRendererName = "imgui_impl_hotline".as_ptr() as *const i8;
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset as i32; 
@@ -84,6 +99,8 @@ fn setup_renderer(info: &ImGuiInfo) {
         if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
             setup_platform_interface();
         }
+
+        create_fonts_texture();
     }
 }
 
@@ -109,7 +126,7 @@ fn swap_renderer() {
 
 fn setup_platform_interface() {
     unsafe {
-        let mut platform_io = *igGetPlatformIO();
+        let mut platform_io = &mut *igGetPlatformIO();
     }
 
     /*
@@ -133,7 +150,7 @@ fn setup_platform_interface() {
 
 fn setup_platform(info: &ImGuiInfo) {
     unsafe {
-        let mut io = *imgui_sys::igGetIO();
+        let mut io = &mut *igGetIO();
         
         // io setup
         io.BackendPlatformUserData = std::mem::transmute(&platform_data.clone());
@@ -167,7 +184,15 @@ fn setup_platform(info: &ImGuiInfo) {
 }
 
 fn new_frame_platform() {
-    
+    unsafe {
+        let mut io = &mut *igGetIO();
+        let window = &*platform_data.window;
+        let (window_width, window_height) = window.get_size();
+        io.DisplaySize = ImVec2 {
+            x: window_width as f32,
+            y: window_height as f32,
+        }
+    }
 }
 
 fn update_platform_windows() {
@@ -177,7 +202,7 @@ fn update_platform_windows() {
 pub fn setup(info: &ImGuiInfo) {
     unsafe {
         igCreateContext(std::ptr::null_mut());
-        let mut io = *igGetIO();
+        let mut io = &mut *igGetIO();
 
         io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
@@ -185,9 +210,16 @@ pub fn setup(info: &ImGuiInfo) {
 
         igStyleColorsLight(std::ptr::null_mut());
 
-        let mut style = *igGetStyle();
+        let mut style = &mut *igGetStyle();
         style.WindowRounding = 0.0; 
         style.Colors[imgui_sys::ImGuiCol_WindowBg as usize].w = 1.0;
+
+        // add fonts
+        for font_name in &info.fonts {
+            let null_font_name = CString::new(font_name.clone()).unwrap();
+            ImFontAtlas_AddFontFromFileTTF(
+                io.Fonts, null_font_name.as_ptr() as *const i8, 16.0, std::ptr::null_mut(), std::ptr::null_mut());
+        }
 
         setup_platform(info);
         setup_renderer(info);
@@ -195,9 +227,9 @@ pub fn setup(info: &ImGuiInfo) {
 }
 
 pub fn new_frame() {
-    unsafe { igNewFrame(); }
     new_frame_platform();
     new_frame_renderer();
+    unsafe { igNewFrame(); }
 }
 
 pub fn render() {
@@ -209,7 +241,7 @@ pub fn render() {
 }
 
 pub fn demo() {
-    
+
 }
 
 impl Default for ImGuiPlatform {
