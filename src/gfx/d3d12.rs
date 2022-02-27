@@ -119,6 +119,7 @@ pub struct SwapChain {
     readback_buffer: Option<ID3D12Resource>,
 }
 
+#[derive(Clone)]
 pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
@@ -1818,6 +1819,18 @@ impl super::Device for Device {
     fn get_adapter_info(&self) -> &AdapterInfo {
         &self.adapter_info
     }
+
+    fn as_ptr(&self) -> *const Self {
+        unsafe {
+            std::mem::transmute(self)
+        }
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut Self {
+        unsafe {
+            std::mem::transmute(self)
+        }
+    }
 }
 
 impl SwapChain {
@@ -1922,6 +1935,18 @@ impl super::SwapChain<Device> for SwapChain {
             // swap buffers
             self.frame_index = self.frame_index + 1;
             self.bb_index = (self.bb_index + 1) % self.num_bb as i32;
+        }
+    }
+
+    fn as_ptr(&self) -> *const Self {
+        unsafe {
+            std::mem::transmute(self)
+        }
+    }
+
+    fn as_mut_ptr(&mut self) -> *mut Self {
+        unsafe {
+            std::mem::transmute(self)
         }
     }
 }

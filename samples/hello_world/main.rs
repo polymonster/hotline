@@ -54,7 +54,9 @@ fn main() {
 
     //
     imgui::setup(&imgui::ImGuiInfo {
-        main_window: win.as_mut_ptr()
+        main_window: win.as_mut_ptr(),
+        swap_chain: swap_chain.as_mut_ptr(),
+        device: dev.as_mut_ptr()
     });
 
     // cmd buffer
@@ -422,8 +424,12 @@ fn main() {
             state_after: gfx::ResourceState::Present,
         });
         cmdbuffer.end_event();
-
+     
         cmdbuffer.close(&swap_chain);
+
+        //imgui::new_frame();
+        //imgui::demo();
+        //imgui::render();
 
         dev.execute(&cmdbuffer);
 
