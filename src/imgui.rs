@@ -6,7 +6,10 @@ use crate::gfx::d3d12 as gfx_platform;
 
 use crate::os::Window;
 
-use std::ffi::CStr;
+use crate::gfx;
+use crate::gfx::Device;
+use crate::gfx::SwapChain;
+
 use std::ffi::CString;
 
 #[derive(Clone)]
@@ -65,7 +68,7 @@ static mut renderer_data : ImGuiRenderer = ImGuiRenderer {
     pipeline: None
 };
 
-fn create_fonts_texture() {
+fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platform::Texture, gfx::Error> {
     unsafe {
         let io = &*igGetIO();
         let mut out_pixels : *mut u8 = std::ptr::null_mut();
@@ -73,6 +76,172 @@ fn create_fonts_texture() {
         let mut out_height = 0;
         let mut out_bytes_per_pixel = 0;
         ImFontAtlas_GetTexDataAsRGBA32(io.Fonts, &mut out_pixels, &mut out_width, &mut out_height, &mut out_bytes_per_pixel);
+
+        let data_size = out_bytes_per_pixel * out_width * out_height;
+        let data_slice = std::slice::from_raw_parts(out_pixels, data_size as usize);
+
+        let tex_info = gfx::TextureInfo {
+            format: gfx::Format::RGBA8n,
+            tex_type: gfx::TextureType::Texture2D,
+            width: out_width as u64,
+            height: out_height as u64,
+            depth: 1,
+            array_levels: 1,
+            mip_levels: 1,
+            samples: 1,
+            usage: gfx::TextureUsage::SHADER_RESOURCE,
+            initial_state: gfx::ResourceState::ShaderResource
+        };
+
+        Ok(device.create_texture(&tex_info, Some(data_slice))?)
+    }
+}
+
+fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeline, gfx::Error> {
+    unsafe {
+        let device = &*info.device;
+        let swap_chain = &*info.swap_chain;
+    
+        // temp: compile shaders
+        let src = "
+            cbuffer vertexBuffer : register(b0)
+            {
+                float4x4 ProjectionMatrix;
+            };
+            struct VS_INPUT
+            {
+                float2 pos : POSITION;
+                float4 col : COLOR0;
+                float2 uv  : TEXCOORD0;
+            };
+            
+            struct PS_INPUT
+            {
+                float4 pos : SV_POSITION;
+                float4 col : COLOR0;
+                float2 uv  : TEXCOORD0;
+            };
+            
+            PS_INPUT VSMain(VS_INPUT input)
+            {
+                PS_INPUT output;
+                output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));
+                output.col = input.col;
+                output.uv  = input.uv;
+                return output;
+            }
+            struct PS_INPUT
+            {
+              float4 pos : SV_POSITION;
+              float4 col : COLOR0;
+              float2 uv  : TEXCOORD0;
+            };
+            SamplerState sampler0 : register(s0);
+            Texture2D texture0 : register(t0);
+            
+            float4 PSMain(PS_INPUT input) : SV_Target
+            {
+              float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
+              return out_col;
+            }";
+    
+        let vs_info = gfx::ShaderInfo {
+            shader_type: gfx::ShaderType::Vertex,
+            compile_info: Some(gfx::ShaderCompileInfo {
+                entry_point: String::from("VSMain"),
+                target: String::from("vs_5_0"),
+                flags: gfx::ShaderCompileFlags::NONE,
+            }),
+        };
+    
+        let fs_info = gfx::ShaderInfo {
+            shader_type: gfx::ShaderType::Fragment,
+            compile_info: Some(gfx::ShaderCompileInfo {
+                entry_point: String::from("PSMain"),
+                target: String::from("ps_5_0"),
+                flags: gfx::ShaderCompileFlags::NONE,
+            }),
+        };
+    
+        let vs = device.create_shader(&vs_info, src.as_bytes())?;
+        let fs = device.create_shader(&fs_info, src.as_bytes())?;
+    
+        Ok( device.create_render_pipeline(&gfx::RenderPipelineInfo {
+                vs: Some(vs),
+                fs: Some(fs),
+                input_layout: vec![
+                    gfx::InputElementInfo {
+                        semantic: String::from("POSITION"),
+                        index: 0,
+                        format: gfx::Format::RG32f,
+                        input_slot: 0,
+                        aligned_byte_offset: 0,
+                        input_slot_class: gfx::InputSlotClass::PerVertex,
+                        step_rate: 0,
+                    },
+                    gfx::InputElementInfo {
+                        semantic: String::from("TEXCOORD"),
+                        index: 0,
+                        format: gfx::Format::RG32f,
+                        input_slot: 0,
+                        aligned_byte_offset: 8,
+                        input_slot_class: gfx::InputSlotClass::PerVertex,
+                        step_rate: 0,
+                    },
+                    gfx::InputElementInfo {
+                        semantic: String::from("COLOR"),
+                        index: 0,
+                        format: gfx::Format::RGBA8n,
+                        input_slot: 0,
+                        aligned_byte_offset: 16,
+                        input_slot_class: gfx::InputSlotClass::PerVertex,
+                        step_rate: 0,
+                    },
+                ],
+                descriptor_layout: gfx::DescriptorLayout {
+                    push_constants: Some(vec![gfx::PushConstantInfo {
+                        visibility: gfx::ShaderVisibility::Vertex,
+                        num_values: 16,
+                        shader_register: 0,
+                        register_space: 0,
+                    }]),
+                    bindings: Some(vec![
+                        gfx::DescriptorBinding {
+                            visibility: gfx::ShaderVisibility::Fragment,
+                            binding_type: gfx::DescriptorType::ShaderResource,
+                            num_descriptors: Some(1),
+                            shader_register: 0,
+                            register_space: 0,
+                        }
+                    ]),
+                    static_samplers: Some(vec![gfx::SamplerInfo {
+                        visibility: gfx::ShaderVisibility::Fragment,
+                        filter: gfx::SamplerFilter::Linear,
+                        address_u: gfx::SamplerAddressMode::Wrap,
+                        address_v: gfx::SamplerAddressMode::Wrap,
+                        address_w: gfx::SamplerAddressMode::Wrap,
+                        comparison: None,
+                        border_colour: None,
+                        mip_lod_bias: 0.0,
+                        max_aniso: 0,
+                        min_lod: -1.0,
+                        max_lod: -1.0,
+                        shader_register: 0,
+                        register_space: 0,
+                    }]),
+                },
+                raster_info: gfx::RasterInfo::default(),
+                depth_stencil_info: gfx::DepthStencilInfo::default(),
+                blend_info: gfx::BlendInfo {
+                    render_target: vec![
+                        gfx::RenderTargetBlendInfo::default()
+                    ],
+                    ..Default::default() 
+                },
+                topology: gfx::Topology::TriangleList,
+                patch_index: 0,
+                pass: swap_chain.get_backbuffer_pass()
+        })?)
     }
 }
 
@@ -88,7 +257,7 @@ fn setup_renderer_interface() {
     }
 }
 
-fn setup_renderer(info: &ImGuiInfo) {
+fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
     unsafe {
         let mut io = &mut *igGetIO();
         io.BackendRendererUserData = std::mem::transmute(&renderer_data.clone());
@@ -100,7 +269,20 @@ fn setup_renderer(info: &ImGuiInfo) {
             setup_platform_interface();
         }
 
-        create_fonts_texture();
+        create_fonts_texture(&mut *info.device)?;
+        create_render_pipeline(info)?;
+
+        /*
+        renderer_data = ImGuiRenderer {
+            main_window: info.main_window,
+            device: info.device,
+            swap_chain: info.swap_chain,
+            font_texture: Some(create_fonts_texture(&mut *info.device)?),
+            pipeline: Some(create_render_pipeline(info)?)
+        };
+        */
+
+        Ok(())
     }
 }
 
@@ -204,9 +386,9 @@ pub fn setup(info: &ImGuiInfo) {
         igCreateContext(std::ptr::null_mut());
         let mut io = &mut *igGetIO();
 
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
+        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-        io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+        //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
         igStyleColorsLight(std::ptr::null_mut());
 
