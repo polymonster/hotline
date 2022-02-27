@@ -101,6 +101,7 @@ pub struct Device {
     dsv_heap: Heap,
 }
 
+#[derive(Clone)]
 pub struct SwapChain {
     width: i32,
     height: i32,
@@ -126,6 +127,7 @@ pub struct RenderPipeline {
     topology: D3D_PRIMITIVE_TOPOLOGY
 }
 
+#[derive(Clone)]
 pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
@@ -134,6 +136,7 @@ pub struct CmdBuf {
     in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>,
 }
 
+#[derive(Clone)]
 pub struct Buffer {
     resource: ID3D12Resource,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
@@ -166,6 +169,7 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
+#[derive(Clone)]
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
     rt_formats: Vec<DXGI_FORMAT>,

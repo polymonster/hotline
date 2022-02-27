@@ -38,6 +38,7 @@ pub struct Rect<T> {
 }
 
 /// Filled out to specify various window parameters when a window is created by `App::create_window`
+#[derive(Clone)]
 pub struct WindowInfo {
     /// Title appears in the title bar of the window
     pub title: String,

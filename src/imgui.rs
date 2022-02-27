@@ -12,6 +12,13 @@ use crate::gfx::SwapChain;
 
 use std::ffi::CString;
 
+pub struct ImGuiInfo {
+    pub main_window: *mut os_platform::Window,
+    pub device: *mut gfx_platform::Device,
+    pub swap_chain: *mut gfx_platform::SwapChain,
+    pub fonts: Vec<String>
+}
+
 #[derive(Clone)]
 struct ImGuiPlatform {
     window: *mut os_platform::Window,
@@ -34,18 +41,22 @@ struct ImGuiRenderer {
     pipeline: Option<gfx_platform::RenderPipeline>
 }
 
-struct ImGuiViewport {
-    device: *mut gfx_platform::Device,
-    window: os_platform::Window,
-    swap_chain: gfx_platform::SwapChain,
-    cmd: gfx_platform::CmdBuf
+#[derive(Clone)]
+struct DrawBuffers {
+    vb: gfx_platform::Buffer,
+    ib: gfx_platform::Buffer,
+    vb_size: i32,
+    ib_size: i32,
 }
 
-pub struct ImGuiInfo {
-    pub main_window: *mut os_platform::Window,
-    pub device: *mut gfx_platform::Device,
-    pub swap_chain: *mut gfx_platform::SwapChain,
-    pub fonts: Vec<String>
+#[derive(Clone)]
+struct ImGuiViewport {
+    device: *mut gfx_platform::Device,
+    window: Option<os_platform::Window>,
+    swap_chain: Option<gfx_platform::SwapChain>,
+    cmd: gfx_platform::CmdBuf,
+    buffers: DrawBuffers,
+    magic: u32
 }
 
 static mut platform_data : ImGuiPlatform = ImGuiPlatform {
@@ -257,6 +268,44 @@ fn setup_renderer_interface() {
     }
 }
 
+fn create_or_resize_buffers(
+    device: &mut gfx_platform::Device, 
+    vb_size: i32, 
+    ib_size: i32,
+    buffers: Option<DrawBuffers>) -> Result<DrawBuffers, gfx::Error> {
+
+    let vb = if buffers.is_none() || buffers.as_ref().unwrap().vb_size < vb_size {
+        device.create_buffer::<u8>(&gfx::BufferInfo {
+            usage: gfx::BufferUsage::Vertex,
+            format: gfx::Format::Unknown,
+            stride: std::mem::size_of::<ImDrawVert>(),
+            num_elements: vb_size as usize, 
+        }, None)?
+    }
+    else {
+        buffers.as_ref().unwrap().vb.clone()
+    };
+
+    let ib = if buffers.is_none() || buffers.as_ref().unwrap().vb_size < vb_size {
+        device.create_buffer::<u8>(&gfx::BufferInfo {
+            usage: gfx::BufferUsage::Index,
+            format: gfx::Format::R16i,
+            stride: std::mem::size_of::<ImDrawVert>(),
+            num_elements: ib_size as usize, 
+        }, None)?
+    }
+    else {
+        buffers.as_ref().unwrap().ib.clone()
+    };
+        
+    Ok(DrawBuffers{
+        vb: vb,
+        ib: ib,
+        vb_size: vb_size,
+        ib_size: ib_size
+    })
+}
+
 fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
     unsafe {
         let mut io = &mut *igGetIO();
@@ -269,10 +318,6 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             setup_platform_interface();
         }
 
-        create_fonts_texture(&mut *info.device)?;
-        create_render_pipeline(info)?;
-
-        /*
         renderer_data = ImGuiRenderer {
             main_window: info.main_window,
             device: info.device,
@@ -280,7 +325,18 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             font_texture: Some(create_fonts_texture(&mut *info.device)?),
             pipeline: Some(create_render_pipeline(info)?)
         };
-        */
+
+        let main_viewport_data = std::boxed::Box::new(ImGuiViewport{
+            device: info.device,
+            window: None,
+            swap_chain: None,
+            cmd: (*info.device).create_cmd_buf(2),
+            buffers: create_or_resize_buffers(&mut *info.device, 5000, 10000, None)?,
+            magic: 696969
+        });
+
+        let mut main_viewport = &mut *igGetMainViewport();
+        main_viewport.RendererUserData = std::mem::transmute(&mut main_viewport_data.clone());
 
         Ok(())
     }
@@ -294,12 +350,18 @@ fn render_platform_windows() {
     
 }
 
-fn render_draw_data() {
-    
+fn render_draw_data(draw_data: &ImDrawData, cmd_buf: &gfx_platform::CmdBuf) {
+    unsafe {
+        let a = 0;
+    }
 }
 
 fn render_renderer() {
-
+    unsafe {
+        let ig_main_viewport = &*igGetMainViewport();
+        let main_viewport : &ImGuiViewport = std::mem::transmute(ig_main_viewport.RendererUserData);
+        render_draw_data(&*igGetDrawData(), &main_viewport.cmd);
+    }
 }
 
 fn swap_renderer() {
@@ -386,8 +448,8 @@ pub fn setup(info: &ImGuiInfo) {
         igCreateContext(std::ptr::null_mut());
         let mut io = &mut *igGetIO();
 
-        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
         io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
+        //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
         //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
         igStyleColorsLight(std::ptr::null_mut());
@@ -415,11 +477,16 @@ pub fn new_frame() {
 }
 
 pub fn render() {
-    unsafe { igRender(); }
-    render_renderer();
-    update_platform_windows();
-    render_platform_windows();
-    swap_renderer();
+    unsafe {
+        let io = &mut *igGetIO(); 
+        igRender();
+        render_renderer();
+        if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
+            update_platform_windows();
+            render_platform_windows();
+        }
+        swap_renderer(); 
+    }
 }
 
 pub fn demo() {
