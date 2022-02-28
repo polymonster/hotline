@@ -108,8 +108,8 @@ pub struct SwapChain {
     format: super::Format,
     num_bb: u32,
     flags: u32,
-    frame_index: i32,
-    bb_index: i32,
+    frame_index: u32,
+    bb_index: usize,
     swap_chain: IDXGISwapChain3,
     backbuffer_textures: Vec<Texture>,
     backbuffer_passes: Vec<RenderPass>,
@@ -1864,6 +1864,10 @@ impl super::SwapChain<Device> for SwapChain {
         self.wait_for_frame(self.bb_index as usize);
     }
 
+    fn get_num_buffers(&self) -> u32 {
+        self.num_bb
+    }
+
     fn update(&mut self, device: &mut Device, window: &platform::Window, cmd: &mut CmdBuf) {
         let (width, height) = window.get_size();
         if width != self.width || height != self.height {
@@ -1904,8 +1908,8 @@ impl super::SwapChain<Device> for SwapChain {
         }
     }
 
-    fn get_backbuffer_index(&self) -> i32 {
-        self.bb_index
+    fn get_backbuffer_index(&self) -> u32 {
+        self.bb_index as u32
     }
 
     fn get_backbuffer_texture(&self) -> &Texture {
@@ -1938,7 +1942,7 @@ impl super::SwapChain<Device> for SwapChain {
 
             // swap buffers
             self.frame_index = self.frame_index + 1;
-            self.bb_index = (self.bb_index + 1) % self.num_bb as i32;
+            self.bb_index = (self.bb_index + 1) % self.num_bb as usize;
         }
     }
 
@@ -2069,8 +2073,9 @@ impl super::CmdBuf<Device> for CmdBuf {
             right: scissor_rect.right,
             bottom: scissor_rect.bottom,
         };
+        let cmd = &self.command_list[self.bb_index];
         unsafe {
-            self.cmd().RSSetScissorRects(1, &d3d12_sr);
+            cmd.RSSetScissorRects(1, &d3d12_sr);
         }
     }
 
