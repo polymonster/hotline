@@ -321,18 +321,23 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             pipeline: Some(create_render_pipeline(info)?)
         };
 
-        let main_viewport_data = std::boxed::Box::new(ImGuiViewport{
+        let main_viewport_data = ImGuiViewport{
             device: info.device,
             window: None,
             swap_chain: None,
             cmd: (*info.device).create_cmd_buf(2),
             buffers: create_or_resize_buffers(&mut *info.device, 5000, 10000, None)?,
             magic: 696969
-        });
+        };
+
+        let layout = std::alloc::Layout::new::<ImGuiViewport>(); 
+        let ptr = std::alloc::alloc(layout);
+        std::ptr::copy_nonoverlapping((&main_viewport_data as *const ImGuiViewport) as *const u8, 
+            ptr, std::mem::size_of::<ImGuiViewport>());
 
         let mut main_viewport = &mut *igGetMainViewport();
-        main_viewport.RendererUserData = std::mem::transmute(&mut main_viewport_data.clone());
-
+        main_viewport.RendererUserData = ptr as *mut cty::c_void;
+                        
         Ok(())
     }
 }
@@ -347,6 +352,9 @@ fn render_platform_windows() {
 
 fn render_draw_data(draw_data: &ImDrawData, cmd_buf: &gfx_platform::CmdBuf) {
     unsafe {
+        let mut main_viewport = &mut *igGetMainViewport();
+        let rud = &*(main_viewport.RendererUserData as *mut ImGuiViewport);
+
         let a = 0;
     }
 }
