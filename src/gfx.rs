@@ -692,7 +692,8 @@ pub trait Device: Sized + Any {
 pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
     fn update(&mut self, device: &mut D, window: &platform::Window, cmd: &mut D::CmdBuf);
-    fn get_backbuffer_index(&self) -> i32;
+    fn get_num_buffers(&self) -> u32;
+    fn get_backbuffer_index(&self) -> u32;
     fn get_backbuffer_texture(&self) -> &D::Texture;
     fn get_backbuffer_pass(&self) -> &D::RenderPass;
     fn get_backbuffer_pass_mut(&mut self) -> &mut D::RenderPass;

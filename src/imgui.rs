@@ -9,6 +9,7 @@ use crate::os::Window;
 use crate::gfx;
 use crate::gfx::Device;
 use crate::gfx::SwapChain;
+use crate::gfx::CmdBuf;
 
 use std::ffi::CString;
 
@@ -42,7 +43,7 @@ struct ImGuiRenderer {
 }
 
 #[derive(Clone)]
-struct DrawBuffers {
+struct RenderBuffers {
     vb: gfx_platform::Buffer,
     ib: gfx_platform::Buffer,
     vb_size: i32,
@@ -55,8 +56,7 @@ struct ImGuiViewport {
     window: Option<os_platform::Window>,
     swap_chain: Option<gfx_platform::SwapChain>,
     cmd: gfx_platform::CmdBuf,
-    buffers: DrawBuffers,
-    magic: u32
+    buffers: Vec<RenderBuffers>,
 }
 
 static mut platform_data : ImGuiPlatform = ImGuiPlatform {
@@ -78,6 +78,13 @@ static mut renderer_data : ImGuiRenderer = ImGuiRenderer {
     font_texture: None,
     pipeline: None
 };
+
+fn get_main_viewport<'a>() -> &'a mut ImGuiViewport {
+    unsafe {
+        let main_viewport = &mut *igGetMainViewport();
+        &mut *(main_viewport.RendererUserData as *mut ImGuiViewport)
+    }
+}
 
 fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platform::Texture, gfx::Error> {
     unsafe {
@@ -267,7 +274,7 @@ fn create_or_resize_buffers(
     device: &mut gfx_platform::Device, 
     vb_size: i32, 
     ib_size: i32,
-    buffers: Option<DrawBuffers>) -> Result<DrawBuffers, gfx::Error> {
+    buffers: Option<RenderBuffers>) -> Result<RenderBuffers, gfx::Error> {
 
     let vb = if buffers.is_none() || buffers.as_ref().unwrap().vb_size < vb_size {
         device.create_buffer::<u8>(&gfx::BufferInfo {
@@ -293,7 +300,7 @@ fn create_or_resize_buffers(
         buffers.as_ref().unwrap().ib.clone()
     };
         
-    Ok(DrawBuffers{
+    Ok(RenderBuffers{
         vb: vb,
         ib: ib,
         vb_size: vb_size,
@@ -321,13 +328,20 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             pipeline: Some(create_render_pipeline(info)?)
         };
 
+        let mut buffers : Vec<RenderBuffers> = Vec::new();
+        let num_buffers = (*info.swap_chain).get_num_buffers();
+        for i in 0..num_buffers {
+            buffers.push(
+                create_or_resize_buffers(&mut *info.device, 5000, 10000, None)?
+            )
+        }
+
         let main_viewport_data = ImGuiViewport{
             device: info.device,
             window: None,
             swap_chain: None,
             cmd: (*info.device).create_cmd_buf(2),
-            buffers: create_or_resize_buffers(&mut *info.device, 5000, 10000, None)?,
-            magic: 696969
+            buffers: buffers,
         };
 
         let layout = std::alloc::Layout::new::<ImGuiViewport>(); 
@@ -350,20 +364,58 @@ fn render_platform_windows() {
     
 }
 
-fn render_draw_data(draw_data: &ImDrawData, cmd_buf: &gfx_platform::CmdBuf) {
+fn render_draw_data(draw_data: &ImDrawData) {
     unsafe {
-        let mut main_viewport = &mut *igGetMainViewport();
-        let rud = &*(main_viewport.RendererUserData as *mut ImGuiViewport);
+        let vp = get_main_viewport();
+        let cmd = &mut vp.cmd;
+        cmd.reset(&(*renderer_data.swap_chain));
 
-        let a = 0;
+        let clip_off = draw_data.DisplayPos;
+        let mut global_vtx_offset = 0;
+        let mut global_idx_offset = 0;
+        let imgui_cmd_lists = std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
+        for imgui_cmd_list in imgui_cmd_lists {
+            let imgui_cmd_buffer = (**imgui_cmd_list).CmdBuffer;
+            let imgui_cmd_data = std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
+            for i in 0..imgui_cmd_buffer.Size as usize {
+                let imgui_cmd = &imgui_cmd_data[i];
+                if imgui_cmd.UserCallback.is_some() {
+
+                }
+                else {
+                    let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
+                    let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
+                    let clip_max_x = imgui_cmd.ClipRect.z - clip_off.x;
+                    let clip_max_y = imgui_cmd.ClipRect.w - clip_off.y;
+                    if clip_max_x < clip_min_x || clip_max_y < clip_min_y {
+                        continue;
+                    }
+
+                    let scissor = gfx::ScissorRect {
+                        left: clip_min_x as i32,
+                        top: clip_max_y as i32,
+                        right: clip_max_x as i32,
+                        bottom: clip_max_y as i32
+                    };
+
+                    // cmd.set_scissor_rect(&scissor);
+
+                    /*
+                    cmd.draw_indexed_instanced(
+                        imgui_cmd.ElemCount, 1, 
+                        imgui_cmd.IdxOffset + global_idx_offset, (imgui_cmd.VtxOffset + global_vtx_offset) as i32, 0)
+                    */
+                }
+            }
+            global_idx_offset += (*(*imgui_cmd_list)).IdxBuffer.Size as u32;
+            global_vtx_offset += (*(*imgui_cmd_list)).VtxBuffer.Size as u32;
+        }
     }
 }
 
 fn render_renderer() {
     unsafe {
-        let ig_main_viewport = &*igGetMainViewport();
-        let main_viewport : &ImGuiViewport = std::mem::transmute(ig_main_viewport.RendererUserData);
-        render_draw_data(&*igGetDrawData(), &main_viewport.cmd);
+        render_draw_data(&*igGetDrawData());
     }
 }
 
@@ -493,7 +545,10 @@ pub fn render() {
 }
 
 pub fn demo() {
-
+    unsafe {
+        let mut open = true;
+        igShowDemoWindow(&mut open);
+    }
 }
 
 impl Default for ImGuiPlatform {
