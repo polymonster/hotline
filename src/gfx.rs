@@ -152,6 +152,8 @@ pub struct SwapChainInfo {
 pub struct BufferInfo {
     /// Indicates how the buffer will be used on the GPU.
     pub usage: BufferUsage,
+    /// Used to indicate if we want to read or write from the CPU, use NONE if possible for best performance
+    pub cpu_access: CpuAccessFlags,
     /// Data format of the buffer
     pub format: Format,
     /// The stride of a vertex or structure in bytes.
@@ -214,6 +216,13 @@ bitflags! {
         const BLUE = 1<<2;
         const ALPHA = 1<<3;
         const ALL = (1<<4)-1;
+    }
+
+    /// CPU Access flags for buffers or textures
+    pub struct CpuAccessFlags: u8 {
+        const NONE = 1<<0;
+        const READ = 1<<1;
+        const WRITE = 1<<2;
     }
 }
 
@@ -747,6 +756,9 @@ pub trait CmdBuf<D: Device>: {
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
 pub trait Buffer<D: Device>: {
+    /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
+    /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
+    fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
     /// Return the index to access in a shader ie) buffers[index].member...
     fn get_srv_index(&self) -> Option<usize>;
 }

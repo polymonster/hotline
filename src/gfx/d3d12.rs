@@ -1266,7 +1266,12 @@ impl super::Device for Device {
         unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    Type: if info.cpu_access.contains(super::CpuAccessFlags::WRITE) { 
+                        D3D12_HEAP_TYPE_UPLOAD 
+                    } 
+                    else { 
+                        D3D12_HEAP_TYPE_DEFAULT 
+                    },
                     ..Default::default()
                 },
                 D3D12_HEAP_FLAG_NONE,
@@ -1283,7 +1288,12 @@ impl super::Device for Device {
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                     ..Default::default()
                 },
-                D3D12_RESOURCE_STATE_COPY_DEST,
+                if info.cpu_access.contains(super::CpuAccessFlags::WRITE) { 
+                    D3D12_RESOURCE_STATE_GENERIC_READ
+                } 
+                else { 
+                    D3D12_RESOURCE_STATE_COPY_DEST 
+                },
                 std::ptr::null(),
                 &mut buf,
             )?;
@@ -2262,6 +2272,21 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 impl super::Buffer<Device> for Buffer {
+    fn update<T: Sized>(&self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+        let range = D3D12_RANGE {
+            Begin: 0,
+            End: data.len()
+        };
+        let mut map_data = std::ptr::null_mut();
+        unsafe {
+            self.resource.Map(0, &range, &mut map_data)?;
+            let dst = (map_data as *mut u8).offset(offset);
+            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, data.len());
+            self.resource.Unmap(0, std::ptr::null_mut());
+        }
+        Ok(())
+    }
+
     fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
     }

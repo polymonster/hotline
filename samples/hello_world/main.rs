@@ -80,6 +80,7 @@ fn main() {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Vertex,
+        cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
         num_elements: 4,
@@ -92,6 +93,7 @@ fn main() {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Index,
+        cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::R16u,
         stride: std::mem::size_of::<u16>(),
         num_elements: 6,
@@ -251,6 +253,7 @@ fn main() {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::ConstantBuffer,
+        cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: cbuffer.len() * 4,
         num_elements: 1,
