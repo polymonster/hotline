@@ -419,6 +419,11 @@ fn main() {
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
+        // ig
+        imgui::new_frame();
+        imgui::demo();
+        imgui::render(&mut cmdbuffer);
+
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
@@ -428,12 +433,10 @@ fn main() {
             state_after: gfx::ResourceState::Present,
         });
         cmdbuffer.end_event();
-     
+
+             
         cmdbuffer.close(&swap_chain);
 
-        imgui::new_frame();
-        imgui::demo();
-        imgui::render();
 
         dev.execute(&cmdbuffer);
 
