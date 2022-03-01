@@ -10,6 +10,7 @@ use crate::gfx;
 use crate::gfx::Device;
 use crate::gfx::SwapChain;
 use crate::gfx::CmdBuf;
+use crate::gfx::Buffer;
 
 use std::ffi::CString;
 
@@ -274,32 +275,56 @@ fn create_or_resize_buffers(
     device: &mut gfx_platform::Device, 
     vb_size: i32, 
     ib_size: i32,
-    buffers: Option<RenderBuffers>) -> Result<RenderBuffers, gfx::Error> {
+    buffers: Option<&RenderBuffers>) -> Result<RenderBuffers, gfx::Error> {
 
-    let vb = if buffers.is_none() || buffers.as_ref().unwrap().vb_size < vb_size {
+    let vb = if let Some(existing) = buffers {
+        if existing.vb_size < vb_size {
+            device.create_buffer::<u8>(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::Vertex,
+                cpu_access: gfx::CpuAccessFlags::WRITE,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<ImDrawVert>(),
+                num_elements: vb_size as usize, 
+            }, None)?
+        }
+        else {
+            existing.vb.clone()
+        }
+    }
+    else {
         device.create_buffer::<u8>(&gfx::BufferInfo {
             usage: gfx::BufferUsage::Vertex,
+            cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVert>(),
             num_elements: vb_size as usize, 
         }, None)?
-    }
-    else {
-        buffers.as_ref().unwrap().vb.clone()
     };
 
-    let ib = if buffers.is_none() || buffers.as_ref().unwrap().ib_size < ib_size {
+    let ib = if let Some(existing) = buffers {
+        if existing.ib_size < ib_size {
+            device.create_buffer::<u8>(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::Index,
+                cpu_access: gfx::CpuAccessFlags::WRITE,
+                format: gfx::Format::R16u,
+                stride: std::mem::size_of::<ImDrawIdx>(),
+                num_elements: ib_size as usize, 
+            }, None)?
+        }
+        else {
+            existing.vb.clone()
+        }
+    }
+    else {
         device.create_buffer::<u8>(&gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
+            cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::R16u,
             stride: std::mem::size_of::<ImDrawIdx>(),
             num_elements: ib_size as usize, 
         }, None)?
-    }
-    else {
-        buffers.as_ref().unwrap().ib.clone()
     };
-        
+
     Ok(RenderBuffers{
         vb: vb,
         ib: ib,
@@ -366,12 +391,34 @@ fn render_platform_windows() {
     
 }
 
-fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) {
+fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> Result<(), gfx::Error> {
     unsafe {
         let vp = get_main_viewport_data();
         let swap_chain = &(*render_data.swap_chain);
 
-        let buffers = &vp.buffers[swap_chain.get_backbuffer_index() as usize];
+        let bb = swap_chain.get_backbuffer_index() as usize;
+
+        // resize buffers
+        vp.buffers[bb] = create_or_resize_buffers(
+            &mut *vp.device, draw_data.TotalVtxCount, draw_data.TotalIdxCount, Some(&vp.buffers[bb]))?;
+
+        // update buffers
+        let buffers = &vp.buffers[bb];
+        let imgui_cmd_lists = std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
+        let mut vertex_write_offset = 0;
+        let mut index_write_offset = 0;
+        for imgui_cmd_list in imgui_cmd_lists {
+            // vertex
+            let draw_vert = (*(*imgui_cmd_list)).VtxBuffer;
+            let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
+            buffers.vb.update(vertex_write_offset, vb_slice)?;
+            vertex_write_offset += draw_vert.Size as isize;
+            // index
+            let draw_index = (*(*imgui_cmd_list)).IdxBuffer;
+            let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
+            buffers.ib.update(index_write_offset, ib_slice)?;
+            index_write_offset += draw_index.Size as isize;
+        }
 
         // let cmd = &mut vp.cmd;
         // cmd.reset(swap_chain);
@@ -395,7 +442,7 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) {
         let clip_off = draw_data.DisplayPos;
         let mut global_vtx_offset = 0;
         let mut global_idx_offset = 0;
-        let imgui_cmd_lists = std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
+
         for imgui_cmd_list in imgui_cmd_lists {
             let imgui_cmd_buffer = (**imgui_cmd_list).CmdBuffer;
             let imgui_cmd_data = std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
@@ -430,6 +477,8 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) {
             global_idx_offset += (*(*imgui_cmd_list)).IdxBuffer.Size as u32;
             global_vtx_offset += (*(*imgui_cmd_list)).VtxBuffer.Size as u32;
         }
+
+        Ok(())
     }
 }
 
@@ -549,7 +598,7 @@ pub fn render(cmd: &mut gfx_platform::CmdBuf) {
     unsafe {
         let io = &mut *igGetIO(); 
         igRender();
-        render_draw_data(&*igGetDrawData(), cmd);
+        render_draw_data(&*igGetDrawData(), cmd).unwrap();
         if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
             update_platform_windows();
             render_platform_windows();
