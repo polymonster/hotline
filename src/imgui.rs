@@ -21,7 +21,7 @@ pub struct ImGuiInfo {
 }
 
 #[derive(Clone)]
-struct ImGuiPlatform {
+struct PlatformData {
     window: *mut os_platform::Window,
     mouse_window: *mut os_platform::Window,
     time: u64,
@@ -34,7 +34,7 @@ struct ImGuiPlatform {
 }
 
 #[derive(Clone)]
-struct ImGuiRenderer {
+struct RenderData {
     main_window: *mut os_platform::Window,
     device: *mut gfx_platform::Device,
     swap_chain: *mut gfx_platform::SwapChain,
@@ -51,7 +51,7 @@ struct RenderBuffers {
 }
 
 #[derive(Clone)]
-struct ImGuiViewport {
+struct ViewportData {
     device: *mut gfx_platform::Device,
     window: Option<os_platform::Window>,
     swap_chain: Option<gfx_platform::SwapChain>,
@@ -59,7 +59,7 @@ struct ImGuiViewport {
     buffers: Vec<RenderBuffers>,
 }
 
-static mut platform_data : ImGuiPlatform = ImGuiPlatform {
+static mut platform_data : PlatformData = PlatformData {
     window: std::ptr::null_mut(),
     mouse_window: std::ptr::null_mut(),
     time: 0,
@@ -71,7 +71,7 @@ static mut platform_data : ImGuiPlatform = ImGuiPlatform {
     want_update_monitors: false 
 };
 
-static mut renderer_data : ImGuiRenderer = ImGuiRenderer {
+static mut render_data : RenderData = RenderData {
     main_window: std::ptr::null_mut(),
     device: std::ptr::null_mut(),
     swap_chain: std::ptr::null_mut(),
@@ -79,10 +79,10 @@ static mut renderer_data : ImGuiRenderer = ImGuiRenderer {
     pipeline: None
 };
 
-fn get_main_viewport<'a>() -> &'a mut ImGuiViewport {
+fn get_main_viewport_data<'a>() -> &'a mut ViewportData {
     unsafe {
         let main_viewport = &mut *igGetMainViewport();
-        &mut *(main_viewport.RendererUserData as *mut ImGuiViewport)
+        &mut *(main_viewport.RendererUserData as *mut ViewportData)
     }
 }
 
@@ -120,7 +120,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
         let device = &*info.device;
         let swap_chain = &*info.swap_chain;
     
-        // temp: compile shaders
+        // TODO: temp: compile shaders
         let src = "
             cbuffer vertexBuffer : register(b0)
             {
@@ -288,11 +288,11 @@ fn create_or_resize_buffers(
         buffers.as_ref().unwrap().vb.clone()
     };
 
-    let ib = if buffers.is_none() || buffers.as_ref().unwrap().vb_size < vb_size {
+    let ib = if buffers.is_none() || buffers.as_ref().unwrap().ib_size < ib_size {
         device.create_buffer::<u8>(&gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
-            format: gfx::Format::R16i,
-            stride: std::mem::size_of::<ImDrawVert>(),
+            format: gfx::Format::R16u,
+            stride: std::mem::size_of::<ImDrawIdx>(),
             num_elements: ib_size as usize, 
         }, None)?
     }
@@ -311,7 +311,7 @@ fn create_or_resize_buffers(
 fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
     unsafe {
         let mut io = &mut *igGetIO();
-        io.BackendRendererUserData = std::mem::transmute(&renderer_data.clone());
+        io.BackendRendererUserData = std::mem::transmute(&render_data.clone());
         io.BackendRendererName = "imgui_impl_hotline".as_ptr() as *const i8;
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset as i32; 
         io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports as i32; 
@@ -320,7 +320,7 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             setup_platform_interface();
         }
 
-        renderer_data = ImGuiRenderer {
+        render_data = RenderData {
             main_window: info.main_window,
             device: info.device,
             swap_chain: info.swap_chain,
@@ -336,18 +336,20 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
             )
         }
 
-        let main_viewport_data = ImGuiViewport{
+        let main_viewport_data = ViewportData{
             device: info.device,
             window: None,
             swap_chain: None,
             cmd: (*info.device).create_cmd_buf(2),
             buffers: buffers,
         };
-
-        let layout = std::alloc::Layout::new::<ImGuiViewport>(); 
+        
+        let layout = std::alloc::Layout::new::<ViewportData>(); 
         let ptr = std::alloc::alloc(layout);
-        std::ptr::copy_nonoverlapping((&main_viewport_data as *const ImGuiViewport) as *const u8, 
-            ptr, std::mem::size_of::<ImGuiViewport>());
+        std::ptr::copy_nonoverlapping((&main_viewport_data as *const ViewportData) as *const u8, 
+            ptr, std::mem::size_of::<ViewportData>());
+
+        std::mem::forget(main_viewport_data);
 
         let mut main_viewport = &mut *igGetMainViewport();
         main_viewport.RendererUserData = ptr as *mut cty::c_void;
@@ -364,11 +366,31 @@ fn render_platform_windows() {
     
 }
 
-fn render_draw_data(draw_data: &ImDrawData) {
+fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) {
     unsafe {
-        let vp = get_main_viewport();
-        let cmd = &mut vp.cmd;
-        cmd.reset(&(*renderer_data.swap_chain));
+        let vp = get_main_viewport_data();
+        let swap_chain = &(*render_data.swap_chain);
+
+        let buffers = &vp.buffers[swap_chain.get_backbuffer_index() as usize];
+
+        // let cmd = &mut vp.cmd;
+        // cmd.reset(swap_chain);
+
+        cmd.set_marker(0xff00ffff, "ImGui");
+
+        let viewport = gfx::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: draw_data.DisplaySize.x,
+            height: draw_data.DisplaySize.y,
+            min_depth: 0.0,
+            max_depth: 1.0
+        };
+
+        cmd.set_viewport(&viewport);
+        cmd.set_vertex_buffer(&buffers.vb, 0);
+        cmd.set_index_buffer(&buffers.ib);
+        cmd.set_render_pipeline(&render_data.pipeline.as_ref().unwrap());
 
         let clip_off = draw_data.DisplayPos;
         let mut global_vtx_offset = 0;
@@ -393,29 +415,21 @@ fn render_draw_data(draw_data: &ImDrawData) {
 
                     let scissor = gfx::ScissorRect {
                         left: clip_min_x as i32,
-                        top: clip_max_y as i32,
+                        top: clip_min_y as i32,
                         right: clip_max_x as i32,
                         bottom: clip_max_y as i32
                     };
 
-                    // cmd.set_scissor_rect(&scissor);
 
-                    /*
+                    cmd.set_scissor_rect(&scissor);
                     cmd.draw_indexed_instanced(
                         imgui_cmd.ElemCount, 1, 
-                        imgui_cmd.IdxOffset + global_idx_offset, (imgui_cmd.VtxOffset + global_vtx_offset) as i32, 0)
-                    */
+                        imgui_cmd.IdxOffset + global_idx_offset, (imgui_cmd.VtxOffset + global_vtx_offset) as i32, 0);
                 }
             }
             global_idx_offset += (*(*imgui_cmd_list)).IdxBuffer.Size as u32;
             global_vtx_offset += (*(*imgui_cmd_list)).VtxBuffer.Size as u32;
         }
-    }
-}
-
-fn render_renderer() {
-    unsafe {
-        render_draw_data(&*igGetDrawData());
     }
 }
 
@@ -460,7 +474,7 @@ fn setup_platform(info: &ImGuiInfo) {
         io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport as i32;
 
         // platform backend setup
-        platform_data = ImGuiPlatform {
+        platform_data = PlatformData {
             window: std::mem::transmute(info.main_window),
             want_update_has_gamepad: true,
             want_update_monitors: true,
@@ -531,11 +545,11 @@ pub fn new_frame() {
     unsafe { igNewFrame(); }
 }
 
-pub fn render() {
+pub fn render(cmd: &mut gfx_platform::CmdBuf) {
     unsafe {
         let io = &mut *igGetIO(); 
         igRender();
-        render_renderer();
+        render_draw_data(&*igGetDrawData(), cmd);
         if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
             update_platform_windows();
             render_platform_windows();
@@ -551,9 +565,9 @@ pub fn demo() {
     }
 }
 
-impl Default for ImGuiPlatform {
+impl Default for PlatformData {
     fn default() -> Self { 
-        ImGuiPlatform {
+        PlatformData {
             window: std::ptr::null_mut(),
             mouse_window: std::ptr::null_mut(),
             time: 0,
