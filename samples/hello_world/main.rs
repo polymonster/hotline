@@ -413,7 +413,7 @@ fn main() {
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_render_pipeline(&pso);
-        cmdbuffer.set_render_heap(1, dev.get_shader_heap());
+        cmdbuffer.set_render_heap(1, dev.get_shader_heap(), 0);
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
