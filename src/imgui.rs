@@ -155,7 +155,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
             
             float4 PSMain(PS_INPUT input) : SV_Target
             {
-              float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
+              float4 out_col = float4(1.0, 0.0, 1.0, 1.0); //input.col * texture0.Sample(sampler0, input.uv);
               return out_col;
             }";
     
@@ -288,7 +288,7 @@ fn create_or_resize_buffers(
             }, None)?
         }
         else {
-            existing.vb.clone()
+            (&existing.vb).clone()
         }
     }
     else {
@@ -312,7 +312,7 @@ fn create_or_resize_buffers(
             }, None)?
         }
         else {
-            existing.vb.clone()
+            (&existing.ib).clone()
         }
     }
     else {
@@ -420,6 +420,19 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
             index_write_offset += draw_index.Size as isize;
         }
 
+        // update push constants
+        let l = draw_data.DisplayPos.x;
+        let r = draw_data.DisplayPos.x + draw_data.DisplaySize.x;
+        let t = draw_data.DisplayPos.y;
+        let b = draw_data.DisplayPos.y + draw_data.DisplaySize.y;
+
+        let mvp : [[f32;4];4] = [
+            [2.0/(r-l), 0.0, 0.0, 0.0],
+            [0.0, 2.0/(t-b), 0.0, 0.0],
+            [0.0, 0.0, 0.5, 0.0],
+            [(r+l)/(l-r), (t+b)/(b-t), 0.0, 0.0]
+        ];
+        
         // let cmd = &mut vp.cmd;
         // cmd.reset(swap_chain);
 
@@ -438,6 +451,7 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
         cmd.set_vertex_buffer(&buffers.vb, 0);
         cmd.set_index_buffer(&buffers.ib);
         cmd.set_render_pipeline(&render_data.pipeline.as_ref().unwrap());
+        cmd.push_constants(0, 16, 0, &mvp);
 
         let clip_off = draw_data.DisplayPos;
         let mut global_vtx_offset = 0;
