@@ -1403,7 +1403,7 @@ impl super::Device for Device {
                 }
             }
 
-            Ok(Buffer {
+            Ok(Buffer{
                 resource: buf.unwrap(),
                 vbv: vbv,
                 ibv: ibv,
@@ -2134,12 +2134,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_render_heap(&self, slot: u32, heap: &Heap) {
+    fn set_render_heap(&self, slot: u32, heap: &Heap, offset: usize) {
         unsafe {
             self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+
+            let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
+            base.ptr += (offset * heap.increment_size) as u64;
+
             self.cmd().SetGraphicsRootDescriptorTable(
                 slot,
-                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+                &base,
             );
         }
     }
@@ -2274,13 +2278,13 @@ impl super::CmdBuf<Device> for CmdBuf {
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
         let range = D3D12_RANGE {
-            Begin: 0,
+            Begin: offset as usize,
             End: data.len()
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
             self.resource.Map(0, &range, &mut map_data)?;
-            let dst = (map_data as *mut u8).offset(offset);
+            let dst = map_data as *mut u8;
             std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, data.len());
             self.resource.Unmap(0, std::ptr::null_mut());
         }

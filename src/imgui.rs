@@ -11,6 +11,7 @@ use crate::gfx::Device;
 use crate::gfx::SwapChain;
 use crate::gfx::CmdBuf;
 use crate::gfx::Buffer;
+use crate::gfx::Texture;
 
 use std::ffi::CString;
 
@@ -155,7 +156,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
             
             float4 PSMain(PS_INPUT input) : SV_Target
             {
-              float4 out_col = input.col; // * texture0.Sample(sampler0, input.uv);
+              float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
               return out_col;
             }";
     
@@ -247,8 +248,20 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
                 raster_info: gfx::RasterInfo::default(),
                 depth_stencil_info: gfx::DepthStencilInfo::default(),
                 blend_info: gfx::BlendInfo {
+                    independent_blend_enabled: true,
                     render_target: vec![
-                        gfx::RenderTargetBlendInfo::default()
+                        gfx::RenderTargetBlendInfo {
+                            blend_enabled: true,
+                            logic_op_enabled: false,
+                            src_blend: gfx::BlendFactor::SrcAlpha,
+                            dst_blend: gfx::BlendFactor::InvSrcAlpha,
+                            blend_op: gfx::BlendOp::Add,
+                            src_blend_alpha: gfx::BlendFactor::One,
+                            dst_blend_alpha: gfx::BlendFactor::InvSrcAlpha,
+                            blend_op_alpha: gfx::BlendOp::Add,
+                            logic_op: gfx::LogicOp::Clear,
+                            write_mask: gfx::WriteMask::ALL
+                        }
                     ],
                     ..Default::default() 
                 },
@@ -395,6 +408,10 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
     unsafe {
         let vp = get_main_viewport_data();
         let swap_chain = &(*render_data.swap_chain);
+        let dev = &*vp.device;
+
+        let font_tex = render_data.font_texture.as_ref().unwrap();
+        let font_tex_index = font_tex.get_srv_index().unwrap();
 
         let bb = swap_chain.get_backbuffer_index() as usize;
 
@@ -409,13 +426,15 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
         let mut index_write_offset = 0;
         for imgui_cmd_list in imgui_cmd_lists {
             // vertex
-            let draw_vert = (*(*imgui_cmd_list)).VtxBuffer;
-            let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
+            let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
+            let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
+            let vb_slice = std::slice::from_raw_parts(draw_vert.Data, vb_size_bytes);
             buffers.vb.update(vertex_write_offset, vb_slice)?;
             vertex_write_offset += draw_vert.Size as isize;
             // index
-            let draw_index = (*(*imgui_cmd_list)).IdxBuffer;
-            let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
+            let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
+            let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
+            let ib_slice = std::slice::from_raw_parts(draw_index.Data, ib_size_bytes);
             buffers.ib.update(index_write_offset, ib_slice)?;
             index_write_offset += draw_index.Size as isize;
         }
@@ -456,10 +475,11 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
         let clip_off = draw_data.DisplayPos;
         let mut global_vtx_offset = 0;
         let mut global_idx_offset = 0;
-
         for imgui_cmd_list in imgui_cmd_lists {
             let imgui_cmd_buffer = (**imgui_cmd_list).CmdBuffer;
             let imgui_cmd_data = std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
+            let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
+            let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
             for i in 0..imgui_cmd_buffer.Size as usize {
                 let imgui_cmd = &imgui_cmd_data[i];
                 if imgui_cmd.UserCallback.is_some() {
@@ -481,15 +501,15 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
                         bottom: clip_max_y as i32
                     };
 
-
+                    cmd.set_render_heap(1, dev.get_shader_heap(), font_tex_index);
                     cmd.set_scissor_rect(&scissor);
                     cmd.draw_indexed_instanced(
                         imgui_cmd.ElemCount, 1, 
                         imgui_cmd.IdxOffset + global_idx_offset, (imgui_cmd.VtxOffset + global_vtx_offset) as i32, 0);
                 }
             }
-            global_idx_offset += (*(*imgui_cmd_list)).IdxBuffer.Size as u32;
-            global_vtx_offset += (*(*imgui_cmd_list)).VtxBuffer.Size as u32;
+            global_idx_offset += draw_vert.Size as u32;
+            global_vtx_offset += draw_index.Size as u32;
         }
 
         Ok(())
