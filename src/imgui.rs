@@ -144,7 +144,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
             PS_INPUT VSMain(VS_INPUT input)
             {
                 PS_INPUT output;
-                output.pos = mul( ProjectionMatrix, float4(input.pos.xy, 0.f, 1.f));
+                output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
                 output.col = input.col;
                 output.uv  = input.uv;
                 return output;
@@ -155,7 +155,7 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
             
             float4 PSMain(PS_INPUT input) : SV_Target
             {
-              float4 out_col = float4(1.0, 0.0, 1.0, 1.0); //input.col * texture0.Sample(sampler0, input.uv);
+              float4 out_col = input.col; // * texture0.Sample(sampler0, input.uv);
               return out_col;
             }";
     
@@ -430,7 +430,7 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
             [2.0/(r-l), 0.0, 0.0, 0.0],
             [0.0, 2.0/(t-b), 0.0, 0.0],
             [0.0, 0.0, 0.5, 0.0],
-            [(r+l)/(l-r), (t+b)/(b-t), 0.0, 0.0]
+            [(r+l)/(l-r), (t+b)/(b-t), 0.0, 1.0]
         ];
         
         // let cmd = &mut vp.cmd;
