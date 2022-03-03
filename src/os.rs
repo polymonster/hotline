@@ -13,6 +13,15 @@ pub struct AppInfo {
     pub num_buffers: u32,
 }
 
+pub enum MouseButton {
+    Left,
+    Middle,
+    Right,
+    X1,
+    X2,
+    Count
+}
+
 /// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized {
     type Window: Window<Self>;
@@ -22,6 +31,14 @@ pub trait App: 'static + Any + Sized {
     fn create_window(&self, info: WindowInfo) -> Self::Window;
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&self) -> bool;
+    /// Retuns the mouse in screen coordinates
+    fn get_mouse_pos(&self) -> Point<i32>;
+    /// Retuns the mouse vertical wheel position
+    fn get_mouse_wheel(&self) -> f32;
+    /// Retuns the mouse horizontal wheel positions
+    fn get_mouse_hwheel(&self) -> f32;
+    /// Retuns the mouse button states, up or down
+    fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
 }
 
 /// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height
@@ -35,6 +52,15 @@ pub struct Rect<T> {
     pub width: T,
     /// Height of the window starting at y
     pub height: T,
+}
+
+/// 2-Dimension point for screen coordinates
+#[derive(Copy, Clone)]
+pub struct Point<T> {
+    /// x position
+    pub x: T,
+    /// y position
+    pub y: T,
 }
 
 /// Filled out to specify various window parameters when a window is created by `App::create_window`
@@ -55,6 +81,8 @@ pub trait Window<A: App>: Any + Sized {
     fn get_rect(&self) -> Rect<i32>;
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> Rect<i32>;
+    /// Return mouse position in relative coordinates from the top left corner of the window
+    fn get_mouse_client_pos(&self, mouse_pos: &Point<i32>) -> Point<i32>;
     /// Set only the size of the window
     fn set_size(&mut self, width: i32, height: i32);
     /// Returns the size of the window as tuple
@@ -67,4 +95,31 @@ pub trait Window<A: App>: Any + Sized {
     fn as_ptr(&self) -> *const Self;
     /// mut pointer
     fn as_mut_ptr(&mut self) -> *mut Self;
+}
+
+impl Default for Point<f32> {
+    fn default() -> Self { 
+        Point::<f32> {
+            x: 0.0,
+            y: 0.0
+        }
+    }
+}
+
+impl Default for Point<i32> {
+    fn default() -> Self { 
+        Point::<i32> {
+            x: 0,
+            y: 0
+        }
+    }
+}
+
+impl Default for Point<u32> {
+    fn default() -> Self { 
+        Point::<u32> {
+            x: 0,
+            y: 0
+        }
+    }
 }

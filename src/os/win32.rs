@@ -1,6 +1,7 @@
 use windows::{
     Win32::Foundation::*, 
     Win32::Graphics::Gdi::ValidateRect, 
+    Win32::Graphics::Gdi::ScreenToClient,
     Win32::System::LibraryLoader::*,
     Win32::UI::Input::KeyboardAndMouse::*, 
     Win32::UI::WindowsAndMessaging::*,
@@ -10,6 +11,7 @@ use windows::{
 pub struct App {
     window_class: String,
     hinstance: HINSTANCE,
+    mouse_pos: super::Point<i32>
 }
 
 #[derive(Clone)]
@@ -57,6 +59,19 @@ static mut PROC_DATA : ProcData = ProcData {
     mouse_hwheel: 0.0
 };
 
+impl App {
+    fn update_mouse(&mut self) {
+        unsafe {
+            let mut mouse_pos = POINT::default();
+            GetCursorPos(&mut mouse_pos);
+            self.mouse_pos = super::Point {
+                x: mouse_pos.x,
+                y: mouse_pos.y
+            }
+        }
+    }
+}
+
 impl super::App for App {
     type Window = Window;
 
@@ -82,6 +97,7 @@ impl super::App for App {
             App {
                 window_class: String::from(window_class),
                 hinstance: instance,
+                mouse_pos: super::Point::default()
             }
         }
     }
@@ -128,6 +144,28 @@ impl super::App for App {
             !quit
         }
     }
+
+    fn get_mouse_pos(&self) -> super::Point<i32> {
+        self.mouse_pos
+    }
+
+    fn get_mouse_wheel(&self) -> f32 {
+        unsafe {
+            PROC_DATA.mouse_wheel
+        }
+    }
+
+    fn get_mouse_hwheel(&self) -> f32 {
+        unsafe {
+            PROC_DATA.mouse_hwheel
+        }
+    }
+
+    fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
+        unsafe {
+            PROC_DATA.mouse_down
+        }
+    }
 }
 
 impl super::Window<App> for Window {
@@ -166,6 +204,20 @@ impl super::Window<App> for Window {
             y: 0,
             width: self.info.rect.width,
             height: self.info.rect.height,
+        }
+    }
+
+    fn get_mouse_client_pos(&self, mouse_pos: &super::Point<i32>) -> super::Point<i32> {
+        unsafe {
+            let mut mp = POINT {
+                x: mouse_pos.x,
+                y: mouse_pos.y
+            };
+            ScreenToClient(self.hwnd, &mut mp);
+            super::Point {
+                x: mp.x,
+                y: mp.y
+            }
         }
     }
 

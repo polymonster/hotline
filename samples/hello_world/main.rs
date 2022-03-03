@@ -437,9 +437,7 @@ fn main() {
         });
         cmdbuffer.end_event();
 
-             
         cmdbuffer.close(&swap_chain);
-
 
         dev.execute(&cmdbuffer);
 
