@@ -102,7 +102,7 @@ fn window_set_rect() {
 
 #[test]
 fn swap_chain_buffer() {
-    let app = os_platform::App::create(os::AppInfo {
+    let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("swap_chain_buffer"),
         window: false,
         num_buffers: 0,
@@ -191,7 +191,7 @@ fn swap_chain_buffer() {
 
 #[test]
 fn draw_triangle() -> Result<(), gfx::Error> {
-    let app = os_platform::App::create(os::AppInfo {
+    let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("draw_triangle"),
         window: false,
         num_buffers: 0,

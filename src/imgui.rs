@@ -22,17 +22,23 @@ pub struct ImGuiInfo {
     pub fonts: Vec<String>
 }
 
-#[derive(Clone)]
-struct PlatformData {
-    window: *mut os_platform::Window,
-    mouse_window: *mut os_platform::Window,
-    time: u64,
-    ticks_per_second: u64,
-    last_mouse_cursor: ImGuiMouseCursor,
-    mouse_tracked: bool,
-    has_gamepad: bool,
-    want_update_has_gamepad: bool,
-    want_update_monitors: bool 
+pub struct ImGuiInfo2 {
+    pub device: &'static mut gfx_platform::Device,
+    pub main_window: &'static mut os_platform::Window,
+    pub swap_chain: &'static mut gfx_platform::SwapChain,
+    pub fonts: Vec<String>
+}
+
+pub struct ImGui {
+    device: &'static mut gfx_platform::Device,
+    main_window: &'static mut os_platform::Window,
+    swap_chain: &'static mut gfx_platform::SwapChain,
+    fonts: Vec<String>,
+    font_texture: gfx_platform::Texture,
+    pipeline: gfx_platform::RenderPipeline,
+    cmd: gfx_platform::CmdBuf,
+    buffers: Vec<RenderBuffers>,
+    viewports: Vec<ViewportData>,
 }
 
 #[derive(Clone)]
@@ -43,6 +49,7 @@ struct RenderData {
     font_texture: Option<gfx_platform::Texture>,
     pipeline: Option<gfx_platform::RenderPipeline>
 }
+
 
 #[derive(Clone)]
 struct RenderBuffers {
@@ -60,18 +67,6 @@ struct ViewportData {
     cmd: gfx_platform::CmdBuf,
     buffers: Vec<RenderBuffers>,
 }
-
-static mut platform_data : PlatformData = PlatformData {
-    window: std::ptr::null_mut(),
-    mouse_window: std::ptr::null_mut(),
-    time: 0,
-    ticks_per_second: 0,
-    last_mouse_cursor: ImGuiMouseCursor_Arrow,
-    mouse_tracked: false,
-    has_gamepad: false,
-    want_update_has_gamepad: false,
-    want_update_monitors: false 
-};
 
 static mut render_data : RenderData = RenderData {
     main_window: std::ptr::null_mut(),
@@ -117,10 +112,10 @@ fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platfor
     }
 }
 
-fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeline, gfx::Error> {
+fn create_render_pipeline(info: &ImGuiInfo2) -> Result<gfx_platform::RenderPipeline, gfx::Error> {
     unsafe {
-        let device = &*info.device;
-        let swap_chain = &*info.swap_chain;
+        let device = &info.device;
+        let swap_chain = &info.swap_chain;
     
         // TODO: temp: compile shaders
         let src = "
@@ -272,23 +267,13 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
     }
 }
 
-fn setup_renderer_interface() {
-    unsafe {
-        /*
-        platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
-        platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
-        platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
-        platform_io.Renderer_RenderWindow = ImGui_ImplDX12_RenderWindow;
-        platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
-        */
-    }
-}
-
 fn create_or_resize_buffers(
     device: &mut gfx_platform::Device, 
     vb_size: i32, 
     ib_size: i32,
     buffers: Option<&RenderBuffers>) -> Result<RenderBuffers, gfx::Error> {
+
+    // TODO: fix double init
 
     let vb = if let Some(existing) = buffers {
         if existing.vb_size < vb_size {
@@ -354,16 +339,12 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
         io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset as i32; 
         io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports as i32; 
 
-        if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
-            setup_platform_interface();
-        }
-
         render_data = RenderData {
             main_window: info.main_window,
             device: info.device,
             swap_chain: info.swap_chain,
             font_texture: Some(create_fonts_texture(&mut *info.device)?),
-            pipeline: Some(create_render_pipeline(info)?)
+            pipeline: None, //Some(create_render_pipeline(info)?)
         };
 
         let mut buffers : Vec<RenderBuffers> = Vec::new();
@@ -394,14 +375,6 @@ fn setup_renderer(info: &ImGuiInfo) -> std::result::Result<(), gfx::Error> {
                         
         Ok(())
     }
-}
-
-fn new_frame_renderer() {
-
-}
-
-fn render_platform_windows() {
-    
 }
 
 fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> Result<(), gfx::Error> {
@@ -516,56 +489,16 @@ fn render_draw_data(draw_data: &ImDrawData, cmd: &mut gfx_platform::CmdBuf) -> R
     }
 }
 
-fn swap_renderer() {
-
-}
-
-fn setup_platform_interface() {
-    unsafe {
-        let mut platform_io = &mut *igGetPlatformIO();
-    }
-
-    /*
-    platform_io.Platform_CreateWindow = ImGui_ImplWin32_CreateWindow;
-    platform_io.Platform_DestroyWindow = ImGui_ImplWin32_DestroyWindow;
-    platform_io.Platform_ShowWindow = ImGui_ImplWin32_ShowWindow;
-    platform_io.Platform_SetWindowPos = ImGui_ImplWin32_SetWindowPos;
-    platform_io.Platform_GetWindowPos = ImGui_ImplWin32_GetWindowPos;
-    platform_io.Platform_SetWindowSize = ImGui_ImplWin32_SetWindowSize;
-    platform_io.Platform_GetWindowSize = ImGui_ImplWin32_GetWindowSize;
-    platform_io.Platform_SetWindowFocus = ImGui_ImplWin32_SetWindowFocus;
-    platform_io.Platform_GetWindowFocus = ImGui_ImplWin32_GetWindowFocus;
-    platform_io.Platform_GetWindowMinimized = ImGui_ImplWin32_GetWindowMinimized;
-    platform_io.Platform_SetWindowTitle = ImGui_ImplWin32_SetWindowTitle;
-    platform_io.Platform_SetWindowAlpha = ImGui_ImplWin32_SetWindowAlpha;
-    platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
-    platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
-    platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
-    */
-}
-
 fn setup_platform(info: &ImGuiInfo) {
     unsafe {
         let mut io = &mut *igGetIO();
         
         // io setup
-        io.BackendPlatformUserData = std::mem::transmute(&platform_data.clone());
         io.BackendPlatformName = "imgui_impl_hotline".as_ptr() as *const i8;
         io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors as i32;
         io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos as i32;
         io.BackendFlags |= ImGuiBackendFlags_PlatformHasViewports as i32;
         io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport as i32;
-
-        // platform backend setup
-        platform_data = PlatformData {
-            window: std::mem::transmute(info.main_window),
-            want_update_has_gamepad: true,
-            want_update_monitors: true,
-            ticks_per_second: 0, // TODO:
-            time: 0, // TODO:
-            last_mouse_cursor: ImGuiMouseCursor_COUNT,
-            ..Default::default()
-        };
 
         // TODO: mouse update
 
@@ -574,7 +507,7 @@ fn setup_platform(info: &ImGuiInfo) {
         // TODO: gamepads
 
         if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
-            setup_platform_interface();
+            // setup_platform_interface();
         }
     }
 }
@@ -582,17 +515,16 @@ fn setup_platform(info: &ImGuiInfo) {
 fn new_frame_platform() {
     unsafe {
         let mut io = &mut *igGetIO();
+
+        /*
         let window = &*platform_data.window;
         let (window_width, window_height) = window.get_size();
         io.DisplaySize = ImVec2 {
             x: window_width as f32,
             y: window_height as f32,
         }
+        */
     }
-}
-
-fn update_platform_windows() {
-
 }
 
 pub fn setup(info: &ImGuiInfo) {
@@ -624,7 +556,6 @@ pub fn setup(info: &ImGuiInfo) {
 
 pub fn new_frame() {
     new_frame_platform();
-    new_frame_renderer();
     unsafe { igNewFrame(); }
 }
 
@@ -634,10 +565,10 @@ pub fn render(cmd: &mut gfx_platform::CmdBuf) {
         igRender();
         render_draw_data(&*igGetDrawData(), cmd).unwrap();
         if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
-            update_platform_windows();
-            render_platform_windows();
+            //update_platform_windows();
+            //render_platform_windows();
         }
-        swap_renderer(); 
+        //swap_renderer(); 
     }
 }
 
@@ -648,18 +579,104 @@ pub fn demo() {
     }
 }
 
-impl Default for PlatformData {
-    fn default() -> Self { 
-        PlatformData {
-            window: std::ptr::null_mut(),
-            mouse_window: std::ptr::null_mut(),
-            time: 0,
-            ticks_per_second: 0,
-            last_mouse_cursor: ImGuiMouseCursor_Arrow,
-            mouse_tracked: false,
-            has_gamepad: false,
-            want_update_has_gamepad: false,
-            want_update_monitors: false 
+impl ImGui {
+    pub fn create(info: &'static mut ImGuiInfo2) -> Result<Self, gfx::Error> {
+        unsafe {
+            igCreateContext(std::ptr::null_mut());
+            let mut io = &mut *igGetIO();
+    
+            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
+            //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
+            //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+    
+            igStyleColorsLight(std::ptr::null_mut());
+    
+            let mut style = &mut *igGetStyle();
+            style.WindowRounding = 0.0; 
+            style.Colors[imgui_sys::ImGuiCol_WindowBg as usize].w = 1.0;
+    
+            // add fonts
+            for font_name in &info.fonts {
+                let null_font_name = CString::new(font_name.clone()).unwrap();
+                ImFontAtlas_AddFontFromFileTTF(
+                    io.Fonts, null_font_name.as_ptr() as *const i8, 16.0, std::ptr::null_mut(), std::ptr::null_mut());
+            }
+    
+            // io setup
+            io.BackendPlatformName = "imgui_impl_hotline".as_ptr() as *const i8;
+            io.BackendFlags |= ImGuiBackendFlags_HasMouseCursors as i32;
+            io.BackendFlags |= ImGuiBackendFlags_HasSetMousePos as i32;
+            io.BackendFlags |= ImGuiBackendFlags_PlatformHasViewports as i32;
+            io.BackendFlags |= ImGuiBackendFlags_HasMouseHoveredViewport as i32;
+
+            // renderer setup
+            io.BackendRendererName = "imgui_impl_hotline".as_ptr() as *const i8;
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasVtxOffset as i32; 
+            io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports as i32; 
+
+            // create render buffers
+            let mut buffers : Vec<RenderBuffers> = Vec::new();
+            let num_buffers = (*info.swap_chain).get_num_buffers();
+            for i in 0..num_buffers {
+                buffers.push(
+                    create_or_resize_buffers(&mut info.device, 5000, 10000, None)?
+                )
+            }
+
+            let font_tex = create_fonts_texture(&mut info.device)?;
+            let pipeline = create_render_pipeline(info)?;
+            let cmd = info.device.create_cmd_buf(2);
+    
+            //
+            let imgui = ImGui {
+                device: info.device,
+                main_window: info.main_window,
+                swap_chain: info.swap_chain,
+                fonts: info.fonts.clone(),
+                font_texture: font_tex,
+                pipeline: pipeline,
+                buffers: buffers,
+                cmd: cmd,
+                viewports: Vec::new()
+            };
+    
+            if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
+                imgui.setup_platform_interface();
+            }
+
+            imgui.setup_renderer_interface();
+
+            Ok(imgui)
         }
+    }
+
+    fn setup_platform_interface(&self) {
+        /*
+        platform_io.Platform_CreateWindow = ImGui_ImplWin32_CreateWindow;
+        platform_io.Platform_DestroyWindow = ImGui_ImplWin32_DestroyWindow;
+        platform_io.Platform_ShowWindow = ImGui_ImplWin32_ShowWindow;
+        platform_io.Platform_SetWindowPos = ImGui_ImplWin32_SetWindowPos;
+        platform_io.Platform_GetWindowPos = ImGui_ImplWin32_GetWindowPos;
+        platform_io.Platform_SetWindowSize = ImGui_ImplWin32_SetWindowSize;
+        platform_io.Platform_GetWindowSize = ImGui_ImplWin32_GetWindowSize;
+        platform_io.Platform_SetWindowFocus = ImGui_ImplWin32_SetWindowFocus;
+        platform_io.Platform_GetWindowFocus = ImGui_ImplWin32_GetWindowFocus;
+        platform_io.Platform_GetWindowMinimized = ImGui_ImplWin32_GetWindowMinimized;
+        platform_io.Platform_SetWindowTitle = ImGui_ImplWin32_SetWindowTitle;
+        platform_io.Platform_SetWindowAlpha = ImGui_ImplWin32_SetWindowAlpha;
+        platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
+        platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
+        platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
+        */
+    }
+
+    fn setup_renderer_interface(&self) {
+        /*
+        platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
+        platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
+        platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
+        platform_io.Renderer_RenderWindow = ImGui_ImplDX12_RenderWindow;
+        platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
+        */
     }
 }

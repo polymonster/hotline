@@ -30,7 +30,7 @@ pub trait App: 'static + Any + Sized {
     /// Create a new operating system window
     fn create_window(&self, info: WindowInfo) -> Self::Window;
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
-    fn run(&self) -> bool;
+    fn run(&mut self) -> bool;
     /// Retuns the mouse in screen coordinates
     fn get_mouse_pos(&self) -> Point<i32>;
     /// Retuns the mouse vertical wheel position
