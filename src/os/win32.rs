@@ -1,6 +1,10 @@
 use windows::{
-    Win32::Foundation::*, Win32::Graphics::Gdi::ValidateRect, Win32::System::LibraryLoader::*,
-    Win32::UI::Input::KeyboardAndMouse, Win32::UI::WindowsAndMessaging::*,
+    Win32::Foundation::*, 
+    Win32::Graphics::Gdi::ValidateRect, 
+    Win32::System::LibraryLoader::*,
+    Win32::UI::Input::KeyboardAndMouse::*, 
+    Win32::UI::WindowsAndMessaging::*,
+    Win32::UI::Controls::*,
 };
 
 pub struct App {
@@ -36,6 +40,22 @@ impl Drop for App {
         }
     }
 }
+
+struct ProcData {
+    mouse_hwnd: HWND,
+    mouse_tracked: bool,
+    mouse_down: [bool; 5],
+    mouse_wheel: f32,
+    mouse_hwheel: f32
+}
+
+static mut PROC_DATA : ProcData = ProcData {
+    mouse_hwnd: HWND(0),
+    mouse_tracked: false,
+    mouse_down: [false; 5],
+    mouse_wheel: 0.0,
+    mouse_hwheel: 0.0
+};
 
 impl super::App for App {
     type Window = Window;
@@ -114,8 +134,8 @@ impl super::Window<App> for Window {
     fn bring_to_front(&self) {
         unsafe {
             SetForegroundWindow(self.hwnd);
-            KeyboardAndMouse::SetFocus(self.hwnd);
-            KeyboardAndMouse::SetActiveWindow(self.hwnd);
+            SetFocus(self.hwnd);
+            SetActiveWindow(self.hwnd);
             BringWindowToTop(self.hwnd);
             ShowWindow(self.hwnd, SW_RESTORE);
         }
@@ -201,9 +221,96 @@ impl super::Window<App> for Window {
     }
 }
 
+fn set_capture(window: HWND) {
+    unsafe {
+        let any_down = PROC_DATA.mouse_down.iter().any(|v| v == &true);
+        if !any_down && GetCapture() == HWND(0){
+            SetCapture(window);
+        }
+    }   
+}
+
+fn release_capture(window: HWND) {
+    unsafe {
+        let any_down = PROC_DATA.mouse_down.iter().any(|v| v == &true);
+        if !any_down && GetCapture() == window {
+            ReleaseCapture();
+        }
+    }   
+}
+
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match message as u32 {
+            WM_MOUSEMOVE => {
+                PROC_DATA.mouse_hwnd = window;
+                if !PROC_DATA.mouse_tracked {
+                    // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events 
+                    TrackMouseEvent(&mut TRACKMOUSEEVENT{
+                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: window,
+                        dwHoverTime: 0
+                    });
+                    PROC_DATA.mouse_tracked = true;
+                }
+                LRESULT(0)
+            }
+            WM_MOUSELEAVE => {
+                PROC_DATA.mouse_hwnd = HWND(0);
+                PROC_DATA.mouse_tracked = false;
+                LRESULT(0)
+            }
+            WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+                PROC_DATA.mouse_down[0] = true;
+                set_capture(window);
+                LRESULT(0)
+            }
+            WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+                PROC_DATA.mouse_down[1] = true;
+                set_capture(window);
+                LRESULT(0)
+            }
+            WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
+                PROC_DATA.mouse_down[2] = true;
+                set_capture(window);
+                LRESULT(0)
+            }
+            WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+                let button = ((wparam.0 >> 16) & 0xffff) + 1;
+                PROC_DATA.mouse_down[button] = true;
+                set_capture(window);
+                LRESULT(0)
+            }
+            WM_LBUTTONUP => {
+                PROC_DATA.mouse_down[0] = false;
+                release_capture(window);
+                LRESULT(0)
+            }
+            WM_RBUTTONUP => {
+                PROC_DATA.mouse_down[1] = false;
+                release_capture(window);
+                LRESULT(0)
+            }
+            WM_MBUTTONUP => {
+                PROC_DATA.mouse_down[2] = false;
+                release_capture(window);
+                LRESULT(0)
+            }
+            WM_XBUTTONUP => {
+                let button = ((wparam.0 >> 16) & 0xffff) + 1;
+                PROC_DATA.mouse_down[button] = true;
+                release_capture(window);
+                LRESULT(0)
+            }
+            WM_MOUSEWHEEL => {
+                PROC_DATA.mouse_wheel += ((wparam.0 >> 16) & 0xffff) as f32 / WHEEL_DELTA as f32;
+                LRESULT(0)
+            }
+            WM_MOUSEHWHEEL => {
+                PROC_DATA.mouse_hwheel += ((wparam.0 >> 16) & 0xffff) as f32 / WHEEL_DELTA as f32;
+                LRESULT(0)
+            }
             WM_PAINT => {
                 ValidateRect(window, std::ptr::null());
                 LRESULT(0)
