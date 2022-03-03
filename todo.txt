@@ -1,5 +1,9 @@
 // TODO:
-// - Imgui
+// - Handle CPU access flags for buffers in a nicer way
+// - Handle buffers with no data
+// - Move Imgui to instance instead of procedural api with static
+// - Imgui platform
+// - Imgui multi windows
 // - Readback request doesnt unmap
 // - Shaders from IR
 // - pmfx Shaders
@@ -15,7 +19,8 @@
 // - Samples
 
 // DONE:
-// - spelling mistake independent.
+// x Imgui renderer
+// x spelling mistake independent.
 // x change get srv handle to be Option instead of sential -1
 // x Depth Stencil Target
 // x Depth stencil heap

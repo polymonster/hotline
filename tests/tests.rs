@@ -239,6 +239,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
 
     let info = gfx::BufferInfo {
         usage: gfx::BufferUsage::Vertex,
+        cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
         num_elements: 3,
