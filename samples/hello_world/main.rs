@@ -7,6 +7,8 @@ use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
 
+use imgui::ImGui;
+
 use std::fs;
 
 #[cfg(target_os = "windows")]
@@ -21,7 +23,7 @@ struct Vertex {
 
 fn main() {
     // app
-    let app = os_platform::App::create(os::AppInfo {
+    let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
         window: false,
         num_buffers: 0,
@@ -342,6 +344,7 @@ fn main() {
     }).unwrap();
 
     //
+    /*
     imgui::setup(&imgui::ImGuiInfo {
         main_window: win.as_mut_ptr(),
         swap_chain: swap_chain.as_mut_ptr(),
@@ -350,6 +353,21 @@ fn main() {
             asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
         ]
     });
+    */
+
+    /*
+    let iiinfo = imgui::ImGuiInfo2 {
+        device: &mut dev,
+        main_window: &mut win,
+        swap_chain: &mut swap_chain,
+        fonts: vec![
+            asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
+        ]
+    };
+
+    let imgui = imgui::ImGui::create(&mut iiinfo);
+    */
+
 
     // ..
     let mut ci = 0;
@@ -423,9 +441,9 @@ fn main() {
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         // ig
-        imgui::new_frame();
-        imgui::demo();
-        imgui::render(&mut cmdbuffer);
+        //imgui::new_frame();
+        //imgui::demo();
+        //imgui::render(&mut cmdbuffer);
 
         cmdbuffer.end_render_pass();
 

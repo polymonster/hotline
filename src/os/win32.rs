@@ -125,10 +125,11 @@ impl super::App for App {
         }
     }
 
-    fn run(&self) -> bool {
+    fn run(&mut self) -> bool {
         unsafe {
             let mut msg = MSG::default();
             let mut quit = false;
+            self.update_mouse();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
