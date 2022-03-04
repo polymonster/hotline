@@ -719,6 +719,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 pub trait CmdBuf<D: Device>: {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
+    fn get_backbuffer_index(&self) -> u32;
     fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
     fn end_render_pass(&self);
     fn begin_event(&self, colour: u32, name: &str);

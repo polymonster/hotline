@@ -1,7 +1,6 @@
 // TODO:
 // - Handle CPU access flags for buffers in a nicer way
 // - Handle buffers with no data
-// - Move Imgui to instance instead of procedural api with static
 // - Imgui platform
 // - Imgui multi windows
 // - Readback request doesnt unmap
@@ -19,6 +18,7 @@
 // - Samples
 
 // DONE:
+// x Move Imgui to instance instead of procedural api with static
 // x Imgui renderer
 // x spelling mistake independent.
 // x change get srv handle to be Option instead of sential -1
