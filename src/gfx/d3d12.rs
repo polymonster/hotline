@@ -2002,6 +2002,17 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
+    fn close(&mut self, swap_chain: &SwapChain) {
+        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
+        unsafe {
+            self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
+        }
+    }
+
+    fn get_backbuffer_index(&self) -> u32 {
+        self.bb_index as u32
+    }
+
     fn begin_render_pass(&self, render_pass: &mut RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
@@ -2201,13 +2212,6 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn dispatch(&self, group_count: Size3, _thread_count: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
-        }
-    }
-
-    fn close(&mut self, swap_chain: &SwapChain) {
-        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
-        unsafe {
-            self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }
     }
 

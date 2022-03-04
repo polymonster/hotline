@@ -343,31 +343,14 @@ fn main() {
         }
     }).unwrap();
 
-    //
-    /*
-    imgui::setup(&imgui::ImGuiInfo {
-        main_window: win.as_mut_ptr(),
-        swap_chain: swap_chain.as_mut_ptr(),
-        device: dev.as_mut_ptr(),
-        fonts: vec![
-            asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
-        ]
-    });
-    */
-
-    /*
-    let iiinfo = imgui::ImGuiInfo2 {
+    let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
-        main_window: &mut win,
         swap_chain: &mut swap_chain,
         fonts: vec![
             asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
         ]
     };
-
-    let imgui = imgui::ImGui::create(&mut iiinfo);
-    */
-
+    let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
     // ..
     let mut ci = 0;
@@ -440,10 +423,10 @@ fn main() {
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
-        // ig
-        //imgui::new_frame();
-        //imgui::demo();
-        //imgui::render(&mut cmdbuffer);
+        // imgui
+        imgui.new_frame(&mut win);
+        imgui.demo();
+        imgui.render(&mut dev, &mut cmdbuffer);
 
         cmdbuffer.end_render_pass();
 
