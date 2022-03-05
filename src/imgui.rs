@@ -323,6 +323,13 @@ impl ImGui {
 
             imgui.setup_renderer_interface();
 
+            // enum monitors
+            let platform_io = &mut *igGetPlatformIO(); 
+            let monitors = os_platform::App::enumerate_display_monitors();
+            for monitor in monitors {
+                let a = 0;
+            }
+
             Ok(imgui)
         }
     }

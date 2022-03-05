@@ -2301,6 +2301,7 @@ impl super::Buffer<Device> for Buffer {
     }
 
     fn map(&self) -> *mut u8 {
+        // TODO: read range
         let range = D3D12_RANGE {
             Begin: 0,
             End: 0

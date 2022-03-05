@@ -2,6 +2,11 @@ use windows::{
     Win32::Foundation::*, 
     Win32::Graphics::Gdi::ValidateRect, 
     Win32::Graphics::Gdi::ScreenToClient,
+    Win32::Graphics::Gdi::EnumDisplayMonitors,
+    Win32::Graphics::Gdi::HDC,
+    Win32::Graphics::Gdi::HMONITOR,
+    Win32::Graphics::Gdi::MONITORINFO,
+    Win32::Graphics::Gdi::GetMonitorInfoA,
     Win32::System::LibraryLoader::*,
     Win32::UI::Input::KeyboardAndMouse::*, 
     Win32::UI::WindowsAndMessaging::*,
@@ -76,6 +81,8 @@ static mut PROC_DATA : ProcData = ProcData {
     mouse_wheel: 0.0,
     mouse_hwheel: 0.0
 };
+
+static mut MONITOR_ENUM : Vec<super::MonitorInfo> = Vec::new();
 
 impl App {
     fn update_mouse(&mut self) {
@@ -184,6 +191,18 @@ impl super::App for App {
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
         unsafe {
             PROC_DATA.mouse_down
+        }
+    }
+
+    fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
+        unsafe {
+            MONITOR_ENUM.clear();
+            EnumDisplayMonitors(HDC(0), std::ptr::null_mut(), Some(enum_func), LPARAM(0));
+            let mut monitors : Vec<super::MonitorInfo> = Vec::new();
+            for m in &MONITOR_ENUM {
+                monitors.push(m.clone());
+            }
+            monitors
         }
     }
 }
@@ -313,6 +332,22 @@ fn release_capture(window: HWND) {
     }   
 }
 
+
+/*
+TODO: wndproc
+WM_KEYDOWN => LRESULT(0),
+WM_KEYUP => LRESULT(0),
+WM_SYSKEYDOWN => LRESULT(0),
+WM_SYSKEYUP => LRESULT(0),
+WM_SETFOCUS => LRESULT(0),
+WM_KILLFOCUS => LRESULT(0),
+WM_CHAR => LRESULT(0),
+WM_SETCURSOR => LRESULT(0),
+WM_DEVICECHANGE => LRESULT(0),
+WM_DISPLAYCHANGE => LRESULT(0),
+*/
+
+
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match message as u32 {
@@ -398,31 +433,28 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
     }
 }
 
-/*
-WM_MOUSEMOVE
-WM_MOUSELEAVE
-WM_LBUTTONDOWN
-WM_LBUTTONDBLCLK
-WM_RBUTTONDOWN
-WM_RBUTTONDBLCLK
-WM_MBUTTONDOWN => {LRESULT(0)}
-WM_MBUTTONDBLCLK => {LRESULT(0)}
-WM_XBUTTONDOWN => {LRESULT(0)}
-WM_XBUTTONDBLCLK => {LRESULT(0)}
-WM_LBUTTONUP => {LRESULT(0)}
-WM_RBUTTONUP => {LRESULT(0)}
-WM_MBUTTONUP => {LRESULT(0)}
-WM_XBUTTONUP => {LRESULT(0)}
-WM_MOUSEWHEEL => LRESULT(0),
-WM_MOUSEHWHEEL => LRESULT(0),
-WM_KEYDOWN => LRESULT(0),
-WM_KEYUP => LRESULT(0),
-WM_SYSKEYDOWN => LRESULT(0),
-WM_SYSKEYUP => LRESULT(0),
-WM_SETFOCUS => LRESULT(0),
-WM_KILLFOCUS => LRESULT(0),
-WM_CHAR => LRESULT(0),
-WM_SETCURSOR => LRESULT(0),
-WM_DEVICECHANGE => LRESULT(0),
-WM_DISPLAYCHANGE => LRESULT(0),
-*/
+extern "system" fn enum_func(monitor: HMONITOR, _hdc: HDC, _lprect: *mut RECT, _lparam: LPARAM) -> BOOL {
+    unsafe {
+        let mut info : MONITORINFO = MONITORINFO::default();
+        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
+        if GetMonitorInfoA(monitor, &mut info) == BOOL::from(false) {
+            return BOOL::from(false);
+        }
+        MONITOR_ENUM.push(super::MonitorInfo {
+            rect: super::Rect {
+                x: info.rcMonitor.left,
+                y: info.rcMonitor.top,
+                width: info.rcMonitor.right - info.rcMonitor.left,
+                height: info.rcMonitor.bottom - info.rcMonitor.top
+            },
+            client_rect: super::Rect {
+                x: info.rcWork.left,
+                y: info.rcWork.top,
+                width: info.rcWork.right - info.rcWork.left,
+                height: info.rcWork.bottom - info.rcWork.top
+            },
+            dpi_scale: 1.0 // TODO:
+        });
+        BOOL::from(true)
+    }
+}
