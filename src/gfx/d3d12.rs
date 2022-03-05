@@ -2281,6 +2281,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+        let update_bytes = data.len() * std::mem::size_of::<T>();
         let range = D3D12_RANGE {
             Begin: 0,
             End: 0
@@ -2289,7 +2290,7 @@ impl super::Buffer<Device> for Buffer {
         unsafe {
             self.resource.Map(0, &range, &mut map_data)?;
             let dst = (map_data as *mut u8).offset(offset);
-            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, data.len());
+            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
             self.resource.Unmap(0, std::ptr::null_mut());
         }
         Ok(())

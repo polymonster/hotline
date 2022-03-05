@@ -328,33 +328,32 @@ impl ImGui {
     }
 
     fn setup_platform_interface(&self) {
-        /*
-        platform_io.Platform_CreateWindow = ImGui_ImplWin32_CreateWindow;
-        platform_io.Platform_DestroyWindow = ImGui_ImplWin32_DestroyWindow;
-        platform_io.Platform_ShowWindow = ImGui_ImplWin32_ShowWindow;
-        platform_io.Platform_SetWindowPos = ImGui_ImplWin32_SetWindowPos;
-        platform_io.Platform_GetWindowPos = ImGui_ImplWin32_GetWindowPos;
-        platform_io.Platform_SetWindowSize = ImGui_ImplWin32_SetWindowSize;
-        platform_io.Platform_GetWindowSize = ImGui_ImplWin32_GetWindowSize;
-        platform_io.Platform_SetWindowFocus = ImGui_ImplWin32_SetWindowFocus;
-        platform_io.Platform_GetWindowFocus = ImGui_ImplWin32_GetWindowFocus;
-        platform_io.Platform_GetWindowMinimized = ImGui_ImplWin32_GetWindowMinimized;
-        platform_io.Platform_SetWindowTitle = ImGui_ImplWin32_SetWindowTitle;
-        platform_io.Platform_SetWindowAlpha = ImGui_ImplWin32_SetWindowAlpha;
-        platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
-        platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
-        platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
-        */
-    }
+        unsafe {
+            let platform_io = &mut *igGetPlatformIO(); 
+            platform_io.Platform_CreateWindow = Some(platform_create_window);
+            platform_io.Platform_DestroyWindow = Some(platform_destroy_window);
+            platform_io.Platform_ShowWindow = Some(platform_show_window);
+            platform_io.Platform_SetWindowPos = Some(platform_set_window_pos);
+            platform_io.Platform_GetWindowPos = Some(platform_get_window_pos);
+            platform_io.Platform_SetWindowSize = Some(platform_set_window_size);
+            platform_io.Platform_GetWindowSize = Some(platform_get_window_size);
+            platform_io.Platform_SetWindowFocus = Some(platform_set_window_focus);
+            platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus);
+            platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
+            platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
+            platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
+        }
+        //platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
+        //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
+        //platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
+    }//
 
     fn setup_renderer_interface(&self) {
-        /*
-        platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
-        platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
-        platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
-        platform_io.Renderer_RenderWindow = ImGui_ImplDX12_RenderWindow;
-        platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
-        */
+        //platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
+        //platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
+        //platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
+        //platform_io.Renderer_RenderWindow = ImGui_ImplDX12_RenderWindow;
+        //platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
     }
 
     pub fn new_frame(&self, app: &os_platform::App, main_window: &mut os_platform::Window) {
@@ -369,8 +368,16 @@ impl ImGui {
             };
 
             // update mouse
-            let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
-            io.MousePos = ImVec2::from(client_mouse);
+            if io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32 == 0 {
+                // non viewports mouse coords are in client space
+                let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
+                io.MousePos = ImVec2::from(client_mouse);
+            }
+            else {
+                // viewports mouse coords are in screen space
+                io.MousePos = ImVec2::from(app.get_mouse_pos());
+            }
+
             io.MouseWheel =app.get_mouse_wheel();
             io.MouseWheelH =app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
@@ -422,13 +429,13 @@ impl ImGui {
                 // vertex
                 let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
                 let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
-                let vb_slice = std::slice::from_raw_parts(draw_vert.Data, vb_size_bytes);
+                let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
                 buffers.vb.update(vertex_write_offset, vb_slice)?;
                 vertex_write_offset += vb_size_bytes as isize;
                 // index
                 let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
                 let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
-                let ib_slice = std::slice::from_raw_parts(draw_index.Data, ib_size_bytes);
+                let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
                 buffers.ib.update(index_write_offset, ib_slice)?;
                 index_write_offset += ib_size_bytes as isize;
             }
@@ -529,3 +536,81 @@ impl From<os::Point<i32>> for ImVec2 {
         }
     }
 }
+
+unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport) -> ImVec2 {
+    ImVec2::default()
+}
+
+unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport) -> ImVec2 {
+    ImVec2::default()
+}
+
+unsafe extern "C" fn platform_set_window_focus(vp: *mut ImGuiViewport) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_get_window_focus(vp: *mut ImGuiViewport) -> bool {
+    false
+}
+
+unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
+    false
+}
+
+unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
+    let a = 0;
+}
+
+unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f32) {
+    let a = 0;
+}
+
+/*
+pub Platform_UpdateWindow: ::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
+pub Platform_RenderWindow: ::core::option::Option<
+unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
+>,
+pub Platform_SwapBuffers: ::core::option::Option<
+unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
+>,
+pub Platform_GetWindowDpiScale:
+::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport) -> f32>,
+pub Platform_OnChangedViewport:
+::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
+pub Platform_SetImeInputPos:
+::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport, pos: ImVec2)>,
+*/
+
+/*
+pub Renderer_CreateWindow: ::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
+pub Renderer_DestroyWindow:
+::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
+pub Renderer_SetWindowSize:
+::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport, size: ImVec2)>,
+pub Renderer_RenderWindow: ::core::option::Option<
+unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
+>,
+pub Renderer_SwapBuffers: ::core::option::Option<
+unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
+>,
+*/
