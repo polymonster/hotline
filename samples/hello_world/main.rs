@@ -42,8 +42,8 @@ fn main() {
     let mut win = app.create_window(os::WindowInfo {
         title: String::from("bindless texture!"),
         rect: os::Rect {
-            x: 0,
-            y: 0,
+            x: 100,
+            y: 100,
             width: 1280,
             height: 720,
         },
@@ -424,7 +424,7 @@ fn main() {
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         // imgui
-        imgui.new_frame(&mut win);
+        imgui.new_frame(&app, &mut win);
         imgui.demo();
         imgui.render(&mut dev, &mut cmdbuffer);
 

@@ -2282,13 +2282,13 @@ impl super::CmdBuf<Device> for CmdBuf {
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
         let range = D3D12_RANGE {
-            Begin: offset as usize,
-            End: data.len()
+            Begin: 0,
+            End: 0
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
             self.resource.Map(0, &range, &mut map_data)?;
-            let dst = map_data as *mut u8;
+            let dst = (map_data as *mut u8).offset(offset);
             std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, data.len());
             self.resource.Unmap(0, std::ptr::null_mut());
         }
@@ -2297,6 +2297,24 @@ impl super::Buffer<Device> for Buffer {
 
     fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
+    }
+
+    fn map(&self) -> *mut u8 {
+        let range = D3D12_RANGE {
+            Begin: 0,
+            End: 0
+        };
+        let mut map_data = std::ptr::null_mut();
+        unsafe {
+            self.resource.Map(0, &range, &mut map_data).unwrap();
+        }
+        map_data as *mut u8
+    }
+
+    fn unmap(&self) {
+        unsafe {
+            self.resource.Unmap(0, std::ptr::null_mut());
+        }
     }
 }
 

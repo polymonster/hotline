@@ -4,6 +4,8 @@ use imgui_sys::*;
 use crate::os::win32 as os_platform;
 use crate::gfx::d3d12 as gfx_platform;
 
+use crate::os;
+use crate::os::App;
 use crate::os::Window;
 
 use crate::gfx;
@@ -230,68 +232,28 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
     }
 }
 
-fn create_or_resize_buffers(
+fn create_vertex_buffer(
     device: &mut gfx_platform::Device, 
-    vb_size: i32, 
-    ib_size: i32,
-    buffers: Option<&RenderBuffers>) -> Result<RenderBuffers, gfx::Error> {
-
-    // TODO: fix double init
-
-    let vb = if let Some(existing) = buffers {
-        if existing.vb_size < vb_size {
-            device.create_buffer::<u8>(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
-                cpu_access: gfx::CpuAccessFlags::WRITE,
-                format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<ImDrawVert>(),
-                num_elements: vb_size as usize, 
-            }, None)?
-        }
-        else {
-            (&existing.vb).clone()
-        }
-    }
-    else {
-        device.create_buffer::<u8>(&gfx::BufferInfo {
+    size: i32, ) -> Result<gfx_platform::Buffer, gfx::Error> {
+        Ok(device.create_buffer::<u8>(&gfx::BufferInfo {
             usage: gfx::BufferUsage::Vertex,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVert>(),
-            num_elements: vb_size as usize, 
-        }, None)?
-    };
+            num_elements: size as usize, 
+        }, None)?)
+}
 
-    let ib = if let Some(existing) = buffers {
-        if existing.ib_size < ib_size {
-            device.create_buffer::<u8>(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Index,
-                cpu_access: gfx::CpuAccessFlags::WRITE,
-                format: gfx::Format::R16u,
-                stride: std::mem::size_of::<ImDrawIdx>(),
-                num_elements: ib_size as usize, 
-            }, None)?
-        }
-        else {
-            (&existing.ib).clone()
-        }
-    }
-    else {
-        device.create_buffer::<u8>(&gfx::BufferInfo {
+fn create_index_buffer(
+    device: &mut gfx_platform::Device, 
+    size: i32, ) -> Result<gfx_platform::Buffer, gfx::Error> {
+        Ok(device.create_buffer::<u8>(&gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::R16u,
             stride: std::mem::size_of::<ImDrawIdx>(),
-            num_elements: ib_size as usize, 
-        }, None)?
-    };
-
-    Ok(RenderBuffers{
-        vb: vb,
-        ib: ib,
-        vb_size: vb_size,
-        ib_size: ib_size
-    })
+            num_elements: size as usize, 
+        }, None)?)
 }
 
 impl ImGui {
@@ -334,7 +296,12 @@ impl ImGui {
             let num_buffers = (*info.swap_chain).get_num_buffers();
             for _i in 0..num_buffers {
                 buffers.push(
-                    create_or_resize_buffers(&mut info.device, 5000, 10000, None)?
+                    RenderBuffers {
+                        vb: create_vertex_buffer(&mut info.device, 5000)?,
+                        vb_size: 5000,
+                        ib: create_index_buffer(&mut info.device, 10000)?,
+                        ib_size: 10000,
+                    }
                 )
             }
 
@@ -390,14 +357,24 @@ impl ImGui {
         */
     }
 
-    pub fn new_frame(&self, main_window: &mut os_platform::Window) {
+    pub fn new_frame(&self, app: &os_platform::App, main_window: &mut os_platform::Window) {
         let (window_width, window_height) = main_window.get_size();
         unsafe {
             let io = &mut *igGetIO(); 
+
+            // update display
             io.DisplaySize = ImVec2 {
                 x: window_width as f32,
                 y: window_height as f32,
             };
+
+            // update mouse
+            let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
+            io.MousePos = ImVec2::from(client_mouse);
+            io.MouseWheel =app.get_mouse_wheel();
+            io.MouseWheelH =app.get_mouse_wheel();
+            io.MouseDown = app.get_mouse_buttons();
+
             igNewFrame();
         }
     }
@@ -417,33 +394,43 @@ impl ImGui {
 
     fn render_draw_data(&mut self, draw_data: &ImDrawData, device: &mut gfx_platform::Device, cmd: &mut gfx_platform::CmdBuf) -> Result<(), gfx::Error> {
         unsafe {    
-
             let font_tex_index = self.font_texture.get_srv_index().unwrap();
-    
             let bb = cmd.get_backbuffer_index() as usize;
     
-            // resize buffers
-            self.buffers[bb] = create_or_resize_buffers(
-                device, draw_data.TotalVtxCount, draw_data.TotalIdxCount, Some(&self.buffers[bb]))?;
+            let mut buffers = &mut self.buffers[bb];
+
+            // resize vb
+            if draw_data.TotalVtxCount > buffers.vb_size {
+                // todo release
+                buffers.vb = create_vertex_buffer(device, draw_data.TotalVtxCount)?;
+                buffers.vb_size = draw_data.TotalVtxCount;
+            }
+
+            // resize ib
+            if draw_data.TotalIdxCount > buffers.ib_size {
+                // todo release
+                buffers.ib = create_index_buffer(device, draw_data.TotalIdxCount)?;
+                buffers.ib_size = draw_data.TotalIdxCount;
+            }
     
             // update buffers
-            let buffers = &self.buffers[bb];
             let imgui_cmd_lists = std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
             let mut vertex_write_offset = 0;
             let mut index_write_offset = 0;
+
             for imgui_cmd_list in imgui_cmd_lists {
                 // vertex
                 let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
                 let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
                 let vb_slice = std::slice::from_raw_parts(draw_vert.Data, vb_size_bytes);
                 buffers.vb.update(vertex_write_offset, vb_slice)?;
-                vertex_write_offset += draw_vert.Size as isize;
+                vertex_write_offset += vb_size_bytes as isize;
                 // index
                 let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
                 let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
                 let ib_slice = std::slice::from_raw_parts(draw_index.Data, ib_size_bytes);
                 buffers.ib.update(index_write_offset, ib_slice)?;
-                index_write_offset += draw_index.Size as isize;
+                index_write_offset += ib_size_bytes as isize;
             }
     
             // update push constants
@@ -512,8 +499,8 @@ impl ImGui {
                             imgui_cmd.IdxOffset + global_idx_offset, (imgui_cmd.VtxOffset + global_vtx_offset) as i32, 0);
                     }
                 }
-                global_idx_offset += draw_vert.Size as u32;
-                global_vtx_offset += draw_index.Size as u32;
+                global_idx_offset += draw_index.Size as u32;
+                global_vtx_offset += draw_vert.Size as u32;
             }
     
             Ok(())
@@ -524,6 +511,21 @@ impl ImGui {
         unsafe {
             let mut open = true;
             igShowDemoWindow(&mut open);
+
+            let io = &mut *igGetIO(); 
+            igText("%f, %f : %f %f\0".as_ptr() as *const i8, 
+                io.MousePos.x as f64, io.MousePos.y as f64,
+                io.DisplaySize.x as f64, io.DisplaySize.y as f64
+            );
+        }
+    }
+}
+
+impl From<os::Point<i32>> for ImVec2 {
+    fn from(point: os::Point<i32>) -> ImVec2 {
+        ImVec2 {
+            x: point.x as f32,
+            y: point.y as f32
         }
     }
 }
