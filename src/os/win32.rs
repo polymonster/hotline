@@ -43,6 +43,24 @@ impl Drop for App {
     }
 }
 
+fn adjust_window_rect(rect: &super::Rect::<i32>) -> super::Rect::<i32>{
+    let mut rc = RECT {
+        left: rect.x,
+        top: rect.y,
+        right: rect.x + rect.width,
+        bottom: rect.y + rect.height
+    };
+    unsafe {
+        AdjustWindowRect(&mut rc, WS_OVERLAPPEDWINDOW, BOOL::from(false));
+    }
+    super::Rect::<i32> {
+        x: rc.left,
+        y: rc.top,
+        width: rc.right - rc.left,
+        height: rc.bottom - rc.top,
+    }
+}
+
 struct ProcData {
     mouse_hwnd: HWND,
     mouse_tracked: bool,
@@ -104,15 +122,16 @@ impl super::App for App {
 
     fn create_window(&self, info: super::WindowInfo) -> Window {
         unsafe {
+            let rect = adjust_window_rect(&info.rect);
             let hwnd = CreateWindowExA(
                 Default::default(),
                 self.window_class.clone(),
                 info.title.clone(),
                 WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-                info.rect.x,
-                info.rect.y,
-                info.rect.width,
-                info.rect.height,
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
                 None,
                 None,
                 self.hinstance,
@@ -182,6 +201,7 @@ impl super::Window<App> for Window {
 
     fn set_rect(&mut self, rect: super::Rect<i32>) {
         unsafe {
+            let rect = adjust_window_rect(&rect);
             SetWindowPos(
                 self.hwnd,
                 HWND(0),
@@ -227,6 +247,7 @@ impl super::Window<App> for Window {
         rect.width = width;
         rect.height = height;
         unsafe {
+            let rect = adjust_window_rect(&rect);
             SetWindowPos(
                 self.hwnd,
                 HWND(0),
@@ -253,7 +274,7 @@ impl super::Window<App> for Window {
     fn update(&mut self) {
         unsafe {
             let mut win_rect = RECT::default();
-            GetWindowRect(self.hwnd, &mut win_rect);
+            GetClientRect(self.hwnd, &mut win_rect);
             self.info.rect.width = win_rect.right - win_rect.left;
             self.info.rect.height = win_rect.bottom - win_rect.top;
             self.info.rect.x = win_rect.left;

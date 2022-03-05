@@ -760,6 +760,10 @@ pub trait Buffer<D: Device>: {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
+    /// maps the entire buffer for writing
+    fn map(&self) -> *mut u8;
+    /// unmap buffer
+    fn unmap(&self);
     /// Return the index to access in a shader ie) buffers[index].member...
     fn get_srv_index(&self) -> Option<usize>;
 }
