@@ -1,5 +1,6 @@
 // TODO:
 // - enum monitors
+// - monitor DPI
 // - Handle CPU access flags for buffers in a nicer way
 // - Handle buffers with no data
 // - Imgui platform

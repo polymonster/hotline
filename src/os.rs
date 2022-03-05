@@ -13,6 +13,7 @@ pub struct AppInfo {
     pub num_buffers: u32,
 }
 
+/// Used to index into array returned by app::get_mouse_buttons
 pub enum MouseButton {
     Left,
     Middle,
@@ -22,23 +23,12 @@ pub enum MouseButton {
     Count
 }
 
-/// An interface which all platforms need to implement for general operating system calls
-pub trait App: 'static + Any + Sized {
-    type Window: Window<Self>;
-    /// Create an application instance
-    fn create(info: AppInfo) -> Self;
-    /// Create a new operating system window
-    fn create_window(&self, info: WindowInfo) -> Self::Window;
-    /// Call to update windows and os state each frame, when false is returned the app has been requested to close
-    fn run(&mut self) -> bool;
-    /// Retuns the mouse in screen coordinates
-    fn get_mouse_pos(&self) -> Point<i32>;
-    /// Retuns the mouse vertical wheel position
-    fn get_mouse_wheel(&self) -> f32;
-    /// Retuns the mouse horizontal wheel positions
-    fn get_mouse_hwheel(&self) -> f32;
-    /// Retuns the mouse button states, up or down
-    fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
+/// Information to describe the dimensions of display monitors
+#[derive(Clone)]
+pub struct MonitorInfo {
+    pub rect: Rect<i32>,
+    pub client_rect: Rect<i32>,
+    pub dpi_scale: f32
 }
 
 /// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height
@@ -70,6 +60,27 @@ pub struct WindowInfo {
     pub title: String,
     /// Specify the position and size of the window
     pub rect: Rect<i32>,
+}
+
+/// An interface which all platforms need to implement for general operating system calls
+pub trait App: 'static + Any + Sized {
+    type Window: Window<Self>;
+    /// Create an application instance
+    fn create(info: AppInfo) -> Self;
+    /// Create a new operating system window
+    fn create_window(&self, info: WindowInfo) -> Self::Window;
+    /// Call to update windows and os state each frame, when false is returned the app has been requested to close
+    fn run(&mut self) -> bool;
+    /// Retuns the mouse in screen coordinates
+    fn get_mouse_pos(&self) -> Point<i32>;
+    /// Retuns the mouse vertical wheel position
+    fn get_mouse_wheel(&self) -> f32;
+    /// Retuns the mouse horizontal wheel positions
+    fn get_mouse_hwheel(&self) -> f32;
+    /// Retuns the mouse button states, up or down
+    fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
+    /// Enumerate all display monitors
+    fn enumerate_display_monitors() -> Vec<MonitorInfo>;
 }
 
 /// An instance of an operating system window
