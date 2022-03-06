@@ -265,7 +265,7 @@ impl ImGui {
     
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
             //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
-            //io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
     
             igStyleColorsLight(std::ptr::null_mut());
     
@@ -381,16 +381,16 @@ impl ImGui {
             platform_io.Platform_DestroyWindow = Some(platform_destroy_window);
             platform_io.Platform_ShowWindow = Some(platform_show_window);
             platform_io.Platform_SetWindowPos = Some(platform_set_window_pos);
-            platform_io.Platform_GetWindowPos = Some(platform_get_window_pos);
             platform_io.Platform_SetWindowSize = Some(platform_set_window_size);
-            platform_io.Platform_GetWindowSize = Some(platform_get_window_size);
             platform_io.Platform_SetWindowFocus = Some(platform_set_window_focus);
             platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus);
             platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
             platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
             platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
 
-            ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, test_fn);
+            // need to hook these c-compatible getter funtions due to complex return types
+            ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos);
+            ImGuiPlatformIO_Set_Platform_GetWindowSize(platform_io, platform_get_window_size)
 
         }
         //platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
@@ -426,6 +426,9 @@ impl ImGui {
             else {
                 // viewports mouse coords are in screen space
                 io.MousePos = ImVec2::from(app.get_mouse_pos());
+
+                let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
+                io.MousePos = ImVec2::from(client_mouse);
             }
 
             io.MouseWheel =app.get_mouse_wheel();
@@ -442,6 +445,9 @@ impl ImGui {
             igRender();
             self.render_draw_data(&*igGetDrawData(), device, cmd).unwrap();
             if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
+
+                igUpdatePlatformWindows();
+
                 //update_platform_windows();
                 //render_platform_windows();
             }
@@ -603,19 +609,8 @@ unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2
     let a = 0;
 }
 
-unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport) -> ImVec2 {
-    ImVec2 {
-        x: 69.0,
-        y: 123.0
-    }
-}
-
 unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
     let a = 0;
-}
-
-unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport) -> ImVec2 {
-    ImVec2::default()
 }
 
 unsafe extern "C" fn platform_set_window_focus(vp: *mut ImGuiViewport) {
@@ -638,16 +633,26 @@ unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f3
     let a = 0;
 }
 
-unsafe extern "C" fn test_fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
+unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
     let a = 0;
 }
 
-pub type SizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
+unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
+    let a = 0;
+}
+
+
+pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
 
 extern "C" {
     pub fn ImGuiPlatformIO_Set_Platform_GetWindowPos(
         platform_io: *mut ImGuiPlatformIO, 
-        function: SizeCallback
+        function: WindowSizeCallback
+    );
+
+    pub fn ImGuiPlatformIO_Set_Platform_GetWindowSize(
+        platform_io: *mut ImGuiPlatformIO, 
+        function: WindowSizeCallback
     );
 } 
 
