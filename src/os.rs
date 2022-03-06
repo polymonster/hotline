@@ -28,7 +28,8 @@ pub enum MouseButton {
 pub struct MonitorInfo {
     pub rect: Rect<i32>,
     pub client_rect: Rect<i32>,
-    pub dpi_scale: f32
+    pub dpi_scale: f32,
+    pub primary: bool
 }
 
 /// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height
@@ -42,6 +43,7 @@ pub struct Rect<T> {
     pub width: T,
     /// Height of the window starting at y
     pub height: T,
+    
 }
 
 /// 2-Dimension point for screen coordinates

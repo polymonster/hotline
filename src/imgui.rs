@@ -29,6 +29,7 @@ pub struct ImGui {
     pipeline: gfx_platform::RenderPipeline,
     buffers: Vec<RenderBuffers>,
     viewports: Vec<ViewportData>,
+    monitors : Vec<ImGuiPlatformMonitor>
 }
 
 #[derive(Clone)]
@@ -307,14 +308,60 @@ impl ImGui {
 
             let font_tex = create_fonts_texture(&mut info.device)?;
             let pipeline = create_render_pipeline(info)?;
-    
+
+            // enum monitors
+            let mut monitors : Vec<ImGuiPlatformMonitor> = Vec::new();
+
+            let platform_io = &mut *igGetPlatformIO(); 
+            let os_monitors = os_platform::App::enumerate_display_monitors();
+            for monitor in os_monitors {
+                let ig_mon = ImGuiPlatformMonitor {
+                    MainPos: ImVec2 {
+                        x: monitor.rect.x as f32, 
+                        y: monitor.rect.y as f32
+                    },
+                    MainSize: ImVec2 {
+                        x: monitor.rect.width as f32, 
+                        y: monitor.rect.height as f32
+                    },
+                    WorkPos: ImVec2 {
+                        x: monitor.client_rect.x as f32, 
+                        y: monitor.client_rect.y as f32
+                    },
+                    WorkSize: ImVec2 {
+                        x: monitor.client_rect.width as f32, 
+                        y: monitor.client_rect.height as f32,
+                    },
+                    DpiScale: monitor.dpi_scale
+                };
+                if monitor.primary {
+                    monitors.push(ig_mon)
+                }
+                else {
+                    monitors.insert(0, ig_mon)
+                }  
+            }
+
+            platform_io.Monitors.Size = monitors.len() as i32;
+            platform_io.Monitors.Capacity = monitors.len() as i32;
+            platform_io.Monitors.Data = monitors.as_mut_ptr();
+
+            // TODO:
+            let vps = &mut *igGetMainViewport();
+            vps.PlatformUserData = monitors.as_mut_ptr() as _;
+            vps.PlatformHandle = monitors.as_mut_ptr() as _;
+
+            // TODO: dynamic memory 
+            std::mem::forget(monitors);
+
             //
             let imgui = ImGui {
                 fonts: info.fonts.clone(),
                 font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
-                viewports: Vec::new()
+                viewports: Vec::new(),
+                monitors: Vec::new(),
             };
     
             if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -322,13 +369,6 @@ impl ImGui {
             }
 
             imgui.setup_renderer_interface();
-
-            // enum monitors
-            let platform_io = &mut *igGetPlatformIO(); 
-            let monitors = os_platform::App::enumerate_display_monitors();
-            for monitor in monitors {
-                let a = 0;
-            }
 
             Ok(imgui)
         }
@@ -349,6 +389,9 @@ impl ImGui {
             platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
             platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
             platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
+
+            ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, test_fn);
+
         }
         //platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
         //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
@@ -561,7 +604,10 @@ unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2
 }
 
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport) -> ImVec2 {
-    ImVec2::default()
+    ImVec2 {
+        x: 69.0,
+        y: 123.0
+    }
 }
 
 unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
@@ -591,6 +637,20 @@ unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *co
 unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f32) {
     let a = 0;
 }
+
+unsafe extern "C" fn test_fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
+    let a = 0;
+}
+
+pub type SizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
+
+extern "C" {
+    pub fn ImGuiPlatformIO_Set_Platform_GetWindowPos(
+        platform_io: *mut ImGuiPlatformIO, 
+        function: SizeCallback
+    );
+} 
+
 
 /*
 pub Platform_UpdateWindow: ::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,

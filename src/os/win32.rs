@@ -453,7 +453,8 @@ extern "system" fn enum_func(monitor: HMONITOR, _hdc: HDC, _lprect: *mut RECT, _
                 width: info.rcWork.right - info.rcWork.left,
                 height: info.rcWork.bottom - info.rcWork.top
             },
-            dpi_scale: 1.0 // TODO:
+            dpi_scale: 1.0, // TODO:
+            primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0
         });
         BOOL::from(true)
     }
