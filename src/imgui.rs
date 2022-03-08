@@ -42,11 +42,15 @@ struct RenderBuffers {
 
 #[derive(Clone)]
 struct ViewportData {
-    device: *mut gfx_platform::Device,
-    window: Option<os_platform::Window>,
-    swap_chain: Option<gfx_platform::SwapChain>,
+    window: os_platform::Window,
+    swap_chain: gfx_platform::SwapChain,
     cmd: gfx_platform::CmdBuf,
     buffers: Vec<RenderBuffers>,
+}
+
+struct UserData<'a> {
+    device: &'a mut gfx_platform::Device,
+    app: &'a mut os_platform::App
 }
 
 fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platform::Texture, gfx::Error> {
@@ -406,7 +410,9 @@ impl ImGui {
         //platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
     }
 
-    pub fn new_frame(&self, app: &os_platform::App, main_window: &mut os_platform::Window) {
+    pub fn new_frame(&self, 
+        app: &mut os_platform::App,  
+        main_window: &mut os_platform::Window) {
         let (window_width, window_height) = main_window.get_size();
         unsafe {
             let io = &mut *igGetIO(); 
@@ -435,22 +441,41 @@ impl ImGui {
             io.MouseWheelH =app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
 
+
+
             igNewFrame();
         }
     }
 
-    pub fn render(&mut self, device: &mut gfx_platform::Device, cmd: &mut gfx_platform::CmdBuf) {
+    pub fn render(
+        &mut self, app: 
+        &mut os_platform::App, device: 
+        &mut gfx_platform::Device, cmd: 
+        &mut gfx_platform::CmdBuf) {
         unsafe {
             let io = &mut *igGetIO(); 
             igRender();
+            
             self.render_draw_data(&*igGetDrawData(), device, cmd).unwrap();
-            if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
 
+            if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
+                
+                // gotta pack the refs into a pointer and into 
+                let mut ud = UserData {
+                    device: device,
+                    app: app
+                }; 
+                let pud = &mut ud as *mut UserData;
+                
+                io.UserData = pud as _;
                 igUpdatePlatformWindows();
 
+                io.UserData = std::ptr::null_mut();
+
+                // TODO:
                 //update_platform_windows();
-                //render_platform_windows();
             }
+            //render_platform_windows();
             //swap_renderer(); 
         }
     }
@@ -594,7 +619,29 @@ impl From<os::Point<i32>> for ImVec2 {
 }
 
 unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
-    let a = 0;
+    unsafe {
+        let io = &mut *igGetIO();
+        let ud = &mut *(io.UserData as *mut UserData);
+
+        // alloc viewport data
+        let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
+        let vd = std::alloc::alloc(layout) as *mut ViewportData;
+
+        // create a window
+        let mut vp_ref = &mut *vp; 
+
+        (*vd).window = ud.app.create_window(os::WindowInfo{
+            title: String::from("imgui_platform"),
+            rect: os::Rect {
+                x: vp_ref.Pos.x as i32,
+                y: vp_ref.Pos.y as i32,
+                width: vp_ref.Size.x as i32,
+                height: vp_ref.Size.y as i32,
+            }
+        });
+
+        vp_ref.PlatformUserData = vd as *mut _;
+    }
 }
 
 unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {

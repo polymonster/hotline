@@ -424,9 +424,9 @@ fn main() {
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         // imgui
-        imgui.new_frame(&app, &mut win);
+        imgui.new_frame(&mut app, &mut win);
         imgui.demo();
-        imgui.render(&mut dev, &mut cmdbuffer);
+        imgui.render(&mut app, &mut dev, &mut cmdbuffer);
 
         cmdbuffer.end_render_pass();
 
