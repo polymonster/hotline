@@ -2,6 +2,7 @@ use windows::{
     Win32::Foundation::*, 
     Win32::Graphics::Gdi::ValidateRect, 
     Win32::Graphics::Gdi::ScreenToClient,
+    Win32::Graphics::Gdi::ClientToScreen,
     Win32::Graphics::Gdi::EnumDisplayMonitors,
     Win32::Graphics::Gdi::HDC,
     Win32::Graphics::Gdi::HMONITOR,
@@ -24,6 +25,8 @@ pub struct App {
 pub struct Window {
     info: super::WindowInfo,
     hwnd: HWND,
+    ws: WINDOW_STYLE,
+    wsex: WINDOW_EX_STYLE
 }
 
 #[derive(Clone, Copy)]
@@ -56,7 +59,41 @@ impl Drop for App {
     }
 }
 
-fn adjust_window_rect(rect: &super::Rect::<i32>) -> super::Rect::<i32>{
+/// minimal set of flags... just what is requires for imgui so far
+fn to_win32_dw_style(style: &super::WindowStyleFlags) -> WINDOW_STYLE {
+    let mut win32_style = 0;
+    if style.contains(super::WindowStyleFlags::POPUP) {
+        win32_style |= WS_POPUP.0;
+    }
+    if style.contains(super::WindowStyleFlags::OVERLAPPED_WINDOW) {
+        win32_style |= WS_OVERLAPPEDWINDOW.0;
+    }
+    if style.contains(super::WindowStyleFlags::VISIBLE) {
+        win32_style |= WS_VISIBLE.0;
+    }
+    // default style
+    if win32_style == 0 {
+        win32_style |= WS_OVERLAPPEDWINDOW.0 | WS_VISIBLE.0;
+    }
+    win32_style |= WS_VISIBLE.0;
+    WINDOW_STYLE(win32_style)
+}
+
+fn to_win32_dw_ex_style(style: &super::WindowStyleFlags) -> WINDOW_EX_STYLE {
+    let mut win32_style = 0;
+    if style.contains(super::WindowStyleFlags::TOOL_WINDOW) {
+        win32_style |= WS_EX_TOOLWINDOW.0;
+    }
+    if style.contains(super::WindowStyleFlags::APP_WINDOW) {
+        win32_style |= WS_EX_APPWINDOW.0;
+    }
+    if style.contains(super::WindowStyleFlags::TOPMOST) {
+        win32_style |= WS_EX_TOPMOST.0;
+    }
+    WINDOW_EX_STYLE(win32_style)
+}
+
+fn adjust_window_rect(rect: &super::Rect::<i32>, ws: WINDOW_STYLE, wsex: WINDOW_EX_STYLE) -> super::Rect::<i32>{
     let mut rc = RECT {
         left: rect.x,
         top: rect.y,
@@ -64,7 +101,7 @@ fn adjust_window_rect(rect: &super::Rect::<i32>) -> super::Rect::<i32>{
         bottom: rect.y + rect.height
     };
     unsafe {
-        AdjustWindowRect(&mut rc, WS_OVERLAPPEDWINDOW, BOOL::from(false));
+        AdjustWindowRectEx(&mut rc, ws, BOOL::from(false), wsex);
     }
     super::Rect::<i32> {
         x: rc.left,
@@ -138,18 +175,21 @@ impl super::App for App {
 
     fn create_window(&self, info: super::WindowInfo, parent: Option<NativeHandle>) -> Window {
         unsafe {
-            let rect = adjust_window_rect(&info.rect);
+            let ws = to_win32_dw_style(&info.style);
+            let wsex = to_win32_dw_ex_style(&info.style);
+            let rect = adjust_window_rect(&info.rect, ws, wsex);
 
+            // TODO: use if let
             let mut parent_hwnd = None;
             if parent.is_some() {
                 parent_hwnd = Some(parent.unwrap().hwnd);
             }
 
             let hwnd = CreateWindowExA(
-                Default::default(),
+                wsex,
                 self.window_class.clone(),
                 info.title.clone(),
-                WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+                ws,
                 rect.x,
                 rect.y,
                 rect.width,
@@ -162,6 +202,8 @@ impl super::App for App {
             Window {
                 hwnd: hwnd,
                 info: info,
+                ws: ws,
+                wsex: wsex
             }
         }
     }
@@ -220,6 +262,20 @@ impl super::App for App {
             monitors
         }
     }
+
+    fn get_window_pos(handle: &Self::NativeHandle) -> super::Point<i32> {
+        unsafe {
+            let mut pos = POINT { 
+                x: 0, 
+                y: 0 
+            };
+            ClientToScreen(handle.hwnd, &mut pos);
+            super::Point {
+                x: pos.x,
+                y: pos.y
+            }
+        }
+    }
 }
 
 impl super::Window<App> for Window {
@@ -235,7 +291,7 @@ impl super::Window<App> for Window {
 
     fn set_rect(&mut self, rect: super::Rect<i32>) {
         unsafe {
-            let rect = adjust_window_rect(&rect);
+            let rect = adjust_window_rect(&rect, self.ws, self.wsex);
             SetWindowPos(
                 self.hwnd,
                 HWND(0),
@@ -281,7 +337,7 @@ impl super::Window<App> for Window {
         rect.width = width;
         rect.height = height;
         unsafe {
-            let rect = adjust_window_rect(&rect);
+            let rect = adjust_window_rect(&rect, self.ws, self.wsex);
             SetWindowPos(
                 self.hwnd,
                 HWND(0),
