@@ -61,6 +61,7 @@ fn create_window() {
             width: 1280,
             height: 720,
         },
+        style: os::WindowStyleFlags::NONE
     });
     win.bring_to_front();
     let winrect = win.get_rect();
@@ -85,6 +86,7 @@ fn window_set_rect() {
             width: 1280,
             height: 720,
         },
+        style: os::WindowStyleFlags::NONE
     });
     win.set_rect(os::Rect {
         x: 200,
@@ -121,6 +123,7 @@ fn swap_chain_buffer() {
             width: 1280,
             height: 720,
         },
+        style: os::WindowStyleFlags::NONE
     });
     win.bring_to_front();
 
@@ -212,6 +215,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
             width: 1280,
             height: 720,
         },
+        style: os::WindowStyleFlags::NONE
     });
 
     let swap_chain_info = gfx::SwapChainInfo {
