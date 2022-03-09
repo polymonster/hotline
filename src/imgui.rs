@@ -20,6 +20,7 @@ use std::ffi::CString;
 pub struct ImGuiInfo<'a> {
     pub device: &'a mut gfx_platform::Device,
     pub swap_chain: &'a mut gfx_platform::SwapChain,
+    pub main_window: &'a os_platform::Window,
     pub fonts: Vec<String>
 }
 
@@ -352,8 +353,16 @@ impl ImGui {
 
             // TODO:
             let vps = &mut *igGetMainViewport();
+
+            // TODO:
             vps.PlatformUserData = monitors.as_mut_ptr() as _;
-            vps.PlatformHandle = monitors.as_mut_ptr() as _;
+
+            // alloc and assign a native handle
+            let layout = std::alloc::Layout::from_size_align(
+                std::mem::size_of::<os_platform::NativeHandle>(), 8).unwrap();
+            let nh = std::alloc::alloc_zeroed(layout) as *mut os_platform::NativeHandle;
+            *nh = info.main_window.get_native_handle();
+            vps.PlatformHandle = nh as _;
 
             // TODO: dynamic memory 
             std::mem::forget(monitors);
@@ -440,8 +449,6 @@ impl ImGui {
             io.MouseWheel =app.get_mouse_wheel();
             io.MouseWheelH =app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
-
-
 
             igNewFrame();
         }
@@ -621,23 +628,32 @@ impl From<os::Point<i32>> for ImVec2 {
 unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     let io = &mut *igGetIO();
     let ud = &mut *(io.UserData as *mut UserData);
+    let mut vp_ref = &mut *vp; 
 
     // alloc viewport data
     let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
     let vd = std::alloc::alloc_zeroed(layout) as *mut ViewportData;
 
+    // find parent
+    let mut parent_handle = None;
+    if vp_ref.ParentViewportId != 0 {
+        let parent = &*igFindViewportByID(vp_ref.ParentViewportId);
+        parent_handle = Some(*(parent.PlatformHandle as *mut os_platform::NativeHandle));
+    }
+
     // create a window
-    let mut vp_ref = &mut *vp; 
     (*vd).window = ud.app.create_window(os::WindowInfo{
-        title: String::from("imgui_platform"),
-        rect: os::Rect {
-            x: vp_ref.Pos.x as i32,
-            y: vp_ref.Pos.y as i32,
-            width: vp_ref.Size.x as i32,
-            height: vp_ref.Size.y as i32,
+            title: String::from("imgui_platform"),
+            rect: os::Rect {
+                x: vp_ref.Pos.x as i32,
+                y: vp_ref.Pos.y as i32,
+                width: vp_ref.Size.x as i32,
+                height: vp_ref.Size.y as i32,
+            },
+            style: os::WindowStyleFlags::from(vp_ref.Flags),
         },
-        style: os::WindowStyleFlags::from(vp_ref.Flags)
-    });
+        parent_handle
+    );
 
     // track the viewport user data pointer
     vp_ref.PlatformUserData = vd as *mut _;
