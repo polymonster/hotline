@@ -47,6 +47,7 @@ fn main() {
             width: 1280,
             height: 720,
         },
+        style: os::WindowStyleFlags::NONE
     });
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,

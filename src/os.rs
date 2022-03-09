@@ -55,6 +55,24 @@ pub struct Point<T> {
     pub y: T,
 }
 
+bitflags! {
+    /// Window style flags to change the window appearance
+    pub struct WindowStyleFlags: u32 {
+        /// No flags
+        const NONE = 0b00000000;
+        /// Popup window
+        const POPUP = 0b00000001;
+        /// Overlapped window has a title bar and border
+        const OVERLAPPED = 0b00000010;
+        /// Has a smaller title bar
+        const TOOL_WINDOW = 0b00000100;
+        /// Forces top level window onto the task bar when visible
+        const APP_WINDOW = 0b00001000;
+        /// Placed above all non top most windows
+        const TOPMOST = 0b00010000;
+    }
+}
+
 /// Filled out to specify various window parameters when a window is created by `App::create_window`
 #[derive(Clone)]
 pub struct WindowInfo {
@@ -62,6 +80,8 @@ pub struct WindowInfo {
     pub title: String,
     /// Specify the position and size of the window
     pub rect: Rect<i32>,
+    /// Specify window styles
+    pub style: WindowStyleFlags
 }
 
 /// An interface which all platforms need to implement for general operating system calls

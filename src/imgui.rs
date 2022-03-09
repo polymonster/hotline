@@ -619,29 +619,29 @@ impl From<os::Point<i32>> for ImVec2 {
 }
 
 unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
-    unsafe {
-        let io = &mut *igGetIO();
-        let ud = &mut *(io.UserData as *mut UserData);
+    let io = &mut *igGetIO();
+    let ud = &mut *(io.UserData as *mut UserData);
 
-        // alloc viewport data
-        let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
-        let vd = std::alloc::alloc(layout) as *mut ViewportData;
+    // alloc viewport data
+    let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
+    let vd = std::alloc::alloc_zeroed(layout) as *mut ViewportData;
 
-        // create a window
-        let mut vp_ref = &mut *vp; 
+    // create a window
+    let mut vp_ref = &mut *vp; 
+    (*vd).window = ud.app.create_window(os::WindowInfo{
+        title: String::from("imgui_platform"),
+        rect: os::Rect {
+            x: vp_ref.Pos.x as i32,
+            y: vp_ref.Pos.y as i32,
+            width: vp_ref.Size.x as i32,
+            height: vp_ref.Size.y as i32,
+        },
+        style: os::WindowStyleFlags::from(vp_ref.Flags)
+    });
 
-        (*vd).window = ud.app.create_window(os::WindowInfo{
-            title: String::from("imgui_platform"),
-            rect: os::Rect {
-                x: vp_ref.Pos.x as i32,
-                y: vp_ref.Pos.y as i32,
-                width: vp_ref.Size.x as i32,
-                height: vp_ref.Size.y as i32,
-            }
-        });
-
-        vp_ref.PlatformUserData = vd as *mut _;
-    }
+    // track the viewport user data pointer
+    vp_ref.PlatformUserData = vd as *mut _;
+    vp_ref.PlatformRequestResize = false;
 }
 
 unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
@@ -701,35 +701,26 @@ extern "C" {
         platform_io: *mut ImGuiPlatformIO, 
         function: WindowSizeCallback
     );
-} 
+}
 
-
-/*
-pub Platform_UpdateWindow: ::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
-pub Platform_RenderWindow: ::core::option::Option<
-unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
->,
-pub Platform_SwapBuffers: ::core::option::Option<
-unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
->,
-pub Platform_GetWindowDpiScale:
-::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport) -> f32>,
-pub Platform_OnChangedViewport:
-::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
-pub Platform_SetImeInputPos:
-::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport, pos: ImVec2)>,
-*/
-
-/*
-pub Renderer_CreateWindow: ::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
-pub Renderer_DestroyWindow:
-::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport)>,
-pub Renderer_SetWindowSize:
-::core::option::Option<unsafe extern "C" fn(vp: *mut ImGuiViewport, size: ImVec2)>,
-pub Renderer_RenderWindow: ::core::option::Option<
-unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
->,
-pub Renderer_SwapBuffers: ::core::option::Option<
-unsafe extern "C" fn(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void),
->,
-*/
+impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
+    fn from(flags: ImGuiViewportFlags) -> os::WindowStyleFlags {
+        let mut style = os::WindowStyleFlags::NONE;
+        if (flags & ImGuiViewportFlags_NoDecoration as i32) == 0 {
+            style |= os::WindowStyleFlags::POPUP;
+        }
+        else {
+            style |= os::WindowStyleFlags::OVERLAPPED;
+        }
+        if (flags & ImGuiViewportFlags_NoTaskBarIcon as i32) == 0 {
+            style |= os::WindowStyleFlags::TOOL_WINDOW;
+        }
+        else {
+            style |= os::WindowStyleFlags::APP_WINDOW;
+        }
+        if (flags & ImGuiViewportFlags_TopMost as i32) == 0 {
+            style |= os::WindowStyleFlags::TOPMOST;
+        }
+        style
+    }
+}
