@@ -40,15 +40,18 @@ fn main() {
 
     // window
     let mut win = app.create_window(os::WindowInfo {
-        title: String::from("bindless texture!"),
-        rect: os::Rect {
-            x: 100,
-            y: 100,
-            width: 1280,
-            height: 720,
+            title: String::from("bindless texture!"),
+            rect: os::Rect {
+                x: 100,
+                y: 100,
+                width: 1280,
+                height: 720,
+            },
+            style: os::WindowStyleFlags::NONE
         },
-        style: os::WindowStyleFlags::NONE
-    });
+        None
+    );
+
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
         format: gfx::Format::RGBA8n
@@ -347,6 +350,7 @@ fn main() {
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
+        main_window: &win,
         fonts: vec![
             asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
         ]

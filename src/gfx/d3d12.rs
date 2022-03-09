@@ -1044,7 +1044,7 @@ impl super::Device for Device {
                 .dxgi_factory
                 .CreateSwapChainForHwnd(
                     &self.command_queue,
-                    win.get_native_handle(),
+                    win.get_hwnd(),
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,

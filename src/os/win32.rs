@@ -13,6 +13,7 @@ use windows::{
     Win32::UI::Controls::*,
 };
 
+#[derive(Clone)]
 pub struct App {
     window_class: String,
     hinstance: HINSTANCE,
@@ -25,8 +26,15 @@ pub struct Window {
     hwnd: HWND,
 }
 
+#[derive(Clone, Copy)]
+pub struct NativeHandle {
+    hwnd: HWND,
+}
+
+impl super::NativeHandle<App> for NativeHandle {}
+
 impl Window {
-    pub fn get_native_handle(&self) -> HWND {
+    pub fn get_hwnd(&self) -> HWND {
         self.hwnd
     }
 }
@@ -99,6 +107,7 @@ impl App {
 
 impl super::App for App {
     type Window = Window;
+    type NativeHandle = NativeHandle;
 
     fn create(info: super::AppInfo) -> Self {
         unsafe {
@@ -127,9 +136,15 @@ impl super::App for App {
         }
     }
 
-    fn create_window(&self, info: super::WindowInfo) -> Window {
+    fn create_window(&self, info: super::WindowInfo, parent: Option<NativeHandle>) -> Window {
         unsafe {
             let rect = adjust_window_rect(&info.rect);
+
+            let mut parent_hwnd = None;
+            if parent.is_some() {
+                parent_hwnd = Some(parent.unwrap().hwnd);
+            }
+
             let hwnd = CreateWindowExA(
                 Default::default(),
                 self.window_class.clone(),
@@ -139,7 +154,7 @@ impl super::App for App {
                 rect.y,
                 rect.width,
                 rect.height,
-                None,
+                parent_hwnd,
                 None,
                 self.hinstance,
                 std::ptr::null_mut(),
@@ -298,6 +313,12 @@ impl super::Window<App> for Window {
             self.info.rect.height = win_rect.bottom - win_rect.top;
             self.info.rect.x = win_rect.left;
             self.info.rect.y = win_rect.top;
+        }
+    }
+
+    fn get_native_handle(&self) -> NativeHandle {
+        NativeHandle {
+            hwnd: self.hwnd
         }
     }
 

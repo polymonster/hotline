@@ -81,16 +81,20 @@ pub struct WindowInfo {
     /// Specify the position and size of the window
     pub rect: Rect<i32>,
     /// Specify window styles
-    pub style: WindowStyleFlags
+    pub style: WindowStyleFlags,
 }
+
+/// A native platform window handle that can be passed around in a lightweight way
+pub trait NativeHandle<A: App>: {}
 
 /// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized {
     type Window: Window<Self>;
+    type NativeHandle: NativeHandle<Self>;
     /// Create an application instance
     fn create(info: AppInfo) -> Self;
     /// Create a new operating system window
-    fn create_window(&self, info: WindowInfo) -> Self::Window;
+    fn create_window(&self, info: WindowInfo, parent: Option<Self::NativeHandle>) -> Self::Window;
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool;
     /// Retuns the mouse in screen coordinates
@@ -122,6 +126,8 @@ pub trait Window<A: App>: Any + Sized {
     fn get_size(&self) -> (i32, i32);
     /// Must be called each frame to handle resizes
     fn update(&mut self);
+    /// gets the internal native handle
+    fn get_native_handle(&self) -> A::NativeHandle;
     /// Close the window
     fn close(&mut self);
     /// const pointer
