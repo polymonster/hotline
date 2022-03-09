@@ -59,17 +59,19 @@ bitflags! {
     /// Window style flags to change the window appearance
     pub struct WindowStyleFlags: u32 {
         /// No flags
-        const NONE = 0b00000000;
+        const NONE = 0;
+        /// Visible
+        const VISIBLE = 1<<0;
         /// Popup window
-        const POPUP = 0b00000001;
+        const POPUP = 1<<1;
         /// Overlapped window has a title bar and border
-        const OVERLAPPED = 0b00000010;
+        const OVERLAPPED_WINDOW = 1<<2;
         /// Has a smaller title bar
-        const TOOL_WINDOW = 0b00000100;
+        const TOOL_WINDOW = 1<<3;
         /// Forces top level window onto the task bar when visible
-        const APP_WINDOW = 0b00001000;
+        const APP_WINDOW = 1<<4;
         /// Placed above all non top most windows
-        const TOPMOST = 0b00010000;
+        const TOPMOST = 1<<5;
     }
 }
 
@@ -107,6 +109,8 @@ pub trait App: 'static + Any + Sized {
     fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
+    /// get widnow postion from raw native handle
+    fn get_window_pos(handle: &Self::NativeHandle) -> Point<i32>;
 }
 
 /// An instance of an operating system window
@@ -135,6 +139,7 @@ pub trait Window<A: App>: Any + Sized {
     /// mut pointer
     fn as_mut_ptr(&mut self) -> *mut Self;
 }
+
 
 impl Default for Point<f32> {
     fn default() -> Self { 

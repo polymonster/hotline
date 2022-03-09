@@ -442,8 +442,8 @@ impl ImGui {
                 // viewports mouse coords are in screen space
                 io.MousePos = ImVec2::from(app.get_mouse_pos());
 
-                let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
-                io.MousePos = ImVec2::from(client_mouse);
+                //let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
+                //io.MousePos = ImVec2::from(client_mouse);
             }
 
             io.MouseWheel =app.get_mouse_wheel();
@@ -660,6 +660,16 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     vp_ref.PlatformRequestResize = false;
 }
 
+unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
+    let vp_ref = &mut *vp; 
+    let hwnd = *(vp_ref.PlatformHandle as *mut os_platform::NativeHandle);
+    let point = os_platform::App::get_window_pos(&hwnd);
+    (*out_pos).x = point.x as f32;
+    (*out_pos).y = point.y as f32;
+}
+
+// TODO: stubs
+
 unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
     let a = 0;
 }
@@ -696,14 +706,9 @@ unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f3
     let a = 0;
 }
 
-unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
-    let a = 0;
-}
-
 unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
     let a = 0;
 }
-
 
 pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
 
@@ -726,7 +731,7 @@ impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
             style |= os::WindowStyleFlags::POPUP;
         }
         else {
-            style |= os::WindowStyleFlags::OVERLAPPED;
+            style |= os::WindowStyleFlags::OVERLAPPED_WINDOW;
         }
         if (flags & ImGuiViewportFlags_NoTaskBarIcon as i32) == 0 {
             style |= os::WindowStyleFlags::TOOL_WINDOW;
