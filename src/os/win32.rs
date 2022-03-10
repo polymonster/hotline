@@ -262,20 +262,6 @@ impl super::App for App {
             monitors
         }
     }
-
-    fn get_window_pos(handle: &Self::NativeHandle) -> super::Point<i32> {
-        unsafe {
-            let mut pos = POINT { 
-                x: 0, 
-                y: 0 
-            };
-            ClientToScreen(handle.hwnd, &mut pos);
-            super::Point {
-                x: pos.x,
-                y: pos.y
-            }
-        }
-    }
 }
 
 impl super::Window<App> for Window {
@@ -286,6 +272,20 @@ impl super::Window<App> for Window {
             SetActiveWindow(self.hwnd);
             BringWindowToTop(self.hwnd);
             ShowWindow(self.hwnd, SW_RESTORE);
+        }
+    }
+
+    fn get_screen_pos(&self) -> super::Point<i32> {
+        unsafe {
+            let mut pos = POINT { 
+                x: 0, 
+                y: 0 
+            };
+            ClientToScreen(self.hwnd, &mut pos);
+            super::Point {
+                x: pos.x,
+                y: pos.y
+            }
         }
     }
 
