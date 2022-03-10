@@ -45,9 +45,9 @@ struct RenderBuffers {
 struct ViewportData {
     /// if viewport is main, we get the window from UserData and the rest of this struct is null
     main_viewport: bool,
-    window: os_platform::Window,
-    swap_chain: gfx_platform::SwapChain,
-    cmd: gfx_platform::CmdBuf,
+    window: Vec<os_platform::Window>,
+    swap_chain: Vec<gfx_platform::SwapChain>,
+    cmd: Vec<gfx_platform::CmdBuf>,
     buffers: Vec<RenderBuffers>,
 }
 
@@ -417,23 +417,26 @@ impl ImGui {
             platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
             platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
             platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
+            platform_io.Platform_UpdateWindow = Some(platform_update_window);
+
+            //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
+            //platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
 
             // need to hook these c-compatible getter funtions due to complex return types
             ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos);
             ImGuiPlatformIO_Set_Platform_GetWindowSize(platform_io, platform_get_window_size)
-
         }
-        //platform_io.Platform_UpdateWindow = ImGui_ImplWin32_UpdateWindow;
-        //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
-        //platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
-    }//
+    }
 
     fn setup_renderer_interface(&self) {
-        //platform_io.Renderer_CreateWindow = ImGui_ImplDX12_CreateWindow;
-        //platform_io.Renderer_DestroyWindow = ImGui_ImplDX12_DestroyWindow;
-        //platform_io.Renderer_SetWindowSize = ImGui_ImplDX12_SetWindowSize;
-        //platform_io.Renderer_RenderWindow = ImGui_ImplDX12_RenderWindow;
-        //platform_io.Renderer_SwapBuffers = ImGui_ImplDX12_SwapBuffers;
+        unsafe {
+            let platform_io = &mut *igGetPlatformIO(); 
+            platform_io.Renderer_CreateWindow = Some(renderer_create_window);
+            platform_io.Renderer_DestroyWindow = Some(renderer_destroy_window);
+            platform_io.Renderer_SetWindowSize = Some(renderer_set_window_size);
+            platform_io.Renderer_RenderWindow = Some(renderer_render_window);
+            platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers);
+        }
     }
 
     pub fn new_frame(&self, 
@@ -493,7 +496,7 @@ impl ImGui {
 
             if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
                 
-                // gotta pack the refs into a pointer and into 
+                // gotta pack the refs into a pointer and into io.UserData
                 let mut ud = UserData {
                     device: device,
                     app: app,
@@ -502,16 +505,10 @@ impl ImGui {
                 io.UserData = (&mut ud as *mut UserData) as _;
 
                 igUpdatePlatformWindows();
+                igRenderPlatformWindowsDefault(std::ptr::null_mut(), std::ptr::null_mut());
 
                 io.UserData = std::ptr::null_mut();
-
-                // TODO:
-                //update_platform_windows();
             }
-
-            // TODO:
-            //render_platform_windows();
-            //swap_renderer(); 
         }
     }
 
@@ -653,6 +650,39 @@ impl From<os::Point<i32>> for ImVec2 {
     }
 }
 
+/// handles the case where we can return an imgui created window from ViewportData, or borrow the main window
+/// from UserData
+fn get_viewport_window<'a>(vp: *mut ImGuiViewport) -> &'a mut os_platform::Window {
+    unsafe {
+        let vp_ref = &mut *vp; 
+        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
+        if vd.main_viewport {
+            let io = &mut *igGetIO();
+            let ud = &mut *(io.UserData as *mut UserData);
+            return ud.main_window;
+        }
+        return &mut vd.window[0];
+    }
+}
+
+/// get a hotline::imgui::ViewportData mutable reference from an ImGuiViewport
+fn get_viewport_data<'a>(vp: *mut ImGuiViewport) -> &'a mut ViewportData {
+    unsafe {
+        let vp_ref = &mut *vp; 
+        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
+        vd
+    }
+}
+
+/// Get the UserData packed inside ImGui.io to access Device, App and main Window
+fn get_user_data<'a>() -> &'a mut UserData<'a> {
+    unsafe {
+        let io = &mut *igGetIO();
+        let ud = &mut *(io.UserData as *mut UserData);
+        ud
+    }
+}
+
 unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     let io = &mut *igGetIO();
     let ud = &mut *(io.UserData as *mut UserData);
@@ -669,7 +699,7 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     }
 
     // create a window
-    (*vd).window = ud.app.create_window(os::WindowInfo{
+    (*vd).window = vec![ud.app.create_window(os::WindowInfo{
             title: String::from("imgui_platform"),
             rect: os::Rect {
                 x: vp_ref.Pos.x as i32,
@@ -680,26 +710,11 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
             style: os::WindowStyleFlags::from(vp_ref.Flags),
         },
         parent_handle
-    );
+    )];
 
     // track the viewport user data pointer
     vp_ref.PlatformUserData = vd as *mut _;
     vp_ref.PlatformRequestResize = false;
-}
-
-/// handles the case where we can return an imgui created window from ViewportData, or borrow the main window
-/// from UserData
-fn get_viewport_window<'a>(vp: *mut ImGuiViewport) -> &'a mut os_platform::Window {
-    unsafe {
-        let vp_ref = &mut *vp; 
-        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
-        if vd.main_viewport {
-            let io = &mut *igGetIO();
-            let ud = &mut *(io.UserData as *mut UserData);
-            return ud.main_window;
-        }
-        return &mut vd.window;
-    }
 }
 
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
@@ -709,16 +724,79 @@ unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *m
     (*out_pos).y = pos.y as f32;
 }
 
-// TODO: stubs
-
-unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
-    let a = 0;
+unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
+    let window = get_viewport_window(vp);
+    let rect = window.get_rect();
+    (*out_size).x = rect.width as f32;
+    (*out_size).y = rect.height as f32;
 }
 
 unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
     let window = get_viewport_window(vp);
-    let activate = if (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 != 0 { false } else { true };
+    let activate = if (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 != 0 { 
+        false 
+    } 
+    else { 
+        true 
+    };
     window.show(true, activate);
+}
+
+unsafe extern "C" fn renderer_create_window(vp: *mut ImGuiViewport) {
+    // unpack data
+    let mut vd = get_viewport_data(vp);
+    let ud = get_user_data();
+    let mut device = &mut ud.device;
+    let win = get_viewport_window(vp);
+    
+    // create cmd buffer
+    vd.cmd = vec![device.create_cmd_buf(2)];
+
+    // create swap chain and bind to window
+    let swap_chain_info = gfx::SwapChainInfo {
+        num_buffers: 2,
+        format: gfx::Format::RGBA8n
+    };
+    vd.swap_chain = vec![device.create_swap_chain(&swap_chain_info, win)];
+
+    // create render buffers
+    let mut buffers : Vec<RenderBuffers> = Vec::new();
+    let num_buffers = vd.swap_chain[0].get_num_buffers();
+    for _i in 0..num_buffers {
+        buffers.push(
+            RenderBuffers {
+                vb: create_vertex_buffer(&mut device, 5000).unwrap(),
+                vb_size: 5000,
+                ib: create_index_buffer(&mut device, 10000).unwrap(),
+                ib_size: 10000,
+            }
+        )
+    }
+    vd.buffers = buffers;
+}
+
+// TODO: render stubs
+
+unsafe extern "C" fn renderer_destroy_window(vp: *mut ImGuiViewport) {
+    let a = 0;
+}
+
+unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void) {
+    let a = 0;
+}
+
+unsafe extern "C" fn renderer_swap_buffers(vp: *mut ImGuiViewport, render_arg: *mut cty::c_void) {
+    let a = 0;
+}
+
+unsafe extern "C" fn renderer_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
+    let a = 0;
+}
+
+// TODO: platform stubs
+
+unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
+    let a = 0;
 }
 
 unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {
@@ -749,7 +827,7 @@ unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f3
     let a = 0;
 }
 
-unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
+unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
     let a = 0;
 }
 
