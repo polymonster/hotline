@@ -109,16 +109,16 @@ pub trait App: 'static + Any + Sized {
     fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
-    /// get widnow postion from raw native handle
-    fn get_window_pos(handle: &Self::NativeHandle) -> Point<i32>;
 }
 
 /// An instance of an operating system window
 pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
+    /// Returns the screen position for the top-left corner of the window
+    fn get_screen_pos(&self) -> Point<i32>;
     /// Set the window position and size in 1
     fn set_rect(&mut self, rect: Rect<i32>);
-    /// Returns the window position and size inside rect
+    /// Returns the internal window rect
     fn get_rect(&self) -> Rect<i32>;
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> Rect<i32>;

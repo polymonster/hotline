@@ -43,6 +43,8 @@ struct RenderBuffers {
 
 #[derive(Clone)]
 struct ViewportData {
+    /// if viewport is main, we get the window from UserData and the rest of this struct is null
+    main_viewport: bool,
     window: os_platform::Window,
     swap_chain: gfx_platform::SwapChain,
     cmd: gfx_platform::CmdBuf,
@@ -50,8 +52,26 @@ struct ViewportData {
 }
 
 struct UserData<'a> {
+    app: &'a mut os_platform::App,
     device: &'a mut gfx_platform::Device,
-    app: &'a mut os_platform::App
+    main_window: &'a mut os_platform::Window,
+}
+
+fn new_viewport_data() -> *mut ViewportData {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut ViewportData
+    }
+}
+
+fn new_native_handle(handle: os_platform::NativeHandle) -> *mut os_platform::NativeHandle {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(
+            std::mem::size_of::<os_platform::NativeHandle>(), 8).unwrap();
+        let nh = std::alloc::alloc_zeroed(layout) as *mut os_platform::NativeHandle;
+        *nh = handle;
+        nh
+    }
 }
 
 fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platform::Texture, gfx::Error> {
@@ -351,18 +371,15 @@ impl ImGui {
             platform_io.Monitors.Capacity = monitors.len() as i32;
             platform_io.Monitors.Data = monitors.as_mut_ptr();
 
-            // TODO:
             let vps = &mut *igGetMainViewport();
 
-            // TODO:
-            vps.PlatformUserData = monitors.as_mut_ptr() as _;
+            // alloc main viewport ViewportData (we obtain from UserData in callbacks)
+            let vp = new_viewport_data();
+            (*vp).main_viewport = true;
+            vps.PlatformUserData = vp as _;
 
             // alloc and assign a native handle
-            let layout = std::alloc::Layout::from_size_align(
-                std::mem::size_of::<os_platform::NativeHandle>(), 8).unwrap();
-            let nh = std::alloc::alloc_zeroed(layout) as *mut os_platform::NativeHandle;
-            *nh = info.main_window.get_native_handle();
-            vps.PlatformHandle = nh as _;
+            vps.PlatformHandle = new_native_handle(info.main_window.get_native_handle()) as _;
 
             // TODO: dynamic memory 
             std::mem::forget(monitors);
@@ -420,8 +437,9 @@ impl ImGui {
     }
 
     pub fn new_frame(&self, 
-        app: &mut os_platform::App,  
-        main_window: &mut os_platform::Window) {
+        app: &mut os_platform::App, 
+        main_window: &mut os_platform::Window, 
+        device: &mut gfx_platform::Device) {
         let (window_width, window_height) = main_window.get_size();
         unsafe {
             let io = &mut *igGetIO(); 
@@ -441,24 +459,32 @@ impl ImGui {
             else {
                 // viewports mouse coords are in screen space
                 io.MousePos = ImVec2::from(app.get_mouse_pos());
-
-                //let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
-                //io.MousePos = ImVec2::from(client_mouse);
             }
 
             io.MouseWheel =app.get_mouse_wheel();
             io.MouseWheelH =app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
 
+            // gotta pack the refs into a pointer and into 
+            let mut ud = UserData {
+                device: device,
+                app: app,
+                main_window: main_window
+            }; 
+            io.UserData = (&mut ud as *mut UserData) as _;
+
             igNewFrame();
+
+            io.UserData = std::ptr::null_mut();
         }
     }
 
     pub fn render(
-        &mut self, app: 
-        &mut os_platform::App, device: 
-        &mut gfx_platform::Device, cmd: 
-        &mut gfx_platform::CmdBuf) {
+        &mut self, 
+        app: &mut os_platform::App, 
+        main_window: &mut os_platform::Window, 
+        device: &mut gfx_platform::Device, 
+        cmd: &mut gfx_platform::CmdBuf) {
         unsafe {
             let io = &mut *igGetIO(); 
             igRender();
@@ -470,11 +496,11 @@ impl ImGui {
                 // gotta pack the refs into a pointer and into 
                 let mut ud = UserData {
                     device: device,
-                    app: app
+                    app: app,
+                    main_window: main_window
                 }; 
-                let pud = &mut ud as *mut UserData;
-                
-                io.UserData = pud as _;
+                io.UserData = (&mut ud as *mut UserData) as _;
+
                 igUpdatePlatformWindows();
 
                 io.UserData = std::ptr::null_mut();
@@ -482,6 +508,8 @@ impl ImGui {
                 // TODO:
                 //update_platform_windows();
             }
+
+            // TODO:
             //render_platform_windows();
             //swap_renderer(); 
         }
@@ -631,8 +659,7 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     let mut vp_ref = &mut *vp; 
 
     // alloc viewport data
-    let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
-    let vd = std::alloc::alloc_zeroed(layout) as *mut ViewportData;
+    let vd = new_viewport_data();
 
     // find parent
     let mut parent_handle = None;
@@ -660,12 +687,26 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     vp_ref.PlatformRequestResize = false;
 }
 
+/// handles the case where we can return an imgui created window from ViewportData, or borrow the main window
+/// from UserData
+fn get_viewport_window<'a>(vp: *mut ImGuiViewport) -> &'a mut os_platform::Window {
+    unsafe {
+        let vp_ref = &mut *vp; 
+        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
+        if vd.main_viewport {
+            let io = &mut *igGetIO();
+            let ud = &mut *(io.UserData as *mut UserData);
+            return ud.main_window;
+        }
+        return &mut vd.window;
+    }
+}
+
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
-    let vp_ref = &mut *vp; 
-    let hwnd = *(vp_ref.PlatformHandle as *mut os_platform::NativeHandle);
-    let point = os_platform::App::get_window_pos(&hwnd);
-    (*out_pos).x = point.x as f32;
-    (*out_pos).y = point.y as f32;
+    let window = get_viewport_window(vp);
+    let pos = window.get_screen_pos();
+    (*out_pos).x = pos.x as f32;
+    (*out_pos).y = pos.y as f32;
 }
 
 // TODO: stubs
