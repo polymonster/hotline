@@ -75,7 +75,7 @@ fn to_win32_dw_style(style: &super::WindowStyleFlags) -> WINDOW_STYLE {
     if win32_style == 0 {
         win32_style |= WS_OVERLAPPEDWINDOW.0 | WS_VISIBLE.0;
     }
-    win32_style |= WS_VISIBLE.0;
+    //win32_style |= WS_VISIBLE.0;
     WINDOW_STYLE(win32_style)
 }
 
@@ -272,6 +272,19 @@ impl super::Window<App> for Window {
             SetActiveWindow(self.hwnd);
             BringWindowToTop(self.hwnd);
             ShowWindow(self.hwnd, SW_RESTORE);
+        }
+    }
+
+    fn show(&self, show: bool, activate: bool) {
+        let mut cmd = SW_HIDE;
+        if show {
+            cmd = SW_SHOWNA;
+            if activate {
+                cmd = SW_SHOW;
+            }
+        }
+        unsafe {
+            ShowWindow(self.hwnd, cmd);
         }
     }
 

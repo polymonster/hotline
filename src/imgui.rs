@@ -716,7 +716,9 @@ unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
 }
 
 unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
-    let a = 0;
+    let window = get_viewport_window(vp);
+    let activate = if (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 != 0 { false } else { true };
+    window.show(true, activate);
 }
 
 unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {

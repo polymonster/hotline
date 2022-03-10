@@ -113,7 +113,10 @@ pub trait App: 'static + Any + Sized {
 
 /// An instance of an operating system window
 pub trait Window<A: App>: Any + Sized {
+    /// Bring window to front and draw ontop of all others
     fn bring_to_front(&self);
+    /// Show window, specify true to show window or false to hide
+    fn show(&self, show: bool, activate: bool);
     /// Returns the screen position for the top-left corner of the window
     fn get_screen_pos(&self) -> Point<i32>;
     /// Set the window position and size in 1
