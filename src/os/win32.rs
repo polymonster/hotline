@@ -422,7 +422,6 @@ fn release_capture(window: HWND) {
     }   
 }
 
-
 /*
 TODO: wndproc
 WM_KEYDOWN => LRESULT(0),
@@ -436,7 +435,6 @@ WM_SETCURSOR => LRESULT(0),
 WM_DEVICECHANGE => LRESULT(0),
 WM_DISPLAYCHANGE => LRESULT(0),
 */
-
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
