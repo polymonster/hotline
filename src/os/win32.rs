@@ -15,7 +15,6 @@ use windows::{
     Win32::Globalization::*,
 };
 
-use std::ffi::CStr;
 use std::ffi::CString;
 
 #[derive(Clone)]

@@ -141,9 +141,8 @@ pub struct Buffer {
     resource: ID3D12Resource,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
-    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv_index: Option<usize>,
+    uav_index: Option<usize>,
 }
 
 pub struct Shader {
@@ -155,9 +154,8 @@ pub struct Texture {
     resource: ID3D12Resource,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    uav: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    srv_index: Option<usize>
+    srv_index: Option<usize>,
+    uav_index: Option<usize>,
 }
 
 #[derive(Clone)]
@@ -649,11 +647,10 @@ fn create_swap_chain_rtv(
             device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
             textures.push(Texture {
                 resource: render_target.clone(),
-                srv: None,
-                srv_index: None,
                 rtv: Some(h),
-                uav: None,
-                dsv: None
+                dsv: None,
+                srv_index: None,
+                uav_index: None
             });
         }
         textures
@@ -1371,7 +1368,6 @@ impl super::Device for Device {
             // create optional views
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
-            let mut srv: Option<D3D12_CPU_DESCRIPTOR_HANDLE> = None;
             let mut srv_index = None;
 
             match info.usage {
@@ -1398,7 +1394,6 @@ impl super::Device for Device {
                         },
                         &h,
                     );
-                    srv = Some(h);
                     srv_index = Some(self.shader_heap.get_handle_index(&h));
                 }
             }
@@ -1407,9 +1402,8 @@ impl super::Device for Device {
                 resource: buf.unwrap(),
                 vbv: vbv,
                 ibv: ibv,
-                srv: srv,
-                uav: None,
-                srv_index: srv_index
+                srv_index: srv_index,
+                uav_index: None
             })
         }
     }
@@ -1565,7 +1559,6 @@ impl super::Device for Device {
             }
             
             // create srv
-            let mut srv_handle = None;
             let mut srv_index = None;
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
@@ -1589,7 +1582,6 @@ impl super::Device for Device {
                     },
                     &h,
                 );
-                srv_handle = Some(h);
                 srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
 
@@ -1610,7 +1602,7 @@ impl super::Device for Device {
             }
 
             // create uav
-            let mut uav_handle = None;
+            let mut uav_index = None;
             if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateUnorderedAccessView(
@@ -1619,16 +1611,15 @@ impl super::Device for Device {
                     std::ptr::null_mut(),
                     &h
                 );
-                uav_handle = Some(h);
+                uav_index = Some(self.shader_heap.get_handle_index(&h));
             }
 
             Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: rtv_handle,
                 dsv: dsv_handle,
-                srv: srv_handle,
-                uav: uav_handle,
-                srv_index: srv_index
+                srv_index: srv_index,
+                uav_index: uav_index
             })
         }
     }
@@ -2300,6 +2291,10 @@ impl super::Buffer<Device> for Buffer {
         self.srv_index
     }
 
+    fn get_uav_index(&self) -> Option<usize> {
+        self.uav_index
+    }
+
     fn map(&self) -> *mut u8 {
         // TODO: read range
         let range = D3D12_RANGE {
@@ -2323,6 +2318,10 @@ impl super::Buffer<Device> for Buffer {
 impl super::Texture<Device> for Texture {
     fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
+    }
+
+    fn get_uav_index(&self) -> Option<usize> {
+        self.uav_index
     }
 }
 
