@@ -12,7 +12,11 @@ use windows::{
     Win32::UI::Input::KeyboardAndMouse::*, 
     Win32::UI::WindowsAndMessaging::*,
     Win32::UI::Controls::*,
+    Win32::Globalization::*,
 };
+
+use std::ffi::CStr;
+use std::ffi::CString;
 
 #[derive(Clone)]
 pub struct App {
@@ -285,6 +289,30 @@ impl super::Window<App> for Window {
         }
         unsafe {
             ShowWindow(self.hwnd, cmd);
+        }
+    }
+
+    fn set_title(&self, title: String) {
+        unsafe {
+            let null_title = CString::new(title).unwrap();
+            let n = MultiByteToWideChar(
+                windows::Win32::Globalization::CP_UTF8, 
+                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), 
+                PSTR(null_title.as_ptr() as _), 
+                -1, 
+                PWSTR(std::ptr::null_mut() as _), 
+                0
+            );
+            let mut v : Vec<u8> = vec![0; n as usize];
+            MultiByteToWideChar(
+                windows::Win32::Globalization::CP_UTF8, 
+                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), 
+                PSTR(null_title.as_ptr() as _), 
+                -1, 
+                PWSTR(v.as_mut_ptr() as _), 
+                n
+            );
+            SetWindowTextW(self.hwnd, PWSTR(v.as_mut_ptr() as _));
         }
     }
 

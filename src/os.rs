@@ -119,6 +119,8 @@ pub trait Window<A: App>: Any + Sized {
     fn show(&self, show: bool, activate: bool);
     /// Returns the screen position for the top-left corner of the window
     fn get_screen_pos(&self) -> Point<i32>;
+    /// Set the window display title that appears on the title bar
+    fn set_title(&self, title: String);
     /// Set the window position and size in 1
     fn set_rect(&mut self, rect: Rect<i32>);
     /// Returns the internal window rect
