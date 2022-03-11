@@ -766,12 +766,16 @@ pub trait Buffer<D: Device>: {
     fn unmap(&self);
     /// Return the index to access in a shader ie) buffers[index].member...
     fn get_srv_index(&self) -> Option<usize>;
+    /// Return the index to unorder access view for read/write from shaders...
+    fn get_uav_index(&self) -> Option<usize>;
 }
 
 /// An opaque Texture type
 pub trait Texture<D: Device>: {
     /// Return the index to access in a shader ie) textures[index].sample...
     fn get_srv_index(&self) -> Option<usize>;
+    /// Return the index to unorder access view for read/write from shaders...
+    fn get_uav_index(&self) -> Option<usize>;
 }
 
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
