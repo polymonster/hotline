@@ -303,7 +303,7 @@ impl super::Window<App> for Window {
                 PWSTR(std::ptr::null_mut() as _), 
                 0
             );
-            let mut v : Vec<u8> = vec![0; n as usize];
+            let mut v : Vec<u16> = vec![0; n as usize];
             MultiByteToWideChar(
                 windows::Win32::Globalization::CP_UTF8, 
                 windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), 

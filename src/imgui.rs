@@ -810,6 +810,8 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
     assert_ne!(vd.cmd.len(), 0);
     assert_ne!(vd.swap_chain.len(), 0);
 
+    println!("render window");
+
     // unpack from vec
     let mut window = &mut vd.window[0];
     let mut cmd = &mut vd.cmd[0];
