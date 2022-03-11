@@ -16,6 +16,7 @@ use crate::gfx::Buffer;
 use crate::gfx::Texture;
 
 use std::ffi::CString;
+use std::ffi::CStr;
 
 pub struct ImGuiInfo<'a> {
     pub device: &'a mut gfx_platform::Device,
@@ -718,7 +719,7 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
 
     // create a window
     (*vd).window = vec![ud.app.create_window(os::WindowInfo{
-            title: String::from("imgui_platform"),
+            title: String::from("Utitled"),
             rect: os::Rect {
                 x: vp_ref.Pos.x as i32,
                 y: vp_ref.Pos.y as i32,
@@ -758,6 +759,12 @@ unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
         true 
     };
     window.show(true, activate);
+}
+
+unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
+    let mut win = get_viewport_window(vp);
+    let cstr = CStr::from_ptr(str_);
+    win.set_title(String::from(cstr.to_str().unwrap()));
 }
 
 unsafe extern "C" fn renderer_create_window(vp: *mut ImGuiViewport) {
@@ -897,10 +904,6 @@ unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bo
     false
 }
 
-unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
-    let a = 0;
-}
-
 unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f32) {
     let a = 0;
 }
@@ -926,19 +929,19 @@ extern "C" {
 impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
     fn from(flags: ImGuiViewportFlags) -> os::WindowStyleFlags {
         let mut style = os::WindowStyleFlags::NONE;
-        if (flags & ImGuiViewportFlags_NoDecoration as i32) == 0 {
+        if (flags & ImGuiViewportFlags_NoDecoration as i32) != 0 {
             style |= os::WindowStyleFlags::POPUP;
         }
         else {
             style |= os::WindowStyleFlags::OVERLAPPED_WINDOW;
         }
-        if (flags & ImGuiViewportFlags_NoTaskBarIcon as i32) == 0 {
+        if (flags & ImGuiViewportFlags_NoTaskBarIcon as i32) != 0 {
             style |= os::WindowStyleFlags::TOOL_WINDOW;
         }
         else {
             style |= os::WindowStyleFlags::APP_WINDOW;
         }
-        if (flags & ImGuiViewportFlags_TopMost as i32) == 0 {
+        if (flags & ImGuiViewportFlags_TopMost as i32) != 0 {
             style |= os::WindowStyleFlags::TOPMOST;
         }
         style
