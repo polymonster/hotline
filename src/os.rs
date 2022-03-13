@@ -117,10 +117,18 @@ pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
     fn show(&self, show: bool, activate: bool);
+    /// Returns true if the window is focused 
+    fn is_focused(&self) -> bool;
+    /// Sets focus to this window
+    fn set_focused(&self);
+    /// Returns true if the mouse if hovering this window
+    fn is_mouse_hovered(&self) -> bool;
     /// Returns the screen position for the top-left corner of the window
-    fn get_screen_pos(&self) -> Point<i32>;
+    fn get_screen_pos(&self) -> Point<i32>; 
     /// Set the window display title that appears on the title bar
     fn set_title(&self, title: String);
+    /// Set window position in screen space
+    fn set_pos(&self, pos: Point<i32>);
     /// Set the window position and size in 1
     fn set_rect(&mut self, rect: Rect<i32>);
     /// Returns the internal window rect
@@ -144,7 +152,6 @@ pub trait Window<A: App>: Any + Sized {
     /// mut pointer
     fn as_mut_ptr(&mut self) -> *mut Self;
 }
-
 
 impl Default for Point<f32> {
     fn default() -> Self { 

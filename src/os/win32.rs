@@ -37,6 +37,24 @@ pub struct NativeHandle {
     hwnd: HWND,
 }
 
+struct ProcData {
+    mouse_hwnd: HWND,
+    mouse_tracked: bool,
+    mouse_down: [bool; 5],
+    mouse_wheel: f32,
+    mouse_hwheel: f32
+}
+
+static mut PROC_DATA : ProcData = ProcData {
+    mouse_hwnd: HWND(0),
+    mouse_tracked: false,
+    mouse_down: [false; 5],
+    mouse_wheel: 0.0,
+    mouse_hwheel: 0.0
+};
+
+static mut MONITOR_ENUM : Vec<super::MonitorInfo> = Vec::new();
+
 impl super::NativeHandle<App> for NativeHandle {}
 
 impl Window {
@@ -113,24 +131,6 @@ fn adjust_window_rect(rect: &super::Rect::<i32>, ws: WINDOW_STYLE, wsex: WINDOW_
         height: rc.bottom - rc.top,
     }
 }
-
-struct ProcData {
-    mouse_hwnd: HWND,
-    mouse_tracked: bool,
-    mouse_down: [bool; 5],
-    mouse_wheel: f32,
-    mouse_hwheel: f32
-}
-
-static mut PROC_DATA : ProcData = ProcData {
-    mouse_hwnd: HWND(0),
-    mouse_tracked: false,
-    mouse_down: [false; 5],
-    mouse_wheel: 0.0,
-    mouse_hwheel: 0.0
-};
-
-static mut MONITOR_ENUM : Vec<super::MonitorInfo> = Vec::new();
 
 impl App {
     fn update_mouse(&mut self) {
@@ -291,6 +291,28 @@ impl super::Window<App> for Window {
         }
     }
 
+    fn is_focused(&self) -> bool {
+        unsafe {
+            GetForegroundWindow() == self.hwnd
+        }
+    }
+
+    fn set_focused(&self) {
+        unsafe {
+            BringWindowToTop(self.hwnd);
+            SetForegroundWindow(self.hwnd);
+            SetFocus(self.hwnd);
+        }
+    }
+
+    fn is_mouse_hovered(&self) -> bool {
+        unsafe {
+            let mut mouse_pos = POINT::default();
+            GetCursorPos(&mut mouse_pos);
+            self.hwnd == WindowFromPoint(mouse_pos)
+        }
+    }
+
     fn set_title(&self, title: String) {
         unsafe {
             let null_title = CString::new(title).unwrap();
@@ -312,6 +334,19 @@ impl super::Window<App> for Window {
                 n
             );
             SetWindowTextW(self.hwnd, PWSTR(v.as_mut_ptr() as _));
+        }
+    }
+
+    fn set_pos(&self, pos: super::Point<i32>) {
+        let mut rect = RECT {
+            left: pos.x,
+            top: pos.y,
+            right: pos.x,
+            bottom: pos.y,
+        };
+        unsafe {
+            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+            SetWindowPos(self.hwnd, HWND(0), rect.left, rect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
         }
     }
 
