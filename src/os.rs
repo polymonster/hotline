@@ -20,7 +20,7 @@ pub enum MouseButton {
     Right,
     X1,
     X2,
-    Count
+    Count,
 }
 
 /// Information to describe the dimensions of display monitors
@@ -29,7 +29,7 @@ pub struct MonitorInfo {
     pub rect: Rect<i32>,
     pub client_rect: Rect<i32>,
     pub dpi_scale: f32,
-    pub primary: bool
+    pub primary: bool,
 }
 
 /// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height
@@ -43,7 +43,6 @@ pub struct Rect<T> {
     pub width: T,
     /// Height of the window starting at y
     pub height: T,
-    
 }
 
 /// 2-Dimension point for screen coordinates
@@ -87,7 +86,7 @@ pub struct WindowInfo {
 }
 
 /// A native platform window handle that can be passed around in a lightweight way
-pub trait NativeHandle<A: App>: {}
+pub trait NativeHandle<A: App> {}
 
 /// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized {
@@ -117,14 +116,14 @@ pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
     fn show(&self, show: bool, activate: bool);
-    /// Returns true if the window is focused 
+    /// Returns true if the window is focused
     fn is_focused(&self) -> bool;
     /// Sets focus to this window
     fn set_focused(&self);
     /// Returns true if the mouse if hovering this window
     fn is_mouse_hovered(&self) -> bool;
     /// Returns the screen position for the top-left corner of the window
-    fn get_screen_pos(&self) -> Point<i32>; 
+    fn get_screen_pos(&self) -> Point<i32>;
     /// Set the window display title that appears on the title bar
     fn set_title(&self, title: String);
     /// Set window position in screen space
@@ -154,28 +153,19 @@ pub trait Window<A: App>: Any + Sized {
 }
 
 impl Default for Point<f32> {
-    fn default() -> Self { 
-        Point::<f32> {
-            x: 0.0,
-            y: 0.0
-        }
+    fn default() -> Self {
+        Point::<f32> { x: 0.0, y: 0.0 }
     }
 }
 
 impl Default for Point<i32> {
-    fn default() -> Self { 
-        Point::<i32> {
-            x: 0,
-            y: 0
-        }
+    fn default() -> Self {
+        Point::<i32> { x: 0, y: 0 }
     }
 }
 
 impl Default for Point<u32> {
-    fn default() -> Self { 
-        Point::<u32> {
-            x: 0,
-            y: 0
-        }
+    fn default() -> Self {
+        Point::<u32> { x: 0, y: 0 }
     }
 }

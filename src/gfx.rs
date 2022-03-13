@@ -31,7 +31,7 @@ pub struct Error {
 pub struct Size3 {
     pub x: u32,
     pub y: u32,
-    pub z: u32
+    pub z: u32,
 }
 
 /// Structure to specify viewport coordinates on a `CmdBuf`.
@@ -95,7 +95,6 @@ pub enum Format {
     D32f,
     D24nS8u,
     D16n,
-
 }
 
 /// Information to create a device, it contains default heaps for resource views
@@ -121,13 +120,13 @@ pub struct AdapterInfo {
     pub dedicated_system_memory: usize,
     pub shared_system_memory: usize,
     /// List of available adapter descriptons
-    pub available: Vec<String>
+    pub available: Vec<String>,
 }
 
 /// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required
 pub struct HeapInfo {
     pub heap_type: HeapType,
-    pub num_descriptors: usize
+    pub num_descriptors: usize,
 }
 
 /// Options for heap types
@@ -137,7 +136,7 @@ pub enum HeapType {
     Shader,
     RenderTarget,
     DepthStencil,
-    Sampler
+    Sampler,
 }
 
 /// Information to pass to `Device::create_swap_chain`
@@ -265,7 +264,7 @@ pub enum ShaderVisibility {
     All,
     Vertex,
     Fragment,
-    Compute
+    Compute,
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
@@ -375,7 +374,7 @@ pub struct RenderPipelineInfo<'a, D: Device> {
     pub patch_index: u32,
     /// A valid render pass, you can share pipelines across passes providing the render target
     /// formats and sample count are the same of the passes you wish to use the pipeline on
-    pub pass: &'a D::RenderPass
+    pub pass: &'a D::RenderPass,
 }
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage
@@ -392,7 +391,7 @@ pub enum Topology {
     LineStripAdj,
     TriangleListAdj,
     TriangleStripAdj,
-    PatchList
+    PatchList,
 }
 
 /// Information to control the rasterisation mode of primitives when using a `RenderPipeline`
@@ -407,20 +406,20 @@ pub struct RasterInfo {
     pub multisample_enable: bool,
     pub antialiased_line_enable: bool,
     pub forced_sample_count: u32,
-    pub conservative_raster_mode: bool
+    pub conservative_raster_mode: bool,
 }
 
 /// Polygon fillmode
 pub enum FillMode {
     Wireframe,
-    Solid
+    Solid,
 }
 
 /// Polygon cull mode
 pub enum CullMode {
     None,
     Front,
-    Back
+    Back,
 }
 
 /// Information to control the depth and stencil testing of primitves when using a `RenderPipeline`
@@ -435,13 +434,13 @@ pub struct DepthStencilInfo {
     pub stencil_read_mask: u8,
     pub stencil_write_mask: u8,
     pub front_face: StencilInfo,
-    pub back_face: StencilInfo
+    pub back_face: StencilInfo,
 }
 
 /// Write to the depth buffer, or omit writes and just perform depth testing
 pub enum DepthWriteMask {
     Zero,
-    All
+    All,
 }
 
 /// Stencil info for various outcomes of the depth stencil test
@@ -449,7 +448,7 @@ pub struct StencilInfo {
     pub fail: StencilOp,
     pub depth_fail: StencilOp,
     pub pass: StencilOp,
-    pub func: ComparisonFunc
+    pub func: ComparisonFunc,
 }
 
 /// Stencil operations
@@ -461,7 +460,7 @@ pub enum StencilOp {
     DecrSat,
     Invert,
     Incr,
-    Decr
+    Decr,
 }
 
 /// Information to control blending operations on render targets
@@ -470,7 +469,7 @@ pub struct BlendInfo {
     /// Separate blending on colour and alpha channels
     pub independent_blend_enabled: bool,
     /// Separate blend operations for each bout render targets
-    pub render_target: Vec<RenderTargetBlendInfo>
+    pub render_target: Vec<RenderTargetBlendInfo>,
 }
 
 /// Blending operations for a single render target
@@ -484,7 +483,7 @@ pub struct RenderTargetBlendInfo {
     pub dst_blend_alpha: BlendFactor,
     pub blend_op_alpha: BlendOp,
     pub logic_op: LogicOp,
-    pub write_mask: WriteMask
+    pub write_mask: WriteMask,
 }
 
 /// Controls how the source and destination terms in blend equation are derrived
@@ -505,7 +504,7 @@ pub enum BlendFactor {
     Src1Colour,
     InvSrc1Colour,
     Src1Alpha,
-    InvSrc1Alpha
+    InvSrc1Alpha,
 }
 
 /// Controls how the source and destination terms are combined: final = src (op) dest
@@ -514,7 +513,7 @@ pub enum BlendOp {
     Subtract,
     RevSubtract,
     Min,
-    Max
+    Max,
 }
 
 /// The logical operation to configure for a render target blend with logic op enabled
@@ -534,14 +533,14 @@ pub enum LogicOp {
     AndReverse,
     AndInverted,
     OrReverse,
-    OrInverted
+    OrInverted,
 }
 
 /// Information to create a compute pipeline through `Device::create_compute_pipeline`
-pub struct ComputePipelineInfo<D:Device> {
+pub struct ComputePipelineInfo<D: Device> {
     /// Compute Shader
     pub cs: D::Shader,
-    pub descriptor_layout: DescriptorLayout
+    pub descriptor_layout: DescriptorLayout,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -557,7 +556,7 @@ pub struct TextureInfo {
     pub samples: u32,
     pub usage: TextureUsage,
     /// Initial state to start image transition barriers before state
-    pub initial_state: ResourceState
+    pub initial_state: ResourceState,
 }
 
 /// Describes the dimension of a texture
@@ -649,15 +648,15 @@ pub enum ResourceState {
 }
 
 /// An opaque Shader type
-pub trait Shader<D: Device>: {}
+pub trait Shader<D: Device> {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
-pub trait RenderPipeline<D: Device>: {}
+pub trait RenderPipeline<D: Device> {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
-pub trait RenderPass<D: Device>: {}
+pub trait RenderPass<D: Device> {}
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
-pub trait Heap<D: Device>: {}
+pub trait Heap<D: Device> {}
 /// An opaque compute pipeline type..
-pub trait ComputePipeline<D: Device>: {}
+pub trait ComputePipeline<D: Device> {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
@@ -674,7 +673,11 @@ pub trait Device: Sized + Any {
     type ComputePipeline: ComputePipeline<Self>;
     fn create(info: &DeviceInfo) -> Self;
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
-    fn create_swap_chain(&mut self, info: &SwapChainInfo, window: &platform::Window) -> Self::SwapChain;
+    fn create_swap_chain(
+        &mut self,
+        info: &SwapChainInfo,
+        window: &platform::Window,
+    ) -> Self::SwapChain;
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
     fn create_buffer<T: Sized>(
@@ -687,9 +690,15 @@ pub trait Device: Sized + Any {
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
-    fn create_render_pipeline(&self, info: &RenderPipelineInfo<Self>) -> Result<Self::RenderPipeline, Error>;
+    fn create_render_pipeline(
+        &self,
+        info: &RenderPipelineInfo<Self>,
+    ) -> Result<Self::RenderPipeline, Error>;
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error>;
-    fn create_compute_pipeline(&self, info: &ComputePipelineInfo<Self>) -> Result<Self::ComputePipeline, Error>;
+    fn create_compute_pipeline(
+        &self,
+        info: &ComputePipelineInfo<Self>,
+    ) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
     fn get_shader_heap(&self) -> &Self::Heap;
     fn get_adapter_info(&self) -> &AdapterInfo;
@@ -716,7 +725,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
-pub trait CmdBuf<D: Device>: {
+pub trait CmdBuf<D: Device> {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain);
     fn get_backbuffer_index(&self) -> u32;
@@ -756,7 +765,7 @@ pub trait CmdBuf<D: Device>: {
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
-pub trait Buffer<D: Device>: {
+pub trait Buffer<D: Device> {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
@@ -771,7 +780,7 @@ pub trait Buffer<D: Device>: {
 }
 
 /// An opaque Texture type
-pub trait Texture<D: Device>: {
+pub trait Texture<D: Device> {
     /// Return the index to access in a shader ie) textures[index].sample...
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
@@ -781,7 +790,7 @@ pub trait Texture<D: Device>: {
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
 /// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
 /// data can be obtained using `get_data`
-pub trait ReadBackRequest<D: Device>: {
+pub trait ReadBackRequest<D: Device> {
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
     fn get_data(&self) -> Result<ReadBackData, &str>;
 }
@@ -936,38 +945,38 @@ impl std::fmt::Display for AdapterInfo {
             available += adapter;
             available += "\n";
         }
-write!(f, 
-"{}:
+        write!(
+            f,
+            "{}:
   {}
   Video Memory: {}(mb)
   System Memory: {}(mb)
   Shared System Memory: {}(mb)
 Available Adapters:
-{}", 
-            self.name, 
-            self.description, 
-            self.dedicated_video_memory/1024/1024,
-            self.dedicated_system_memory/1024/1024,
-            self.shared_system_memory/1024/1024,
+{}",
+            self.name,
+            self.description,
+            self.dedicated_video_memory / 1024 / 1024,
+            self.dedicated_system_memory / 1024 / 1024,
+            self.shared_system_memory / 1024 / 1024,
             available
         )
     }
 }
 
 impl Default for DeviceInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         DeviceInfo {
             adapter_name: None,
             shader_heap_size: 0,
             depth_stencil_heap_size: 0,
-            render_target_heap_size: 0
+            render_target_heap_size: 0,
         }
     }
 }
 
-
 impl Default for RasterInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         RasterInfo {
             fill_mode: FillMode::Solid,
             cull_mode: CullMode::None,
@@ -979,13 +988,13 @@ impl Default for RasterInfo {
             multisample_enable: false,
             antialiased_line_enable: false,
             forced_sample_count: 0,
-            conservative_raster_mode: false
+            conservative_raster_mode: false,
         }
     }
 }
 
 impl Default for SamplerInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         SamplerInfo {
             visibility: ShaderVisibility::Fragment,
             filter: SamplerFilter::Linear,
@@ -1005,7 +1014,7 @@ impl Default for SamplerInfo {
 }
 
 impl Default for DepthStencilInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         DepthStencilInfo {
             depth_enabled: false,
             depth_write_mask: DepthWriteMask::Zero,
@@ -1024,23 +1033,23 @@ impl Default for DepthStencilInfo {
                 depth_fail: StencilOp::Keep,
                 pass: StencilOp::Keep,
                 func: ComparisonFunc::Always,
-            }
+            },
         }
     }
 }
 
 impl Default for BlendInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         BlendInfo {
             alpha_to_coverage_enabled: false,
             independent_blend_enabled: false,
-            render_target: Vec::new()
+            render_target: Vec::new(),
         }
     }
 }
 
 impl Default for RenderTargetBlendInfo {
-    fn default() -> Self { 
+    fn default() -> Self {
         RenderTargetBlendInfo {
             blend_enabled: false,
             logic_op_enabled: false,
@@ -1051,17 +1060,17 @@ impl Default for RenderTargetBlendInfo {
             dst_blend_alpha: BlendFactor::Zero,
             blend_op_alpha: BlendOp::Add,
             logic_op: LogicOp::Clear,
-            write_mask: WriteMask::ALL
+            write_mask: WriteMask::ALL,
         }
     }
 }
 
 impl Default for DescriptorLayout {
-    fn default() -> Self { 
+    fn default() -> Self {
         DescriptorLayout {
             push_constants: None,
             bindings: None,
-            static_samplers: None
+            static_samplers: None,
         }
     }
 }

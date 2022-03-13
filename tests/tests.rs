@@ -38,7 +38,7 @@ fn create_d3d12_device() {
         window: false,
         num_buffers: 0,
     });
-    let _dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+    let _dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
         shader_heap_size: 1,
         render_target_heap_size: 1,
@@ -53,16 +53,19 @@ fn create_window() {
         window: false,
         num_buffers: 0,
     });
-    let win = app.create_window(os::WindowInfo {
-        title: String::from("hello world!"),
-        rect: os::Rect {
-            x: 0,
-            y: 0,
-            width: 1280,
-            height: 720,
+    let win = app.create_window(
+        os::WindowInfo {
+            title: String::from("hello world!"),
+            rect: os::Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            style: os::WindowStyleFlags::NONE,
         },
-        style: os::WindowStyleFlags::NONE
-    }, None);
+        None,
+    );
     win.bring_to_front();
     let winrect = win.get_rect();
     assert_eq!(winrect.x, 0);
@@ -78,16 +81,19 @@ fn window_set_rect() {
         window: false,
         num_buffers: 0,
     });
-    let mut win = app.create_window(os::WindowInfo {
-        title: String::from("window_set_rect!"),
-        rect: os::Rect {
-            x: 0,
-            y: 0,
-            width: 1280,
-            height: 720,
+    let mut win = app.create_window(
+        os::WindowInfo {
+            title: String::from("window_set_rect!"),
+            rect: os::Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            style: os::WindowStyleFlags::NONE,
         },
-        style: os::WindowStyleFlags::NONE
-    }, None);
+        None,
+    );
     win.set_rect(os::Rect {
         x: 200,
         y: 0,
@@ -109,27 +115,30 @@ fn swap_chain_buffer() {
         window: false,
         num_buffers: 0,
     });
-    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo{
+    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
         shader_heap_size: 0,
         render_target_heap_size: 2,
         depth_stencil_heap_size: 0,
     });
-    let mut win = app.create_window(os::WindowInfo {
-        title: String::from("swap chain buffering"),
-        rect: os::Rect {
-            x: 0,
-            y: 0,
-            width: 1280,
-            height: 720,
+    let mut win = app.create_window(
+        os::WindowInfo {
+            title: String::from("swap chain buffering"),
+            rect: os::Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            style: os::WindowStyleFlags::NONE,
         },
-        style: os::WindowStyleFlags::NONE
-    }, None);
+        None,
+    );
     win.bring_to_front();
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
-        format: gfx::Format::RGBA8n
+        format: gfx::Format::RGBA8n,
     };
 
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
@@ -202,25 +211,28 @@ fn draw_triangle() -> Result<(), gfx::Error> {
 
     let num_buffers = 2;
 
-    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo{
+    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers,
         ..Default::default()
     });
 
-    let mut window = app.create_window(os::WindowInfo {
-        title: String::from("triangle!"),
-        rect: os::Rect {
-            x: 0,
-            y: 0,
-            width: 1280,
-            height: 720,
+    let mut window = app.create_window(
+        os::WindowInfo {
+            title: String::from("triangle!"),
+            rect: os::Rect {
+                x: 0,
+                y: 0,
+                width: 1280,
+                height: 720,
+            },
+            style: os::WindowStyleFlags::NONE,
         },
-        style: os::WindowStyleFlags::NONE
-    }, None);
+        None,
+    );
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: num_buffers as u32,
-        format: gfx::Format::RGBA8n
+        format: gfx::Format::RGBA8n,
     };
 
     let mut swap_chain = device.create_swap_chain(&swap_chain_info, &window);
@@ -323,15 +335,12 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         blend_info: gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
             independent_blend_enabled: false,
-            render_target: vec![
-                gfx::RenderTargetBlendInfo::default()
-            ]
+            render_target: vec![gfx::RenderTargetBlendInfo::default()],
         },
         topology: gfx::Topology::TriangleList,
         patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass()
+        pass: swap_chain.get_backbuffer_pass(),
     })?;
-
 
     while app.run() {
         // update window and swap chain

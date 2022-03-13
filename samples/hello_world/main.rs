@@ -7,13 +7,11 @@ use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
 
-use imgui::ImGui;
-
 use std::fs;
 
+use hotline::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
-use hotline::gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
 struct Vertex {
@@ -34,12 +32,13 @@ fn main() {
         adapter_name: None,
         shader_heap_size: 100,
         render_target_heap_size: 100,
-        depth_stencil_heap_size: 100
+        depth_stencil_heap_size: 100,
     });
     print!("{}", dev.get_adapter_info());
 
     // window
-    let mut win = app.create_window(os::WindowInfo {
+    let mut win = app.create_window(
+        os::WindowInfo {
             title: String::from("bindless texture!"),
             rect: os::Rect {
                 x: 100,
@@ -47,14 +46,14 @@ fn main() {
                 width: 1280,
                 height: 720,
             },
-            style: os::WindowStyleFlags::NONE
+            style: os::WindowStyleFlags::NONE,
         },
-        None
+        None,
     );
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
-        format: gfx::Format::RGBA8n
+        format: gfx::Format::RGBA8n,
     };
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
 
@@ -147,80 +146,80 @@ fn main() {
     let num_descriptors = 10;
 
     // pipeline
-    let pso = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: Some(vs),
-        fs: Some(fs),
-        input_layout: vec![
-            gfx::InputElementInfo {
-                semantic: String::from("POSITION"),
-                index: 0,
-                format: gfx::Format::RGB32f,
-                input_slot: 0,
-                aligned_byte_offset: 0,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-            gfx::InputElementInfo {
-                semantic: String::from("COLOR"),
-                index: 0,
-                format: gfx::Format::RGBA32f,
-                input_slot: 0,
-                aligned_byte_offset: 12,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-        ],
-        descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![gfx::PushConstantInfo {
-                visibility: gfx::ShaderVisibility::Fragment,
-                num_values: 4,
-                shader_register: 0,
-                register_space: 0,
-            }]),
-            bindings: Some(vec![
-                gfx::DescriptorBinding {
+    let pso = dev
+        .create_render_pipeline(&gfx::RenderPipelineInfo {
+            vs: Some(vs),
+            fs: Some(fs),
+            input_layout: vec![
+                gfx::InputElementInfo {
+                    semantic: String::from("POSITION"),
+                    index: 0,
+                    format: gfx::Format::RGB32f,
+                    input_slot: 0,
+                    aligned_byte_offset: 0,
+                    input_slot_class: gfx::InputSlotClass::PerVertex,
+                    step_rate: 0,
+                },
+                gfx::InputElementInfo {
+                    semantic: String::from("COLOR"),
+                    index: 0,
+                    format: gfx::Format::RGBA32f,
+                    input_slot: 0,
+                    aligned_byte_offset: 12,
+                    input_slot_class: gfx::InputSlotClass::PerVertex,
+                    step_rate: 0,
+                },
+            ],
+            descriptor_layout: gfx::DescriptorLayout {
+                push_constants: Some(vec![gfx::PushConstantInfo {
                     visibility: gfx::ShaderVisibility::Fragment,
-                    binding_type: gfx::DescriptorType::ShaderResource,
-                    num_descriptors: Some(num_descriptors),
+                    num_values: 4,
                     shader_register: 0,
                     register_space: 0,
-                },
-                gfx::DescriptorBinding {
+                }]),
+                bindings: Some(vec![
+                    gfx::DescriptorBinding {
+                        visibility: gfx::ShaderVisibility::Fragment,
+                        binding_type: gfx::DescriptorType::ShaderResource,
+                        num_descriptors: Some(num_descriptors),
+                        shader_register: 0,
+                        register_space: 0,
+                    },
+                    gfx::DescriptorBinding {
+                        visibility: gfx::ShaderVisibility::Fragment,
+                        binding_type: gfx::DescriptorType::ConstantBuffer,
+                        num_descriptors: Some(num_descriptors),
+                        shader_register: 1,
+                        register_space: 0,
+                    },
+                ]),
+                static_samplers: Some(vec![gfx::SamplerInfo {
                     visibility: gfx::ShaderVisibility::Fragment,
-                    binding_type: gfx::DescriptorType::ConstantBuffer,
-                    num_descriptors: Some(num_descriptors),
-                    shader_register: 1,
+                    filter: gfx::SamplerFilter::Linear,
+                    address_u: gfx::SamplerAddressMode::Wrap,
+                    address_v: gfx::SamplerAddressMode::Wrap,
+                    address_w: gfx::SamplerAddressMode::Wrap,
+                    comparison: None,
+                    border_colour: None,
+                    mip_lod_bias: 0.0,
+                    max_aniso: 0,
+                    min_lod: -1.0,
+                    max_lod: -1.0,
+                    shader_register: 0,
                     register_space: 0,
-                },
-            ]),
-            static_samplers: Some(vec![gfx::SamplerInfo {
-                visibility: gfx::ShaderVisibility::Fragment,
-                filter: gfx::SamplerFilter::Linear,
-                address_u: gfx::SamplerAddressMode::Wrap,
-                address_v: gfx::SamplerAddressMode::Wrap,
-                address_w: gfx::SamplerAddressMode::Wrap,
-                comparison: None,
-                border_colour: None,
-                mip_lod_bias: 0.0,
-                max_aniso: 0,
-                min_lod: -1.0,
-                max_lod: -1.0,
-                shader_register: 0,
-                register_space: 0,
-            }]),
-        },
-        raster_info: gfx::RasterInfo::default(),
-        depth_stencil_info: gfx::DepthStencilInfo::default(),
-        blend_info: gfx::BlendInfo {
-            render_target: vec![
-                gfx::RenderTargetBlendInfo::default()
-            ],
-            ..Default::default() 
-        },
-        topology: gfx::Topology::TriangleList,
-        patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass()
-    }).expect("failed to create pipeline!");
+                }]),
+            },
+            raster_info: gfx::RasterInfo::default(),
+            depth_stencil_info: gfx::DepthStencilInfo::default(),
+            blend_info: gfx::BlendInfo {
+                render_target: vec![gfx::RenderTargetBlendInfo::default()],
+                ..Default::default()
+            },
+            topology: gfx::Topology::TriangleList,
+            patch_index: 0,
+            pass: swap_chain.get_backbuffer_pass(),
+        })
+        .expect("failed to create pipeline!");
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
@@ -241,7 +240,7 @@ fn main() {
             mip_levels: 1,
             samples: 1,
             usage: gfx::TextureUsage::SHADER_RESOURCE,
-            initial_state: gfx::ResourceState::ShaderResource
+            initial_state: gfx::ResourceState::ShaderResource,
         };
         let tex = dev.create_texture(&tex_info, Some(image.data.as_slice())).unwrap();
         textures.push(tex);
@@ -278,7 +277,7 @@ fn main() {
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
-        initial_state: gfx::ResourceState::ShaderResource
+        initial_state: gfx::ResourceState::ShaderResource,
     };
     let render_target = dev.create_texture::<u8>(&rt_info, None).unwrap();
 
@@ -293,27 +292,29 @@ fn main() {
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::DEPTH_STENCIL,
-        initial_state: gfx::ResourceState::DepthStencil
+        initial_state: gfx::ResourceState::DepthStencil,
     };
     let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
 
     // pass for render target with depth stencil
-    let mut render_target_pass = dev.create_render_pass(&gfx::RenderPassInfo {
-        render_targets: vec![render_target.clone()],
-        rt_clear: Some(gfx::ClearColour {
-            r: 1.0,
-            g: 0.0,
-            b: 1.0,
-            a: 1.0,
-        }),
-        depth_stencil: Some(depth_stencil.clone()),
-        ds_clear: Some( gfx::ClearDepthStencil {
-            depth: Some(1.0),
-            stencil: None
-        }),
-        resolve: false,
-        discard: false,
-    }).unwrap();
+    let mut render_target_pass = dev
+        .create_render_pass(&gfx::RenderPassInfo {
+            render_targets: vec![render_target.clone()],
+            rt_clear: Some(gfx::ClearColour {
+                r: 1.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            }),
+            depth_stencil: Some(depth_stencil.clone()),
+            ds_clear: Some(gfx::ClearDepthStencil {
+                depth: Some(1.0),
+                stencil: None,
+            }),
+            resolve: false,
+            discard: false,
+        })
+        .unwrap();
 
     // unordered access rw texture
     let rw_info = gfx::TextureInfo {
@@ -326,34 +327,36 @@ fn main() {
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
-        initial_state: gfx::ResourceState::ShaderResource
+        initial_state: gfx::ResourceState::ShaderResource,
     };
-    let rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
+    dev.create_texture::<u8>(&rw_info, None).unwrap();
 
-    let compute_pipeline = dev.create_compute_pipeline(&gfx::ComputePipelineInfo{
-        cs: cs,
-        descriptor_layout: gfx::DescriptorLayout {
-            static_samplers: None,
-            push_constants: None,
-            bindings: Some(vec![
-                gfx::DescriptorBinding {
+    let compute_pipeline = dev
+        .create_compute_pipeline(&gfx::ComputePipelineInfo {
+            cs: cs,
+            descriptor_layout: gfx::DescriptorLayout {
+                static_samplers: None,
+                push_constants: None,
+                bindings: Some(vec![gfx::DescriptorBinding {
                     visibility: gfx::ShaderVisibility::Compute,
                     binding_type: gfx::DescriptorType::UnorderedAccess,
                     num_descriptors: Some(num_descriptors),
                     shader_register: 0,
                     register_space: 0,
-                },
-            ]),
-        }
-    }).unwrap();
+                }]),
+            },
+        })
+        .unwrap();
 
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
-        fonts: vec![
-            asset_path.join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf").to_str().unwrap().to_string()
-        ]
+        fonts: vec![asset_path
+            .join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf")
+            .to_str()
+            .unwrap()
+            .to_string()],
     };
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
@@ -372,10 +375,14 @@ fn main() {
         cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
         cmdbuffer.dispatch(
             gfx::Size3 {
-                x:512/16, y:512/16, z:1
+                x: 512 / 16,
+                y: 512 / 16,
+                z: 1,
             },
             gfx::Size3 {
-                x:512, y:512, z:1
+                x: 512,
+                y: 512,
+                z: 1,
             },
         );
         cmdbuffer.end_event();
@@ -388,7 +395,7 @@ fn main() {
             state_before: gfx::ResourceState::ShaderResource,
             state_after: gfx::ResourceState::RenderTarget,
         });
-        
+
         cmdbuffer.begin_render_pass(&mut render_target_pass);
         cmdbuffer.end_render_pass();
 
