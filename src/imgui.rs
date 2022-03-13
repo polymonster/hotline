@@ -26,12 +26,9 @@ pub struct ImGuiInfo<'a> {
 }
 
 pub struct ImGui {
-    fonts: Vec<String>,
     font_texture: gfx_platform::Texture,
     pipeline: gfx_platform::RenderPipeline,
     buffers: Vec<RenderBuffers>,
-    viewports: Vec<ViewportData>,
-    monitors : Vec<ImGuiPlatformMonitor>
 }
 
 #[derive(Clone)]
@@ -107,158 +104,156 @@ fn create_fonts_texture(device: &mut gfx_platform::Device) -> Result<gfx_platfor
 }
 
 fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeline, gfx::Error> {
-    unsafe {
-        let device = &info.device;
-        let swap_chain = &info.swap_chain;
-    
-        // TODO: temp: compile shaders
-        let src = "
-            cbuffer vertexBuffer : register(b0)
-            {
-                float4x4 ProjectionMatrix;
-            };
-            struct VS_INPUT
-            {
-                float2 pos : POSITION;
-                float4 col : COLOR0;
-                float2 uv  : TEXCOORD0;
-            };
-            
-            struct PS_INPUT
-            {
-                float4 pos : SV_POSITION;
-                float4 col : COLOR0;
-                float2 uv  : TEXCOORD0;
-            };
-            
-            PS_INPUT VSMain(VS_INPUT input)
-            {
-                PS_INPUT output;
-                output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
-                output.col = input.col;
-                output.uv  = input.uv;
-                return output;
-            }
+    let device = &info.device;
+    let swap_chain = &info.swap_chain;
 
-            SamplerState sampler0 : register(s0);
-            Texture2D texture0 : register(t0);
-            
-            float4 PSMain(PS_INPUT input) : SV_Target
-            {
-              float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
-              return out_col;
-            }";
-    
-        let vs_info = gfx::ShaderInfo {
-            shader_type: gfx::ShaderType::Vertex,
-            compile_info: Some(gfx::ShaderCompileInfo {
-                entry_point: String::from("VSMain"),
-                target: String::from("vs_5_0"),
-                flags: gfx::ShaderCompileFlags::NONE,
-            }),
+    // TODO: temp: compile shaders
+    let src = "
+        cbuffer vertexBuffer : register(b0)
+        {
+            float4x4 ProjectionMatrix;
         };
-    
-        let fs_info = gfx::ShaderInfo {
-            shader_type: gfx::ShaderType::Fragment,
-            compile_info: Some(gfx::ShaderCompileInfo {
-                entry_point: String::from("PSMain"),
-                target: String::from("ps_5_0"),
-                flags: gfx::ShaderCompileFlags::NONE,
-            }),
+        struct VS_INPUT
+        {
+            float2 pos : POSITION;
+            float4 col : COLOR0;
+            float2 uv  : TEXCOORD0;
         };
-    
-        let vs = device.create_shader(&vs_info, src.as_bytes())?;
-        let fs = device.create_shader(&fs_info, src.as_bytes())?;
-    
-        Ok( device.create_render_pipeline(&gfx::RenderPipelineInfo {
-                vs: Some(vs),
-                fs: Some(fs),
-                input_layout: vec![
-                    gfx::InputElementInfo {
-                        semantic: String::from("POSITION"),
-                        index: 0,
-                        format: gfx::Format::RG32f,
-                        input_slot: 0,
-                        aligned_byte_offset: 0,
-                        input_slot_class: gfx::InputSlotClass::PerVertex,
-                        step_rate: 0,
-                    },
-                    gfx::InputElementInfo {
-                        semantic: String::from("TEXCOORD"),
-                        index: 0,
-                        format: gfx::Format::RG32f,
-                        input_slot: 0,
-                        aligned_byte_offset: 8,
-                        input_slot_class: gfx::InputSlotClass::PerVertex,
-                        step_rate: 0,
-                    },
-                    gfx::InputElementInfo {
-                        semantic: String::from("COLOR"),
-                        index: 0,
-                        format: gfx::Format::RGBA8n,
-                        input_slot: 0,
-                        aligned_byte_offset: 16,
-                        input_slot_class: gfx::InputSlotClass::PerVertex,
-                        step_rate: 0,
-                    },
-                ],
-                descriptor_layout: gfx::DescriptorLayout {
-                    push_constants: Some(vec![gfx::PushConstantInfo {
-                        visibility: gfx::ShaderVisibility::Vertex,
-                        num_values: 16,
-                        shader_register: 0,
-                        register_space: 0,
-                    }]),
-                    bindings: Some(vec![
-                        gfx::DescriptorBinding {
-                            visibility: gfx::ShaderVisibility::Fragment,
-                            binding_type: gfx::DescriptorType::ShaderResource,
-                            num_descriptors: Some(1),
-                            shader_register: 0,
-                            register_space: 0,
-                        }
-                    ]),
-                    static_samplers: Some(vec![gfx::SamplerInfo {
+        
+        struct PS_INPUT
+        {
+            float4 pos : SV_POSITION;
+            float4 col : COLOR0;
+            float2 uv  : TEXCOORD0;
+        };
+        
+        PS_INPUT VSMain(VS_INPUT input)
+        {
+            PS_INPUT output;
+            output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
+            output.col = input.col;
+            output.uv  = input.uv;
+            return output;
+        }
+
+        SamplerState sampler0 : register(s0);
+        Texture2D texture0 : register(t0);
+        
+        float4 PSMain(PS_INPUT input) : SV_Target
+        {
+            float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
+            return out_col;
+        }";
+
+    let vs_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: Some(gfx::ShaderCompileInfo {
+            entry_point: String::from("VSMain"),
+            target: String::from("vs_5_0"),
+            flags: gfx::ShaderCompileFlags::NONE,
+        }),
+    };
+
+    let fs_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: Some(gfx::ShaderCompileInfo {
+            entry_point: String::from("PSMain"),
+            target: String::from("ps_5_0"),
+            flags: gfx::ShaderCompileFlags::NONE,
+        }),
+    };
+
+    let vs = device.create_shader(&vs_info, src.as_bytes())?;
+    let fs = device.create_shader(&fs_info, src.as_bytes())?;
+
+    Ok( device.create_render_pipeline(&gfx::RenderPipelineInfo {
+            vs: Some(vs),
+            fs: Some(fs),
+            input_layout: vec![
+                gfx::InputElementInfo {
+                    semantic: String::from("POSITION"),
+                    index: 0,
+                    format: gfx::Format::RG32f,
+                    input_slot: 0,
+                    aligned_byte_offset: 0,
+                    input_slot_class: gfx::InputSlotClass::PerVertex,
+                    step_rate: 0,
+                },
+                gfx::InputElementInfo {
+                    semantic: String::from("TEXCOORD"),
+                    index: 0,
+                    format: gfx::Format::RG32f,
+                    input_slot: 0,
+                    aligned_byte_offset: 8,
+                    input_slot_class: gfx::InputSlotClass::PerVertex,
+                    step_rate: 0,
+                },
+                gfx::InputElementInfo {
+                    semantic: String::from("COLOR"),
+                    index: 0,
+                    format: gfx::Format::RGBA8n,
+                    input_slot: 0,
+                    aligned_byte_offset: 16,
+                    input_slot_class: gfx::InputSlotClass::PerVertex,
+                    step_rate: 0,
+                },
+            ],
+            descriptor_layout: gfx::DescriptorLayout {
+                push_constants: Some(vec![gfx::PushConstantInfo {
+                    visibility: gfx::ShaderVisibility::Vertex,
+                    num_values: 16,
+                    shader_register: 0,
+                    register_space: 0,
+                }]),
+                bindings: Some(vec![
+                    gfx::DescriptorBinding {
                         visibility: gfx::ShaderVisibility::Fragment,
-                        filter: gfx::SamplerFilter::Linear,
-                        address_u: gfx::SamplerAddressMode::Wrap,
-                        address_v: gfx::SamplerAddressMode::Wrap,
-                        address_w: gfx::SamplerAddressMode::Wrap,
-                        comparison: None,
-                        border_colour: None,
-                        mip_lod_bias: 0.0,
-                        max_aniso: 0,
-                        min_lod: -1.0,
-                        max_lod: -1.0,
+                        binding_type: gfx::DescriptorType::ShaderResource,
+                        num_descriptors: Some(1),
                         shader_register: 0,
                         register_space: 0,
-                    }]),
-                },
-                raster_info: gfx::RasterInfo::default(),
-                depth_stencil_info: gfx::DepthStencilInfo::default(),
-                blend_info: gfx::BlendInfo {
-                    independent_blend_enabled: true,
-                    render_target: vec![
-                        gfx::RenderTargetBlendInfo {
-                            blend_enabled: true,
-                            logic_op_enabled: false,
-                            src_blend: gfx::BlendFactor::SrcAlpha,
-                            dst_blend: gfx::BlendFactor::InvSrcAlpha,
-                            blend_op: gfx::BlendOp::Add,
-                            src_blend_alpha: gfx::BlendFactor::One,
-                            dst_blend_alpha: gfx::BlendFactor::InvSrcAlpha,
-                            blend_op_alpha: gfx::BlendOp::Add,
-                            logic_op: gfx::LogicOp::Clear,
-                            write_mask: gfx::WriteMask::ALL
-                        }
-                    ],
-                    ..Default::default() 
-                },
-                topology: gfx::Topology::TriangleList,
-                patch_index: 0,
-                pass: swap_chain.get_backbuffer_pass()
-        })?)
-    }
+                    }
+                ]),
+                static_samplers: Some(vec![gfx::SamplerInfo {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    filter: gfx::SamplerFilter::Linear,
+                    address_u: gfx::SamplerAddressMode::Wrap,
+                    address_v: gfx::SamplerAddressMode::Wrap,
+                    address_w: gfx::SamplerAddressMode::Wrap,
+                    comparison: None,
+                    border_colour: None,
+                    mip_lod_bias: 0.0,
+                    max_aniso: 0,
+                    min_lod: -1.0,
+                    max_lod: -1.0,
+                    shader_register: 0,
+                    register_space: 0,
+                }]),
+            },
+            raster_info: gfx::RasterInfo::default(),
+            depth_stencil_info: gfx::DepthStencilInfo::default(),
+            blend_info: gfx::BlendInfo {
+                independent_blend_enabled: true,
+                render_target: vec![
+                    gfx::RenderTargetBlendInfo {
+                        blend_enabled: true,
+                        logic_op_enabled: false,
+                        src_blend: gfx::BlendFactor::SrcAlpha,
+                        dst_blend: gfx::BlendFactor::InvSrcAlpha,
+                        blend_op: gfx::BlendOp::Add,
+                        src_blend_alpha: gfx::BlendFactor::One,
+                        dst_blend_alpha: gfx::BlendFactor::InvSrcAlpha,
+                        blend_op_alpha: gfx::BlendOp::Add,
+                        logic_op: gfx::LogicOp::Clear,
+                        write_mask: gfx::WriteMask::ALL
+                    }
+                ],
+                ..Default::default() 
+            },
+            topology: gfx::Topology::TriangleList,
+            patch_index: 0,
+            pass: swap_chain.get_backbuffer_pass()
+    })?)
 }
 
 fn create_vertex_buffer(
@@ -509,12 +504,9 @@ impl ImGui {
 
             //
             let imgui = ImGui {
-                fonts: info.fonts.clone(),
                 font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
-                viewports: Vec::new(),
-                monitors: Vec::new(),
             };
     
             if(io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -570,6 +562,16 @@ impl ImGui {
         unsafe {
             let io = &mut *igGetIO(); 
 
+            // gotta pack the refs into a pointer and into UserData for callbacks
+            let mut ud = UserData {
+                device: device,
+                app: app,
+                main_window: main_window,
+                pipeline: &self.pipeline,
+                font_texture: &self.font_texture
+            }; 
+            io.UserData = (&mut ud as *mut UserData) as _;
+
             // update display
             io.DisplaySize = ImVec2 {
                 x: window_width as f32,
@@ -587,19 +589,27 @@ impl ImGui {
                 io.MousePos = ImVec2::from(app.get_mouse_pos());
             }
 
+            // set ImGui mouse hovered viewport
+            let platform_io = &mut *igGetPlatformIO();
+            let num_vp = platform_io.Viewports.Size;
+            let viewports = std::slice::from_raw_parts(platform_io.Viewports.Data, num_vp as usize);
+
+            // find / reset hovered
+            io.MouseHoveredViewport = 0;
+            for vp in viewports {
+                let p_vp = *vp;
+                let vp_ref = &*p_vp;
+                let win = get_viewport_window(p_vp);
+                if win.is_mouse_hovered() {
+                    if (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
+                        io.MouseHoveredViewport = vp_ref.ID;
+                    }
+                }
+            }
+
             io.MouseWheel =app.get_mouse_wheel();
             io.MouseWheelH =app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
-
-            // gotta pack the refs into a pointer and into 
-            let mut ud = UserData {
-                device: device,
-                app: app,
-                main_window: main_window,
-                pipeline: &self.pipeline,
-                font_texture: &self.font_texture
-            }; 
-            io.UserData = (&mut ud as *mut UserData) as _;
 
             igNewFrame();
 
@@ -665,6 +675,15 @@ impl From<os::Point<i32>> for ImVec2 {
         ImVec2 {
             x: point.x as f32,
             y: point.y as f32
+        }
+    }
+}
+
+impl From<ImVec2> for os::Point<i32> {
+    fn from(vec2: ImVec2) -> os::Point<i32> {
+        os::Point {
+            x: vec2.x as i32,
+            y: vec2.y as i32
         }
     }
 }
@@ -762,9 +781,24 @@ unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
 }
 
 unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
-    let mut win = get_viewport_window(vp);
+    let win = get_viewport_window(vp);
     let cstr = CStr::from_ptr(str_);
     win.set_title(String::from(cstr.to_str().unwrap()));
+}
+
+unsafe extern "C" fn platform_set_window_focus(vp: *mut ImGuiViewport) {
+    let window = get_viewport_window(vp);
+    window.set_focused();
+}
+
+unsafe extern "C" fn platform_get_window_focus(vp: *mut ImGuiViewport) -> bool {
+    let window = get_viewport_window(vp);
+    window.is_focused()
+}
+
+unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {
+    let window = get_viewport_window(vp);
+    window.set_pos(os::Point::from(pos));
 }
 
 unsafe extern "C" fn renderer_create_window(vp: *mut ImGuiViewport) {
@@ -802,7 +836,7 @@ unsafe extern "C" fn renderer_create_window(vp: *mut ImGuiViewport) {
 
 unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
     let ud = get_user_data();
-    let mut vd = get_viewport_data(vp);
+    let vd = get_viewport_data(vp);
     let vp_ref = &*vp;
 
     // must be an imgui created window
@@ -813,9 +847,9 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
     println!("render window");
 
     // unpack from vec
-    let mut window = &mut vd.window[0];
+    let window = &mut vd.window[0];
     let mut cmd = &mut vd.cmd[0];
-    let mut swap = &mut vd.swap_chain[0];
+    let swap = &mut vd.swap_chain[0];
     let vp_rect = window.get_rect();
 
     // update
@@ -865,7 +899,7 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
 
 unsafe extern "C" fn renderer_swap_buffers(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
     let ud = get_user_data();
-    let mut vd = get_viewport_data(vp);
+    let vd = get_viewport_data(vp);
     assert_ne!(vd.swap_chain.len(), 0);
     vd.swap_chain[0].swap(&ud.device);
 }
@@ -873,33 +907,17 @@ unsafe extern "C" fn renderer_swap_buffers(vp: *mut ImGuiViewport, _render_arg: 
 // TODO: render stubs
 
 unsafe extern "C" fn renderer_destroy_window(vp: *mut ImGuiViewport) {
-    let a = 0;
 }
 
 unsafe extern "C" fn renderer_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
-    let a = 0;
 }
 
 // TODO: platform stubs
 
 unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
-    let a = 0;
-}
-
-unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {
-    let a = 0;
 }
 
 unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, pos: ImVec2) {
-    let a = 0;
-}
-
-unsafe extern "C" fn platform_set_window_focus(vp: *mut ImGuiViewport) {
-    let a = 0;
-}
-
-unsafe extern "C" fn platform_get_window_focus(vp: *mut ImGuiViewport) -> bool {
-    false
 }
 
 unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
@@ -907,11 +925,9 @@ unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bo
 }
 
 unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f32) {
-    let a = 0;
 }
 
 unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
-    let a = 0;
 }
 
 pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
