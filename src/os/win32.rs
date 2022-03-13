@@ -1,18 +1,10 @@
 use windows::{
-    Win32::Foundation::*, 
-    Win32::Graphics::Gdi::ValidateRect, 
-    Win32::Graphics::Gdi::ScreenToClient,
-    Win32::Graphics::Gdi::ClientToScreen,
-    Win32::Graphics::Gdi::EnumDisplayMonitors,
-    Win32::Graphics::Gdi::HDC,
-    Win32::Graphics::Gdi::HMONITOR,
-    Win32::Graphics::Gdi::MONITORINFO,
-    Win32::Graphics::Gdi::GetMonitorInfoA,
-    Win32::System::LibraryLoader::*,
-    Win32::UI::Input::KeyboardAndMouse::*, 
+    Win32::Foundation::*, Win32::Globalization::*, Win32::Graphics::Gdi::ClientToScreen,
+    Win32::Graphics::Gdi::EnumDisplayMonitors, Win32::Graphics::Gdi::GetMonitorInfoA,
+    Win32::Graphics::Gdi::ScreenToClient, Win32::Graphics::Gdi::ValidateRect,
+    Win32::Graphics::Gdi::HDC, Win32::Graphics::Gdi::HMONITOR, Win32::Graphics::Gdi::MONITORINFO,
+    Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::Input::KeyboardAndMouse::*,
     Win32::UI::WindowsAndMessaging::*,
-    Win32::UI::Controls::*,
-    Win32::Globalization::*,
 };
 
 use std::ffi::CString;
@@ -21,7 +13,7 @@ use std::ffi::CString;
 pub struct App {
     window_class: String,
     hinstance: HINSTANCE,
-    mouse_pos: super::Point<i32>
+    mouse_pos: super::Point<i32>,
 }
 
 #[derive(Clone)]
@@ -29,7 +21,7 @@ pub struct Window {
     info: super::WindowInfo,
     hwnd: HWND,
     ws: WINDOW_STYLE,
-    wsex: WINDOW_EX_STYLE
+    wsex: WINDOW_EX_STYLE,
 }
 
 #[derive(Clone, Copy)]
@@ -42,18 +34,18 @@ struct ProcData {
     mouse_tracked: bool,
     mouse_down: [bool; 5],
     mouse_wheel: f32,
-    mouse_hwheel: f32
+    mouse_hwheel: f32,
 }
 
-static mut PROC_DATA : ProcData = ProcData {
+static mut PROC_DATA: ProcData = ProcData {
     mouse_hwnd: HWND(0),
     mouse_tracked: false,
     mouse_down: [false; 5],
     mouse_wheel: 0.0,
-    mouse_hwheel: 0.0
+    mouse_hwheel: 0.0,
 };
 
-static mut MONITOR_ENUM : Vec<super::MonitorInfo> = Vec::new();
+static mut MONITOR_ENUM: Vec<super::MonitorInfo> = Vec::new();
 
 impl super::NativeHandle<App> for NativeHandle {}
 
@@ -114,12 +106,16 @@ fn to_win32_dw_ex_style(style: &super::WindowStyleFlags) -> WINDOW_EX_STYLE {
     WINDOW_EX_STYLE(win32_style)
 }
 
-fn adjust_window_rect(rect: &super::Rect::<i32>, ws: WINDOW_STYLE, wsex: WINDOW_EX_STYLE) -> super::Rect::<i32>{
+fn adjust_window_rect(
+    rect: &super::Rect<i32>,
+    ws: WINDOW_STYLE,
+    wsex: WINDOW_EX_STYLE,
+) -> super::Rect<i32> {
     let mut rc = RECT {
         left: rect.x,
         top: rect.y,
         right: rect.x + rect.width,
-        bottom: rect.y + rect.height
+        bottom: rect.y + rect.height,
     };
     unsafe {
         AdjustWindowRectEx(&mut rc, ws, BOOL::from(false), wsex);
@@ -139,7 +135,7 @@ impl App {
             GetCursorPos(&mut mouse_pos);
             self.mouse_pos = super::Point {
                 x: mouse_pos.x,
-                y: mouse_pos.y
+                y: mouse_pos.y,
             }
         }
     }
@@ -171,7 +167,7 @@ impl super::App for App {
             App {
                 window_class: String::from(window_class),
                 hinstance: instance,
-                mouse_pos: super::Point::default()
+                mouse_pos: super::Point::default(),
             }
         }
     }
@@ -206,7 +202,7 @@ impl super::App for App {
                 hwnd: hwnd,
                 info: info,
                 ws: ws,
-                wsex: wsex
+                wsex: wsex,
             }
         }
     }
@@ -237,28 +233,22 @@ impl super::App for App {
     }
 
     fn get_mouse_wheel(&self) -> f32 {
-        unsafe {
-            PROC_DATA.mouse_wheel
-        }
+        unsafe { PROC_DATA.mouse_wheel }
     }
 
     fn get_mouse_hwheel(&self) -> f32 {
-        unsafe {
-            PROC_DATA.mouse_hwheel
-        }
+        unsafe { PROC_DATA.mouse_hwheel }
     }
 
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
-        unsafe {
-            PROC_DATA.mouse_down
-        }
+        unsafe { PROC_DATA.mouse_down }
     }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
             MONITOR_ENUM.clear();
             EnumDisplayMonitors(HDC(0), std::ptr::null_mut(), Some(enum_func), LPARAM(0));
-            let mut monitors : Vec<super::MonitorInfo> = Vec::new();
+            let mut monitors: Vec<super::MonitorInfo> = Vec::new();
             for m in &MONITOR_ENUM {
                 monitors.push(m.clone());
             }
@@ -292,9 +282,7 @@ impl super::Window<App> for Window {
     }
 
     fn is_focused(&self) -> bool {
-        unsafe {
-            GetForegroundWindow() == self.hwnd
-        }
+        unsafe { GetForegroundWindow() == self.hwnd }
     }
 
     fn set_focused(&self) {
@@ -317,21 +305,21 @@ impl super::Window<App> for Window {
         unsafe {
             let null_title = CString::new(title).unwrap();
             let n = MultiByteToWideChar(
-                windows::Win32::Globalization::CP_UTF8, 
-                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), 
-                PSTR(null_title.as_ptr() as _), 
-                -1, 
-                PWSTR(std::ptr::null_mut() as _), 
-                0
+                windows::Win32::Globalization::CP_UTF8,
+                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+                PSTR(null_title.as_ptr() as _),
+                -1,
+                PWSTR(std::ptr::null_mut() as _),
+                0,
             );
-            let mut v : Vec<u16> = vec![0; n as usize];
+            let mut v: Vec<u16> = vec![0; n as usize];
             MultiByteToWideChar(
-                windows::Win32::Globalization::CP_UTF8, 
-                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0), 
-                PSTR(null_title.as_ptr() as _), 
-                -1, 
-                PWSTR(v.as_mut_ptr() as _), 
-                n
+                windows::Win32::Globalization::CP_UTF8,
+                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+                PSTR(null_title.as_ptr() as _),
+                -1,
+                PWSTR(v.as_mut_ptr() as _),
+                n,
             );
             SetWindowTextW(self.hwnd, PWSTR(v.as_mut_ptr() as _));
         }
@@ -346,21 +334,23 @@ impl super::Window<App> for Window {
         };
         unsafe {
             AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
-            SetWindowPos(self.hwnd, HWND(0), rect.left, rect.top, 0, 0, SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+            SetWindowPos(
+                self.hwnd,
+                HWND(0),
+                rect.left,
+                rect.top,
+                0,
+                0,
+                SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 
     fn get_screen_pos(&self) -> super::Point<i32> {
         unsafe {
-            let mut pos = POINT { 
-                x: 0, 
-                y: 0 
-            };
+            let mut pos = POINT { x: 0, y: 0 };
             ClientToScreen(self.hwnd, &mut pos);
-            super::Point {
-                x: pos.x,
-                y: pos.y
-            }
+            super::Point { x: pos.x, y: pos.y }
         }
     }
 
@@ -397,13 +387,10 @@ impl super::Window<App> for Window {
         unsafe {
             let mut mp = POINT {
                 x: mouse_pos.x,
-                y: mouse_pos.y
+                y: mouse_pos.y,
             };
             ScreenToClient(self.hwnd, &mut mp);
-            super::Point {
-                x: mp.x,
-                y: mp.y
-            }
+            super::Point { x: mp.x, y: mp.y }
         }
     }
 
@@ -448,31 +435,25 @@ impl super::Window<App> for Window {
     }
 
     fn get_native_handle(&self) -> NativeHandle {
-        NativeHandle {
-            hwnd: self.hwnd
-        }
+        NativeHandle { hwnd: self.hwnd }
     }
 
     fn as_ptr(&self) -> *const Self {
-        unsafe {
-            std::mem::transmute(self)
-        }
+        unsafe { std::mem::transmute(self) }
     }
 
     fn as_mut_ptr(&mut self) -> *mut Self {
-        unsafe {
-            std::mem::transmute(self)
-        }
+        unsafe { std::mem::transmute(self) }
     }
 }
 
 fn set_capture(window: HWND) {
     unsafe {
         let any_down = PROC_DATA.mouse_down.iter().any(|v| v == &true);
-        if !any_down && GetCapture() == HWND(0){
+        if !any_down && GetCapture() == HWND(0) {
             SetCapture(window);
         }
-    }   
+    }
 }
 
 fn release_capture(window: HWND) {
@@ -481,7 +462,7 @@ fn release_capture(window: HWND) {
         if !any_down && GetCapture() == window {
             ReleaseCapture();
         }
-    }   
+    }
 }
 
 /*
@@ -504,12 +485,12 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             WM_MOUSEMOVE => {
                 PROC_DATA.mouse_hwnd = window;
                 if !PROC_DATA.mouse_tracked {
-                    // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events 
-                    TrackMouseEvent(&mut TRACKMOUSEEVENT{
+                    // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events
+                    TrackMouseEvent(&mut TRACKMOUSEEVENT {
                         cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
                         dwFlags: TME_LEAVE,
                         hwndTrack: window,
-                        dwHoverTime: 0
+                        dwHoverTime: 0,
                     });
                     PROC_DATA.mouse_tracked = true;
                 }
@@ -583,9 +564,14 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
     }
 }
 
-extern "system" fn enum_func(monitor: HMONITOR, _hdc: HDC, _lprect: *mut RECT, _lparam: LPARAM) -> BOOL {
+extern "system" fn enum_func(
+    monitor: HMONITOR,
+    _hdc: HDC,
+    _lprect: *mut RECT,
+    _lparam: LPARAM,
+) -> BOOL {
     unsafe {
-        let mut info : MONITORINFO = MONITORINFO::default();
+        let mut info: MONITORINFO = MONITORINFO::default();
         info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
         if GetMonitorInfoA(monitor, &mut info) == BOOL::from(false) {
             return BOOL::from(false);
@@ -595,16 +581,16 @@ extern "system" fn enum_func(monitor: HMONITOR, _hdc: HDC, _lprect: *mut RECT, _
                 x: info.rcMonitor.left,
                 y: info.rcMonitor.top,
                 width: info.rcMonitor.right - info.rcMonitor.left,
-                height: info.rcMonitor.bottom - info.rcMonitor.top
+                height: info.rcMonitor.bottom - info.rcMonitor.top,
             },
             client_rect: super::Rect {
                 x: info.rcWork.left,
                 y: info.rcWork.top,
                 width: info.rcWork.right - info.rcWork.left,
-                height: info.rcWork.bottom - info.rcWork.top
+                height: info.rcWork.bottom - info.rcWork.top,
             },
             dpi_scale: 1.0, // TODO:
-            primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0
+            primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
         });
         BOOL::from(true)
     }
