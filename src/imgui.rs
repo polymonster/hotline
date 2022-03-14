@@ -807,7 +807,18 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
 }
 
 unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
+    let vd = get_viewport_data(vp);
+    let mut vp_ref = &mut *vp;
 
+    vd.swap_chain[0].wait_for_last_frame();
+
+    vd.swap_chain.clear();
+    vd.cmd.clear();
+    vd.buffers.clear(); // TODO: heap
+    vd.window.clear();
+
+    // null PlatformUserData
+    vp_ref.PlatformUserData = std::ptr::null_mut();
 }
 
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
@@ -937,7 +948,9 @@ unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f3
     
 }
 
-unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {}
+unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
+
+}
 
 pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
 

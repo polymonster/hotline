@@ -1905,8 +1905,20 @@ impl SwapChain {
     }
 }
 
+impl Drop for SwapChain {
+    fn drop(&mut self) {
+        unsafe {
+            // self.wait_for_frame(self.bb_index as usize);
+        }
+    }
+}
+
 impl super::SwapChain<Device> for SwapChain {
     fn new_frame(&mut self) {
+        self.wait_for_frame(self.bb_index as usize);
+    }
+
+    fn wait_for_last_frame(&mut self) {
         self.wait_for_frame(self.bb_index as usize);
     }
 
@@ -2022,6 +2034,14 @@ impl CmdBuf {
             }
         }
         self.in_flight_barriers[bb].clear();
+    }
+}
+
+impl Drop for CmdBuf {
+    fn drop(&mut self) {
+        unsafe {
+            self.drop_complete_in_flight_barriers(self.bb_index);
+        }
     }
 }
 

@@ -58,7 +58,6 @@ impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
             DestroyWindow(self.hwnd);
-            self.hwnd = HWND(0);
         }
     }
 }

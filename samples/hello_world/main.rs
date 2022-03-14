@@ -439,7 +439,7 @@ fn main() {
         imgui.new_frame(&mut app, &mut win, &mut dev);
         imgui.demo();
         imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer);
-        
+
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
@@ -458,6 +458,8 @@ fn main() {
 
         ci = (ci + 1) % 4;
     }
+
+    swap_chain.wait_for_last_frame();
 
     // must wait for the final frame to be completed
     cmdbuffer.reset(&swap_chain);
