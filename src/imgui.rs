@@ -536,8 +536,6 @@ impl ImGui {
                 imgui.setup_platform_interface();
             }
 
-            imgui.setup_renderer_interface();
-
             Ok(imgui)
         }
     }
@@ -554,23 +552,18 @@ impl ImGui {
             platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus);
             platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
             platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
-            platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
-            platform_io.Platform_UpdateWindow = Some(platform_update_window);
-
+            platform_io.Renderer_RenderWindow = Some(renderer_render_window);
+            platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers);
+            
+            // TODO:
+            //platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
+            //platform_io.Platform_UpdateWindow = Some(platform_update_window);
             //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
             //platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
 
             // need to hook these c-compatible getter funtions due to complex return types
             ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos);
             ImGuiPlatformIO_Set_Platform_GetWindowSize(platform_io, platform_get_window_size)
-        }
-    }
-
-    fn setup_renderer_interface(&self) {
-        unsafe {
-            let platform_io = &mut *igGetPlatformIO();
-            platform_io.Renderer_RenderWindow = Some(renderer_render_window);
-            platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers);
         }
     }
 
@@ -695,6 +688,14 @@ impl ImGui {
     }
 }
 
+impl Drop for ImGui {
+    fn drop(&mut self) {
+        unsafe {
+            igDestroyPlatformWindows();
+        }
+    }
+}
+
 impl From<os::Point<i32>> for ImVec2 {
     fn from(point: os::Point<i32>) -> ImVec2 {
         ImVec2 {
@@ -774,6 +775,7 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
                 height: vp_ref.Size.y as i32,
             },
             style: os::WindowStyleFlags::from(vp_ref.Flags),
+            imgui: true,
         },
         parent_handle,
     )];
@@ -871,6 +873,11 @@ unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, size: ImVe
     window.set_size(os::Size::from(size));
 }
 
+unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
+    let window = get_viewport_window(vp);
+    window.is_minimised()
+}
+
 unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
     let ud = get_user_data();
     let vd = get_viewport_data(vp);
@@ -938,18 +945,6 @@ unsafe extern "C" fn renderer_swap_buffers(vp: *mut ImGuiViewport, _render_arg: 
     let vd = get_viewport_data(vp);
     assert_ne!(vd.swap_chain.len(), 0);
     vd.swap_chain[0].swap(&ud.device);
-}
-
-unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
-    false
-}
-
-unsafe extern "C" fn platform_set_window_alpha(vp: *mut ImGuiViewport, alpha: f32) {
-    
-}
-
-unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
-
 }
 
 pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);

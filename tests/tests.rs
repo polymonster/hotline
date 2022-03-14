@@ -2,15 +2,10 @@ use hotline::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
-use gfx::ReadBackRequest;
 use gfx::SwapChain;
 
 use os::App;
 use os::Window;
-
-use image::*;
-use std::env;
-use std::fs;
 
 use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
@@ -63,6 +58,7 @@ fn create_window() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
+            imgui: false
         },
         None,
     );
@@ -98,6 +94,7 @@ fn swap_chain_buffer() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
+            imgui: false
         },
         None,
     );
@@ -146,8 +143,6 @@ fn swap_chain_buffer() {
 
         cmdbuffer.reset(&swap_chain);
 
-        let col = &clears_colours[i];
-
         let mut pass = swap_chain.get_backbuffer_pass_mut();
 
         cmdbuffer.begin_render_pass(&mut pass);
@@ -158,7 +153,7 @@ fn swap_chain_buffer() {
         dev.execute(&cmdbuffer);
         swap_chain.swap(&dev);
 
-        std::thread::sleep_ms(128);
+        std::thread::sleep(std::time::Duration::from_millis(60));
         i = (i + 1) % clears_colours.len();
         count = count + 1;
 
@@ -193,6 +188,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
+            imgui: false
         },
         None,
     );
