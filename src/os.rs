@@ -85,6 +85,8 @@ pub struct WindowInfo {
     pub rect: Rect<i32>,
     /// Specify window styles
     pub style: WindowStyleFlags,
+    /// Specify window is requested for creation by ImGui
+    pub imgui: bool
 }
 
 /// A native platform window handle that can be passed around in a lightweight way
@@ -120,6 +122,8 @@ pub trait Window<A: App>: Any + Sized {
     fn show(&self, show: bool, activate: bool);
     /// Returns true if the window is focused
     fn is_focused(&self) -> bool;
+    /// Returns true if the window is minimised
+    fn is_minimised(&self) -> bool;
     /// Sets focus to this window
     fn set_focused(&self);
     /// Returns true if the mouse if hovering this window

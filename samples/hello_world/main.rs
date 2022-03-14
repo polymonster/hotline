@@ -47,6 +47,7 @@ fn main() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
+            imgui: false,
         },
         None,
     );

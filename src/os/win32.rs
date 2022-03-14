@@ -12,6 +12,7 @@ use std::ffi::CString;
 #[derive(Clone)]
 pub struct App {
     window_class: String,
+    window_class_imgui: String,
     hinstance: HINSTANCE,
     mouse_pos: super::Point<i32>,
 }
@@ -57,6 +58,9 @@ impl Window {
 impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
+            if GetCapture() == self.hwnd {
+                ReleaseCapture();
+            }
             DestroyWindow(self.hwnd);
         }
     }
@@ -145,7 +149,8 @@ impl super::App for App {
 
     fn create(info: super::AppInfo) -> Self {
         unsafe {
-            let window_class = info.name + "\0";
+            let window_class = info.name.to_string() + "\0";
+            let window_class_imgui = info.name.to_string() + "_imgui\0";
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
 
@@ -154,7 +159,7 @@ impl super::App for App {
                 hInstance: instance,
                 lpszClassName: PSTR(window_class.as_ptr() as _),
                 style: CS_HREDRAW | CS_VREDRAW,
-                lpfnWndProc: Some(wndproc),
+                lpfnWndProc: Some(main_wndproc),
                 ..Default::default()
             };
 
@@ -162,7 +167,21 @@ impl super::App for App {
                 panic!("hotline::os::win32: class already registered!");
             }
 
+            let wc2 = WNDCLASSA {
+                hCursor: LoadCursorW(None, IDC_ARROW),
+                hInstance: instance,
+                lpszClassName: PSTR(window_class_imgui.as_ptr() as _),
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(imgui_wndproc),
+                ..Default::default()
+            };
+
+            if RegisterClassA(&wc2) == 0 {
+                panic!("hotline::os::win32: imgui class already registered!");
+            }
+
             App {
+                window_class_imgui: window_class_imgui,
                 window_class: String::from(window_class),
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
@@ -182,9 +201,16 @@ impl super::App for App {
                 parent_hwnd = Some(parent.unwrap().hwnd);
             }
 
+            let class = if info.imgui {
+                self.window_class_imgui.clone()
+            }
+            else {
+                self.window_class.clone()
+            };
+
             let hwnd = CreateWindowExA(
                 wsex,
-                self.window_class.clone(),
+                class,
                 info.title.clone(),
                 ws,
                 rect.x,
@@ -280,6 +306,10 @@ impl super::Window<App> for Window {
 
     fn is_focused(&self) -> bool {
         unsafe { GetForegroundWindow() == self.hwnd }
+    }
+
+    fn is_minimised(&self) -> bool {
+        unsafe { IsIconic(self.hwnd) == BOOL::from(true) }
     }
 
     fn set_focused(&self) {
@@ -462,6 +492,46 @@ WM_DEVICECHANGE => LRESULT(0),
 WM_DISPLAYCHANGE => LRESULT(0),
 */
 
+extern "system" fn main_wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    unsafe {
+        match message as u32 {
+            WM_DESTROY => {
+                PostQuitMessage(0);
+                LRESULT(0)
+            }
+            WM_SYSCOMMAND => {
+                if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
+                    // Disable ALT application menu
+                    return LRESULT(0);
+                }
+                else {
+                    return wndproc(window, message, wparam, lparam);
+                }
+            }
+            _ => wndproc(window, message, wparam, lparam),
+        }
+    }
+}
+
+extern "system" fn imgui_wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // TODO: set flags for imgui to pick up
+    match message as u32 {
+        WM_CLOSE => {
+            LRESULT(0)
+        }
+        WM_MOVE => {
+            LRESULT(0)
+        }
+        WM_SIZE => {
+            LRESULT(0)
+        }
+        WM_MOUSEACTIVATE => {
+            LRESULT(0)
+        }
+        _ => wndproc(window, message, wparam, lparam),
+    }
+}
+
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match message as u32 {
@@ -536,10 +606,6 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             }
             WM_PAINT => {
                 ValidateRect(window, std::ptr::null());
-                LRESULT(0)
-            }
-            WM_DESTROY => {
-                PostQuitMessage(0);
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
