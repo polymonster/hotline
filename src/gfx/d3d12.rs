@@ -128,6 +128,7 @@ pub struct SwapChain {
     fence_event: HANDLE,
     frame_fence_value: Vec<u64>,
     readback_buffer: Option<ID3D12Resource>,
+    require_wait: Vec<bool>,
 }
 
 #[derive(Clone)]
@@ -1111,6 +1112,7 @@ impl super::Device for Device {
                 frame_index: 0,
                 frame_fence_value: vec![0; info.num_buffers as usize],
                 readback_buffer: create_read_back_buffer(&self, data_size),
+                require_wait: vec![false; info.num_buffers as usize]
             }
         }
     }
@@ -1886,7 +1888,8 @@ impl SwapChain {
     fn wait_for_frame(&mut self, frame_index: usize) {
         unsafe {
             let mut waitable: [HANDLE; 2] =
-                [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+            [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+
             let mut num_waitable = 1;
             let mut fv = self.frame_fence_value[frame_index as usize];
 
@@ -1995,6 +1998,7 @@ impl super::SwapChain<Device> for SwapChain {
             // update fence tracking
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.bb_index as usize] = fv;
+            self.require_wait[self.bb_index] = true; 
 
             // swap buffers
             self.frame_index = self.frame_index + 1;
