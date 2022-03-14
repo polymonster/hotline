@@ -18,7 +18,6 @@ pub struct App {
 
 #[derive(Clone)]
 pub struct Window {
-    info: super::WindowInfo,
     hwnd: HWND,
     ws: WINDOW_STYLE,
     wsex: WINDOW_EX_STYLE,
@@ -200,7 +199,6 @@ impl super::App for App {
             );
             Window {
                 hwnd: hwnd,
-                info: info,
                 ws: ws,
                 wsex: wsex,
             }
@@ -346,7 +344,28 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn get_screen_pos(&self) -> super::Point<i32> {
+    fn set_size(&self, size: super::Point<i32>) {
+        let mut rect = RECT {
+            left: 0,
+            top: 0,
+            right: size.x,
+            bottom: size.y,
+        };
+        unsafe {
+            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+            SetWindowPos(
+                self.hwnd,
+                HWND(0),
+                0,
+                0,
+                rect.right - rect.left,
+                rect.bottom - rect.top,
+                SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE,
+            );
+        }
+    }
+
+    fn get_pos(&self) -> super::Point<i32> {
         unsafe {
             let mut pos = POINT { x: 0, y: 0 };
             ClientToScreen(self.hwnd, &mut pos);
@@ -354,32 +373,27 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn set_rect(&mut self, rect: super::Rect<i32>) {
+    fn get_size(&self) -> super::Size<i32> {
         unsafe {
-            let rect = adjust_window_rect(&rect, self.ws, self.wsex);
-            SetWindowPos(
-                self.hwnd,
-                HWND(0),
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
-                SWP_ASYNCWINDOWPOS,
-            );
+            let mut rect = RECT::default();
+            GetClientRect(self.hwnd, &mut rect);
+            super::Size {
+                x: rect.right - rect.left,
+                y: rect.bottom - rect.top
+            }
         }
-        self.info.rect = rect;
-    }
-
-    fn get_rect(&self) -> super::Rect<i32> {
-        self.info.rect
     }
 
     fn get_viewport_rect(&self) -> super::Rect<i32> {
-        super::Rect::<i32> {
-            x: 0,
-            y: 0,
-            width: self.info.rect.width,
-            height: self.info.rect.height,
+        unsafe {
+            let mut rect = RECT::default();
+            GetClientRect(self.hwnd, &mut rect);
+            super::Rect::<i32> {
+                x: 0,
+                y: 0,
+                width: rect.right - rect.left,
+                height: rect.bottom - rect.top
+            }
         }
     }
 
@@ -394,29 +408,6 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn set_size(&mut self, width: i32, height: i32) {
-        let mut rect = self.info.rect;
-        rect.width = width;
-        rect.height = height;
-        unsafe {
-            let rect = adjust_window_rect(&rect, self.ws, self.wsex);
-            SetWindowPos(
-                self.hwnd,
-                HWND(0),
-                rect.x,
-                rect.y,
-                rect.width,
-                rect.height,
-                SWP_ASYNCWINDOWPOS,
-            );
-        }
-        self.info.rect = rect;
-    }
-
-    fn get_size(&self) -> (i32, i32) {
-        (self.info.rect.width, self.info.rect.height)
-    }
-
     fn close(&mut self) {
         unsafe {
             DestroyWindow(self.hwnd);
@@ -424,14 +415,7 @@ impl super::Window<App> for Window {
     }
 
     fn update(&mut self) {
-        unsafe {
-            let mut win_rect = RECT::default();
-            GetClientRect(self.hwnd, &mut win_rect);
-            self.info.rect.width = win_rect.right - win_rect.left;
-            self.info.rect.height = win_rect.bottom - win_rect.top;
-            self.info.rect.x = win_rect.left;
-            self.info.rect.y = win_rect.top;
-        }
+        // stubbed
     }
 
     fn get_native_handle(&self) -> NativeHandle {

@@ -67,45 +67,12 @@ fn create_window() {
         None,
     );
     win.bring_to_front();
-    let winrect = win.get_rect();
-    assert_eq!(winrect.x, 0);
-    assert_eq!(winrect.y, 0);
-    assert_eq!(winrect.width, 1280);
-    assert_eq!(winrect.height, 720);
-}
-
-#[test]
-fn window_set_rect() {
-    let app = os_platform::App::create(os::AppInfo {
-        name: String::from("window_set_rect"),
-        window: false,
-        num_buffers: 0,
-    });
-    let mut win = app.create_window(
-        os::WindowInfo {
-            title: String::from("window_set_rect!"),
-            rect: os::Rect {
-                x: 0,
-                y: 0,
-                width: 1280,
-                height: 720,
-            },
-            style: os::WindowStyleFlags::NONE,
-        },
-        None,
-    );
-    win.set_rect(os::Rect {
-        x: 200,
-        y: 0,
-        width: 1280,
-        height: 720,
-    });
-    win.bring_to_front();
-    let winrect = win.get_rect();
-    assert_eq!(winrect.x, 200);
-    assert_eq!(winrect.y, 0);
-    assert_eq!(winrect.width, 1280);
-    assert_eq!(winrect.height, 720);
+    let size = win.get_size();
+    let pos = win.get_pos();
+    assert_eq!(pos.x, 0);
+    assert_eq!(pos.y, 0);
+    assert_eq!(size.x, 1280);
+    assert_eq!(size.y, 720);
 }
 
 #[test]
@@ -348,7 +315,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         swap_chain.update(&mut device, &window, &mut cmd);
 
         // update viewport from window size
-        let window_rect = window.get_rect();
+        let window_rect = window.get_viewport_rect();
         let viewport = gfx::Viewport::from(window_rect);
         let scissor = gfx::ScissorRect::from(window_rect);
 
