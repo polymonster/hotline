@@ -329,7 +329,7 @@ fn main() {
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
         initial_state: gfx::ResourceState::ShaderResource,
     };
-    dev.create_texture::<u8>(&rw_info, None).unwrap();
+    let _rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
 
     let compute_pipeline = dev
         .create_compute_pipeline(&gfx::ComputePipelineInfo {
@@ -439,7 +439,7 @@ fn main() {
         imgui.new_frame(&mut app, &mut win, &mut dev);
         imgui.demo();
         imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer);
-
+        
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {

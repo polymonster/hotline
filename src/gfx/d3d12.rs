@@ -1060,11 +1060,11 @@ impl super::Device for Device {
             let dxgi_format = to_dxgi_format(format);
 
             // create swap chain desc
-            let rect = win.get_rect();
+            let size = win.get_size();
             let swap_chain_desc = DXGI_SWAP_CHAIN_DESC1 {
                 BufferCount: info.num_buffers,
-                Width: rect.width as u32,
-                Height: rect.height as u32,
+                Width: size.x as u32,
+                Height: size.y as u32,
                 Format: dxgi_format,
                 BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                 SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
@@ -1091,12 +1091,13 @@ impl super::Device for Device {
 
             // create rtv heap and handles
             let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
-            let data_size = (rect.width * rect.height * 4) as u64;
+            // TODO use format
+            let data_size = (size.x * size.y * 4) as u64;
             let passes = self.create_render_passes_for_swap_chain(info.num_buffers, &textures);
 
             SwapChain {
-                width: rect.width,
-                height: rect.height,
+                width: size.x,
+                height: size.y,
                 format: format,
                 num_bb: info.num_buffers,
                 flags: flags as u32,
@@ -1914,8 +1915,8 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn update(&mut self, device: &mut Device, window: &platform::Window, cmd: &mut CmdBuf) {
-        let (width, height) = window.get_size();
-        if width != self.width || height != self.height {
+        let size = window.get_size();
+        if size.x != self.width || size.y != self.height {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
@@ -1933,8 +1934,8 @@ impl super::SwapChain<Device> for SwapChain {
                 self.swap_chain
                     .ResizeBuffers(
                         self.num_bb,
-                        width as u32,
-                        height as u32,
+                        size.x as u32,
+                        size.y as u32,
                         DXGI_FORMAT_UNKNOWN,
                         self.flags,
                     )
@@ -1950,8 +1951,8 @@ impl super::SwapChain<Device> for SwapChain {
                 self.backbuffer_passes = device
                     .create_render_passes_for_swap_chain(self.num_bb, &self.backbuffer_textures);
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
-                self.width = width;
-                self.height = height;
+                self.width = size.x;
+                self.height = size.y;
                 self.bb_index = 0;
             }
         } else {

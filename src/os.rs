@@ -54,6 +54,8 @@ pub struct Point<T> {
     pub y: T,
 }
 
+pub type Size<T> = Point<T>;
+
 bitflags! {
     /// Window style flags to change the window appearance
     pub struct WindowStyleFlags: u32 {
@@ -122,24 +124,20 @@ pub trait Window<A: App>: Any + Sized {
     fn set_focused(&self);
     /// Returns true if the mouse if hovering this window
     fn is_mouse_hovered(&self) -> bool;
-    /// Returns the screen position for the top-left corner of the window
-    fn get_screen_pos(&self) -> Point<i32>;
     /// Set the window display title that appears on the title bar
     fn set_title(&self, title: String);
     /// Set window position in screen space
     fn set_pos(&self, pos: Point<i32>);
-    /// Set the window position and size in 1
-    fn set_rect(&mut self, rect: Rect<i32>);
-    /// Returns the internal window rect
-    fn get_rect(&self) -> Rect<i32>;
+    /// Set window size
+    fn set_size(&self, size: Size<i32>);
+    /// Returns the screen position for the top-left corner of the window
+    fn get_pos(&self) -> Point<i32>;
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> Rect<i32>;
+    /// Returns the screen position for the top-left corner of the window
+    fn get_size(&self) -> Size<i32>;
     /// Return mouse position in relative coordinates from the top left corner of the window
     fn get_mouse_client_pos(&self, mouse_pos: &Point<i32>) -> Point<i32>;
-    /// Set only the size of the window
-    fn set_size(&mut self, width: i32, height: i32);
-    /// Returns the size of the window as tuple
-    fn get_size(&self) -> (i32, i32);
     /// Must be called each frame to handle resizes
     fn update(&mut self);
     /// gets the internal native handle
