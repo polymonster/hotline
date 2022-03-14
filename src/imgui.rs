@@ -812,7 +812,9 @@ unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
     let vd = get_viewport_data(vp);
     let mut vp_ref = &mut *vp;
 
-    vd.swap_chain[0].wait_for_last_frame();
+    if vd.swap_chain.len() > 0 {
+        vd.swap_chain[0].wait_for_last_frame();
+    }
 
     vd.swap_chain.clear();
     vd.cmd.clear();
