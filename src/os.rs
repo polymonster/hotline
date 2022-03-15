@@ -140,6 +140,8 @@ pub trait Window<A: App>: Any + Sized {
     fn update(&mut self);
     /// Close the window
     fn close(&mut self);
+    /// Change the windows style
+    fn update_style(&mut self, flags: WindowStyleFlags, rect: Rect<i32>);
     /// Returns true if the window is focused
     fn is_focused(&self) -> bool;
     /// Returns true if the window is minimised
@@ -161,7 +163,7 @@ pub trait Window<A: App>: Any + Sized {
     /// Returns the screen position for the top-left corner of the window
     fn get_size(&self) -> Size<i32>;
     /// Return mouse position in relative coordinates from the top left corner of the window
-    fn get_mouse_client_pos(&self, mouse_pos: &Point<i32>) -> Point<i32>;
+    fn get_mouse_client_pos(&self, mouse_pos: Point<i32>) -> Point<i32>;
     /// Return the dpi scale for the current monitor the window is on
     fn get_dpi_scale(&self) -> f32;
     /// gets the internal native handle
