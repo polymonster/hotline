@@ -3,10 +3,12 @@ use windows::{
     Win32::Graphics::Gdi::EnumDisplayMonitors, Win32::Graphics::Gdi::GetMonitorInfoA,
     Win32::Graphics::Gdi::ScreenToClient, Win32::Graphics::Gdi::ValidateRect,
     Win32::Graphics::Gdi::HDC, Win32::Graphics::Gdi::HMONITOR, Win32::Graphics::Gdi::MONITORINFO,
+    Win32::Graphics::Gdi::MonitorFromWindow,Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST,
     Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::Input::KeyboardAndMouse::*,
     Win32::UI::WindowsAndMessaging::*, Win32::UI::HiDpi::*
 };
 
+use std::collections::HashMap;
 use std::ffi::CString;
 
 #[derive(Clone)]
@@ -22,6 +24,7 @@ pub struct Window {
     hwnd: HWND,
     ws: WINDOW_STYLE,
     wsex: WINDOW_EX_STYLE,
+    events: super::WindowEventFlags 
 }
 
 #[derive(Clone, Copy)]
@@ -44,6 +47,8 @@ static mut PROC_DATA: ProcData = ProcData {
     mouse_wheel: 0.0,
     mouse_hwheel: 0.0,
 };
+
+static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
 
 static mut MONITOR_ENUM: Vec<super::MonitorInfo> = Vec::new();
 
@@ -90,7 +95,6 @@ fn to_win32_dw_style(style: &super::WindowStyleFlags) -> WINDOW_STYLE {
     if win32_style == 0 {
         win32_style |= WS_OVERLAPPEDWINDOW.0 | WS_VISIBLE.0;
     }
-    //win32_style |= WS_VISIBLE.0;
     WINDOW_STYLE(win32_style)
 }
 
@@ -154,10 +158,11 @@ impl super::App for App {
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
 
-            // TODO: Option
-            SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-            if !SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
-                println!("hotline::os::win32: SetProcessDpiAwareness failed");
+            if info.dpi_aware {
+                SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+                if !SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+                    println!("hotline::os::win32: SetProcessDpiAwareness failed");
+                }
             }
 
             let wc = WNDCLASSA {
@@ -186,6 +191,8 @@ impl super::App for App {
                 panic!("hotline::os::win32: imgui class already registered!");
             }
 
+            EVENTS = Some(HashMap::new());
+
             App {
                 window_class_imgui: window_class_imgui,
                 window_class: String::from(window_class),
@@ -195,19 +202,20 @@ impl super::App for App {
         }
     }
 
-    fn create_window(&self, info: super::WindowInfo, parent: Option<NativeHandle>) -> Window {
+    fn create_window(&self, info: super::WindowInfo<Self>) -> Window {
         unsafe {
             let ws = to_win32_dw_style(&info.style);
             let wsex = to_win32_dw_ex_style(&info.style);
             let rect = adjust_window_rect(&info.rect, ws, wsex);
 
-            // TODO: use if let
-            let mut parent_hwnd = None;
-            if parent.is_some() {
-                parent_hwnd = Some(parent.unwrap().hwnd);
+            let parent_hwnd = if info.parent_handle.is_some() {
+                Some(info.parent_handle.unwrap().hwnd)
             }
+            else {
+                None
+            };
 
-            let class = if info.imgui {
+            let class = if info.style.contains(super::WindowStyleFlags::IMGUI) {
                 self.window_class_imgui.clone()
             }
             else {
@@ -232,6 +240,7 @@ impl super::App for App {
                 hwnd: hwnd,
                 ws: ws,
                 wsex: wsex,
+                events: super::WindowEventFlags::NONE
             }
         }
     }
@@ -307,6 +316,24 @@ impl super::Window<App> for Window {
         }
         unsafe {
             ShowWindow(self.hwnd, cmd);
+        }
+    }
+
+    fn close(&mut self) {
+        unsafe {
+            DestroyWindow(self.hwnd);
+        }
+    }
+
+    fn update(&mut self) {
+        unsafe {
+            // take events
+            if let Some(events_map) = &mut EVENTS {
+                if let Some(window_events) = events_map.get_mut(&self.hwnd.0) {
+                    self.events = *window_events;
+                    *window_events = super::WindowEventFlags::NONE;
+                }
+            }
         }
     }
 
@@ -443,18 +470,29 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn close(&mut self) {
+    fn get_dpi_scale(&self) -> f32 {
         unsafe {
-            DestroyWindow(self.hwnd);
+            let monitor = MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST);
+            let mut xdpi : u32 = 0;
+            let mut ydpi : u32 = 0;
+            if !GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
+                println!("hotline::os::win32: GetDpiForMonitor failed");
+                return 1.0;
+            }
+            (xdpi as f32) / 96.0
         }
-    }
-
-    fn update(&mut self) {
-        // stubbed
     }
 
     fn get_native_handle(&self) -> NativeHandle {
         NativeHandle { hwnd: self.hwnd }
+    }
+
+    fn get_events(&self) -> super::WindowEventFlags {
+        self.events
+    }
+
+    fn clear_events(&mut self) {
+        self.events = super::WindowEventFlags::NONE
     }
 
     fn as_ptr(&self) -> *const Self {
@@ -519,16 +557,33 @@ extern "system" fn main_wndproc(window: HWND, message: u32, wparam: WPARAM, lpar
     }
 }
 
+fn add_event(window: HWND, flags: super::WindowEventFlags) {
+    unsafe {
+        if let Some(events_map) = &mut EVENTS {
+            if let Some(window_events) = events_map.get_mut(&window.0) {
+                // or into existsing key
+                *window_events |= flags;
+            }
+            else {
+                // create new key
+                events_map.insert(window.0, flags);
+            }
+        }
+    }
+}
+
 extern "system" fn imgui_wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    // TODO: set flags for imgui to pick up
-    match message as u32 {
+     match message as u32 {
         WM_CLOSE => {
+            add_event(window, super::WindowEventFlags::CLOSE);
             LRESULT(0)
         }
         WM_MOVE => {
+            add_event(window, super::WindowEventFlags::MOVE);
             LRESULT(0)
         }
         WM_SIZE => {
+            add_event(window, super::WindowEventFlags::SIZE);
             LRESULT(0)
         }
         WM_MOUSEACTIVATE => {
@@ -631,9 +686,16 @@ extern "system" fn enum_func(
         if GetMonitorInfoA(monitor, &mut info) == BOOL::from(false) {
             return BOOL::from(false);
         }
+
+        // get dpi from monitor
         let mut xdpi : u32 = 0;
         let mut ydpi : u32 = 0;
-        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi);
+        let dpi_scale = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
+            (xdpi as f32) / 96.0
+        } 
+        else {
+            1.0
+        };
         
         MONITOR_ENUM.push(super::MonitorInfo {
             rect: super::Rect {
@@ -648,7 +710,7 @@ extern "system" fn enum_func(
                 width: info.rcWork.right - info.rcWork.left,
                 height: info.rcWork.bottom - info.rcWork.top,
             },
-            dpi_scale: (xdpi as f32) / 96.0,
+            dpi_scale: dpi_scale,
             primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
         });
         BOOL::from(true)

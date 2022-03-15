@@ -18,6 +18,9 @@ use crate::gfx::Texture;
 use std::ffi::CStr;
 use std::ffi::CString;
 
+const DEFAULT_VB_SIZE : i32 = 5000;
+const DEFAULT_IB_SIZE : i32 = 10000;
+
 pub struct ImGuiInfo<'a> {
     pub device: &'a mut gfx_platform::Device,
     pub swap_chain: &'a mut gfx_platform::SwapChain,
@@ -75,6 +78,16 @@ fn new_native_handle(handle: os_platform::NativeHandle) -> *mut os_platform::Nat
         let nh = std::alloc::alloc_zeroed(layout) as *mut os_platform::NativeHandle;
         *nh = handle;
         nh
+    }
+}
+
+fn new_monitors(monitors: &Vec<ImGuiPlatformMonitor>) -> *mut ImGuiPlatformMonitor {
+    unsafe {
+        let size_bytes = std::mem::size_of::<ImGuiPlatformMonitor>() * monitors.len();
+        let layout = std::alloc::Layout::from_size_align(size_bytes, 8).unwrap();
+        let ptr = std::alloc::alloc_zeroed(layout) as *mut ImGuiPlatformMonitor;
+        std::ptr::copy_nonoverlapping(monitors.as_ptr(), ptr, monitors.len());
+        ptr
     }
 }
 
@@ -312,14 +325,12 @@ fn render_draw_data(
 
         // resize vb
         if draw_data.TotalVtxCount > buffers.vb_size {
-            // todo release
             buffers.vb = create_vertex_buffer(device, draw_data.TotalVtxCount)?;
             buffers.vb_size = draw_data.TotalVtxCount;
         }
 
         // resize ib
         if draw_data.TotalIdxCount > buffers.ib_size {
-            // todo release
             buffers.ib = create_index_buffer(device, draw_data.TotalIdxCount)?;
             buffers.ib_size = draw_data.TotalIdxCount;
         }
@@ -464,12 +475,13 @@ impl ImGui {
             // create render buffers
             let mut buffers: Vec<RenderBuffers> = Vec::new();
             let num_buffers = (*info.swap_chain).get_num_buffers();
+
             for _i in 0..num_buffers {
                 buffers.push(RenderBuffers {
-                    vb: create_vertex_buffer(&mut info.device, 5000)?,
-                    vb_size: 5000,
-                    ib: create_index_buffer(&mut info.device, 10000)?,
-                    ib_size: 10000,
+                    vb: create_vertex_buffer(&mut info.device, DEFAULT_VB_SIZE)?,
+                    vb_size: DEFAULT_VB_SIZE,
+                    ib: create_index_buffer(&mut info.device, DEFAULT_IB_SIZE)?,
+                    ib_size: DEFAULT_IB_SIZE,
                 })
             }
 
@@ -510,7 +522,7 @@ impl ImGui {
 
             platform_io.Monitors.Size = monitors.len() as i32;
             platform_io.Monitors.Capacity = monitors.len() as i32;
-            platform_io.Monitors.Data = monitors.as_mut_ptr();
+            platform_io.Monitors.Data = new_monitors(&monitors);
 
             let vps = &mut *igGetMainViewport();
 
@@ -518,12 +530,7 @@ impl ImGui {
             let vp = new_viewport_data();
             (*vp).main_viewport = true;
             vps.PlatformUserData = vp as _;
-
-            // alloc and assign a native handle
             vps.PlatformHandle = new_native_handle(info.main_window.get_native_handle()) as _;
-
-            // TODO: dynamic memory
-            std::mem::forget(monitors);
 
             //
             let imgui = ImGui {
@@ -543,6 +550,7 @@ impl ImGui {
     fn setup_platform_interface(&self) {
         unsafe {
             let platform_io = &mut *igGetPlatformIO();
+            // platform hooks
             platform_io.Platform_CreateWindow = Some(platform_create_window);
             platform_io.Platform_DestroyWindow = Some(platform_destroy_window);
             platform_io.Platform_ShowWindow = Some(platform_show_window);
@@ -552,14 +560,12 @@ impl ImGui {
             platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus);
             platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
             platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
+            platform_io.Platform_GetWindowDpiScale = Some(platform_get_window_dpi_scale);
+            platform_io.Platform_UpdateWindow = Some(platform_update_window);
+
+            // render hooks
             platform_io.Renderer_RenderWindow = Some(renderer_render_window);
             platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers);
-            
-            // TODO:
-            //platform_io.Platform_SetWindowAlpha = Some(platform_set_window_alpha);
-            //platform_io.Platform_UpdateWindow = Some(platform_update_window);
-            //platform_io.Platform_GetWindowDpiScale = ImGui_ImplWin32_GetWindowDpiScale; // FIXME-DPI
-            //platform_io.Platform_OnChangedViewport = ImGui_ImplWin32_OnChangedViewport; // FIXME-DPI
 
             // need to hook these c-compatible getter funtions due to complex return types
             ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos);
@@ -775,9 +781,8 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
                 height: vp_ref.Size.y as i32,
             },
             style: os::WindowStyleFlags::from(vp_ref.Flags),
-            imgui: true,
+            parent_handle: parent_handle
         },
-        parent_handle,
     )];
 
     // create cmd buffer
@@ -795,10 +800,10 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     let num_buffers = vd.swap_chain[0].get_num_buffers();
     for _i in 0..num_buffers {
         buffers.push(RenderBuffers {
-            vb: create_vertex_buffer(&mut device, 5000).unwrap(),
-            vb_size: 5000,
-            ib: create_index_buffer(&mut device, 10000).unwrap(),
-            ib_size: 10000,
+            vb: create_vertex_buffer(&mut device, DEFAULT_VB_SIZE).unwrap(),
+            vb_size: DEFAULT_VB_SIZE,
+            ib: create_index_buffer(&mut device, DEFAULT_IB_SIZE).unwrap(),
+            ib_size: DEFAULT_IB_SIZE,
         })
     }
     vd.buffers = buffers;
@@ -818,11 +823,30 @@ unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
 
     vd.swap_chain.clear();
     vd.cmd.clear();
-    vd.buffers.clear(); // TODO: heap
+    vd.buffers.clear();
     vd.window.clear();
 
     // null PlatformUserData
     vp_ref.PlatformUserData = std::ptr::null_mut();
+}
+
+unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
+    let window = get_viewport_window(vp);
+    let mut vp_ref = &mut *vp;
+    window.update();
+    let events = window.get_events();
+    if events.contains(os::WindowEventFlags::CLOSE) {
+        vp_ref.PlatformRequestClose = true;
+    }
+    if events.contains(os::WindowEventFlags::MOVE) {
+        vp_ref.PlatformRequestMove = true;
+    }
+    if events.contains(os::WindowEventFlags::SIZE) {
+        vp_ref.PlatformRequestResize = true;
+    }
+    window.clear_events();
+
+    // TODO: style changes
 }
 
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
@@ -878,6 +902,11 @@ unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, size: ImVe
 unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
     let window = get_viewport_window(vp);
     window.is_minimised()
+}
+
+unsafe extern "C" fn platform_get_window_dpi_scale(vp: *mut ImGuiViewport) -> f32 {
+    let window = get_viewport_window(vp);
+    window.get_dpi_scale()
 }
 
 unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
@@ -965,7 +994,7 @@ extern "C" {
 
 impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
     fn from(flags: ImGuiViewportFlags) -> os::WindowStyleFlags {
-        let mut style = os::WindowStyleFlags::NONE;
+        let mut style = os::WindowStyleFlags::IMGUI;
         if (flags & ImGuiViewportFlags_NoDecoration as i32) != 0 {
             style |= os::WindowStyleFlags::POPUP;
         } else {

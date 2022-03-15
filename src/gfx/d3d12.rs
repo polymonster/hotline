@@ -715,7 +715,7 @@ fn validate_data_size<T: Sized>(
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::RenderPass<Device> for RenderPass {}
-impl super::Heap<Device> for Heap {}
+
 
 impl From<windows::core::Error> for super::Error {
     fn from(err: windows::core::Error) -> super::Error {
@@ -750,8 +750,18 @@ impl Heap {
         ptr / self.increment_size
     }
 
-    fn deallocate(&mut self, handle: &D3D12_CPU_DESCRIPTOR_HANDLE) {
+    fn deallocate_internal(&mut self, handle: &D3D12_CPU_DESCRIPTOR_HANDLE) {
         self.free_list.push(handle.ptr);
+    }
+}
+
+impl super::Heap<Device> for Heap {
+    fn deallocate(&mut self, index: usize) {
+        let ptr = self.base_address + self.increment_size * index;
+        let handle = D3D12_CPU_DESCRIPTOR_HANDLE {
+            ptr: ptr
+        };
+        self.deallocate_internal(&handle);
     }
 }
 
@@ -1871,6 +1881,10 @@ impl super::Device for Device {
         &self.shader_heap
     }
 
+    fn get_shader_heap_mut(&mut self) -> &mut Self::Heap {
+        &mut self.shader_heap
+    }
+
     fn get_adapter_info(&self) -> &AdapterInfo {
         &self.adapter_info
     }
@@ -1931,7 +1945,7 @@ impl super::SwapChain<Device> for SwapChain {
                 // clean up rtv handles
                 for bb_tex in &self.backbuffer_textures {
                     if bb_tex.rtv.is_some() {
-                        device.rtv_heap.deallocate(&bb_tex.rtv.unwrap());
+                        device.rtv_heap.deallocate_internal(&bb_tex.rtv.unwrap());
                     }
                 }
 

@@ -23,6 +23,7 @@ fn create_app() {
         name: String::from("create_app"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
 }
 
@@ -32,6 +33,7 @@ fn create_d3d12_device() {
         name: String::from("create_d3d12_device"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
     let _dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
@@ -47,6 +49,7 @@ fn create_window() {
         name: String::from("create_window"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
     let win = app.create_window(
         os::WindowInfo {
@@ -58,9 +61,8 @@ fn create_window() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
-            imgui: false
-        },
-        None,
+            parent_handle: None
+        }
     );
     win.bring_to_front();
     let size = win.get_size();
@@ -77,6 +79,7 @@ fn swap_chain_buffer() {
         name: String::from("swap_chain_buffer"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
     let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
@@ -94,9 +97,8 @@ fn swap_chain_buffer() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
-            imgui: false
+            parent_handle: None
         },
-        None,
     );
     win.bring_to_front();
 
@@ -169,6 +171,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         name: String::from("draw_triangle"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
 
     let num_buffers = 2;
@@ -188,9 +191,8 @@ fn draw_triangle() -> Result<(), gfx::Error> {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
-            imgui: false
+            parent_handle: None
         },
-        None,
     );
 
     let swap_chain_info = gfx::SwapChainInfo {
