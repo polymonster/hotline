@@ -12,7 +12,7 @@ pub struct AppInfo {
     /// Specify the number of buffers in the swap chain
     pub num_buffers: u32,
     /// Signify if this app wants to be dpi aware
-    pub dpi_aware: bool
+    pub dpi_aware: bool,
 }
 
 /// Used to index into array returned by app::get_mouse_buttons
@@ -102,7 +102,7 @@ pub struct WindowInfo<A: App> {
     /// Specify window styles
     pub style: WindowStyleFlags,
     /// Specify a parent handle for child windows (optional)
-    pub parent_handle: Option<A::NativeHandle>
+    pub parent_handle: Option<A::NativeHandle>,
 }
 
 /// A native platform window handle that can be passed around in a lightweight way
