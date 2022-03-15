@@ -1062,7 +1062,7 @@ impl super::Device for Device {
         unsafe {
             // set flags, these could be passed in
             let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
-            let format = super::Format::RGBA8n;
+            let format = info.format;
             let dxgi_format = to_dxgi_format(format);
 
             // create swap chain desc

@@ -126,6 +126,8 @@ pub trait App: 'static + Any + Sized {
     fn get_mouse_hwheel(&self) -> f32;
     /// Retuns the mouse button states, up or down
     fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
+    /// Returns a vector of utf-16 characters that have been input since the last frame
+    fn get_utf16_input(&self) -> Vec<u16>;
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
 }

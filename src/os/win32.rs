@@ -20,6 +20,7 @@ pub struct App {
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
     mouse_hwheel: f32,
+    utf16_inputs: Vec<u16>
 }
 
 #[derive(Clone)]
@@ -41,6 +42,7 @@ struct ProcData {
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
     mouse_hwheel: f32,
+    utf16_inputs: Vec<u16>
 }
 
 static mut PROC_DATA: ProcData = ProcData {
@@ -49,6 +51,7 @@ static mut PROC_DATA: ProcData = ProcData {
     mouse_down: [false; 5],
     mouse_wheel: 0.0,
     mouse_hwheel: 0.0,
+    utf16_inputs: Vec::new()
 };
 
 static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
@@ -158,6 +161,16 @@ impl App {
             PROC_DATA.mouse_hwheel = 0.0;
         }
     }
+
+    fn update_keyboard(&mut self) {
+        unsafe {
+            // update char inputs
+            self.utf16_inputs = PROC_DATA.utf16_inputs.to_vec();
+            PROC_DATA.utf16_inputs.clear();
+
+            // TODO: update sys keys
+        }
+    }
 }
 
 impl super::App for App {
@@ -214,6 +227,7 @@ impl super::App for App {
                 mouse_wheel: 0.0,
                 mouse_hwheel: 0.0,
                 mouse_down: [false; super::MouseButton::Count as usize],
+                utf16_inputs: Vec::new()
             }
         }
     }
@@ -250,6 +264,7 @@ impl super::App for App {
                 self.hinstance,
                 std::ptr::null_mut(),
             );
+
             Window {
                 hwnd: hwnd,
                 ws: ws,
@@ -264,6 +279,7 @@ impl super::App for App {
             let mut msg = MSG::default();
             let mut quit = false;
             self.update_mouse();
+            self.update_keyboard();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
@@ -294,6 +310,10 @@ impl super::App for App {
 
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
         self.mouse_down
+    }
+
+    fn get_utf16_input(&self) -> Vec<u16> {
+        self.utf16_inputs.to_vec()
     }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
@@ -738,6 +758,12 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
             }
             WM_PAINT => {
                 ValidateRect(window, std::ptr::null());
+                LRESULT(0)
+            }
+            WM_CHAR => {
+                if wparam.0 > 0 && wparam.0 < 0x10000 {
+                    PROC_DATA.utf16_inputs.push(wparam.0 as u16);
+                }
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
