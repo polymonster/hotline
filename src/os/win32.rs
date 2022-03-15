@@ -4,7 +4,7 @@ use windows::{
     Win32::Graphics::Gdi::ScreenToClient, Win32::Graphics::Gdi::ValidateRect,
     Win32::Graphics::Gdi::HDC, Win32::Graphics::Gdi::HMONITOR, Win32::Graphics::Gdi::MONITORINFO,
     Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*,
+    Win32::UI::WindowsAndMessaging::*, Win32::UI::HiDpi::*
 };
 
 use std::ffi::CString;
@@ -153,6 +153,12 @@ impl super::App for App {
             let window_class_imgui = info.name.to_string() + "_imgui\0";
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
+
+            // TODO: Option
+            SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+            if !SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+                println!("hotline::os::win32: SetProcessDpiAwareness failed");
+            }
 
             let wc = WNDCLASSA {
                 hCursor: LoadCursorW(None, IDC_ARROW),
@@ -625,6 +631,10 @@ extern "system" fn enum_func(
         if GetMonitorInfoA(monitor, &mut info) == BOOL::from(false) {
             return BOOL::from(false);
         }
+        let mut xdpi : u32 = 0;
+        let mut ydpi : u32 = 0;
+        GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi);
+        
         MONITOR_ENUM.push(super::MonitorInfo {
             rect: super::Rect {
                 x: info.rcMonitor.left,
@@ -638,7 +648,7 @@ extern "system" fn enum_func(
                 width: info.rcWork.right - info.rcWork.left,
                 height: info.rcWork.bottom - info.rcWork.top,
             },
-            dpi_scale: 1.0, // TODO:
+            dpi_scale: (xdpi as f32) / 96.0,
             primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
         });
         BOOL::from(true)
