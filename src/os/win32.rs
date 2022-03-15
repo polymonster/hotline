@@ -17,6 +17,9 @@ pub struct App {
     window_class_imgui: String,
     hinstance: HINSTANCE,
     mouse_pos: super::Point<i32>,
+    mouse_down: [bool; super::MouseButton::Count as usize],
+    mouse_wheel: f32,
+    mouse_hwheel: f32
 }
 
 #[derive(Clone)]
@@ -35,7 +38,7 @@ pub struct NativeHandle {
 struct ProcData {
     mouse_hwnd: HWND,
     mouse_tracked: bool,
-    mouse_down: [bool; 5],
+    mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
     mouse_hwheel: f32,
 }
@@ -137,12 +140,22 @@ fn adjust_window_rect(
 impl App {
     fn update_mouse(&mut self) {
         unsafe {
+            // mouse pos
             let mut mouse_pos = POINT::default();
             GetCursorPos(&mut mouse_pos);
             self.mouse_pos = super::Point {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
-            }
+            };
+
+            // mouse state
+            self.mouse_wheel = PROC_DATA.mouse_wheel; 
+            self.mouse_hwheel = PROC_DATA.mouse_hwheel; 
+            self.mouse_down = PROC_DATA.mouse_down;
+
+            // reset mouse deltas
+            PROC_DATA.mouse_wheel = 0.0;
+            PROC_DATA.mouse_hwheel = 0.0;
         }
     }
 }
@@ -198,6 +211,9 @@ impl super::App for App {
                 window_class: String::from(window_class),
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
+                mouse_wheel: 0.0,
+                mouse_hwheel: 0.0,
+                mouse_down: [false; super::MouseButton::Count as usize]
             }
         }
     }
@@ -271,15 +287,15 @@ impl super::App for App {
     }
 
     fn get_mouse_wheel(&self) -> f32 {
-        unsafe { PROC_DATA.mouse_wheel }
+        self.mouse_wheel
     }
 
     fn get_mouse_hwheel(&self) -> f32 {
-        unsafe { PROC_DATA.mouse_hwheel }
+        self.mouse_hwheel
     }
 
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
-        unsafe { PROC_DATA.mouse_down }
+        self.mouse_down
     }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
@@ -708,11 +724,13 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 LRESULT(0)
             }
             WM_MOUSEWHEEL => {
-                PROC_DATA.mouse_wheel += ((wparam.0 >> 16) & 0xffff) as f32 / WHEEL_DELTA as f32;
+                let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
+                PROC_DATA.mouse_wheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
                 LRESULT(0)
             }
             WM_MOUSEHWHEEL => {
-                PROC_DATA.mouse_hwheel += ((wparam.0 >> 16) & 0xffff) as f32 / WHEEL_DELTA as f32;
+                let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
+                PROC_DATA.mouse_hwheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
                 LRESULT(0)
             }
             WM_PAINT => {
