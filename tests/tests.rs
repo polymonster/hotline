@@ -23,7 +23,7 @@ fn create_app() {
         name: String::from("create_app"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
 }
 
@@ -33,7 +33,7 @@ fn create_d3d12_device() {
         name: String::from("create_d3d12_device"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
     let _dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
@@ -49,21 +49,19 @@ fn create_window() {
         name: String::from("create_window"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
-    let win = app.create_window(
-        os::WindowInfo {
-            title: String::from("hello world!"),
-            rect: os::Rect {
-                x: 0,
-                y: 0,
-                width: 1280,
-                height: 720,
-            },
-            style: os::WindowStyleFlags::NONE,
-            parent_handle: None
-        }
-    );
+    let win = app.create_window(os::WindowInfo {
+        title: String::from("hello world!"),
+        rect: os::Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
+        },
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
     win.bring_to_front();
     let size = win.get_size();
     let pos = win.get_pos();
@@ -79,7 +77,7 @@ fn swap_chain_buffer() {
         name: String::from("swap_chain_buffer"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
     let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
@@ -87,24 +85,23 @@ fn swap_chain_buffer() {
         render_target_heap_size: 2,
         depth_stencil_heap_size: 0,
     });
-    let mut win = app.create_window(
-        os::WindowInfo {
-            title: String::from("swap chain buffering"),
-            rect: os::Rect {
-                x: 0,
-                y: 0,
-                width: 1280,
-                height: 720,
-            },
-            style: os::WindowStyleFlags::NONE,
-            parent_handle: None
+    let mut win = app.create_window(os::WindowInfo {
+        title: String::from("swap chain buffering"),
+        rect: os::Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
         },
-    );
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
     win.bring_to_front();
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
         format: gfx::Format::RGBA8n,
+        clear_colour: None,
     };
 
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
@@ -171,7 +168,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         name: String::from("draw_triangle"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
 
     let num_buffers = 2;
@@ -181,23 +178,27 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         ..Default::default()
     });
 
-    let mut window = app.create_window(
-        os::WindowInfo {
-            title: String::from("triangle!"),
-            rect: os::Rect {
-                x: 0,
-                y: 0,
-                width: 1280,
-                height: 720,
-            },
-            style: os::WindowStyleFlags::NONE,
-            parent_handle: None
+    let mut window = app.create_window(os::WindowInfo {
+        title: String::from("triangle!"),
+        rect: os::Rect {
+            x: 0,
+            y: 0,
+            width: 1280,
+            height: 720,
         },
-    );
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: num_buffers as u32,
         format: gfx::Format::RGBA8n,
+        clear_colour: Some(gfx::ClearColour {
+            r: 0.45,
+            g: 0.55,
+            b: 0.60,
+            a: 1.00,
+        }),
     };
 
     let mut swap_chain = device.create_swap_chain(&swap_chain_info, &window);

@@ -129,6 +129,7 @@ pub struct SwapChain {
     frame_fence_value: Vec<u64>,
     readback_buffer: Option<ID3D12Resource>,
     require_wait: Vec<bool>,
+    clear_col: Option<ClearColour>,
 }
 
 #[derive(Clone)]
@@ -716,7 +717,6 @@ impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::RenderPass<Device> for RenderPass {}
 
-
 impl From<windows::core::Error> for super::Error {
     fn from(err: windows::core::Error) -> super::Error {
         super::Error {
@@ -758,9 +758,7 @@ impl Heap {
 impl super::Heap<Device> for Heap {
     fn deallocate(&mut self, index: usize) {
         let ptr = self.base_address + self.increment_size * index;
-        let handle = D3D12_CPU_DESCRIPTOR_HANDLE {
-            ptr: ptr
-        };
+        let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
         self.deallocate_internal(&handle);
     }
 }
@@ -840,6 +838,7 @@ impl Device {
                     OffsetInDescriptorsFromTableStart: 0,
                 };
 
+                // TODO: if let
                 let map = visibility_map.get_mut(&binding.visibility);
                 if map.is_some() {
                     map.unwrap().push(range);
@@ -927,18 +926,14 @@ impl Device {
         &self,
         num_buffers: u32,
         textures: &Vec<Texture>,
+        clear_col: Option<ClearColour>,
     ) -> Vec<RenderPass> {
         let mut passes = Vec::new();
         for i in 0..num_buffers as usize {
             passes.push(
                 self.create_render_pass(&super::RenderPassInfo {
                     render_targets: vec![textures[i].clone()],
-                    rt_clear: Some(super::ClearColour {
-                        r: 1.0,
-                        g: 1.0,
-                        b: 1.0,
-                        a: 1.0,
-                    }),
+                    rt_clear: clear_col,
                     depth_stencil: None,
                     ds_clear: None,
                     resolve: false,
@@ -1102,9 +1097,13 @@ impl super::Device for Device {
 
             // create rtv heap and handles
             let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
-            // TODO use format
-            let data_size = (size.x * size.y * 4) as u64;
-            let passes = self.create_render_passes_for_swap_chain(info.num_buffers, &textures);
+
+            let data_size = size_for_format(format, size.x as u64, size.y as u64, 1) as u64;
+            let passes = self.create_render_passes_for_swap_chain(
+                info.num_buffers,
+                &textures,
+                info.clear_colour,
+            );
 
             SwapChain {
                 width: size.x,
@@ -1122,7 +1121,8 @@ impl super::Device for Device {
                 frame_index: 0,
                 frame_fence_value: vec![0; info.num_buffers as usize],
                 readback_buffer: create_read_back_buffer(&self, data_size),
-                require_wait: vec![false; info.num_buffers as usize]
+                require_wait: vec![false; info.num_buffers as usize],
+                clear_col: info.clear_colour,
             }
         }
     }
@@ -1902,7 +1902,7 @@ impl SwapChain {
     fn wait_for_frame(&mut self, frame_index: usize) {
         unsafe {
             let mut waitable: [HANDLE; 2] =
-            [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
+                [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
 
             let mut num_waitable = 1;
             let mut fv = self.frame_fence_value[frame_index as usize];
@@ -1969,8 +1969,12 @@ impl super::SwapChain<Device> for SwapChain {
                 );
                 self.backbuffer_textures =
                     create_swap_chain_rtv(&self.swap_chain, device, self.num_bb);
-                self.backbuffer_passes = device
-                    .create_render_passes_for_swap_chain(self.num_bb, &self.backbuffer_textures);
+                self.backbuffer_passes = device.create_render_passes_for_swap_chain(
+                    self.num_bb,
+                    &self.backbuffer_textures,
+                    self.clear_col,
+                );
+
                 self.readback_buffer = create_read_back_buffer(&device, data_size);
                 self.width = size.x;
                 self.height = size.y;
@@ -2012,7 +2016,7 @@ impl super::SwapChain<Device> for SwapChain {
             // update fence tracking
             self.fence_last_signalled_value = fv;
             self.frame_fence_value[self.bb_index as usize] = fv;
-            self.require_wait[self.bb_index] = true; 
+            self.require_wait[self.bb_index] = true;
 
             // swap buffers
             self.frame_index = self.frame_index + 1;
@@ -2079,22 +2083,16 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn begin_render_pass(&self, render_pass: &mut RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
-            // TODO: fix this branch
-            if render_pass.ds.is_some() {
-                cmd4.BeginRenderPass(
-                    render_pass.rt.len() as u32,
-                    render_pass.rt.as_mut_ptr(),
-                    render_pass.ds.as_ref().unwrap(),
-                    D3D12_RENDER_PASS_FLAG_NONE,
-                );
-            } else {
-                cmd4.BeginRenderPass(
-                    render_pass.rt.len() as u32,
-                    render_pass.rt.as_mut_ptr(),
-                    std::ptr::null_mut(),
-                    D3D12_RENDER_PASS_FLAG_NONE,
-                );
-            }
+            cmd4.BeginRenderPass(
+                render_pass.rt.len() as u32,
+                render_pass.rt.as_mut_ptr(),
+                if let Some(ds) = &render_pass.ds {
+                    ds
+                } else {
+                    std::ptr::null_mut()
+                },
+                D3D12_RENDER_PASS_FLAG_NONE,
+            );
         }
     }
 

@@ -18,8 +18,8 @@ use crate::gfx::Texture;
 use std::ffi::CStr;
 use std::ffi::CString;
 
-const DEFAULT_VB_SIZE : i32 = 5000;
-const DEFAULT_IB_SIZE : i32 = 10000;
+const DEFAULT_VB_SIZE: i32 = 5000;
+const DEFAULT_IB_SIZE: i32 = 10000;
 
 pub struct ImGuiInfo<'a> {
     pub device: &'a mut gfx_platform::Device,
@@ -696,9 +696,16 @@ impl ImGui {
                 let mut open = true;
 
                 // Create a window called "Hello, world!" and append into it.
-                igBegin("Hello, world!\0".as_ptr() as *const i8, &mut open, ImGuiWindowFlags_None as i32);
+                igBegin(
+                    "Hello, world!\0".as_ptr() as *const i8,
+                    &mut open,
+                    ImGuiWindowFlags_None as i32,
+                );
 
-                igText("%s\0".as_ptr() as *const i8, "This is some useful text.\0".as_ptr() as *const i8);
+                igText(
+                    "%s\0".as_ptr() as *const i8,
+                    "This is some useful text.\0".as_ptr() as *const i8,
+                );
 
                 igCheckbox("Demo Window\0".as_ptr() as *const i8, &mut SHOW_DEMO_WINDOW);
                 igCheckbox("Another Window\0".as_ptr() as *const i8, &mut SHOW_ANOTHER_WINDOW);
@@ -821,19 +828,17 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     }
 
     // create a window
-    vd.window = vec![ud.app.create_window(
-        os::WindowInfo {
-            title: String::from("Utitled"),
-            rect: os::Rect {
-                x: vp_ref.Pos.x as i32,
-                y: vp_ref.Pos.y as i32,
-                width: vp_ref.Size.x as i32,
-                height: vp_ref.Size.y as i32,
-            },
-            style: os::WindowStyleFlags::from(vp_ref.Flags),
-            parent_handle: parent_handle
+    vd.window = vec![ud.app.create_window(os::WindowInfo {
+        title: String::from("Utitled"),
+        rect: os::Rect {
+            x: vp_ref.Pos.x as i32,
+            y: vp_ref.Pos.y as i32,
+            width: vp_ref.Size.x as i32,
+            height: vp_ref.Size.y as i32,
         },
-    )];
+        style: os::WindowStyleFlags::from(vp_ref.Flags),
+        parent_handle: parent_handle,
+    })];
 
     // create cmd buffer
     vd.cmd = vec![device.create_cmd_buf(2)];
@@ -842,6 +847,12 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
         format: gfx::Format::RGBA8n,
+        clear_colour: Some(gfx::ClearColour {
+            r: 0.45,
+            g: 0.55,
+            b: 0.60,
+            a: 1.00,
+        }),
     };
     vd.swap_chain = vec![device.create_swap_chain(&swap_chain_info, &vd.window[0])];
 
@@ -888,12 +899,15 @@ unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
     let window = get_viewport_window(vp);
     let mut vp_ref = &mut *vp;
     window.update();
-    window.update_style(os::WindowStyleFlags::from(vp_ref.Flags), os::Rect {
-        x: vp_ref.Pos.x as i32,
-        y: vp_ref.Pos.y as i32,
-        width: vp_ref.Size.x as i32,
-        height: vp_ref.Size.y as i32,
-    });
+    window.update_style(
+        os::WindowStyleFlags::from(vp_ref.Flags),
+        os::Rect {
+            x: vp_ref.Pos.x as i32,
+            y: vp_ref.Pos.y as i32,
+            width: vp_ref.Size.x as i32,
+            height: vp_ref.Size.y as i32,
+        },
+    );
     let events = window.get_events();
     if events.contains(os::WindowEventFlags::CLOSE) {
         vp_ref.PlatformRequestClose = true;

@@ -144,6 +144,8 @@ pub struct SwapChainInfo {
     pub num_buffers: u32,
     /// must be BGRA8n, RGBA8n or RGBA16f
     pub format: Format,
+    /// colour for clearing the window when using the backbuffer pass, use None to not clear
+    pub clear_colour: Option<ClearColour>,
 }
 
 /// Information to create a buffer through `Device::create_buffer`.

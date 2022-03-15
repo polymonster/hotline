@@ -1,10 +1,7 @@
 // TODO:
-// - enum monitors
-// - monitor DPI
+// - keyboard input
 // - Handle CPU access flags for buffers in a nicer way
 // - Handle buffers with no data
-// - Imgui platform
-// - Imgui multi windows
 // - Readback request doesnt unmap
 // - Shaders from IR
 // - pmfx Shaders
@@ -20,6 +17,10 @@
 // - Samples
 
 // DONE:
+// x Imgui platform
+// x Imgui multi windows
+// x enum monitors
+// x monitor DPI
 // x Move Imgui to instance instead of procedural api with static
 // x Imgui renderer
 // x spelling mistake independent.

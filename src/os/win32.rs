@@ -1,11 +1,11 @@
 use windows::{
     Win32::Foundation::*, Win32::Globalization::*, Win32::Graphics::Gdi::ClientToScreen,
     Win32::Graphics::Gdi::EnumDisplayMonitors, Win32::Graphics::Gdi::GetMonitorInfoA,
-    Win32::Graphics::Gdi::ScreenToClient, Win32::Graphics::Gdi::ValidateRect,
-    Win32::Graphics::Gdi::HDC, Win32::Graphics::Gdi::HMONITOR, Win32::Graphics::Gdi::MONITORINFO,
-    Win32::Graphics::Gdi::MonitorFromWindow,Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST,
-    Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::Input::KeyboardAndMouse::*,
-    Win32::UI::WindowsAndMessaging::*, Win32::UI::HiDpi::*
+    Win32::Graphics::Gdi::MonitorFromWindow, Win32::Graphics::Gdi::ScreenToClient,
+    Win32::Graphics::Gdi::ValidateRect, Win32::Graphics::Gdi::HDC, Win32::Graphics::Gdi::HMONITOR,
+    Win32::Graphics::Gdi::MONITORINFO, Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST,
+    Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::HiDpi::*,
+    Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*,
 };
 
 use std::collections::HashMap;
@@ -19,7 +19,7 @@ pub struct App {
     mouse_pos: super::Point<i32>,
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
-    mouse_hwheel: f32
+    mouse_hwheel: f32,
 }
 
 #[derive(Clone)]
@@ -27,7 +27,7 @@ pub struct Window {
     hwnd: HWND,
     ws: WINDOW_STYLE,
     wsex: WINDOW_EX_STYLE,
-    events: super::WindowEventFlags 
+    events: super::WindowEventFlags,
 }
 
 #[derive(Clone, Copy)]
@@ -149,8 +149,8 @@ impl App {
             };
 
             // mouse state
-            self.mouse_wheel = PROC_DATA.mouse_wheel; 
-            self.mouse_hwheel = PROC_DATA.mouse_hwheel; 
+            self.mouse_wheel = PROC_DATA.mouse_wheel;
+            self.mouse_hwheel = PROC_DATA.mouse_hwheel;
             self.mouse_down = PROC_DATA.mouse_down;
 
             // reset mouse deltas
@@ -213,7 +213,7 @@ impl super::App for App {
                 mouse_pos: super::Point::default(),
                 mouse_wheel: 0.0,
                 mouse_hwheel: 0.0,
-                mouse_down: [false; super::MouseButton::Count as usize]
+                mouse_down: [false; super::MouseButton::Count as usize],
             }
         }
     }
@@ -226,15 +226,13 @@ impl super::App for App {
 
             let parent_hwnd = if info.parent_handle.is_some() {
                 Some(info.parent_handle.unwrap().hwnd)
-            }
-            else {
+            } else {
                 None
             };
 
             let class = if info.style.contains(super::WindowStyleFlags::IMGUI) {
                 self.window_class_imgui.clone()
-            }
-            else {
+            } else {
                 self.window_class.clone()
             };
 
@@ -256,7 +254,7 @@ impl super::App for App {
                 hwnd: hwnd,
                 ws: ws,
                 wsex: wsex,
-                events: super::WindowEventFlags::NONE
+                events: super::WindowEventFlags::NONE,
             }
         }
     }
@@ -360,17 +358,16 @@ impl super::Window<App> for Window {
             let top_most_changed = (wsex & WS_EX_TOPMOST) != (self.wsex & WS_EX_TOPMOST);
             let swp_flag = if top_most_changed {
                 SET_WINDOW_POS_FLAGS(0)
-            }
-            else {
+            } else {
                 SWP_NOZORDER
             };
 
-            let insert_after = if flags.contains(super::WindowStyleFlags::TOPMOST) && top_most_changed {
-                HWND_TOPMOST
-            } 
-            else {
-                HWND_NOTOPMOST
-            };
+            let insert_after =
+                if flags.contains(super::WindowStyleFlags::TOPMOST) && top_most_changed {
+                    HWND_TOPMOST
+                } else {
+                    HWND_NOTOPMOST
+                };
 
             self.ws = ws;
             self.wsex = wsex;
@@ -388,12 +385,12 @@ impl super::Window<App> for Window {
 
                 SetWindowPos(
                     self.hwnd,
-                    insert_after, 
-                    rect.left, 
-                    rect.top, 
-                    rect.right - rect.left, 
+                    insert_after,
+                    rect.left,
+                    rect.top,
+                    rect.right - rect.left,
                     rect.bottom - rect.top,
-                    swp_flag | SWP_NOACTIVATE | SWP_FRAMECHANGED
+                    swp_flag | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
 
                 ShowWindow(self.hwnd, SW_SHOWNA);
@@ -507,7 +504,7 @@ impl super::Window<App> for Window {
             GetClientRect(self.hwnd, &mut rect);
             super::Size {
                 x: rect.right - rect.left,
-                y: rect.bottom - rect.top
+                y: rect.bottom - rect.top,
             }
         }
     }
@@ -520,7 +517,7 @@ impl super::Window<App> for Window {
                 x: 0,
                 y: 0,
                 width: rect.right - rect.left,
-                height: rect.bottom - rect.top
+                height: rect.bottom - rect.top,
             }
         }
     }
@@ -539,8 +536,8 @@ impl super::Window<App> for Window {
     fn get_dpi_scale(&self) -> f32 {
         unsafe {
             let monitor = MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST);
-            let mut xdpi : u32 = 0;
-            let mut ydpi : u32 = 0;
+            let mut xdpi: u32 = 0;
+            let mut ydpi: u32 = 0;
             if !GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
                 println!("hotline::os::win32: GetDpiForMonitor failed");
                 return 1.0;
@@ -602,7 +599,12 @@ WM_DEVICECHANGE => LRESULT(0),
 WM_DISPLAYCHANGE => LRESULT(0),
 */
 
-extern "system" fn main_wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+extern "system" fn main_wndproc(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
     unsafe {
         match message as u32 {
             WM_DESTROY => {
@@ -613,8 +615,7 @@ extern "system" fn main_wndproc(window: HWND, message: u32, wparam: WPARAM, lpar
                 if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
                     // Disable ALT application menu
                     return LRESULT(0);
-                }
-                else {
+                } else {
                     return wndproc(window, message, wparam, lparam);
                 }
             }
@@ -629,8 +630,7 @@ fn add_event(window: HWND, flags: super::WindowEventFlags) {
             if let Some(window_events) = events_map.get_mut(&window.0) {
                 // or into existsing key
                 *window_events |= flags;
-            }
-            else {
+            } else {
                 // create new key
                 events_map.insert(window.0, flags);
             }
@@ -638,8 +638,13 @@ fn add_event(window: HWND, flags: super::WindowEventFlags) {
     }
 }
 
-extern "system" fn imgui_wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-     match message as u32 {
+extern "system" fn imgui_wndproc(
+    window: HWND,
+    message: u32,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    match message as u32 {
         WM_CLOSE => {
             add_event(window, super::WindowEventFlags::CLOSE);
             LRESULT(0)
@@ -652,9 +657,7 @@ extern "system" fn imgui_wndproc(window: HWND, message: u32, wparam: WPARAM, lpa
             add_event(window, super::WindowEventFlags::SIZE);
             LRESULT(0)
         }
-        WM_MOUSEACTIVATE => {
-            LRESULT(0)
-        }
+        WM_MOUSEACTIVATE => LRESULT(0),
         _ => wndproc(window, message, wparam, lparam),
     }
 }
@@ -756,15 +759,15 @@ extern "system" fn enum_func(
         }
 
         // get dpi from monitor
-        let mut xdpi : u32 = 0;
-        let mut ydpi : u32 = 0;
-        let dpi_scale = if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
-            (xdpi as f32) / 96.0
-        } 
-        else {
-            1.0
-        };
-        
+        let mut xdpi: u32 = 0;
+        let mut ydpi: u32 = 0;
+        let dpi_scale =
+            if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
+                (xdpi as f32) / 96.0
+            } else {
+                1.0
+            };
+
         MONITOR_ENUM.push(super::MonitorInfo {
             rect: super::Rect {
                 x: info.rcMonitor.left,

@@ -25,7 +25,7 @@ fn main() {
         name: String::from("window_set_rect"),
         window: false,
         num_buffers: 0,
-        dpi_aware: true
+        dpi_aware: true,
     });
 
     // device
@@ -38,23 +38,27 @@ fn main() {
     print!("{}", dev.get_adapter_info());
 
     // window
-    let mut win = app.create_window(
-        os::WindowInfo {
-            title: String::from("bindless texture!"),
-            rect: os::Rect {
-                x: 100,
-                y: 100,
-                width: 1280,
-                height: 720,
-            },
-            style: os::WindowStyleFlags::NONE,
-            parent_handle: None
+    let mut win = app.create_window(os::WindowInfo {
+        title: String::from("bindless texture!"),
+        rect: os::Rect {
+            x: 100,
+            y: 100,
+            width: 1280,
+            height: 720,
         },
-    );
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
         format: gfx::Format::RGBA8n,
+        clear_colour: Some(gfx::ClearColour {
+            r: 0.45,
+            g: 0.55,
+            b: 0.60,
+            a: 1.00,
+        }),
     };
     let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
 
