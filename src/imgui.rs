@@ -627,9 +627,16 @@ impl ImGui {
                 }
             }
 
+            // update mouse
             io.MouseWheel = app.get_mouse_wheel();
             io.MouseWheelH = app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
+
+            // update keyboard
+            let utf16 = app.get_utf16_input();
+            for u in utf16 {
+                ImGuiIO_AddInputCharacterUTF16(io, u);
+            }
 
             igNewFrame();
 

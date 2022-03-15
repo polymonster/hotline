@@ -142,6 +142,7 @@ fn swap_chain_buffer() {
 
         cmdbuffer.reset(&swap_chain);
 
+        // TODO: pass on the fly
         let mut pass = swap_chain.get_backbuffer_pass_mut();
 
         cmdbuffer.begin_render_pass(&mut pass);
