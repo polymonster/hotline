@@ -602,7 +602,7 @@ impl ImGui {
             // update mouse
             if io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32 == 0 {
                 // non viewports mouse coords are in client space
-                let client_mouse = main_window.get_mouse_client_pos(&app.get_mouse_pos());
+                let client_mouse = main_window.get_mouse_client_pos(app.get_mouse_pos());
                 io.MousePos = ImVec2::from(client_mouse);
             } else {
                 // viewports mouse coords are in screen space
@@ -698,6 +698,9 @@ impl Drop for ImGui {
     fn drop(&mut self) {
         unsafe {
             igDestroyPlatformWindows();
+            let platform_io = &mut *igGetPlatformIO();
+            std::ptr::drop_in_place(platform_io.Monitors.Data as *mut ImGuiPlatformMonitor);
+            platform_io.Monitors.Data = std::ptr::null_mut();
         }
     }
 }
@@ -761,7 +764,7 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
 
     // alloc viewport data
     let p_vd = new_viewport_data();
-    let mut vd = &mut *p_vd;
+    let vd = &mut *p_vd;
 
     // find parent
     let mut parent_handle = None;
@@ -827,6 +830,7 @@ unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
     vd.window.clear();
 
     // null PlatformUserData
+    std::ptr::drop_in_place(vp_ref.PlatformUserData as *mut ViewportData);
     vp_ref.PlatformUserData = std::ptr::null_mut();
 }
 
@@ -834,6 +838,12 @@ unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
     let window = get_viewport_window(vp);
     let mut vp_ref = &mut *vp;
     window.update();
+    window.update_style(os::WindowStyleFlags::from(vp_ref.Flags), os::Rect {
+        x: vp_ref.Pos.x as i32,
+        y: vp_ref.Pos.y as i32,
+        width: vp_ref.Size.x as i32,
+        height: vp_ref.Size.y as i32,
+    });
     let events = window.get_events();
     if events.contains(os::WindowEventFlags::CLOSE) {
         vp_ref.PlatformRequestClose = true;
@@ -845,8 +855,6 @@ unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
         vp_ref.PlatformRequestResize = true;
     }
     window.clear_events();
-
-    // TODO: style changes
 }
 
 unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {

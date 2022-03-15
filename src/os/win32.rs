@@ -337,6 +337,56 @@ impl super::Window<App> for Window {
         }
     }
 
+    fn update_style(&mut self, flags: super::WindowStyleFlags, rect: super::Rect<i32>) {
+        let ws = to_win32_dw_style(&flags);
+        let wsex = to_win32_dw_ex_style(&flags);
+        if ws != self.ws || wsex != self.wsex {
+            let top_most_changed = (wsex & WS_EX_TOPMOST) != (self.wsex & WS_EX_TOPMOST);
+            let swp_flag = if top_most_changed {
+                SET_WINDOW_POS_FLAGS(0)
+            }
+            else {
+                SWP_NOZORDER
+            };
+
+            let insert_after = if flags.contains(super::WindowStyleFlags::TOPMOST) && top_most_changed {
+                HWND_TOPMOST
+            } 
+            else {
+                HWND_NOTOPMOST
+            };
+
+            self.ws = ws;
+            self.wsex = wsex;
+            unsafe {
+                SetWindowLongA(self.hwnd, GWL_STYLE, ws.0 as i32);
+                SetWindowLongA(self.hwnd, GWL_EXSTYLE, wsex.0 as i32);
+
+                let mut rect = RECT {
+                    left: rect.x,
+                    top: rect.y,
+                    right: rect.x + rect.width,
+                    bottom: rect.y + rect.height,
+                };
+                AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+
+                SetWindowPos(
+                    self.hwnd,
+                    insert_after, 
+                    rect.left, 
+                    rect.top, 
+                    rect.right - rect.left, 
+                    rect.bottom - rect.top,
+                    swp_flag | SWP_NOACTIVATE | SWP_FRAMECHANGED
+                );
+
+                ShowWindow(self.hwnd, SW_SHOWNA);
+                self.events |= super::WindowEventFlags::MOVE;
+                self.events |= super::WindowEventFlags::SIZE;
+            }
+        }
+    }
+
     fn is_focused(&self) -> bool {
         unsafe { GetForegroundWindow() == self.hwnd }
     }
@@ -459,7 +509,7 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn get_mouse_client_pos(&self, mouse_pos: &super::Point<i32>) -> super::Point<i32> {
+    fn get_mouse_client_pos(&self, mouse_pos: super::Point<i32>) -> super::Point<i32> {
         unsafe {
             let mut mp = POINT {
                 x: mouse_pos.x,
