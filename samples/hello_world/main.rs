@@ -25,6 +25,7 @@ fn main() {
         name: String::from("window_set_rect"),
         window: false,
         num_buffers: 0,
+        dpi_aware: true
     });
 
     // device
@@ -47,9 +48,8 @@ fn main() {
                 height: 720,
             },
             style: os::WindowStyleFlags::NONE,
-            imgui: false,
+            parent_handle: None
         },
-        None,
     );
 
     let swap_chain_info = gfx::SwapChainInfo {

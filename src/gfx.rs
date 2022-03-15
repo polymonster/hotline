@@ -653,8 +653,6 @@ pub trait Shader<D: Device> {}
 pub trait RenderPipeline<D: Device> {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device> {}
-/// An opaque shader heap type, use to create views of resources for binding and access in shaders
-pub trait Heap<D: Device> {}
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device> {}
 
@@ -701,6 +699,7 @@ pub trait Device: Sized + Any {
     ) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
     fn get_shader_heap(&self) -> &Self::Heap;
+    fn get_shader_heap_mut(&mut self) -> &mut Self::Heap;
     fn get_adapter_info(&self) -> &AdapterInfo;
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;
@@ -786,6 +785,12 @@ pub trait Texture<D: Device> {
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
+}
+
+/// An opaque shader heap type, use to create views of resources for binding and access in shaders
+pub trait Heap<D: Device> {
+    /// Deallocate a resource from the heap and mark space in free list for re-use
+    fn deallocate(&mut self, index: usize);
 }
 
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion

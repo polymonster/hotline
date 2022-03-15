@@ -11,6 +11,8 @@ pub struct AppInfo {
     pub window: bool,
     /// Specify the number of buffers in the swap chain
     pub num_buffers: u32,
+    /// Signify if this app wants to be dpi aware
+    pub dpi_aware: bool
 }
 
 /// Used to index into array returned by app::get_mouse_buttons
@@ -73,20 +75,34 @@ bitflags! {
         const APP_WINDOW = 1<<4;
         /// Placed above all non top most windows
         const TOPMOST = 1<<5;
+        /// Signify window is for imgui
+        const IMGUI = 1<<6;
+    }
+
+    /// Event flags to query from other systems (such as imgui) to respond to native os events.
+    pub struct WindowEventFlags : u32 {
+        /// No flags
+        const NONE = 0;
+        /// Window was requested to be closed
+        const CLOSE = 1<<0;
+        /// Window was requested to move
+        const MOVE = 1<<1;
+        /// Window was requested to resize
+        const SIZE = 1<<2;
     }
 }
 
 /// Filled out to specify various window parameters when a window is created by `App::create_window`
 #[derive(Clone)]
-pub struct WindowInfo {
+pub struct WindowInfo<A: App> {
     /// Title appears in the title bar of the window
     pub title: String,
     /// Specify the position and size of the window
     pub rect: Rect<i32>,
     /// Specify window styles
     pub style: WindowStyleFlags,
-    /// Specify window is requested for creation by ImGui
-    pub imgui: bool
+    /// Specify a parent handle for child windows (optional)
+    pub parent_handle: Option<A::NativeHandle>
 }
 
 /// A native platform window handle that can be passed around in a lightweight way
@@ -99,7 +115,7 @@ pub trait App: 'static + Any + Sized {
     /// Create an application instance
     fn create(info: AppInfo) -> Self;
     /// Create a new operating system window
-    fn create_window(&self, info: WindowInfo, parent: Option<Self::NativeHandle>) -> Self::Window;
+    fn create_window(&self, info: WindowInfo<Self>) -> Self::Window;
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool;
     /// Retuns the mouse in screen coordinates
@@ -120,6 +136,10 @@ pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
     fn show(&self, show: bool, activate: bool);
+    /// Must be called each frame to handle resizes
+    fn update(&mut self);
+    /// Close the window
+    fn close(&mut self);
     /// Returns true if the window is focused
     fn is_focused(&self) -> bool;
     /// Returns true if the window is minimised
@@ -142,12 +162,14 @@ pub trait Window<A: App>: Any + Sized {
     fn get_size(&self) -> Size<i32>;
     /// Return mouse position in relative coordinates from the top left corner of the window
     fn get_mouse_client_pos(&self, mouse_pos: &Point<i32>) -> Point<i32>;
-    /// Must be called each frame to handle resizes
-    fn update(&mut self);
+    /// Return the dpi scale for the current monitor the window is on
+    fn get_dpi_scale(&self) -> f32;
     /// gets the internal native handle
     fn get_native_handle(&self) -> A::NativeHandle;
-    /// Close the window
-    fn close(&mut self);
+    /// gets window events tracked from os update, to handle events inside external systems
+    fn get_events(&self) -> WindowEventFlags;
+    /// clears events after they have been responded to
+    fn clear_events(&mut self);
     /// const pointer
     fn as_ptr(&self) -> *const Self;
     /// mut pointer
