@@ -25,6 +25,13 @@ pub enum MouseButton {
     Count,
 }
 
+/// Enums for system key presses
+pub enum SysKey {
+    Ctrl,
+    Shift,
+    Alt
+}
+
 /// Information to describe the dimensions of display monitors
 #[derive(Clone)]
 pub struct MonitorInfo {
@@ -128,6 +135,10 @@ pub trait App: 'static + Any + Sized {
     fn get_mouse_buttons(&self) -> [bool; MouseButton::Count as usize];
     /// Returns a vector of utf-16 characters that have been input since the last frame
     fn get_utf16_input(&self) -> Vec<u16>;
+    /// Returns an array of bools containing 0-256 keys down (true) or up (false)
+    fn get_keys_down(&self) -> [bool; 256];
+    /// Returns true if the sys key is down and false if the key is up
+    fn is_sys_key_down(&self, key: SysKey) -> bool;
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
 }
