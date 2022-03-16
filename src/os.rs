@@ -32,6 +32,25 @@ pub enum SysKey {
     Alt
 }
 
+pub enum Key {
+    Tab,
+    Left,
+    Right,
+    Up,
+    Down,
+    PageUp,
+    PageDown,
+    Home,
+    End,
+    Insert,
+    Delete,
+    Backspace,
+    Space,
+    Enter,
+    Escape,
+    KeyPadEnter
+}
+
 /// Information to describe the dimensions of display monitors
 #[derive(Clone)]
 pub struct MonitorInfo {
@@ -139,6 +158,8 @@ pub trait App: 'static + Any + Sized {
     fn get_keys_down(&self) -> [bool; 256];
     /// Returns true if the sys key is down and false if the key is up
     fn is_sys_key_down(&self, key: SysKey) -> bool;
+    /// Get os system virtual key code from Key
+    fn get_key_code(key: Key) -> i32;
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
 }

@@ -348,6 +348,27 @@ impl super::App for App {
         }
     }
 
+    fn get_key_code(key: super::Key) -> i32 {
+        match key {
+            super::Key::Tab => VK_TAB.0 as i32,
+            super::Key::Left => VK_LEFT.0 as i32,
+            super::Key::Right => VK_RIGHT.0 as i32,
+            super::Key::Up => VK_UP.0 as i32,
+            super::Key::Down => VK_DOWN.0 as i32,
+            super::Key::PageUp => VK_PRIOR.0 as i32,
+            super::Key::PageDown => VK_NEXT.0 as i32,
+            super::Key::Home => VK_HOME.0 as i32,
+            super::Key::End => VK_END.0 as i32,
+            super::Key::Insert => VK_INSERT.0 as i32,
+            super::Key::Delete => VK_DELETE.0 as i32,
+            super::Key::Backspace => VK_BACK.0 as i32,
+            super::Key::Space => VK_SPACE.0 as i32,
+            super::Key::Enter => VK_RETURN.0 as i32,
+            super::Key::Escape => VK_ESCAPE.0 as i32,
+            super::Key::KeyPadEnter => VK_RETURN.0 as i32,
+        }
+    } 
+
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
             MONITOR_ENUM.clear();
