@@ -439,7 +439,6 @@ impl ImGui {
             let mut io = &mut *igGetIO();
 
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
             io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
             igStyleColorsLight(std::ptr::null_mut());
@@ -459,6 +458,34 @@ impl ImGui {
                     std::ptr::null_mut(),
                 );
             }
+
+            // TODO: 
+            //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
+            /*
+            // Keyboard mapping. Dear ImGui will use those indices to peek into the io.KeysDown[] array that we will update during the application lifetime.
+            io.KeyMap[ImGuiKey_Tab] = VK_TAB;
+            io.KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
+            io.KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
+            io.KeyMap[ImGuiKey_UpArrow] = VK_UP;
+            io.KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
+            io.KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
+            io.KeyMap[ImGuiKey_PageDown] = VK_NEXT;
+            io.KeyMap[ImGuiKey_Home] = VK_HOME;
+            io.KeyMap[ImGuiKey_End] = VK_END;
+            io.KeyMap[ImGuiKey_Insert] = VK_INSERT;
+            io.KeyMap[ImGuiKey_Delete] = VK_DELETE;
+            io.KeyMap[ImGuiKey_Backspace] = VK_BACK;
+            io.KeyMap[ImGuiKey_Space] = VK_SPACE;
+            io.KeyMap[ImGuiKey_Enter] = VK_RETURN;
+            io.KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
+            io.KeyMap[ImGuiKey_KeyPadEnter] = VK_RETURN;
+            io.KeyMap[ImGuiKey_A] = 'A';
+            io.KeyMap[ImGuiKey_C] = 'C';
+            io.KeyMap[ImGuiKey_V] = 'V';
+            io.KeyMap[ImGuiKey_X] = 'X';
+            io.KeyMap[ImGuiKey_Y] = 'Y';
+            io.KeyMap[ImGuiKey_Z] = 'Z';
+            */
 
             // io setup
             io.BackendPlatformName = "imgui_impl_hotline".as_ptr() as *const i8;
@@ -632,11 +659,18 @@ impl ImGui {
             io.MouseWheelH = app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
 
-            // update keyboard
+            // update char inputs
             let utf16 = app.get_utf16_input();
             for u in utf16 {
                 ImGuiIO_AddInputCharacterUTF16(io, u);
             }
+
+            // update keyboard
+            let keys_down = app.get_keys_down();
+            std::ptr::copy_nonoverlapping(&keys_down as *const bool, &mut io.KeysDown as *mut bool, 256);
+            io.KeyCtrl = app.is_sys_key_down(os::SysKey::Ctrl);
+            io.KeyShift = app.is_sys_key_down(os::SysKey::Shift);
+            io.KeyAlt = app.is_sys_key_down(os::SysKey::Alt);
 
             igNewFrame();
 

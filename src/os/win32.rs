@@ -20,7 +20,11 @@ pub struct App {
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
     mouse_hwheel: f32,
-    utf16_inputs: Vec<u16>
+    utf16_inputs: Vec<u16>,
+    key_down: [bool; 256],
+    key_ctrl: bool,
+    key_shift: bool,
+    key_alt: bool
 }
 
 #[derive(Clone)]
@@ -42,7 +46,11 @@ struct ProcData {
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
     mouse_hwheel: f32,
-    utf16_inputs: Vec<u16>
+    utf16_inputs: Vec<u16>,
+    key_down: [bool; 256],
+    key_ctrl: bool,
+    key_shift: bool,
+    key_alt: bool
 }
 
 static mut PROC_DATA: ProcData = ProcData {
@@ -51,7 +59,11 @@ static mut PROC_DATA: ProcData = ProcData {
     mouse_down: [false; 5],
     mouse_wheel: 0.0,
     mouse_hwheel: 0.0,
-    utf16_inputs: Vec::new()
+    utf16_inputs: Vec::new(),
+    key_down: [false; 256],
+    key_ctrl: false,
+    key_shift: false,
+    key_alt: false
 };
 
 static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
@@ -168,7 +180,11 @@ impl App {
             self.utf16_inputs = PROC_DATA.utf16_inputs.to_vec();
             PROC_DATA.utf16_inputs.clear();
 
-            // TODO: update sys keys
+            // update sys keys
+            self.key_down = PROC_DATA.key_down;
+            self.key_ctrl = PROC_DATA.key_ctrl;
+            self.key_shift = PROC_DATA.key_shift;
+            self.key_alt = PROC_DATA.key_alt;
         }
     }
 }
@@ -227,7 +243,11 @@ impl super::App for App {
                 mouse_wheel: 0.0,
                 mouse_hwheel: 0.0,
                 mouse_down: [false; super::MouseButton::Count as usize],
-                utf16_inputs: Vec::new()
+                utf16_inputs: Vec::new(),
+                key_down: [false; 256],
+                key_ctrl: false,
+                key_shift: false,
+                key_alt: false
             }
         }
     }
@@ -314,6 +334,18 @@ impl super::App for App {
 
     fn get_utf16_input(&self) -> Vec<u16> {
         self.utf16_inputs.to_vec()
+    }
+
+    fn get_keys_down(&self) -> [bool; 256] {
+        self.key_down
+    }
+
+    fn is_sys_key_down(&self, key: super::SysKey) -> bool {
+        match key {
+            super::SysKey::Ctrl => self.key_ctrl,
+            super::SysKey::Shift => self.key_shift,
+            super::SysKey::Alt => self.key_alt
+        }
     }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
@@ -607,13 +639,8 @@ fn release_capture(window: HWND) {
 
 /*
 TODO: wndproc
-WM_KEYDOWN => LRESULT(0),
-WM_KEYUP => LRESULT(0),
-WM_SYSKEYDOWN => LRESULT(0),
-WM_SYSKEYUP => LRESULT(0),
 WM_SETFOCUS => LRESULT(0),
 WM_KILLFOCUS => LRESULT(0),
-WM_CHAR => LRESULT(0),
 WM_SETCURSOR => LRESULT(0),
 WM_DEVICECHANGE => LRESULT(0),
 WM_DISPLAYCHANGE => LRESULT(0),
@@ -764,6 +791,29 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 if wparam.0 > 0 && wparam.0 < 0x10000 {
                     PROC_DATA.utf16_inputs.push(wparam.0 as u16);
                 }
+                LRESULT(0)
+            }
+            WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
+                let down = (message == WM_KEYDOWN) || (message == WM_SYSKEYDOWN);
+
+                if wparam.0 < 256 {
+                    PROC_DATA.key_down[wparam.0] = down;
+                }
+
+                let vk = VIRTUAL_KEY(wparam.0 as u16);
+                match vk {
+                    VK_CONTROL => {
+                        PROC_DATA.key_ctrl = down;
+                    }
+                    VK_SHIFT => {
+                        PROC_DATA.key_shift = down;
+                    }
+                    VK_MENU => {
+                        PROC_DATA.key_alt = down;
+                    }
+                    _ => {}
+                }
+
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
