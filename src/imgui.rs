@@ -458,34 +458,30 @@ impl ImGui {
                     std::ptr::null_mut(),
                 );
             }
-
-            // TODO: 
-            //io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
-            /*
-            // Keyboard mapping. Dear ImGui will use those indices to peek into the io.KeysDown[] array that we will update during the application lifetime.
-            io.KeyMap[ImGuiKey_Tab] = VK_TAB;
-            io.KeyMap[ImGuiKey_LeftArrow] = VK_LEFT;
-            io.KeyMap[ImGuiKey_RightArrow] = VK_RIGHT;
-            io.KeyMap[ImGuiKey_UpArrow] = VK_UP;
-            io.KeyMap[ImGuiKey_DownArrow] = VK_DOWN;
-            io.KeyMap[ImGuiKey_PageUp] = VK_PRIOR;
-            io.KeyMap[ImGuiKey_PageDown] = VK_NEXT;
-            io.KeyMap[ImGuiKey_Home] = VK_HOME;
-            io.KeyMap[ImGuiKey_End] = VK_END;
-            io.KeyMap[ImGuiKey_Insert] = VK_INSERT;
-            io.KeyMap[ImGuiKey_Delete] = VK_DELETE;
-            io.KeyMap[ImGuiKey_Backspace] = VK_BACK;
-            io.KeyMap[ImGuiKey_Space] = VK_SPACE;
-            io.KeyMap[ImGuiKey_Enter] = VK_RETURN;
-            io.KeyMap[ImGuiKey_Escape] = VK_ESCAPE;
-            io.KeyMap[ImGuiKey_KeyPadEnter] = VK_RETURN;
-            io.KeyMap[ImGuiKey_A] = 'A';
-            io.KeyMap[ImGuiKey_C] = 'C';
-            io.KeyMap[ImGuiKey_V] = 'V';
-            io.KeyMap[ImGuiKey_X] = 'X';
-            io.KeyMap[ImGuiKey_Y] = 'Y';
-            io.KeyMap[ImGuiKey_Z] = 'Z';
-            */
+            
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
+            io.KeyMap[ImGuiKey_Tab as usize] = os_platform::App::get_key_code(os::Key::Tab);
+            io.KeyMap[ImGuiKey_LeftArrow as usize] = os_platform::App::get_key_code(os::Key::Left);
+            io.KeyMap[ImGuiKey_RightArrow as usize] = os_platform::App::get_key_code(os::Key::Right);
+            io.KeyMap[ImGuiKey_UpArrow as usize] = os_platform::App::get_key_code(os::Key::Up);
+            io.KeyMap[ImGuiKey_DownArrow as usize] = os_platform::App::get_key_code(os::Key::Down);
+            io.KeyMap[ImGuiKey_PageUp as usize] = os_platform::App::get_key_code(os::Key::PageUp);
+            io.KeyMap[ImGuiKey_PageDown as usize] = os_platform::App::get_key_code(os::Key::PageDown);
+            io.KeyMap[ImGuiKey_Home as usize] = os_platform::App::get_key_code(os::Key::Home);
+            io.KeyMap[ImGuiKey_End as usize] = os_platform::App::get_key_code(os::Key::End);
+            io.KeyMap[ImGuiKey_Insert as usize] = os_platform::App::get_key_code(os::Key::Insert);
+            io.KeyMap[ImGuiKey_Delete as usize] = os_platform::App::get_key_code(os::Key::Delete);
+            io.KeyMap[ImGuiKey_Backspace as usize] = os_platform::App::get_key_code(os::Key::Backspace);
+            io.KeyMap[ImGuiKey_Space as usize] = os_platform::App::get_key_code(os::Key::Space);
+            io.KeyMap[ImGuiKey_Enter as usize] = os_platform::App::get_key_code(os::Key::Enter);
+            io.KeyMap[ImGuiKey_Escape as usize] = os_platform::App::get_key_code(os::Key::Escape);
+            io.KeyMap[ImGuiKey_KeyPadEnter as usize] = os_platform::App::get_key_code(os::Key::KeyPadEnter);
+            io.KeyMap[ImGuiKey_A as usize] = 'A' as i32;
+            io.KeyMap[ImGuiKey_C as usize] = 'C' as i32;
+            io.KeyMap[ImGuiKey_V as usize] = 'V' as i32;
+            io.KeyMap[ImGuiKey_X as usize] = 'X' as i32;
+            io.KeyMap[ImGuiKey_Y as usize] = 'Y' as i32;
+            io.KeyMap[ImGuiKey_Z as usize] = 'Z' as i32;
 
             // io setup
             io.BackendPlatformName = "imgui_impl_hotline".as_ptr() as *const i8;
