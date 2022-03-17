@@ -1,8 +1,8 @@
 use imgui_sys::*;
 
-use crate::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use crate::os::win32 as os_platform;
+use crate::gfx::d3d12 as gfx_platform;
 
 use crate::os;
 use crate::os::App;
@@ -458,7 +458,7 @@ impl ImGui {
                     std::ptr::null_mut(),
                 );
             }
-            
+
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
             io.KeyMap[ImGuiKey_Tab as usize] = os_platform::App::get_key_code(os::Key::Tab);
             io.KeyMap[ImGuiKey_LeftArrow as usize] = os_platform::App::get_key_code(os::Key::Left);
