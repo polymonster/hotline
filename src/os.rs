@@ -32,6 +32,7 @@ pub enum SysKey {
     Alt
 }
 
+/// Enums for vitual keys
 pub enum Key {
     Tab,
     Left,
@@ -188,7 +189,7 @@ pub trait Window<A: App>: Any + Sized {
     fn set_title(&self, title: String);
     /// Set window position in screen space
     fn set_pos(&self, pos: Point<i32>);
-    /// Set window size
+    /// Set window size in screen coordinates
     fn set_size(&self, size: Size<i32>);
     /// Returns the screen position for the top-left corner of the window
     fn get_pos(&self) -> Point<i32>;

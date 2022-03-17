@@ -557,8 +557,8 @@ fn get_hardware_adapter(
             let decoded = decoded1.trim_matches(x);
             adapter_info.available.push(decoded.to_string());
 
-            if adapter_name.is_some() {
-                let s = adapter_name.as_ref().unwrap().to_string();
+            if let Some(adapter_name) = &adapter_name {
+                let s = adapter_name.to_string();
                 if s == decoded.to_string() {
                     selected_index = i as i32;
                 }
@@ -797,9 +797,8 @@ impl Device {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
 
         // push constants
-        if layout.push_constants.is_some() {
-            let constants_set = layout.push_constants.as_ref();
-            for constants in constants_set.unwrap() {
+        if let Some(constants_set) = &layout.push_constants {
+            for constants in constants_set {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
@@ -817,9 +816,8 @@ impl Device {
         // bindings for (SRV, UAV, CBV an Samplers)
         let mut visibility_map: HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> =
             HashMap::new();
-        if layout.bindings.is_some() {
-            let bindings = layout.bindings.as_ref();
-            for binding in bindings.unwrap() {
+        if let Some(bindings) = &layout.bindings {
+            for binding in bindings {
                 let count = if binding.num_descriptors.is_some() {
                     binding.num_descriptors.unwrap()
                 } else {
@@ -863,9 +861,8 @@ impl Device {
 
         // immutable samplers
         let mut static_samplers: Vec<D3D12_STATIC_SAMPLER_DESC> = Vec::new();
-        if layout.static_samplers.is_some() {
-            let samplers = layout.static_samplers.as_ref();
-            for sampler in samplers.unwrap() {
+        if let Some(samplers) = &layout.static_samplers {
+            for sampler in samplers {
                 static_samplers.push(D3D12_STATIC_SAMPLER_DESC {
                     Filter: to_d3d12_filter(sampler.filter),
                     AddressU: to_d3d12_address_mode(sampler.address_u),
@@ -1168,10 +1165,6 @@ impl super::Device for Device {
     ) -> result::Result<RenderPipeline, super::Error> {
         let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
-        // TODO: select which shaders
-        let vs = &info.vs.as_ref().unwrap().blob;
-        let ps = &info.fs.as_ref().unwrap().blob;
-
         let semantics = null_terminate_semantics(&info.input_layout);
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
         let input_layout = D3D12_INPUT_LAYOUT_DESC {
@@ -1183,16 +1176,31 @@ impl super::Device for Device {
         let depth_stencil = &info.depth_stencil_info;
         let blend = &info.blend_info;
 
+        let null_bytecode = D3D12_SHADER_BYTECODE {
+            pShaderBytecode: std::ptr::null_mut(),
+            BytecodeLength: 0,
+        };
+
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
             pRootSignature: Some(root_signature.clone()),
-            VS: D3D12_SHADER_BYTECODE {
-                pShaderBytecode: unsafe { vs.GetBufferPointer() },
-                BytecodeLength: unsafe { vs.GetBufferSize() },
+            VS: if let Some(vs) = &info.vs {
+                D3D12_SHADER_BYTECODE {
+                    pShaderBytecode: unsafe { vs.blob.GetBufferPointer() },
+                    BytecodeLength: unsafe { vs.blob.GetBufferSize() },
+                }
+            }
+            else {
+                null_bytecode
             },
-            PS: D3D12_SHADER_BYTECODE {
-                pShaderBytecode: unsafe { ps.GetBufferPointer() },
-                BytecodeLength: unsafe { ps.GetBufferSize() },
+            PS: if let Some(ps) = &info.fs {
+                D3D12_SHADER_BYTECODE {
+                    pShaderBytecode: unsafe { ps.blob.GetBufferPointer() },
+                    BytecodeLength: unsafe { ps.blob.GetBufferSize() },
+                }
+            }
+            else {
+                null_bytecode
             },
             RasterizerState: D3D12_RASTERIZER_DESC {
                 FillMode: to_d3d12_fill_mode(&raster.fill_mode),
@@ -1265,8 +1273,7 @@ impl super::Device for Device {
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
         let mut shader_blob = None;
-        if info.compile_info.is_some() {
-            let compile_info = info.compile_info.as_ref().unwrap();
+        if let Some(compile_info) = &info.compile_info {
             let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
             unsafe {
                 let nullt_entry_point = CString::new(compile_info.entry_point.clone())?;
@@ -1288,9 +1295,8 @@ impl super::Device for Device {
                     &mut errors,
                 );
                 if !result.is_ok() {
-                    if errors.is_some() {
-                        let w = errors.unwrap();
-                        let buf = w.GetBufferPointer();
+                    if let Some(e) = errors {
+                        let buf = e.GetBufferPointer();
                         let c_str: &CStr = CStr::from_ptr(buf as *const i8);
                         let str_slice: &str = c_str.to_str().unwrap();
                         return Err(super::Error {
@@ -1302,6 +1308,7 @@ impl super::Device for Device {
                 }
             }
         }
+
         Ok(Shader {
             blob: shader_blob.unwrap(),
         })
@@ -1340,16 +1347,24 @@ impl super::Device for Device {
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
                     ..Default::default()
                 },
+                // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
-                } else {
-                    D3D12_RESOURCE_STATE_COPY_DEST
+                } 
+                else {
+                    if data.is_some() {
+                        D3D12_RESOURCE_STATE_COPY_DEST
+                    }
+                    else {
+                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+                    }
                 },
                 std::ptr::null(),
                 &mut buf,
             )?;
 
-            if data.is_some() {
+            // load buffer with initialised data
+            if let Some(data) = &data {
                 let mut upload: Option<ID3D12Resource> = None;
                 self.device.CreateCommittedResource(
                     &D3D12_HEAP_PROPERTIES {
@@ -1386,7 +1401,7 @@ impl super::Device for Device {
                 let res = upload.clone().unwrap();
                 res.Map(0, &range, &mut map_data)?;
                 if map_data != std::ptr::null_mut() {
-                    let src = data.as_ref().unwrap().as_ptr() as *mut u8;
+                    let src = data.as_ptr() as *mut u8;
                     std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes as usize);
                 }
                 res.Unmap(0, std::ptr::null());
@@ -1508,9 +1523,7 @@ impl super::Device for Device {
                 &mut tex,
             )?;
 
-            if data.is_some() {
-                let data = data.unwrap();
-
+            if let Some(data) = &data {
                 // create upload buffer
                 let row_pitch = super::row_pitch_for_format(info.format, info.width);
                 let upload_pitch =
@@ -1746,7 +1759,7 @@ impl super::Device for Device {
 
         let mut ds = None;
         let mut ds_format = DXGI_FORMAT_UNKNOWN;
-        if info.depth_stencil.is_some() {
+        if let Some(depth_stencil) = &info.depth_stencil {
             let mut clear_depth = 0.0;
             let mut depth_begin_type = D3D12_RENDER_PASS_BEGINNING_ACCESS_TYPE_PRESERVE;
             let mut clear_stencil = 0x0;
@@ -1777,8 +1790,6 @@ impl super::Device for Device {
                 }
             }
 
-            // TODO: if no depth stencil?
-            let depth_stencil = info.depth_stencil.as_ref().unwrap();
             let desc = unsafe { depth_stencil.resource.GetDesc() };
             ds_format = desc.Format;
 
@@ -1821,6 +1832,7 @@ impl super::Device for Device {
                     },
                 },
             };
+
             let stencil_end = D3D12_RENDER_PASS_ENDING_ACCESS {
                 Type: end_type,
                 Anonymous: D3D12_RENDER_PASS_ENDING_ACCESS_0 {
@@ -1828,8 +1840,9 @@ impl super::Device for Device {
                 },
             };
 
+            // TODO: if no dsv
             ds = Some(D3D12_RENDER_PASS_DEPTH_STENCIL_DESC {
-                cpuDescriptor: info.depth_stencil.as_ref().unwrap().dsv.unwrap(),
+                cpuDescriptor: depth_stencil.dsv.unwrap(),
                 DepthBeginningAccess: depth_begin,
                 StencilBeginningAccess: stencil_begin,
                 DepthEndingAccess: depth_end,
@@ -2118,8 +2131,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {
-        if barrier.texture.is_some() {
-            let tex = barrier.texture.as_ref().unwrap();
+        if let Some(tex) = &barrier.texture {
             let barrier = transition_barrier(
                 &tex.resource,
                 to_d3d12_resource_state(barrier.state_before),
@@ -2400,23 +2412,25 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
-            let res = self.resource.as_ref().unwrap();
-            res.Map(0, &range, &mut map_data).map_err(|_| "hotline::gfx::d3d12: map failed!")?;
-            if map_data != std::ptr::null_mut() {
-                let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
-                let rb_data = super::ReadBackData {
-                    data: slice,
-                    size: self.size,
-                    format: super::Format::Unknown,
-                    row_pitch: self.row_pitch,
-                    slice_pitch: self.size,
-                };
-                return Ok(rb_data);
-            } else {
-                return Err("hotline::gfx::d3d12: map failed!");
+            if let Some(res) = &self.resource {
+                res.Map(0, &range, &mut map_data).map_err(|_| "hotline::gfx::d3d12: map failed!")?;
+                if map_data != std::ptr::null_mut() {
+                    let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
+                    let rb_data = super::ReadBackData {
+                        data: slice,
+                        size: self.size,
+                        format: super::Format::Unknown,
+                        row_pitch: self.row_pitch,
+                        slice_pitch: self.size,
+                    };
+                    return Ok(rb_data);
+                } else {
+                    return Err("hotline::gfx::d3d12: map failed!");
+                }
+                // TODO: ownership
+                //res.Unmap(0, std::ptr::null());
             }
-            // TODO: ownership
-            //res.Unmap(0, std::ptr::null());
+            Err("hotline::gfx::d3d12: get_data called on read back request with no resource!")
         }
     }
 }
