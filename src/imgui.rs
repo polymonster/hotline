@@ -735,6 +735,7 @@ impl ImGui {
         unsafe {
             static mut SHOW_DEMO_WINDOW: bool = true;
             static mut SHOW_ANOTHER_WINDOW: bool = true;
+            static mut CLEAR_COLOUR : [f32; 3] = [0.0, 0.0, 0.0];
 
             let io = &mut *igGetIO();
 
@@ -744,8 +745,8 @@ impl ImGui {
 
             // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
             {
-                //static float f = 0.0f;
-                //static int counter = 0;
+                static mut SLIDER_FLOAT : f32 = 0.0;
+                static mut COUNTER : i32 = 0;
 
                 let mut open = true;
 
@@ -772,32 +773,55 @@ impl ImGui {
                     io.DisplaySize.y as f64,
                 );
 
+                igSliderFloat("float\0".as_ptr() as _, &mut SLIDER_FLOAT, 0.0, 1.0, "%.3f\0".as_ptr() as _, 0);
+
+                if igButton("Button\0".as_ptr() as _, ImVec2 {
+                    x: 0.0,
+                    y: 0.0
+                }) {
+                    COUNTER += 1;
+                }
+
+                igSameLine(0.0, -1.0);
+
+                igText(
+                    "counter = %i\0".as_ptr() as *const i8,
+                    "This is some useful text.\0".as_ptr() as *const i8,
+                );
+
+                igColorEdit3("clear color\0".as_ptr() as _, CLEAR_COLOUR.as_mut_ptr(), 0); // Edit 3 floats representing a color
+
+                igText(
+                    "Application average %.3f ms/frame (%.1f FPS)\0".as_ptr() as _,
+                    1000.0 / io.Framerate as f64, 
+                    io.Framerate as f64
+                );
+
                 igEnd();
-
-                /*
-                ImGui::SliderFloat("float", &f, 0.0f, 1.0f);            // Edit 1 float using a slider from 0.0f to 1.0f
-                ImGui::ColorEdit3("clear color", (float*)&clear_color); // Edit 3 floats representing a color
-
-                if (ImGui::Button("Button"))                            // Buttons return true when clicked (most widgets return true when edited/activated)
-                    counter++;
-                ImGui::SameLine();
-                ImGui::Text("counter = %d", counter);
-
-                ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-                */
             }
 
             // 3. Show another simple window.
-            /*
-            if (show_another_window)
-            {
-                ImGui::Begin("Another Window", &show_another_window);   // Pass a pointer to our bool variable (the window will have a closing button that will clear the bool when clicked)
-                ImGui::Text("Hello from another window!");
-                if (ImGui::Button("Close Me"))
-                    show_another_window = false;
-                ImGui::End();
+            if SHOW_ANOTHER_WINDOW {                
+                igBegin(
+                    "Another Window\0".as_ptr() as *const i8,
+                    &mut SHOW_ANOTHER_WINDOW,
+                    ImGuiWindowFlags_None as i32,
+                );
+
+                igText(
+                    "%s\0".as_ptr() as *const i8,
+                    "Hello from another window!\0".as_ptr() as *const i8,
+                );
+
+                if igButton("Close Me\0".as_ptr() as _, ImVec2 {
+                    x: 0.0,
+                    y: 0.0
+                }) {
+                    SHOW_ANOTHER_WINDOW = false;
+                }
+
+                igEnd();
             }
-            */
         }
     }
 }
