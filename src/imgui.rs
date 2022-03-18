@@ -32,6 +32,7 @@ pub struct ImGui {
     font_texture: gfx_platform::Texture,
     pipeline: gfx_platform::RenderPipeline,
     buffers: Vec<RenderBuffers>,
+    last_cursor: os::Cursor
 }
 
 #[derive(Clone)]
@@ -560,6 +561,7 @@ impl ImGui {
                 font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
+                last_cursor: os::Cursor::None
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -597,7 +599,7 @@ impl ImGui {
     }
 
     pub fn new_frame(
-        &self,
+        &mut self,
         app: &mut os_platform::App,
         main_window: &mut os_platform::Window,
         device: &mut gfx_platform::Device,
@@ -667,6 +669,21 @@ impl ImGui {
             io.KeyCtrl = app.is_sys_key_down(os::SysKey::Ctrl);
             io.KeyShift = app.is_sys_key_down(os::SysKey::Shift);
             io.KeyAlt = app.is_sys_key_down(os::SysKey::Alt);
+
+            // update mouse cursor
+
+            // Update OS mouse cursor with the cursor requested by imgui
+            let cursor = if io.MouseDrawCursor {
+                to_os_cursor(igGetMouseCursor())
+            }
+            else {
+                os::Cursor::None
+            };
+
+            if self.last_cursor != cursor {
+                self.last_cursor = cursor;
+                app.set_cursor(&self.last_cursor);
+            }
 
             igNewFrame();
 
@@ -1118,5 +1135,21 @@ impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
             style |= os::WindowStyleFlags::TOPMOST;
         }
         style
+    }
+}
+
+#[allow(non_upper_case_globals)] 
+fn to_os_cursor(cursor: ImGuiMouseCursor) -> os::Cursor {
+    match cursor {
+        ImGuiMouseCursor_Arrow => os::Cursor::Arrow,
+        ImGuiMouseCursor_TextInput => os::Cursor::TextInput,
+        ImGuiMouseCursor_ResizeAll => os::Cursor::ResizeAll,
+        ImGuiMouseCursor_ResizeEW => os::Cursor::ResizeEW,
+        ImGuiMouseCursor_ResizeNS => os::Cursor::ResizeNS,
+        ImGuiMouseCursor_ResizeNESW => os::Cursor::ResizeNESW,
+        ImGuiMouseCursor_ResizeNWSE => os::Cursor::ResizeNWSE,
+        ImGuiMouseCursor_Hand => os::Cursor::Hand,
+        ImGuiMouseCursor_NotAllowed =>os::Cursor::NotAllowed,
+        _ => os::Cursor::None
     }
 }

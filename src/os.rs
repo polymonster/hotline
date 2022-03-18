@@ -52,6 +52,20 @@ pub enum Key {
     KeyPadEnter
 }
 
+#[derive(Eq, PartialEq)]
+pub enum Cursor {
+    None,
+    Arrow,
+    TextInput,
+    ResizeAll,
+    ResizeEW,
+    ResizeNS,
+    ResizeNESW,
+    ResizeNWSE,
+    Hand,
+    NotAllowed
+}
+
 /// Information to describe the dimensions of display monitors
 #[derive(Clone)]
 pub struct MonitorInfo {
@@ -163,6 +177,8 @@ pub trait App: 'static + Any + Sized {
     fn get_key_code(key: Key) -> i32;
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
+    /// Sets the mouse cursor
+    fn set_cursor(&self, cursor: &Cursor);
 }
 
 /// An instance of an operating system window

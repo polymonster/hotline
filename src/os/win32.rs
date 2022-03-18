@@ -380,6 +380,23 @@ impl super::App for App {
             monitors
         }
     }
+
+    fn set_cursor(&self, cursor: &super::Cursor) {
+        unsafe {
+            match cursor {
+                super::Cursor::None => SetCursor(HCURSOR(0)),
+                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, &IDC_ARROW)),
+                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, &IDC_IBEAM)),
+                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEALL)),
+                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEWE)),
+                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENS)),
+                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENESW)),
+                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENWSE)),
+                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, &IDC_HAND)),
+                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, &IDC_NO)),
+            };
+        }
+    }
 }
 
 impl super::Window<App> for Window {
