@@ -1,1 +1,1 @@
-initSidebarItems({"struct":[["App",""],["Window",""]]});
+initSidebarItems({"struct":[["App",""],["NativeHandle",""],["Window",""]]});
