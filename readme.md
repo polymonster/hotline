@@ -1,6 +1,6 @@
 # Hotline
 
-[Documentation](https://www.polymonster.co.uk/hotline/hotline/gfx/index.html)
+[Documentation](https://www.polymonster.co.uk/hotline/index.html)
 
 ## Design Goals
 - An easy to use cross platform graphics/compute/os api for rapid development.
