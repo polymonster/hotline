@@ -98,7 +98,6 @@ impl WinPixEventRuntime {
 }
 
 pub struct Device {
-    _adapter: IDXGIAdapter1,
     adapter_info: super::AdapterInfo,
     dxgi_factory: IDXGIFactory4,
     device: ID3D12Device,
@@ -110,6 +109,9 @@ pub struct Device {
     rtv_heap: Heap,
     dsv_heap: Heap,
 }
+
+unsafe impl Send for Device {}
+unsafe impl Sync for Device {}
 
 #[derive(Clone)]
 pub struct SwapChain {
@@ -1032,7 +1034,6 @@ impl super::Device for Device {
 
             // initialise struct
             Device {
-                _adapter: adapter,
                 adapter_info: adapter_info,
                 device: device,
                 dxgi_factory: dxgi_factory,

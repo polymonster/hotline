@@ -9,6 +9,10 @@ use gfx::SwapChain;
 
 use std::fs;
 
+use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
+
 use hotline::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
@@ -29,13 +33,28 @@ fn main() {
     });
 
     // device
-    let mut dev = gfx_platform::Device::create(&gfx::DeviceInfo {
+    let device = gfx_platform::Device::create(&gfx::DeviceInfo {
         adapter_name: None,
         shader_heap_size: 100,
         render_target_heap_size: 100,
         depth_stencil_heap_size: 100,
     });
-    print!("{}", dev.get_adapter_info());
+    print!("{}", device.get_adapter_info());
+
+    let arc_dev = Arc::new(Mutex::new(device));
+
+    let d2 = arc_dev.clone();
+    thread::spawn(move || {
+        println!("create thread!");
+        d2.lock().unwrap().create_cmd_buf(3);
+        println!("locked and create cmd buffer!");
+        loop {
+            println!("thread!!!");
+            std::thread::sleep(std::time::Duration::from_millis(60));
+        }
+    });
+
+    let mut dev = arc_dev.lock().unwrap();
 
     // window
     let mut win = app.create_window(os::WindowInfo {
@@ -365,9 +384,14 @@ fn main() {
     };
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
+    std::mem::drop(dev);
+
     // ..
     let mut ci = 0;
     while app.run() {
+
+        let mut dev = arc_dev.lock().unwrap();
+
         win.update();
         swap_chain.update(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
@@ -460,7 +484,6 @@ fn main() {
         dev.execute(&cmdbuffer);
 
         swap_chain.swap(&dev);
-
         ci = (ci + 1) % 4;
     }
 
