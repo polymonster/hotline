@@ -18,7 +18,7 @@
 
 #### In Progress
 - API (gfx::, os::) / Backend (d3d12::, win32::)
-- Imgui support w/ Viewports
+- ~~Imgui support w/ Viewports~~
 
 #### Future Work
 - Multi-threading support (async command buffer generation and job dispatches)
