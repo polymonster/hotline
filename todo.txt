@@ -1,9 +1,4 @@
 // TODO:
-// - keyboard input
-// - imgui mouse cursors
-// - Handle CPU access flags for buffers in a nicer way
-// - Handle buffers with no data
-// - Readback request doesnt unmap
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
@@ -18,6 +13,11 @@
 // - Samples
 
 // DONE:
+// x Handle CPU access flags for buffers in a nicer way
+// x Handle buffers with no data
+// x Readback request doesnt unmap
+// x keyboard input
+// x imgui mouse cursors
 // x Imgui platform
 // x Imgui multi windows
 // x enum monitors

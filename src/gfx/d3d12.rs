@@ -1189,8 +1189,7 @@ impl super::Device for Device {
                     pShaderBytecode: unsafe { vs.blob.GetBufferPointer() },
                     BytecodeLength: unsafe { vs.blob.GetBufferSize() },
                 }
-            }
-            else {
+            } else {
                 null_bytecode
             },
             PS: if let Some(ps) = &info.fs {
@@ -1198,8 +1197,7 @@ impl super::Device for Device {
                     pShaderBytecode: unsafe { ps.blob.GetBufferPointer() },
                     BytecodeLength: unsafe { ps.blob.GetBufferSize() },
                 }
-            }
-            else {
+            } else {
                 null_bytecode
             },
             RasterizerState: D3D12_RASTERIZER_DESC {
@@ -1350,12 +1348,10 @@ impl super::Device for Device {
                 // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
-                } 
-                else {
+                } else {
                     if data.is_some() {
                         D3D12_RESOURCE_STATE_COPY_DEST
-                    }
-                    else {
+                    } else {
                         D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
                     }
                 },
@@ -2370,19 +2366,25 @@ impl super::Buffer<Device> for Buffer {
         self.uav_index
     }
 
-    fn map(&self) -> *mut u8 {
-        // TODO: read range
-        let range = D3D12_RANGE { Begin: 0, End: 0 };
+    fn map(&self, info: &MapInfo) -> *mut u8 {
+        let range = D3D12_RANGE {
+            Begin: info.read_start,
+            End: info.read_end,
+        };
         let mut map_data = std::ptr::null_mut();
         unsafe {
-            self.resource.Map(0, &range, &mut map_data).unwrap();
+            self.resource.Map(info.subresource, &range, &mut map_data).unwrap();
         }
         map_data as *mut u8
     }
 
-    fn unmap(&self) {
+    fn unmap(&self, info: &UnmapInfo) {
+        let range = D3D12_RANGE {
+            Begin: info.write_start,
+            End: info.write_end,
+        };
         unsafe {
-            self.resource.Unmap(0, std::ptr::null_mut());
+            self.resource.Unmap(info.subresource, &range);
         }
     }
 }
@@ -2405,15 +2407,19 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         false
     }
 
-    fn get_data(&self) -> std::result::Result<super::ReadBackData, &str> {
+    fn map(&self, info: &MapInfo) -> result::Result<ReadBackData, super::Error> {
         let range = D3D12_RANGE {
-            Begin: 0,
-            End: self.size,
+            Begin: info.read_start,
+            End: if info.read_end == usize::MAX {
+                self.size
+            } else {
+                info.read_end
+            },
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
             if let Some(res) = &self.resource {
-                res.Map(0, &range, &mut map_data).map_err(|_| "hotline::gfx::d3d12: map failed!")?;
+                res.Map(0, &range, &mut map_data)?;
                 if map_data != std::ptr::null_mut() {
                     let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
                     let rb_data = super::ReadBackData {
@@ -2424,13 +2430,20 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                         slice_pitch: self.size,
                     };
                     return Ok(rb_data);
-                } else {
-                    return Err("hotline::gfx::d3d12: map failed!");
                 }
-                // TODO: ownership
-                //res.Unmap(0, std::ptr::null());
             }
-            Err("hotline::gfx::d3d12: get_data called on read back request with no resource!")
+            Err(super::Error {
+                error_type: super::ErrorType::MapError,
+                msg: format!("Failed to map readback buffer"),
+            })
+        }
+    }
+
+    fn unmap(&self) {
+        unsafe {
+            if let Some(res) = &self.resource {
+                res.Unmap(0, std::ptr::null());
+            }
         }
     }
 }

@@ -24,7 +24,7 @@ pub struct App {
     key_down: [bool; 256],
     key_ctrl: bool,
     key_shift: bool,
-    key_alt: bool
+    key_alt: bool,
 }
 
 #[derive(Clone)]
@@ -50,7 +50,7 @@ struct ProcData {
     key_down: [bool; 256],
     key_ctrl: bool,
     key_shift: bool,
-    key_alt: bool
+    key_alt: bool,
 }
 
 static mut PROC_DATA: ProcData = ProcData {
@@ -63,7 +63,7 @@ static mut PROC_DATA: ProcData = ProcData {
     key_down: [false; 256],
     key_ctrl: false,
     key_shift: false,
-    key_alt: false
+    key_alt: false,
 };
 
 static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
@@ -247,7 +247,7 @@ impl super::App for App {
                 key_down: [false; 256],
                 key_ctrl: false,
                 key_shift: false,
-                key_alt: false
+                key_alt: false,
             }
         }
     }
@@ -344,7 +344,7 @@ impl super::App for App {
         match key {
             super::SysKey::Ctrl => self.key_ctrl,
             super::SysKey::Shift => self.key_shift,
-            super::SysKey::Alt => self.key_alt
+            super::SysKey::Alt => self.key_alt,
         }
     }
 
@@ -367,7 +367,7 @@ impl super::App for App {
             super::Key::Escape => VK_ESCAPE.0 as i32,
             super::Key::KeyPadEnter => VK_RETURN.0 as i32,
         }
-    } 
+    }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
