@@ -681,7 +681,7 @@ pub trait ComputePipeline<D: Device> {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
-pub trait Device: Sized + Any {
+pub trait Device: 'static + Send + Sync + Sized + Any {
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
