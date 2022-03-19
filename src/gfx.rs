@@ -14,6 +14,7 @@ pub enum ErrorType {
     ShaderCompile,
     DescriptorLayout,
     RenderPass,
+    MapError,
     Direct3D12,
     Vulkan,
     Metal,
@@ -649,6 +650,26 @@ pub enum ResourceState {
     IndexBuffer,
 }
 
+/// Info to control mapping of resources for read/write access
+pub struct MapInfo {
+    /// Sub resource to map ie. mip level, cubemap face, array slice
+    pub subresource: u32,
+    /// Range start of data we wish to read, for write-only access supply 0
+    pub read_start: usize,
+    /// Range end of data we wish to read, for write only access supply 0, to read the whole resource supply usize::MAX
+    pub read_end: usize,
+}
+
+/// Info to control writing of mapped resources
+pub struct UnmapInfo {
+    /// Sub resource to map ie. mip level, cubemap face, array slice
+    pub subresource: u32,
+    /// Range start of data we have written to the buffer, supply 0 for read-only
+    pub write_start: usize,
+    /// Range end of data we have written to the buffer, supply 0 for read only
+    pub write_end: usize,
+}
+
 /// An opaque Shader type
 pub trait Shader<D: Device> {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
@@ -771,11 +792,11 @@ pub trait Buffer<D: Device> {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
-    /// maps the entire buffer for writing
-    fn map(&self) -> *mut u8;
-    /// unmap buffer
-    fn unmap(&self);
-    /// Return the index to access in a shader ie) buffers[index].member...
+    /// maps the entire buffer for reading or writing... see MapInfo
+    fn map(&self, info: &MapInfo) -> *mut u8;
+    /// unmap buffer... see UnmapInfo
+    fn unmap(&self, info: &UnmapInfo);
+    /// Return the index to access in a shader
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
@@ -783,7 +804,7 @@ pub trait Buffer<D: Device> {
 
 /// An opaque Texture type
 pub trait Texture<D: Device> {
-    /// Return the index to access in a shader ie) textures[index].sample...
+    /// Return the index to access in a shader
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
@@ -800,7 +821,8 @@ pub trait Heap<D: Device> {
 /// data can be obtained using `get_data`
 pub trait ReadBackRequest<D: Device> {
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
-    fn get_data(&self) -> Result<ReadBackData, &str>;
+    fn map(&self, info: &MapInfo) -> Result<ReadBackData, Error>;
+    fn unmap(&self);
 }
 
 /// Results from an issued ReadBackRequest
@@ -1079,6 +1101,16 @@ impl Default for DescriptorLayout {
             push_constants: None,
             bindings: None,
             static_samplers: None,
+        }
+    }
+}
+
+impl Default for MapInfo {
+    fn default() -> Self {
+        MapInfo {
+            subresource: 0,
+            read_start: 0,
+            read_end: 0,
         }
     }
 }

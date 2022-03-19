@@ -29,7 +29,7 @@ pub enum MouseButton {
 pub enum SysKey {
     Ctrl,
     Shift,
-    Alt
+    Alt,
 }
 
 /// Enums for vitual keys
@@ -49,9 +49,10 @@ pub enum Key {
     Space,
     Enter,
     Escape,
-    KeyPadEnter
+    KeyPadEnter,
 }
 
+/// Enums for different mouse cursors
 #[derive(Eq, PartialEq)]
 pub enum Cursor {
     None,
@@ -63,7 +64,7 @@ pub enum Cursor {
     ResizeNESW,
     ResizeNWSE,
     Hand,
-    NotAllowed
+    NotAllowed,
 }
 
 /// Information to describe the dimensions of display monitors
@@ -97,6 +98,7 @@ pub struct Point<T> {
     pub y: T,
 }
 
+/// 2-Dimension size for window coordinates
 pub type Size<T> = Point<T>;
 
 bitflags! {
@@ -217,15 +219,15 @@ pub trait Window<A: App>: Any + Sized {
     fn get_mouse_client_pos(&self, mouse_pos: Point<i32>) -> Point<i32>;
     /// Return the dpi scale for the current monitor the window is on
     fn get_dpi_scale(&self) -> f32;
-    /// gets the internal native handle
+    /// Gets the internal native handle
     fn get_native_handle(&self) -> A::NativeHandle;
-    /// gets window events tracked from os update, to handle events inside external systems
+    /// Gets window events tracked from os update, to handle events inside external systems
     fn get_events(&self) -> WindowEventFlags;
-    /// clears events after they have been responded to
+    /// Clears events after they have been responded to
     fn clear_events(&mut self);
-    /// const pointer
+    /// Const pointer
     fn as_ptr(&self) -> *const Self;
-    /// mut pointer
+    /// Mut pointer
     fn as_mut_ptr(&mut self) -> *mut Self;
 }
 

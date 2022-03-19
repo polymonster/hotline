@@ -1,8 +1,8 @@
 use imgui_sys::*;
 
+use crate::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use crate::os::win32 as os_platform;
-use crate::gfx::d3d12 as gfx_platform;
 
 use crate::os;
 use crate::os::App;
@@ -32,7 +32,7 @@ pub struct ImGui {
     font_texture: gfx_platform::Texture,
     pipeline: gfx_platform::RenderPipeline,
     buffers: Vec<RenderBuffers>,
-    last_cursor: os::Cursor
+    last_cursor: os::Cursor,
 }
 
 #[derive(Clone)]
@@ -463,20 +463,24 @@ impl ImGui {
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
             io.KeyMap[ImGuiKey_Tab as usize] = os_platform::App::get_key_code(os::Key::Tab);
             io.KeyMap[ImGuiKey_LeftArrow as usize] = os_platform::App::get_key_code(os::Key::Left);
-            io.KeyMap[ImGuiKey_RightArrow as usize] = os_platform::App::get_key_code(os::Key::Right);
+            io.KeyMap[ImGuiKey_RightArrow as usize] =
+                os_platform::App::get_key_code(os::Key::Right);
             io.KeyMap[ImGuiKey_UpArrow as usize] = os_platform::App::get_key_code(os::Key::Up);
             io.KeyMap[ImGuiKey_DownArrow as usize] = os_platform::App::get_key_code(os::Key::Down);
             io.KeyMap[ImGuiKey_PageUp as usize] = os_platform::App::get_key_code(os::Key::PageUp);
-            io.KeyMap[ImGuiKey_PageDown as usize] = os_platform::App::get_key_code(os::Key::PageDown);
+            io.KeyMap[ImGuiKey_PageDown as usize] =
+                os_platform::App::get_key_code(os::Key::PageDown);
             io.KeyMap[ImGuiKey_Home as usize] = os_platform::App::get_key_code(os::Key::Home);
             io.KeyMap[ImGuiKey_End as usize] = os_platform::App::get_key_code(os::Key::End);
             io.KeyMap[ImGuiKey_Insert as usize] = os_platform::App::get_key_code(os::Key::Insert);
             io.KeyMap[ImGuiKey_Delete as usize] = os_platform::App::get_key_code(os::Key::Delete);
-            io.KeyMap[ImGuiKey_Backspace as usize] = os_platform::App::get_key_code(os::Key::Backspace);
+            io.KeyMap[ImGuiKey_Backspace as usize] =
+                os_platform::App::get_key_code(os::Key::Backspace);
             io.KeyMap[ImGuiKey_Space as usize] = os_platform::App::get_key_code(os::Key::Space);
             io.KeyMap[ImGuiKey_Enter as usize] = os_platform::App::get_key_code(os::Key::Enter);
             io.KeyMap[ImGuiKey_Escape as usize] = os_platform::App::get_key_code(os::Key::Escape);
-            io.KeyMap[ImGuiKey_KeyPadEnter as usize] = os_platform::App::get_key_code(os::Key::KeyPadEnter);
+            io.KeyMap[ImGuiKey_KeyPadEnter as usize] =
+                os_platform::App::get_key_code(os::Key::KeyPadEnter);
             io.KeyMap[ImGuiKey_A as usize] = 'A' as i32;
             io.KeyMap[ImGuiKey_C as usize] = 'C' as i32;
             io.KeyMap[ImGuiKey_V as usize] = 'V' as i32;
@@ -561,7 +565,7 @@ impl ImGui {
                 font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
-                last_cursor: os::Cursor::None
+                last_cursor: os::Cursor::None,
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -665,7 +669,11 @@ impl ImGui {
 
             // update keyboard
             let keys_down = app.get_keys_down();
-            std::ptr::copy_nonoverlapping(&keys_down as *const bool, &mut io.KeysDown as *mut bool, 256);
+            std::ptr::copy_nonoverlapping(
+                &keys_down as *const bool,
+                &mut io.KeysDown as *mut bool,
+                256,
+            );
             io.KeyCtrl = app.is_sys_key_down(os::SysKey::Ctrl);
             io.KeyShift = app.is_sys_key_down(os::SysKey::Shift);
             io.KeyAlt = app.is_sys_key_down(os::SysKey::Alt);
@@ -675,8 +683,7 @@ impl ImGui {
             // Update OS mouse cursor with the cursor requested by imgui
             let cursor = if io.MouseDrawCursor {
                 to_os_cursor(igGetMouseCursor())
-            }
-            else {
+            } else {
                 os::Cursor::None
             };
 
@@ -735,7 +742,7 @@ impl ImGui {
         unsafe {
             static mut SHOW_DEMO_WINDOW: bool = true;
             static mut SHOW_ANOTHER_WINDOW: bool = true;
-            static mut CLEAR_COLOUR : [f32; 3] = [0.0, 0.0, 0.0];
+            static mut CLEAR_COLOUR: [f32; 3] = [0.0, 0.0, 0.0];
 
             let io = &mut *igGetIO();
 
@@ -745,8 +752,8 @@ impl ImGui {
 
             // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
             {
-                static mut SLIDER_FLOAT : f32 = 0.0;
-                static mut COUNTER : i32 = 0;
+                static mut SLIDER_FLOAT: f32 = 0.0;
+                static mut COUNTER: i32 = 0;
 
                 let mut open = true;
 
@@ -773,12 +780,16 @@ impl ImGui {
                     io.DisplaySize.y as f64,
                 );
 
-                igSliderFloat("float\0".as_ptr() as _, &mut SLIDER_FLOAT, 0.0, 1.0, "%.3f\0".as_ptr() as _, 0);
+                igSliderFloat(
+                    "float\0".as_ptr() as _,
+                    &mut SLIDER_FLOAT,
+                    0.0,
+                    1.0,
+                    "%.3f\0".as_ptr() as _,
+                    0,
+                );
 
-                if igButton("Button\0".as_ptr() as _, ImVec2 {
-                    x: 0.0,
-                    y: 0.0
-                }) {
+                if igButton("Button\0".as_ptr() as _, ImVec2 { x: 0.0, y: 0.0 }) {
                     COUNTER += 1;
                 }
 
@@ -793,15 +804,15 @@ impl ImGui {
 
                 igText(
                     "Application average %.3f ms/frame (%.1f FPS)\0".as_ptr() as _,
-                    1000.0 / io.Framerate as f64, 
-                    io.Framerate as f64
+                    1000.0 / io.Framerate as f64,
+                    io.Framerate as f64,
                 );
 
                 igEnd();
             }
 
             // 3. Show another simple window.
-            if SHOW_ANOTHER_WINDOW {                
+            if SHOW_ANOTHER_WINDOW {
                 igBegin(
                     "Another Window\0".as_ptr() as *const i8,
                     &mut SHOW_ANOTHER_WINDOW,
@@ -813,10 +824,7 @@ impl ImGui {
                     "Hello from another window!\0".as_ptr() as *const i8,
                 );
 
-                if igButton("Close Me\0".as_ptr() as _, ImVec2 {
-                    x: 0.0,
-                    y: 0.0
-                }) {
+                if igButton("Close Me\0".as_ptr() as _, ImVec2 { x: 0.0, y: 0.0 }) {
                     SHOW_ANOTHER_WINDOW = false;
                 }
 
@@ -1162,7 +1170,7 @@ impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
     }
 }
 
-#[allow(non_upper_case_globals)] 
+#[allow(non_upper_case_globals)]
 fn to_os_cursor(cursor: ImGuiMouseCursor) -> os::Cursor {
     match cursor {
         ImGuiMouseCursor_Arrow => os::Cursor::Arrow,
@@ -1173,7 +1181,7 @@ fn to_os_cursor(cursor: ImGuiMouseCursor) -> os::Cursor {
         ImGuiMouseCursor_ResizeNESW => os::Cursor::ResizeNESW,
         ImGuiMouseCursor_ResizeNWSE => os::Cursor::ResizeNWSE,
         ImGuiMouseCursor_Hand => os::Cursor::Hand,
-        ImGuiMouseCursor_NotAllowed =>os::Cursor::NotAllowed,
-        _ => os::Cursor::None
+        ImGuiMouseCursor_NotAllowed => os::Cursor::NotAllowed,
+        _ => os::Cursor::None,
     }
 }
