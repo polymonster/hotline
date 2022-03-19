@@ -1,5 +1,5 @@
 # Hotline
-
+[![Discord](https://img.shields.io/discord/807665639845789796.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/3yjXwJ8wJC)
 [Documentation](https://www.polymonster.co.uk/hotline/index.html)
 
 ## Design Goals
