@@ -455,6 +455,20 @@
 <span id="455">455</span>
 <span id="456">456</span>
 <span id="457">457</span>
+<span id="458">458</span>
+<span id="459">459</span>
+<span id="460">460</span>
+<span id="461">461</span>
+<span id="462">462</span>
+<span id="463">463</span>
+<span id="464">464</span>
+<span id="465">465</span>
+<span id="466">466</span>
+<span id="467">467</span>
+<span id="468">468</span>
+<span id="469">469</span>
+<span id="470">470</span>
+<span id="471">471</span>
 </pre><pre class="rust"><code><span class="kw">use</span> <span class="ident">hotline</span>::<span class="kw-2">*</span>;
 
 <span class="kw">use</span> <span class="ident">os::App</span>;
@@ -466,9 +480,9 @@
 
 <span class="kw">use</span> <span class="ident">std::fs</span>;
 
+<span class="kw">use</span> <span class="ident">hotline::gfx::d3d12</span> <span class="kw">as</span> <span class="ident">gfx_platform</span>;
 <span class="attribute">#[<span class="ident">cfg</span>(<span class="ident">target_os</span> <span class="op">=</span> <span class="string">&quot;windows&quot;</span>)]</span>
 <span class="kw">use</span> <span class="ident">hotline::os::win32</span> <span class="kw">as</span> <span class="ident">os_platform</span>;
-<span class="kw">use</span> <span class="ident">hotline::gfx::d3d12</span> <span class="kw">as</span> <span class="ident">gfx_platform</span>;
 
 <span class="attribute">#[<span class="ident">repr</span>(<span class="ident">C</span>)]</span>
 <span class="kw">struct</span> <span class="ident">Vertex</span> {
@@ -478,36 +492,49 @@
 
 <span class="kw">fn</span> <span class="ident">main</span>() {
     <span class="comment">// app</span>
-    <span class="kw">let</span> <span class="ident">app</span> <span class="op">=</span> <span class="ident">os_platform::App::create</span>(<span class="ident">os::AppInfo</span> {
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">app</span> <span class="op">=</span> <span class="ident">os_platform::App::create</span>(<span class="ident">os::AppInfo</span> {
         <span class="ident">name</span>: <span class="ident">String::from</span>(<span class="string">&quot;window_set_rect&quot;</span>),
         <span class="ident">window</span>: <span class="bool-val">false</span>,
         <span class="ident">num_buffers</span>: <span class="number">0</span>,
+        <span class="ident">dpi_aware</span>: <span class="bool-val">true</span>,
     });
 
     <span class="comment">// device</span>
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">gfx_platform::Device::create</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::DeviceInfo</span>{
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">dev</span> <span class="op">=</span> <span class="ident">gfx_platform::Device::create</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::DeviceInfo</span> {
         <span class="ident">adapter_name</span>: <span class="prelude-val">None</span>,
         <span class="ident">shader_heap_size</span>: <span class="number">100</span>,
         <span class="ident">render_target_heap_size</span>: <span class="number">100</span>,
-        <span class="ident">depth_stencil_heap_size</span>: <span class="number">100</span>
+        <span class="ident">depth_stencil_heap_size</span>: <span class="number">100</span>,
     });
     <span class="macro">print!</span>(<span class="string">&quot;{}&quot;</span>, <span class="ident">dev</span>.<span class="ident">get_adapter_info</span>());
 
     <span class="comment">// window</span>
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">win</span> <span class="op">=</span> <span class="ident">app</span>.<span class="ident">create_window</span>(<span class="ident">os::WindowInfo</span> {
-        <span class="ident">title</span>: <span class="ident">String::from</span>(<span class="string">&quot;bindless texture!&quot;</span>),
+        <span class="ident">title</span>: <span class="ident">String::from</span>(<span class="string">&quot;imgui!&quot;</span>),
         <span class="ident">rect</span>: <span class="ident">os::Rect</span> {
-            <span class="ident">x</span>: <span class="number">0</span>,
-            <span class="ident">y</span>: <span class="number">0</span>,
+            <span class="ident">x</span>: <span class="number">100</span>,
+            <span class="ident">y</span>: <span class="number">100</span>,
             <span class="ident">width</span>: <span class="number">1280</span>,
             <span class="ident">height</span>: <span class="number">720</span>,
         },
+        <span class="ident">style</span>: <span class="ident">os::WindowStyleFlags::NONE</span>,
+        <span class="ident">parent_handle</span>: <span class="prelude-val">None</span>,
     });
+
     <span class="kw">let</span> <span class="ident">swap_chain_info</span> <span class="op">=</span> <span class="ident">gfx::SwapChainInfo</span> {
         <span class="ident">num_buffers</span>: <span class="number">2</span>,
-        <span class="ident">format</span>: <span class="ident">gfx::Format::RGBA8n</span>
+        <span class="ident">format</span>: <span class="ident">gfx::Format::RGBA8n</span>,
+        <span class="ident">clear_colour</span>: <span class="prelude-val">Some</span>(<span class="ident">gfx::ClearColour</span> {
+            <span class="ident">r</span>: <span class="number">0.45</span>,
+            <span class="ident">g</span>: <span class="number">0.55</span>,
+            <span class="ident">b</span>: <span class="number">0.60</span>,
+            <span class="ident">a</span>: <span class="number">1.00</span>,
+        }),
     };
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">swap_chain</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_swap_chain</span>(<span class="kw-2">&amp;</span><span class="ident">swap_chain_info</span>, <span class="kw-2">&amp;</span><span class="ident">win</span>);
+
+    <span class="kw">let</span> <span class="ident">exe_path</span> <span class="op">=</span> <span class="ident">std::env::current_exe</span>().<span class="ident">ok</span>().<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="ident">asset_path</span> <span class="op">=</span> <span class="ident">exe_path</span>.<span class="ident">parent</span>().<span class="ident">unwrap</span>();
 
     <span class="comment">// cmd buffer</span>
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">cmdbuffer</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_cmd_buf</span>(<span class="number">2</span>);
@@ -534,6 +561,7 @@
 
     <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">gfx::BufferInfo</span> {
         <span class="ident">usage</span>: <span class="ident">gfx::BufferUsage::Vertex</span>,
+        <span class="ident">cpu_access</span>: <span class="ident">gfx::CpuAccessFlags::NONE</span>,
         <span class="ident">format</span>: <span class="ident">gfx::Format::Unknown</span>,
         <span class="ident">stride</span>: <span class="ident">std::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">Vertex</span><span class="op">&gt;</span>(),
         <span class="ident">num_elements</span>: <span class="number">4</span>,
@@ -546,6 +574,7 @@
 
     <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">gfx::BufferInfo</span> {
         <span class="ident">usage</span>: <span class="ident">gfx::BufferUsage::Index</span>,
+        <span class="ident">cpu_access</span>: <span class="ident">gfx::CpuAccessFlags::NONE</span>,
         <span class="ident">format</span>: <span class="ident">gfx::Format::R16u</span>,
         <span class="ident">stride</span>: <span class="ident">std::mem::size_of</span>::<span class="op">&lt;</span><span class="ident">u16</span><span class="op">&gt;</span>(),
         <span class="ident">num_elements</span>: <span class="number">6</span>,
@@ -554,8 +583,6 @@
     <span class="kw">let</span> <span class="ident">index_buffer</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_buffer</span>(<span class="kw-2">&amp;</span><span class="ident">info</span>, <span class="prelude-val">Some</span>(<span class="ident">gfx::as_u8_slice</span>(<span class="kw-2">&amp;</span><span class="ident">indices</span>))).<span class="ident">unwrap</span>();
 
     <span class="comment">// shaders</span>
-    <span class="kw">let</span> <span class="ident">exe_path</span> <span class="op">=</span> <span class="ident">std::env::current_exe</span>().<span class="ident">ok</span>().<span class="ident">unwrap</span>();
-    <span class="kw">let</span> <span class="ident">asset_path</span> <span class="op">=</span> <span class="ident">exe_path</span>.<span class="ident">parent</span>().<span class="ident">unwrap</span>();
     <span class="kw">let</span> <span class="ident">shaders_hlsl_path</span> <span class="op">=</span> <span class="ident">asset_path</span>.<span class="ident">join</span>(<span class="string">&quot;..\\..\\samples\\hello_world\\shaders.hlsl&quot;</span>);
     <span class="kw">let</span> <span class="ident">shaders_hlsl</span> <span class="op">=</span> <span class="ident">shaders_hlsl_path</span>.<span class="ident">to_str</span>().<span class="ident">unwrap</span>();
 
@@ -595,123 +622,80 @@
     <span class="kw">let</span> <span class="ident">num_descriptors</span> <span class="op">=</span> <span class="number">10</span>;
 
     <span class="comment">// pipeline</span>
-    <span class="kw">let</span> <span class="ident">pso</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_render_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::RenderPipelineInfo</span> {
-        <span class="ident">vs</span>: <span class="prelude-val">Some</span>(<span class="ident">vs</span>),
-        <span class="ident">fs</span>: <span class="prelude-val">Some</span>(<span class="ident">fs</span>),
-        <span class="ident">input_layout</span>: <span class="macro">vec!</span>[
-            <span class="ident">gfx::InputElementInfo</span> {
-                <span class="ident">semantic</span>: <span class="ident">String::from</span>(<span class="string">&quot;POSITION&quot;</span>),
-                <span class="ident">index</span>: <span class="number">0</span>,
-                <span class="ident">format</span>: <span class="ident">gfx::Format::RGB32f</span>,
-                <span class="ident">input_slot</span>: <span class="number">0</span>,
-                <span class="ident">aligned_byte_offset</span>: <span class="number">0</span>,
-                <span class="ident">input_slot_class</span>: <span class="ident">gfx::InputSlotClass::PerVertex</span>,
-                <span class="ident">step_rate</span>: <span class="number">0</span>,
-            },
-            <span class="ident">gfx::InputElementInfo</span> {
-                <span class="ident">semantic</span>: <span class="ident">String::from</span>(<span class="string">&quot;COLOR&quot;</span>),
-                <span class="ident">index</span>: <span class="number">0</span>,
-                <span class="ident">format</span>: <span class="ident">gfx::Format::RGBA32f</span>,
-                <span class="ident">input_slot</span>: <span class="number">0</span>,
-                <span class="ident">aligned_byte_offset</span>: <span class="number">12</span>,
-                <span class="ident">input_slot_class</span>: <span class="ident">gfx::InputSlotClass::PerVertex</span>,
-                <span class="ident">step_rate</span>: <span class="number">0</span>,
-            },
-        ],
-        <span class="ident">descriptor_layout</span>: <span class="ident">gfx::DescriptorLayout</span> {
-            <span class="ident">push_constants</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[<span class="ident">gfx::PushConstantInfo</span> {
-                <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
-                <span class="ident">num_values</span>: <span class="number">4</span>,
-                <span class="ident">shader_register</span>: <span class="number">0</span>,
-                <span class="ident">register_space</span>: <span class="number">0</span>,
-            }]),
-            <span class="ident">tables</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[
-                <span class="ident">gfx::DescriptorTableInfo</span> {
+    <span class="kw">let</span> <span class="ident">pso</span> <span class="op">=</span> <span class="ident">dev</span>
+        .<span class="ident">create_render_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::RenderPipelineInfo</span> {
+            <span class="ident">vs</span>: <span class="prelude-val">Some</span>(<span class="ident">vs</span>),
+            <span class="ident">fs</span>: <span class="prelude-val">Some</span>(<span class="ident">fs</span>),
+            <span class="ident">input_layout</span>: <span class="macro">vec!</span>[
+                <span class="ident">gfx::InputElementInfo</span> {
+                    <span class="ident">semantic</span>: <span class="ident">String::from</span>(<span class="string">&quot;POSITION&quot;</span>),
+                    <span class="ident">index</span>: <span class="number">0</span>,
+                    <span class="ident">format</span>: <span class="ident">gfx::Format::RGB32f</span>,
+                    <span class="ident">input_slot</span>: <span class="number">0</span>,
+                    <span class="ident">aligned_byte_offset</span>: <span class="number">0</span>,
+                    <span class="ident">input_slot_class</span>: <span class="ident">gfx::InputSlotClass::PerVertex</span>,
+                    <span class="ident">step_rate</span>: <span class="number">0</span>,
+                },
+                <span class="ident">gfx::InputElementInfo</span> {
+                    <span class="ident">semantic</span>: <span class="ident">String::from</span>(<span class="string">&quot;COLOR&quot;</span>),
+                    <span class="ident">index</span>: <span class="number">0</span>,
+                    <span class="ident">format</span>: <span class="ident">gfx::Format::RGBA32f</span>,
+                    <span class="ident">input_slot</span>: <span class="number">0</span>,
+                    <span class="ident">aligned_byte_offset</span>: <span class="number">12</span>,
+                    <span class="ident">input_slot_class</span>: <span class="ident">gfx::InputSlotClass::PerVertex</span>,
+                    <span class="ident">step_rate</span>: <span class="number">0</span>,
+                },
+            ],
+            <span class="ident">descriptor_layout</span>: <span class="ident">gfx::DescriptorLayout</span> {
+                <span class="ident">push_constants</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[<span class="ident">gfx::PushConstantInfo</span> {
                     <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
-                    <span class="ident">table_type</span>: <span class="ident">gfx::DescriptorTableType::ShaderResource</span>,
-                    <span class="ident">num_descriptors</span>: <span class="prelude-val">Some</span>(<span class="ident">num_descriptors</span>),
+                    <span class="ident">num_values</span>: <span class="number">4</span>,
                     <span class="ident">shader_register</span>: <span class="number">0</span>,
                     <span class="ident">register_space</span>: <span class="number">0</span>,
-                },
-                <span class="ident">gfx::DescriptorTableInfo</span> {
+                }]),
+                <span class="ident">bindings</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[
+                    <span class="ident">gfx::DescriptorBinding</span> {
+                        <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
+                        <span class="ident">binding_type</span>: <span class="ident">gfx::DescriptorType::ShaderResource</span>,
+                        <span class="ident">num_descriptors</span>: <span class="prelude-val">Some</span>(<span class="ident">num_descriptors</span>),
+                        <span class="ident">shader_register</span>: <span class="number">0</span>,
+                        <span class="ident">register_space</span>: <span class="number">0</span>,
+                    },
+                    <span class="ident">gfx::DescriptorBinding</span> {
+                        <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
+                        <span class="ident">binding_type</span>: <span class="ident">gfx::DescriptorType::ConstantBuffer</span>,
+                        <span class="ident">num_descriptors</span>: <span class="prelude-val">Some</span>(<span class="ident">num_descriptors</span>),
+                        <span class="ident">shader_register</span>: <span class="number">1</span>,
+                        <span class="ident">register_space</span>: <span class="number">0</span>,
+                    },
+                ]),
+                <span class="ident">static_samplers</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[<span class="ident">gfx::SamplerInfo</span> {
                     <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
-                    <span class="ident">table_type</span>: <span class="ident">gfx::DescriptorTableType::ConstantBuffer</span>,
-                    <span class="ident">num_descriptors</span>: <span class="prelude-val">Some</span>(<span class="ident">num_descriptors</span>),
-                    <span class="ident">shader_register</span>: <span class="number">1</span>,
+                    <span class="ident">filter</span>: <span class="ident">gfx::SamplerFilter::Linear</span>,
+                    <span class="ident">address_u</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
+                    <span class="ident">address_v</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
+                    <span class="ident">address_w</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
+                    <span class="ident">comparison</span>: <span class="prelude-val">None</span>,
+                    <span class="ident">border_colour</span>: <span class="prelude-val">None</span>,
+                    <span class="ident">mip_lod_bias</span>: <span class="number">0.0</span>,
+                    <span class="ident">max_aniso</span>: <span class="number">0</span>,
+                    <span class="ident">min_lod</span>: <span class="op">-</span><span class="number">1.0</span>,
+                    <span class="ident">max_lod</span>: <span class="op">-</span><span class="number">1.0</span>,
+                    <span class="ident">shader_register</span>: <span class="number">0</span>,
                     <span class="ident">register_space</span>: <span class="number">0</span>,
-                },
-            ]),
-            <span class="ident">static_samplers</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[<span class="ident">gfx::SamplerInfo</span> {
-                <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Fragment</span>,
-                <span class="ident">filter</span>: <span class="ident">gfx::SamplerFilter::Linear</span>,
-                <span class="ident">address_u</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
-                <span class="ident">address_v</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
-                <span class="ident">address_w</span>: <span class="ident">gfx::SamplerAddressMode::Wrap</span>,
-                <span class="ident">comparison</span>: <span class="prelude-val">None</span>,
-                <span class="ident">border_colour</span>: <span class="prelude-val">None</span>,
-                <span class="ident">mip_lod_bias</span>: <span class="number">0.0</span>,
-                <span class="ident">max_aniso</span>: <span class="number">0</span>,
-                <span class="ident">min_lod</span>: <span class="op">-</span><span class="number">1.0</span>,
-                <span class="ident">max_lod</span>: <span class="op">-</span><span class="number">1.0</span>,
-                <span class="ident">shader_register</span>: <span class="number">0</span>,
-                <span class="ident">register_space</span>: <span class="number">0</span>,
-            }]),
-        },
-        <span class="ident">raster_info</span>: <span class="ident">gfx::RasterInfo</span> {
-            <span class="ident">fill_mode</span>: <span class="ident">gfx::FillMode::Solid</span>,
-            <span class="ident">cull_mode</span>: <span class="ident">gfx::CullMode::None</span>,
-            <span class="ident">front_ccw</span>: <span class="bool-val">false</span>,
-            <span class="ident">depth_bias</span>: <span class="number">0</span>,
-            <span class="ident">depth_bias_clamp</span>: <span class="number">0.0</span>,
-            <span class="ident">slope_scaled_depth_bias</span>: <span class="number">0.0</span>,
-            <span class="ident">depth_clip_enable</span>: <span class="bool-val">false</span>,
-            <span class="ident">multisample_enable</span>: <span class="bool-val">false</span>,
-            <span class="ident">antialiased_line_enable</span>: <span class="bool-val">false</span>,
-            <span class="ident">forced_sample_count</span>: <span class="number">0</span>,
-            <span class="ident">conservative_raster_mode</span>: <span class="bool-val">false</span>
-        },
-        <span class="ident">depth_stencil_info</span>: <span class="ident">gfx::DepthStencilInfo</span> {
-            <span class="ident">depth_enabled</span>: <span class="bool-val">false</span>,
-            <span class="ident">depth_write_mask</span>: <span class="ident">gfx::DepthWriteMask::Zero</span>,
-            <span class="ident">depth_func</span>: <span class="ident">gfx::ComparisonFunc::Always</span>,
-            <span class="ident">stencil_enabled</span>: <span class="bool-val">false</span>,
-            <span class="ident">stencil_read_mask</span>: <span class="number">0</span>,
-            <span class="ident">stencil_write_mask</span>: <span class="number">0</span>,
-            <span class="ident">front_face</span>: <span class="ident">gfx::StencilInfo</span> {
-                <span class="ident">fail</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">depth_fail</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">pass</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">func</span>: <span class="ident">gfx::ComparisonFunc::Always</span>,
+                }]),
             },
-            <span class="ident">back_face</span>: <span class="ident">gfx::StencilInfo</span> {
-                <span class="ident">fail</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">depth_fail</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">pass</span>: <span class="ident">gfx::StencilOp::Keep</span>,
-                <span class="ident">func</span>: <span class="ident">gfx::ComparisonFunc::Always</span>,
+            <span class="ident">raster_info</span>: <span class="ident">gfx::RasterInfo::default</span>(),
+            <span class="ident">depth_stencil_info</span>: <span class="ident">gfx::DepthStencilInfo::default</span>(),
+            <span class="ident">blend_info</span>: <span class="ident">gfx::BlendInfo</span> {
+                <span class="ident">render_target</span>: <span class="macro">vec!</span>[<span class="ident">gfx::RenderTargetBlendInfo::default</span>()],
+                ..<span class="ident">Default::default</span>()
             },
-        },
-        <span class="ident">blend_info</span>: <span class="ident">gfx::BlendInfo</span> {
-            <span class="ident">alpha_to_coverage_enabled</span>: <span class="bool-val">false</span>,
-            <span class="ident">independant_blend_enabled</span>: <span class="bool-val">false</span>,
-            <span class="ident">render_target</span>: <span class="macro">vec!</span>[
-                <span class="ident">gfx::RenderTargetBlendInfo</span> {
-                    <span class="ident">blend_enabled</span>: <span class="bool-val">false</span>,
-                    <span class="ident">logic_op_enabled</span>: <span class="bool-val">false</span>,
-                    <span class="ident">src_blend</span>: <span class="ident">gfx::BlendFactor::Zero</span>,
-                    <span class="ident">dst_blend</span>: <span class="ident">gfx::BlendFactor::Zero</span>,
-                    <span class="ident">blend_op</span>: <span class="ident">gfx::BlendOp::Add</span>,
-                    <span class="ident">src_blend_alpha</span>: <span class="ident">gfx::BlendFactor::Zero</span>,
-                    <span class="ident">dst_blend_alpha</span>: <span class="ident">gfx::BlendFactor::Zero</span>,
-                    <span class="ident">blend_op_alpha</span>: <span class="ident">gfx::BlendOp::Add</span>,
-                    <span class="ident">logic_op</span>: <span class="ident">gfx::LogicOp::Clear</span>,
-                    <span class="ident">write_mask</span>: <span class="ident">gfx::WriteMask::ALL</span>
-                }
-            ]
-        },
-        <span class="ident">topology</span>: <span class="ident">gfx::Topology::TriangleList</span>,
-        <span class="ident">patch_index</span>: <span class="number">0</span>,
-        <span class="ident">pass</span>: <span class="ident">swap_chain</span>.<span class="ident">get_backbuffer_pass</span>()
-    }).<span class="ident">expect</span>(<span class="string">&quot;failed to create pipeline!&quot;</span>);
+            <span class="ident">topology</span>: <span class="ident">gfx::Topology::TriangleList</span>,
+            <span class="ident">patch_index</span>: <span class="number">0</span>,
+            <span class="ident">pass</span>: <span class="ident">swap_chain</span>.<span class="ident">get_backbuffer_pass</span>(),
+        })
+        .<span class="ident">expect</span>(<span class="string">&quot;failed to create pipeline!&quot;</span>);
 
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">textures</span>: <span class="ident">Vec</span><span class="op">&lt;</span><span class="ident">gfx::d3d12::Texture</span><span class="op">&gt;</span> <span class="op">=</span> <span class="ident">Vec::new</span>();
     <span class="kw">let</span> <span class="ident">files</span> <span class="op">=</span> <span class="macro">vec!</span>[
@@ -732,7 +716,7 @@
             <span class="ident">mip_levels</span>: <span class="number">1</span>,
             <span class="ident">samples</span>: <span class="number">1</span>,
             <span class="ident">usage</span>: <span class="ident">gfx::TextureUsage::SHADER_RESOURCE</span>,
-            <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>
+            <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>,
         };
         <span class="kw">let</span> <span class="ident">tex</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_texture</span>(<span class="kw-2">&amp;</span><span class="ident">tex_info</span>, <span class="prelude-val">Some</span>(<span class="ident">image</span>.<span class="ident">data</span>.<span class="ident">as_slice</span>())).<span class="ident">unwrap</span>();
         <span class="ident">textures</span>.<span class="ident">push</span>(<span class="ident">tex</span>);
@@ -750,6 +734,7 @@
 
     <span class="kw">let</span> <span class="ident">info</span> <span class="op">=</span> <span class="ident">gfx::BufferInfo</span> {
         <span class="ident">usage</span>: <span class="ident">gfx::BufferUsage::ConstantBuffer</span>,
+        <span class="ident">cpu_access</span>: <span class="ident">gfx::CpuAccessFlags::NONE</span>,
         <span class="ident">format</span>: <span class="ident">gfx::Format::Unknown</span>,
         <span class="ident">stride</span>: <span class="ident">cbuffer</span>.<span class="ident">len</span>() <span class="op">*</span> <span class="number">4</span>,
         <span class="ident">num_elements</span>: <span class="number">1</span>,
@@ -768,24 +753,44 @@
         <span class="ident">mip_levels</span>: <span class="number">1</span>,
         <span class="ident">samples</span>: <span class="number">1</span>,
         <span class="ident">usage</span>: <span class="ident">gfx::TextureUsage::SHADER_RESOURCE</span> <span class="op">|</span> <span class="ident">gfx::TextureUsage::RENDER_TARGET</span>,
-        <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>
+        <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>,
     };
     <span class="kw">let</span> <span class="ident">render_target</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_texture</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">rt_info</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
 
-    <span class="comment">// pass for render target</span>
-    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">render_target_pass</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_render_pass</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::RenderPassInfo</span> {
-        <span class="ident">render_targets</span>: <span class="macro">vec!</span>[<span class="ident">render_target</span>.<span class="ident">clone</span>()],
-        <span class="ident">rt_clear</span>: <span class="prelude-val">Some</span>(<span class="ident">gfx::ClearColour</span> {
-            <span class="ident">r</span>: <span class="number">1.0</span>,
-            <span class="ident">g</span>: <span class="number">0.0</span>,
-            <span class="ident">b</span>: <span class="number">1.0</span>,
-            <span class="ident">a</span>: <span class="number">1.0</span>,
-        }),
-        <span class="ident">depth_stencil_target</span>: <span class="prelude-val">None</span>,
-        <span class="ident">ds_clear</span>: <span class="prelude-val">None</span>,
-        <span class="ident">resolve</span>: <span class="bool-val">false</span>,
-        <span class="ident">discard</span>: <span class="bool-val">false</span>,
-    }).<span class="ident">unwrap</span>();
+    <span class="comment">// depth stencil target</span>
+    <span class="kw">let</span> <span class="ident">ds_info</span> <span class="op">=</span> <span class="ident">gfx::TextureInfo</span> {
+        <span class="ident">format</span>: <span class="ident">gfx::Format::D24nS8u</span>,
+        <span class="ident">tex_type</span>: <span class="ident">gfx::TextureType::Texture2D</span>,
+        <span class="ident">width</span>: <span class="number">512</span>,
+        <span class="ident">height</span>: <span class="number">512</span>,
+        <span class="ident">depth</span>: <span class="number">1</span>,
+        <span class="ident">array_levels</span>: <span class="number">1</span>,
+        <span class="ident">mip_levels</span>: <span class="number">1</span>,
+        <span class="ident">samples</span>: <span class="number">1</span>,
+        <span class="ident">usage</span>: <span class="ident">gfx::TextureUsage::DEPTH_STENCIL</span>,
+        <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::DepthStencil</span>,
+    };
+    <span class="kw">let</span> <span class="ident">depth_stencil</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_texture</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">ds_info</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
+
+    <span class="comment">// pass for render target with depth stencil</span>
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">render_target_pass</span> <span class="op">=</span> <span class="ident">dev</span>
+        .<span class="ident">create_render_pass</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::RenderPassInfo</span> {
+            <span class="ident">render_targets</span>: <span class="macro">vec!</span>[<span class="ident">render_target</span>.<span class="ident">clone</span>()],
+            <span class="ident">rt_clear</span>: <span class="prelude-val">Some</span>(<span class="ident">gfx::ClearColour</span> {
+                <span class="ident">r</span>: <span class="number">1.0</span>,
+                <span class="ident">g</span>: <span class="number">0.0</span>,
+                <span class="ident">b</span>: <span class="number">1.0</span>,
+                <span class="ident">a</span>: <span class="number">1.0</span>,
+            }),
+            <span class="ident">depth_stencil</span>: <span class="prelude-val">Some</span>(<span class="ident">depth_stencil</span>.<span class="ident">clone</span>()),
+            <span class="ident">ds_clear</span>: <span class="prelude-val">Some</span>(<span class="ident">gfx::ClearDepthStencil</span> {
+                <span class="ident">depth</span>: <span class="prelude-val">Some</span>(<span class="number">1.0</span>),
+                <span class="ident">stencil</span>: <span class="prelude-val">None</span>,
+            }),
+            <span class="ident">resolve</span>: <span class="bool-val">false</span>,
+            <span class="ident">discard</span>: <span class="bool-val">false</span>,
+        })
+        .<span class="ident">unwrap</span>();
 
     <span class="comment">// unordered access rw texture</span>
     <span class="kw">let</span> <span class="ident">rw_info</span> <span class="op">=</span> <span class="ident">gfx::TextureInfo</span> {
@@ -798,26 +803,38 @@
         <span class="ident">mip_levels</span>: <span class="number">1</span>,
         <span class="ident">samples</span>: <span class="number">1</span>,
         <span class="ident">usage</span>: <span class="ident">gfx::TextureUsage::SHADER_RESOURCE</span> <span class="op">|</span> <span class="ident">gfx::TextureUsage::UNORDERED_ACCESS</span>,
-        <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>
+        <span class="ident">initial_state</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>,
     };
-    <span class="kw">let</span> <span class="ident">rw_tex</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_texture</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">rw_info</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
+    <span class="kw">let</span> <span class="ident">_rw_tex</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_texture</span>::<span class="op">&lt;</span><span class="ident">u8</span><span class="op">&gt;</span>(<span class="kw-2">&amp;</span><span class="ident">rw_info</span>, <span class="prelude-val">None</span>).<span class="ident">unwrap</span>();
 
-    <span class="kw">let</span> <span class="ident">compute_pipeline</span> <span class="op">=</span> <span class="ident">dev</span>.<span class="ident">create_compute_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::ComputePipelineInfo</span>{
-        <span class="ident">cs</span>: <span class="ident">cs</span>,
-        <span class="ident">descriptor_layout</span>: <span class="ident">gfx::DescriptorLayout</span> {
-            <span class="ident">static_samplers</span>: <span class="prelude-val">None</span>,
-            <span class="ident">push_constants</span>: <span class="prelude-val">None</span>,
-            <span class="ident">tables</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[
-                <span class="ident">gfx::DescriptorTableInfo</span> {
+    <span class="kw">let</span> <span class="ident">compute_pipeline</span> <span class="op">=</span> <span class="ident">dev</span>
+        .<span class="ident">create_compute_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">gfx::ComputePipelineInfo</span> {
+            <span class="ident">cs</span>: <span class="ident">cs</span>,
+            <span class="ident">descriptor_layout</span>: <span class="ident">gfx::DescriptorLayout</span> {
+                <span class="ident">static_samplers</span>: <span class="prelude-val">None</span>,
+                <span class="ident">push_constants</span>: <span class="prelude-val">None</span>,
+                <span class="ident">bindings</span>: <span class="prelude-val">Some</span>(<span class="macro">vec!</span>[<span class="ident">gfx::DescriptorBinding</span> {
                     <span class="ident">visibility</span>: <span class="ident">gfx::ShaderVisibility::Compute</span>,
-                    <span class="ident">table_type</span>: <span class="ident">gfx::DescriptorTableType::UnorderedAccess</span>,
+                    <span class="ident">binding_type</span>: <span class="ident">gfx::DescriptorType::UnorderedAccess</span>,
                     <span class="ident">num_descriptors</span>: <span class="prelude-val">Some</span>(<span class="ident">num_descriptors</span>),
                     <span class="ident">shader_register</span>: <span class="number">0</span>,
                     <span class="ident">register_space</span>: <span class="number">0</span>,
-                },
-            ]),
-        }
-    }).<span class="ident">unwrap</span>();
+                }]),
+            },
+        })
+        .<span class="ident">unwrap</span>();
+
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">imgui_info</span> <span class="op">=</span> <span class="ident">imgui::ImGuiInfo</span> {
+        <span class="ident">device</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">dev</span>,
+        <span class="ident">swap_chain</span>: <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">swap_chain</span>,
+        <span class="ident">main_window</span>: <span class="kw-2">&amp;</span><span class="ident">win</span>,
+        <span class="ident">fonts</span>: <span class="macro">vec!</span>[<span class="ident">asset_path</span>
+            .<span class="ident">join</span>(<span class="string">&quot;..\\..\\samples\\hello_world\\Roboto-Medium.ttf&quot;</span>)
+            .<span class="ident">to_str</span>()
+            .<span class="ident">unwrap</span>()
+            .<span class="ident">to_string</span>()],
+    };
+    <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">imgui</span> <span class="op">=</span> <span class="ident">imgui::ImGui::create</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">imgui_info</span>).<span class="ident">unwrap</span>();
 
     <span class="comment">// ..</span>
     <span class="kw">let</span> <span class="kw-2">mut</span> <span class="ident">ci</span> <span class="op">=</span> <span class="number">0</span>;
@@ -834,10 +851,14 @@
         <span class="ident">cmdbuffer</span>.<span class="ident">set_compute_heap</span>(<span class="number">0</span>, <span class="ident">dev</span>.<span class="ident">get_shader_heap</span>());
         <span class="ident">cmdbuffer</span>.<span class="ident">dispatch</span>(
             <span class="ident">gfx::Size3</span> {
-                <span class="ident">x</span>:<span class="number">512</span><span class="op">/</span><span class="number">16</span>, <span class="ident">y</span>:<span class="number">512</span><span class="op">/</span><span class="number">16</span>, <span class="ident">z</span>:<span class="number">1</span>
+                <span class="ident">x</span>: <span class="number">512</span> <span class="op">/</span> <span class="number">16</span>,
+                <span class="ident">y</span>: <span class="number">512</span> <span class="op">/</span> <span class="number">16</span>,
+                <span class="ident">z</span>: <span class="number">1</span>,
             },
             <span class="ident">gfx::Size3</span> {
-                <span class="ident">x</span>:<span class="number">512</span>, <span class="ident">y</span>:<span class="number">512</span>, <span class="ident">z</span>:<span class="number">1</span>
+                <span class="ident">x</span>: <span class="number">512</span>,
+                <span class="ident">y</span>: <span class="number">512</span>,
+                <span class="ident">z</span>: <span class="number">1</span>,
             },
         );
         <span class="ident">cmdbuffer</span>.<span class="ident">end_event</span>();
@@ -850,7 +871,7 @@
             <span class="ident">state_before</span>: <span class="ident">gfx::ResourceState::ShaderResource</span>,
             <span class="ident">state_after</span>: <span class="ident">gfx::ResourceState::RenderTarget</span>,
         });
-        
+
         <span class="ident">cmdbuffer</span>.<span class="ident">begin_render_pass</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">render_target_pass</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">end_render_pass</span>();
 
@@ -881,14 +902,19 @@
         <span class="ident">cmdbuffer</span>.<span class="ident">set_viewport</span>(<span class="kw-2">&amp;</span><span class="ident">viewport</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">set_scissor_rect</span>(<span class="kw-2">&amp;</span><span class="ident">scissor</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">set_render_pipeline</span>(<span class="kw-2">&amp;</span><span class="ident">pso</span>);
-        <span class="ident">cmdbuffer</span>.<span class="ident">set_render_heap</span>(<span class="number">1</span>, <span class="ident">dev</span>.<span class="ident">get_shader_heap</span>());
+        <span class="ident">cmdbuffer</span>.<span class="ident">set_render_heap</span>(<span class="number">1</span>, <span class="ident">dev</span>.<span class="ident">get_shader_heap</span>(), <span class="number">0</span>);
 
         <span class="ident">cmdbuffer</span>.<span class="ident">set_index_buffer</span>(<span class="kw-2">&amp;</span><span class="ident">index_buffer</span>);
         <span class="ident">cmdbuffer</span>.<span class="ident">set_vertex_buffer</span>(<span class="kw-2">&amp;</span><span class="ident">vertex_buffer</span>, <span class="number">0</span>);
 
         <span class="ident">cmdbuffer</span>.<span class="ident">push_constants</span>(<span class="number">0</span>, <span class="number">4</span>, <span class="number">0</span>, <span class="ident">constants</span>.<span class="ident">as_slice</span>());
 
-        <span class="ident">cmdbuffer</span>.<span class="ident">draw_indexed_instanced</span>(<span class="number">6</span>, <span class="number">1</span>, <span class="number">0</span>, <span class="number">0</span>, <span class="number">0</span>);
+        <span class="comment">//cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);</span>
+
+        <span class="comment">// imgui</span>
+        <span class="ident">imgui</span>.<span class="ident">new_frame</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">app</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">win</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">dev</span>);
+        <span class="ident">imgui</span>.<span class="ident">demo</span>();
+        <span class="ident">imgui</span>.<span class="ident">render</span>(<span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">app</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">win</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">dev</span>, <span class="kw-2">&amp;</span><span class="kw-2">mut</span> <span class="ident">cmdbuffer</span>);
 
         <span class="ident">cmdbuffer</span>.<span class="ident">end_render_pass</span>();
 
@@ -908,6 +934,8 @@
 
         <span class="ident">ci</span> <span class="op">=</span> (<span class="ident">ci</span> <span class="op">+</span> <span class="number">1</span>) <span class="op">%</span> <span class="number">4</span>;
     }
+
+    <span class="ident">swap_chain</span>.<span class="ident">wait_for_last_frame</span>();
 
     <span class="comment">// must wait for the final frame to be completed</span>
     <span class="ident">cmdbuffer</span>.<span class="ident">reset</span>(<span class="kw-2">&amp;</span><span class="ident">swap_chain</span>);
