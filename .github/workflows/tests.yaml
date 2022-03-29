@@ -1,8 +1,8 @@
-name: hotline-tests
+name: tests
 on: [push]
 jobs:
   win32:
     runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
-      - run: ls
+      - run: cargo test
