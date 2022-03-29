@@ -1,0 +1,8 @@
+name: hotline-tests
+on: [push]
+jobs:
+  win32:
+    runs-on: DESKTOP-CFR9TBA
+    steps:
+      - uses: actions/checkout@v2
+      - run: ls
