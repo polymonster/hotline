@@ -2,7 +2,7 @@ name: hotline-tests
 on: [push]
 jobs:
   win32:
-    runs-on: DESKTOP-CFR9TBA
+    runs-on: self-hosted
     steps:
       - uses: actions/checkout@v2
       - run: ls
