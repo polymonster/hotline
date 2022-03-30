@@ -4,6 +4,9 @@ pub mod os;
 /// Graphics and compute module.
 pub mod gfx;
 
+/// Hardware accelerated audio and video decoding
+pub mod av;
+
 /// Image reading/writing module support for (png, jpg, bmp, tiff, dds)
 pub mod image;
 
