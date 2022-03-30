@@ -1,0 +1,8 @@
+name: samples
+on: [push]
+jobs:
+  win32:
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v2
+      - run: cargo build
