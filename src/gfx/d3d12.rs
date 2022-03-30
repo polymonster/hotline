@@ -526,7 +526,7 @@ fn transition_barrier(
     }
 }
 
-fn get_hardware_adapter(
+pub fn get_hardware_adapter(
     factory: &IDXGIFactory4,
     adapter_name: &Option<String>,
 ) -> Result<(IDXGIAdapter1, super::AdapterInfo)> {
@@ -943,6 +943,11 @@ impl Device {
         }
         passes
     }
+}
+
+// public accessor for device
+pub fn get_dxgi_factory(device: &Device) -> &IDXGIFactory4 {
+    &device.dxgi_factory
 }
 
 impl super::Device for Device {

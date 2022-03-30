@@ -3,6 +3,7 @@
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
+
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
@@ -12,6 +13,9 @@
 // - Math lib
 // - Samples
 // - Automate docs update
+
+// - WMF D3D12
+// -- https://github.com/microsoft/Xbox-ATG-Samples/blob/master/UWPSamples/Graphics/VideoTextureUWP12
 
 // DONE:
 // x CI runner
