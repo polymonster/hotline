@@ -1,5 +1,4 @@
 // TODO:
-// - CI runner
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
@@ -14,6 +13,7 @@
 // - Samples
 
 // DONE:
+// x CI runner
 // x Handle CPU access flags for buffers in a nicer way
 // x Handle buffers with no data
 // x Readback request doesnt unmap
