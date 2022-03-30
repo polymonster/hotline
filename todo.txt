@@ -11,6 +11,7 @@
 // - MSAA
 // - Math lib
 // - Samples
+// - Automate docs update
 
 // DONE:
 // x CI runner
