@@ -36,3 +36,7 @@ features = [
 [[bin]]
 name = "hello_world"
 path = "samples/hello_world/main.rs"
+
+[[bin]]
+name = "imgui_demo"
+path = "samples/imgui_demo/main.rs"
