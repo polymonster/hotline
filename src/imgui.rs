@@ -1,12 +1,9 @@
 use imgui_sys::*;
 
-use crate::gfx::d3d12 as gfx_platform;
-#[cfg(target_os = "windows")]
-use crate::os::win32 as os_platform;
-
 use crate::os;
 use crate::os::App;
 use crate::os::Window;
+use crate::os::NativeHandle;
 
 use crate::gfx;
 use crate::gfx::Buffer;
@@ -21,62 +18,63 @@ use std::ffi::CString;
 const DEFAULT_VB_SIZE: i32 = 5000;
 const DEFAULT_IB_SIZE: i32 = 10000;
 
-pub struct ImGuiInfo<'a> {
-    pub device: &'a mut gfx_platform::Device,
-    pub swap_chain: &'a mut gfx_platform::SwapChain,
-    pub main_window: &'a os_platform::Window,
+pub struct ImGuiInfo<'a, D: Device, A: App> {
+    pub device: &'a mut D,
+    pub swap_chain: &'a mut D::SwapChain,
+    pub main_window: &'a A::Window,
     pub fonts: Vec<String>,
 }
 
-pub struct ImGui {
-    font_texture: gfx_platform::Texture,
-    pipeline: gfx_platform::RenderPipeline,
-    buffers: Vec<RenderBuffers>,
+pub struct ImGui<D: Device, A: App> {
+    _native_handle: A::NativeHandle,
+    font_texture: D::Texture,
+    pipeline: D::RenderPipeline,
+    buffers: Vec<RenderBuffers<D>>,
     last_cursor: os::Cursor,
 }
 
 #[derive(Clone)]
-struct RenderBuffers {
-    vb: gfx_platform::Buffer,
-    ib: gfx_platform::Buffer,
+struct RenderBuffers<D: Device> {
+    vb: D::Buffer,
+    ib: D::Buffer,
     vb_size: i32,
     ib_size: i32,
 }
 
-#[derive(Clone)]
-struct ViewportData {
+//#[derive(Clone)]
+struct ViewportData<D: Device, A: App> {
     /// if viewport is main, we get the window from UserData and the rest of this struct is null
     main_viewport: bool,
-    window: Vec<os_platform::Window>,
-    swap_chain: Vec<gfx_platform::SwapChain>,
-    cmd: Vec<gfx_platform::CmdBuf>,
-    buffers: Vec<RenderBuffers>,
+    window: Vec<A::Window>,
+    swap_chain: Vec<D::SwapChain>,
+    cmd: Vec<D::CmdBuf>,
+    buffers: Vec<RenderBuffers<D>>,
 }
 
-struct UserData<'a> {
-    app: &'a mut os_platform::App,
-    device: &'a mut gfx_platform::Device,
-    main_window: &'a mut os_platform::Window,
-    pipeline: &'a gfx_platform::RenderPipeline,
-    font_texture: &'a gfx_platform::Texture,
+struct UserData<'a, D: Device, A: App> {
+    app: &'a mut A,
+    device: &'a mut D,
+    main_window: &'a mut A::Window,
+    pipeline: &'a D::RenderPipeline,
+    font_texture: &'a D::Texture,
 }
 
-fn new_viewport_data() -> *mut ViewportData {
+fn new_viewport_data<D: Device, A: App>() -> *mut ViewportData<D, A> {
     unsafe {
         let layout =
-            std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData>(), 8).unwrap();
-        std::alloc::alloc_zeroed(layout) as *mut ViewportData
+            std::alloc::Layout::from_size_align(std::mem::size_of::<ViewportData<D, A>>(), 8).unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut ViewportData<D, A>
     }
 }
 
-fn new_native_handle(handle: os_platform::NativeHandle) -> *mut os_platform::NativeHandle {
+fn new_native_handle<A: App>(handle: A::NativeHandle) -> *mut A::NativeHandle {
     unsafe {
         let layout = std::alloc::Layout::from_size_align(
-            std::mem::size_of::<os_platform::NativeHandle>(),
+            std::mem::size_of::<A::NativeHandle>(),
             8,
         )
         .unwrap();
-        let nh = std::alloc::alloc_zeroed(layout) as *mut os_platform::NativeHandle;
+        let nh = std::alloc::alloc_zeroed(layout) as *mut A::NativeHandle;
         *nh = handle;
         nh
     }
@@ -92,9 +90,9 @@ fn new_monitors(monitors: &Vec<ImGuiPlatformMonitor>) -> *mut ImGuiPlatformMonit
     }
 }
 
-fn create_fonts_texture(
-    device: &mut gfx_platform::Device,
-) -> Result<gfx_platform::Texture, gfx::Error> {
+fn create_fonts_texture<D: Device>(
+    device: &mut D,
+) -> Result<D::Texture, gfx::Error> {
     unsafe {
         let io = &*igGetIO();
         let mut out_pixels: *mut u8 = std::ptr::null_mut();
@@ -129,7 +127,7 @@ fn create_fonts_texture(
     }
 }
 
-fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeline, gfx::Error> {
+fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D::RenderPipeline, gfx::Error> {
     let device = &info.device;
     let swap_chain = &info.swap_chain;
 
@@ -278,10 +276,10 @@ fn create_render_pipeline(info: &ImGuiInfo) -> Result<gfx_platform::RenderPipeli
     })?)
 }
 
-fn create_vertex_buffer(
-    device: &mut gfx_platform::Device,
+fn create_vertex_buffer<D: Device>(
+    device: &mut D,
     size: i32,
-) -> Result<gfx_platform::Buffer, gfx::Error> {
+) -> Result<D::Buffer, gfx::Error> {
     Ok(device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Vertex,
@@ -294,10 +292,10 @@ fn create_vertex_buffer(
     )?)
 }
 
-fn create_index_buffer(
-    device: &mut gfx_platform::Device,
+fn create_index_buffer<D: Device>(
+    device: &mut D,
     size: i32,
-) -> Result<gfx_platform::Buffer, gfx::Error> {
+) -> Result<D::Buffer, gfx::Error> {
     Ok(device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
@@ -310,13 +308,13 @@ fn create_index_buffer(
     )?)
 }
 
-fn render_draw_data(
+fn render_draw_data<D: Device>(
     draw_data: &ImDrawData,
-    device: &mut gfx_platform::Device,
-    cmd: &mut gfx_platform::CmdBuf,
-    buffers: &mut Vec<RenderBuffers>,
-    pipeline: &gfx_platform::RenderPipeline,
-    font_texture: &gfx_platform::Texture,
+    device: &mut D,
+    cmd: &mut D::CmdBuf,
+    buffers: &mut Vec<RenderBuffers<D>>,
+    pipeline: &D::RenderPipeline,
+    font_texture: &D::Texture,
 ) -> Result<(), gfx::Error> {
     unsafe {
         let font_tex_index = font_texture.get_srv_index().unwrap();
@@ -326,13 +324,13 @@ fn render_draw_data(
 
         // resize vb
         if draw_data.TotalVtxCount > buffers.vb_size {
-            buffers.vb = create_vertex_buffer(device, draw_data.TotalVtxCount)?;
+            buffers.vb = create_vertex_buffer::<D>(device, draw_data.TotalVtxCount)?;
             buffers.vb_size = draw_data.TotalVtxCount;
         }
 
         // resize ib
         if draw_data.TotalIdxCount > buffers.ib_size {
-            buffers.ib = create_index_buffer(device, draw_data.TotalIdxCount)?;
+            buffers.ib = create_index_buffer::<D>(device, draw_data.TotalIdxCount)?;
             buffers.ib_size = draw_data.TotalIdxCount;
         }
 
@@ -433,8 +431,8 @@ fn render_draw_data(
     }
 }
 
-impl ImGui {
-    pub fn create(info: &mut ImGuiInfo) -> Result<Self, gfx::Error> {
+impl<D, A> ImGui<D, A> where D: Device, A: App {
+    pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, gfx::Error> {
         unsafe {
             igCreateContext(std::ptr::null_mut());
             let mut io = &mut *igGetIO();
@@ -461,26 +459,26 @@ impl ImGui {
             }
 
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;
-            io.KeyMap[ImGuiKey_Tab as usize] = os_platform::App::get_key_code(os::Key::Tab);
-            io.KeyMap[ImGuiKey_LeftArrow as usize] = os_platform::App::get_key_code(os::Key::Left);
+            io.KeyMap[ImGuiKey_Tab as usize] = A::get_key_code(os::Key::Tab);
+            io.KeyMap[ImGuiKey_LeftArrow as usize] = A::get_key_code(os::Key::Left);
             io.KeyMap[ImGuiKey_RightArrow as usize] =
-                os_platform::App::get_key_code(os::Key::Right);
-            io.KeyMap[ImGuiKey_UpArrow as usize] = os_platform::App::get_key_code(os::Key::Up);
-            io.KeyMap[ImGuiKey_DownArrow as usize] = os_platform::App::get_key_code(os::Key::Down);
-            io.KeyMap[ImGuiKey_PageUp as usize] = os_platform::App::get_key_code(os::Key::PageUp);
+                A::get_key_code(os::Key::Right);
+            io.KeyMap[ImGuiKey_UpArrow as usize] = A::get_key_code(os::Key::Up);
+            io.KeyMap[ImGuiKey_DownArrow as usize] = A::get_key_code(os::Key::Down);
+            io.KeyMap[ImGuiKey_PageUp as usize] = A::get_key_code(os::Key::PageUp);
             io.KeyMap[ImGuiKey_PageDown as usize] =
-                os_platform::App::get_key_code(os::Key::PageDown);
-            io.KeyMap[ImGuiKey_Home as usize] = os_platform::App::get_key_code(os::Key::Home);
-            io.KeyMap[ImGuiKey_End as usize] = os_platform::App::get_key_code(os::Key::End);
-            io.KeyMap[ImGuiKey_Insert as usize] = os_platform::App::get_key_code(os::Key::Insert);
-            io.KeyMap[ImGuiKey_Delete as usize] = os_platform::App::get_key_code(os::Key::Delete);
+                A::get_key_code(os::Key::PageDown);
+            io.KeyMap[ImGuiKey_Home as usize] = A::get_key_code(os::Key::Home);
+            io.KeyMap[ImGuiKey_End as usize] = A::get_key_code(os::Key::End);
+            io.KeyMap[ImGuiKey_Insert as usize] = A::get_key_code(os::Key::Insert);
+            io.KeyMap[ImGuiKey_Delete as usize] = A::get_key_code(os::Key::Delete);
             io.KeyMap[ImGuiKey_Backspace as usize] =
-                os_platform::App::get_key_code(os::Key::Backspace);
-            io.KeyMap[ImGuiKey_Space as usize] = os_platform::App::get_key_code(os::Key::Space);
-            io.KeyMap[ImGuiKey_Enter as usize] = os_platform::App::get_key_code(os::Key::Enter);
-            io.KeyMap[ImGuiKey_Escape as usize] = os_platform::App::get_key_code(os::Key::Escape);
+                A::get_key_code(os::Key::Backspace);
+            io.KeyMap[ImGuiKey_Space as usize] = A::get_key_code(os::Key::Space);
+            io.KeyMap[ImGuiKey_Enter as usize] = A::get_key_code(os::Key::Enter);
+            io.KeyMap[ImGuiKey_Escape as usize] = A::get_key_code(os::Key::Escape);
             io.KeyMap[ImGuiKey_KeyPadEnter as usize] =
-                os_platform::App::get_key_code(os::Key::KeyPadEnter);
+                A::get_key_code(os::Key::KeyPadEnter);
             io.KeyMap[ImGuiKey_A as usize] = 'A' as i32;
             io.KeyMap[ImGuiKey_C as usize] = 'C' as i32;
             io.KeyMap[ImGuiKey_V as usize] = 'V' as i32;
@@ -501,26 +499,26 @@ impl ImGui {
             io.BackendFlags |= ImGuiBackendFlags_RendererHasViewports as i32;
 
             // create render buffers
-            let mut buffers: Vec<RenderBuffers> = Vec::new();
+            let mut buffers: Vec<RenderBuffers<D>> = Vec::new();
             let num_buffers = (*info.swap_chain).get_num_buffers();
+
+            let font_tex = create_fonts_texture::<D>(&mut info.device)?;
+            let pipeline = create_render_pipeline(info)?;
 
             for _i in 0..num_buffers {
                 buffers.push(RenderBuffers {
-                    vb: create_vertex_buffer(&mut info.device, DEFAULT_VB_SIZE)?,
+                    vb: create_vertex_buffer::<D>(&mut info.device, DEFAULT_VB_SIZE)?,
                     vb_size: DEFAULT_VB_SIZE,
-                    ib: create_index_buffer(&mut info.device, DEFAULT_IB_SIZE)?,
+                    ib: create_index_buffer::<D>(&mut info.device, DEFAULT_IB_SIZE)?,
                     ib_size: DEFAULT_IB_SIZE,
                 })
             }
-
-            let font_tex = create_fonts_texture(&mut info.device)?;
-            let pipeline = create_render_pipeline(info)?;
 
             // enum monitors
             let mut monitors: Vec<ImGuiPlatformMonitor> = Vec::new();
 
             let platform_io = &mut *igGetPlatformIO();
-            let os_monitors = os_platform::App::enumerate_display_monitors();
+            let os_monitors = A::enumerate_display_monitors();
             for monitor in os_monitors {
                 let ig_mon = ImGuiPlatformMonitor {
                     MainPos: ImVec2 {
@@ -555,13 +553,14 @@ impl ImGui {
             let vps = &mut *igGetMainViewport();
 
             // alloc main viewport ViewportData (we obtain from UserData in callbacks)
-            let vp = new_viewport_data();
+            let vp = new_viewport_data::<D, A>();
             (*vp).main_viewport = true;
             vps.PlatformUserData = vp as _;
-            vps.PlatformHandle = new_native_handle(info.main_window.get_native_handle()) as _;
+            vps.PlatformHandle = new_native_handle::<A>(info.main_window.get_native_handle()) as _;
 
             //
             let imgui = ImGui {
+                _native_handle: info.main_window.get_native_handle(),
                 font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
@@ -580,33 +579,33 @@ impl ImGui {
         unsafe {
             let platform_io = &mut *igGetPlatformIO();
             // platform hooks
-            platform_io.Platform_CreateWindow = Some(platform_create_window);
-            platform_io.Platform_DestroyWindow = Some(platform_destroy_window);
-            platform_io.Platform_ShowWindow = Some(platform_show_window);
-            platform_io.Platform_SetWindowPos = Some(platform_set_window_pos);
-            platform_io.Platform_SetWindowSize = Some(platform_set_window_size);
-            platform_io.Platform_SetWindowFocus = Some(platform_set_window_focus);
-            platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus);
-            platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised);
-            platform_io.Platform_SetWindowTitle = Some(platform_set_window_title);
-            platform_io.Platform_GetWindowDpiScale = Some(platform_get_window_dpi_scale);
-            platform_io.Platform_UpdateWindow = Some(platform_update_window);
+            platform_io.Platform_CreateWindow = Some(platform_create_window::<D, A>);
+            platform_io.Platform_DestroyWindow = Some(platform_destroy_window::<D, A>);
+            platform_io.Platform_ShowWindow = Some(platform_show_window::<D, A>);
+            platform_io.Platform_SetWindowPos = Some(platform_set_window_pos::<D, A>);
+            platform_io.Platform_SetWindowSize = Some(platform_set_window_size::<D, A>);
+            platform_io.Platform_SetWindowFocus = Some(platform_set_window_focus::<D, A>);
+            platform_io.Platform_GetWindowFocus = Some(platform_get_window_focus::<D, A>);
+            platform_io.Platform_GetWindowMinimized = Some(platform_get_window_minimised::<D, A>);
+            platform_io.Platform_SetWindowTitle = Some(platform_set_window_title::<D, A>);
+            platform_io.Platform_GetWindowDpiScale = Some(platform_get_window_dpi_scale::<D, A>);
+            platform_io.Platform_UpdateWindow = Some(platform_update_window::<D, A>);
 
             // render hooks
-            platform_io.Renderer_RenderWindow = Some(renderer_render_window);
-            platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers);
+            platform_io.Renderer_RenderWindow = Some(renderer_render_window::<D, A>);
+            platform_io.Renderer_SwapBuffers = Some(renderer_swap_buffers::<D, A>);
 
             // need to hook these c-compatible getter funtions due to complex return types
-            ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos);
-            ImGuiPlatformIO_Set_Platform_GetWindowSize(platform_io, platform_get_window_size)
+            ImGuiPlatformIO_Set_Platform_GetWindowPos(platform_io, platform_get_window_pos::<D, A>);
+            ImGuiPlatformIO_Set_Platform_GetWindowSize(platform_io, platform_get_window_size::<D, A>)
         }
     }
 
     pub fn new_frame(
         &mut self,
-        app: &mut os_platform::App,
-        main_window: &mut os_platform::Window,
-        device: &mut gfx_platform::Device,
+        app: &mut A,
+        main_window: &mut A::Window,
+        device: &mut D,
     ) {
         let size = main_window.get_size();
         unsafe {
@@ -620,7 +619,7 @@ impl ImGui {
                 pipeline: &self.pipeline,
                 font_texture: &self.font_texture,
             };
-            io.UserData = (&mut ud as *mut UserData) as _;
+            io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
             // update display
             io.DisplaySize = ImVec2 {
@@ -648,7 +647,7 @@ impl ImGui {
             for vp in viewports {
                 let p_vp = *vp;
                 let vp_ref = &*p_vp;
-                let win = get_viewport_window(p_vp);
+                let win = get_viewport_window::<D, A>(p_vp);
                 if win.is_mouse_hovered() {
                     if (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
                         io.MouseHoveredViewport = vp_ref.ID;
@@ -700,16 +699,16 @@ impl ImGui {
 
     pub fn render(
         &mut self,
-        app: &mut os_platform::App,
-        main_window: &mut os_platform::Window,
-        device: &mut gfx_platform::Device,
-        cmd: &mut gfx_platform::CmdBuf,
+        app: &mut A,
+        main_window: &mut A::Window,
+        device: &mut D,
+        cmd: &mut D::CmdBuf,
     ) {
         unsafe {
             let io = &mut *igGetIO();
             igRender();
 
-            render_draw_data(
+            render_draw_data::<D>(
                 &*igGetDrawData(),
                 device,
                 cmd,
@@ -728,7 +727,7 @@ impl ImGui {
                     pipeline: &self.pipeline,
                     font_texture: &self.font_texture,
                 };
-                io.UserData = (&mut ud as *mut UserData) as _;
+                io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
                 igUpdatePlatformWindows();
                 igRenderPlatformWindowsDefault(std::ptr::null_mut(), std::ptr::null_mut());
@@ -834,7 +833,7 @@ impl ImGui {
     }
 }
 
-impl Drop for ImGui {
+impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {
     fn drop(&mut self) {
         unsafe {
             igDestroyPlatformWindows();
@@ -865,13 +864,13 @@ impl From<ImVec2> for os::Point<i32> {
 
 /// handles the case where we can return an imgui created window from ViewportData, or borrow the main window
 /// from UserData
-fn get_viewport_window<'a>(vp: *mut ImGuiViewport) -> &'a mut os_platform::Window {
+fn get_viewport_window<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut A::Window {
     unsafe {
         let vp_ref = &mut *vp;
-        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
+        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData<D, A>);
         if vd.main_viewport {
             let io = &mut *igGetIO();
-            let ud = &mut *(io.UserData as *mut UserData);
+            let ud = &mut *(io.UserData as *mut UserData<D, A>);
             return ud.main_window;
         }
         return &mut vd.window[0];
@@ -879,38 +878,39 @@ fn get_viewport_window<'a>(vp: *mut ImGuiViewport) -> &'a mut os_platform::Windo
 }
 
 /// get a hotline::imgui::ViewportData mutable reference from an ImGuiViewport
-fn get_viewport_data<'a>(vp: *mut ImGuiViewport) -> &'a mut ViewportData {
+fn get_viewport_data<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut ViewportData<D, A> {
     unsafe {
         let vp_ref = &mut *vp;
-        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData);
+        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData<D, A>);
         vd
     }
 }
 
 /// Get the UserData packed inside ImGui.io to access Device, App and main Window
-fn get_user_data<'a>() -> &'a mut UserData<'a> {
+fn get_user_data<'a, D: Device, A: App>() -> &'a mut UserData<'a, D, A> {
     unsafe {
         let io = &mut *igGetIO();
-        let ud = &mut *(io.UserData as *mut UserData);
+        let ud = &mut *(io.UserData as *mut UserData<D, A>);
         ud
     }
 }
 
-unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
+unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let io = &mut *igGetIO();
-    let ud = &mut *(io.UserData as *mut UserData);
+    let ud = &mut *(io.UserData as *mut UserData<D, A>);
     let mut device = &mut ud.device;
     let mut vp_ref = &mut *vp;
 
     // alloc viewport data
-    let p_vd = new_viewport_data();
+    let p_vd = new_viewport_data::<D, A>();
     let vd = &mut *p_vd;
 
     // find parent
     let mut parent_handle = None;
     if vp_ref.ParentViewportId != 0 {
         let parent = &*igFindViewportByID(vp_ref.ParentViewportId);
-        parent_handle = Some(*(parent.PlatformHandle as *mut os_platform::NativeHandle));
+        let nh = &*(parent.PlatformHandle as *mut A::NativeHandle);
+        parent_handle = Some(nh.copy());
     }
 
     // create a window
@@ -940,16 +940,16 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
             a: 1.00,
         }),
     };
-    vd.swap_chain = vec![device.create_swap_chain(&swap_chain_info, &vd.window[0])];
+    vd.swap_chain = vec![device.create_swap_chain::<A>(&swap_chain_info, &vd.window[0])];
 
     // create render buffers
-    let mut buffers: Vec<RenderBuffers> = Vec::new();
+    let mut buffers: Vec<RenderBuffers<D>> = Vec::new();
     let num_buffers = vd.swap_chain[0].get_num_buffers();
     for _i in 0..num_buffers {
         buffers.push(RenderBuffers {
-            vb: create_vertex_buffer(&mut device, DEFAULT_VB_SIZE).unwrap(),
+            vb: create_vertex_buffer::<D>(&mut device, DEFAULT_VB_SIZE).unwrap(),
             vb_size: DEFAULT_VB_SIZE,
-            ib: create_index_buffer(&mut device, DEFAULT_IB_SIZE).unwrap(),
+            ib: create_index_buffer::<D>(&mut device, DEFAULT_IB_SIZE).unwrap(),
             ib_size: DEFAULT_IB_SIZE,
         })
     }
@@ -958,11 +958,11 @@ unsafe extern "C" fn platform_create_window(vp: *mut ImGuiViewport) {
     // track the viewport user data pointer
     vp_ref.PlatformUserData = p_vd as *mut _;
     vp_ref.PlatformRequestResize = false;
-    vp_ref.PlatformHandle = new_native_handle(vd.window[0].get_native_handle()) as _;
+    vp_ref.PlatformHandle = new_native_handle::<A>(vd.window[0].get_native_handle()) as _;
 }
 
-unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
-    let vd = get_viewport_data(vp);
+unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
+    let vd = get_viewport_data::<D, A>(vp);
     let mut vp_ref = &mut *vp;
 
     if vd.swap_chain.len() > 0 {
@@ -975,14 +975,14 @@ unsafe extern "C" fn platform_destroy_window(vp: *mut ImGuiViewport) {
     vd.window.clear();
 
     // drop and null allocated data
-    std::ptr::drop_in_place(vp_ref.PlatformUserData as *mut ViewportData);
+    std::ptr::drop_in_place(vp_ref.PlatformUserData as *mut ViewportData<D, A>);
     vp_ref.PlatformUserData = std::ptr::null_mut();
-    std::ptr::drop_in_place(vp_ref.PlatformHandle as *mut os_platform::NativeHandle);
+    std::ptr::drop_in_place(vp_ref.PlatformHandle as *mut A::NativeHandle);
     vp_ref.PlatformHandle = std::ptr::null_mut();
 }
 
-unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_update_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
+    let window = get_viewport_window::<D, A>(vp);
     let mut vp_ref = &mut *vp;
     window.update();
     window.update_style(
@@ -1007,22 +1007,22 @@ unsafe extern "C" fn platform_update_window(vp: *mut ImGuiViewport) {
     window.clear_events();
 }
 
-unsafe extern "C" fn platform_get_window_pos(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_get_window_pos<D: Device, A: App>(vp: *mut ImGuiViewport, out_pos: *mut ImVec2) {
+    let window = get_viewport_window::<D, A>(vp);
     let pos = window.get_pos();
     (*out_pos).x = pos.x as f32;
     (*out_pos).y = pos.y as f32;
 }
 
-unsafe extern "C" fn platform_get_window_size(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_get_window_size<D: Device, A: App>(vp: *mut ImGuiViewport, out_size: *mut ImVec2) {
+    let window = get_viewport_window::<D, A>(vp);
     let size = window.get_size();
     (*out_size).x = size.x as f32;
     (*out_size).y = size.y as f32;
 }
 
-unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_show_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
+    let window = get_viewport_window::<D, A>(vp);
     let activate = if (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 != 0 {
         false
     } else {
@@ -1031,45 +1031,45 @@ unsafe extern "C" fn platform_show_window(vp: *mut ImGuiViewport) {
     window.show(true, activate);
 }
 
-unsafe extern "C" fn platform_set_window_title(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
-    let win = get_viewport_window(vp);
+unsafe extern "C" fn platform_set_window_title<D: Device, A: App>(vp: *mut ImGuiViewport, str_: *const cty::c_char) {
+    let win = get_viewport_window::<D, A>(vp);
     let cstr = CStr::from_ptr(str_);
     win.set_title(String::from(cstr.to_str().unwrap()));
 }
 
-unsafe extern "C" fn platform_set_window_focus(vp: *mut ImGuiViewport) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_set_window_focus<D: Device, A: App>(vp: *mut ImGuiViewport) {
+    let window = get_viewport_window::<D, A>(vp);
     window.set_focused();
 }
 
-unsafe extern "C" fn platform_get_window_focus(vp: *mut ImGuiViewport) -> bool {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_get_window_focus<D: Device, A: App>(vp: *mut ImGuiViewport) -> bool {
+    let window = get_viewport_window::<D, A>(vp);
     window.is_focused()
 }
 
-unsafe extern "C" fn platform_set_window_pos(vp: *mut ImGuiViewport, pos: ImVec2) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_set_window_pos<D: Device, A: App>(vp: *mut ImGuiViewport, pos: ImVec2) {
+    let window = get_viewport_window::<D, A>(vp);
     window.set_pos(os::Point::from(pos));
 }
 
-unsafe extern "C" fn platform_set_window_size(vp: *mut ImGuiViewport, size: ImVec2) {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_set_window_size<D: Device, A: App>(vp: *mut ImGuiViewport, size: ImVec2) {
+    let window = get_viewport_window::<D, A>(vp);
     window.set_size(os::Size::from(size));
 }
 
-unsafe extern "C" fn platform_get_window_minimised(vp: *mut ImGuiViewport) -> bool {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_get_window_minimised<D: Device, A: App>(vp: *mut ImGuiViewport) -> bool {
+    let window = get_viewport_window::<D, A>(vp);
     window.is_minimised()
 }
 
-unsafe extern "C" fn platform_get_window_dpi_scale(vp: *mut ImGuiViewport) -> f32 {
-    let window = get_viewport_window(vp);
+unsafe extern "C" fn platform_get_window_dpi_scale<D: Device, A: App>(vp: *mut ImGuiViewport) -> f32 {
+    let window = get_viewport_window::<D, A>(vp);
     window.get_dpi_scale()
 }
 
-unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
-    let ud = get_user_data();
-    let vd = get_viewport_data(vp);
+unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
+    let ud = get_user_data::<D, A>();
+    let vd = get_viewport_data::<D, A>(vp);
     let vp_ref = &*vp;
 
     // must be an imgui created window
@@ -1085,15 +1085,16 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
 
     // update
     window.update();
-    swap.update(&mut ud.device, &window, &mut cmd);
+    swap.update::<A>(&mut ud.device, &window, &mut cmd);
     cmd.reset(&swap);
 
     // render
     let viewport = gfx::Viewport::from(vp_rect);
     let scissor = gfx::ScissorRect::from(vp_rect);
 
+    // TODO:
     cmd.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(swap.get_backbuffer_texture().clone()),
+        texture: Some(swap.get_backbuffer_texture().clone_inner()),
         buffer: None,
         state_before: gfx::ResourceState::Present,
         state_after: gfx::ResourceState::RenderTarget,
@@ -1105,7 +1106,7 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
     cmd.set_viewport(&viewport);
     cmd.set_scissor_rect(&scissor);
 
-    render_draw_data(
+    render_draw_data::<D>(
         &*vp_ref.DrawData,
         &mut ud.device,
         &mut cmd,
@@ -1117,8 +1118,9 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
 
     cmd.end_render_pass();
 
+    // TODO:
     cmd.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(swap.get_backbuffer_texture().clone()),
+        texture: Some(swap.get_backbuffer_texture().clone_inner()),
         buffer: None,
         state_before: gfx::ResourceState::RenderTarget,
         state_after: gfx::ResourceState::Present,
@@ -1129,9 +1131,9 @@ unsafe extern "C" fn renderer_render_window(vp: *mut ImGuiViewport, _render_arg:
     ud.device.execute(cmd);
 }
 
-unsafe extern "C" fn renderer_swap_buffers(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
-    let ud = get_user_data();
-    let vd = get_viewport_data(vp);
+unsafe extern "C" fn renderer_swap_buffers<D: Device, A: App>(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
+    let ud = get_user_data::<D, A>();
+    let vd = get_viewport_data::<D, A>(vp);
     assert_ne!(vd.swap_chain.len(), 0);
     vd.swap_chain[0].swap(&ud.device);
 }

@@ -1,4 +1,7 @@
 // TODO:
+
+// - fix location of imgui.ini and .gitignore
+
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout

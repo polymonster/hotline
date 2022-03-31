@@ -149,7 +149,11 @@ pub struct WindowInfo<A: App> {
 }
 
 /// A native platform window handle that can be passed around in a lightweight way
-pub trait NativeHandle<A: App> {}
+pub trait NativeHandle<A: App> {
+    /// returns the handle as an isize (ie. HWND)
+    fn get_isize(&self) -> isize;
+    fn copy(&self) -> Self;
+}
 
 /// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized {

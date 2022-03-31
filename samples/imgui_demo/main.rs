@@ -51,7 +51,7 @@ fn main() {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let exe_path = std::env::current_exe().ok().unwrap();
@@ -62,7 +62,7 @@ fn main() {
         swap_chain: &mut swap_chain,
         main_window: &win,
         fonts: vec![asset_path
-            .join("..\\..\\samples\\hello_world\\Roboto-Medium.ttf")
+            .join("..\\..\\samples\\imgui_demo\\Roboto-Medium.ttf")
             .to_str()
             .unwrap()
             .to_string()],
@@ -74,7 +74,7 @@ fn main() {
     while app.run() {
 
         win.update();
-        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
+        swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 
         // main pass
