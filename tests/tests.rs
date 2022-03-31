@@ -104,7 +104,7 @@ fn swap_chain_buffer() {
         clear_colour: None,
     };
 
-    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let clears_colours: [gfx::ClearColour; 4] = [
@@ -138,7 +138,7 @@ fn swap_chain_buffer() {
     let mut count = 0;
     while app.run() {
         win.update();
-        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
+        swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
 
         cmdbuffer.reset(&swap_chain);
 
@@ -202,7 +202,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
         }),
     };
 
-    let mut swap_chain = device.create_swap_chain(&swap_chain_info, &window);
+    let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window);
     let mut cmd = device.create_cmd_buf(2);
 
     let vertices = [
@@ -312,7 +312,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
     while app.run() {
         // update window and swap chain
         window.update();
-        swap_chain.update(&mut device, &window, &mut cmd);
+        swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
 
         // update viewport from window size
         let window_rect = window.get_viewport_rect();

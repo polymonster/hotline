@@ -4,9 +4,6 @@ use std::any::Any;
 /// Implemets this interface with a Direct3D12 backend.
 pub mod d3d12;
 
-#[cfg(target_os = "windows")]
-use os::win32 as platform;
-
 /// Error types for different gfx backends and FFI calls
 #[derive(Debug)]
 pub enum ErrorType {
@@ -694,10 +691,10 @@ pub trait Device: 'static + Send + Sync + Sized + Any {
     type ComputePipeline: ComputePipeline<Self>;
     fn create(info: &DeviceInfo) -> Self;
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
-    fn create_swap_chain(
+    fn create_swap_chain<A: os::App>(
         &mut self,
         info: &SwapChainInfo,
-        window: &platform::Window,
+        window: &A::Window,
     ) -> Self::SwapChain;
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
@@ -731,7 +728,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any {
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
 pub trait SwapChain<D: Device>: 'static + Sized + Any {
     fn new_frame(&mut self);
-    fn update(&mut self, device: &mut D, window: &platform::Window, cmd: &mut D::CmdBuf);
+    fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
     fn wait_for_last_frame(&mut self);
     fn get_num_buffers(&self) -> u32;
     fn get_backbuffer_index(&self) -> u32;
@@ -808,6 +805,8 @@ pub trait Texture<D: Device> {
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
+    /// return a clone
+    fn clone_inner(&self) -> Self;
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders

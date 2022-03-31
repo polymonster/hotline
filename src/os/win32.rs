@@ -37,7 +37,7 @@ pub struct Window {
 
 #[derive(Clone, Copy)]
 pub struct NativeHandle {
-    hwnd: HWND,
+    pub hwnd: HWND,
 }
 
 struct ProcData {
@@ -70,7 +70,14 @@ static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
 
 static mut MONITOR_ENUM: Vec<super::MonitorInfo> = Vec::new();
 
-impl super::NativeHandle<App> for NativeHandle {}
+impl super::NativeHandle<App> for NativeHandle {
+    fn get_isize(&self) -> isize {
+        self.hwnd.0
+    }
+    fn copy(&self) -> NativeHandle {
+        *self
+    }
+}
 
 impl Window {
     pub fn get_hwnd(&self) -> HWND {

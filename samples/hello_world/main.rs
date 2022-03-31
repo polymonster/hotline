@@ -13,9 +13,9 @@ use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-use hotline::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
+use hotline::gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
 struct Vertex {
@@ -79,7 +79,7 @@ fn main() {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
@@ -381,7 +381,7 @@ fn main() {
         let mut dev = arc_dev.lock().unwrap();
 
         win.update();
-        swap_chain.update(&mut dev, &win, &mut cmdbuffer);
+        swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 
         // compute pass

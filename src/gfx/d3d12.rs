@@ -1,7 +1,5 @@
 use crate::os::Window;
-
-#[cfg(target_os = "windows")]
-use crate::os::win32 as platform;
+use crate::os::NativeHandle;
 
 use super::Device as SuperDevice;
 use super::*;
@@ -1057,10 +1055,10 @@ impl super::Device for Device {
         create_heap(&self.device, &info)
     }
 
-    fn create_swap_chain(
+    fn create_swap_chain<A: os::App>(
         &mut self,
         info: &super::SwapChainInfo,
-        win: &platform::Window,
+        win: &A::Window,
     ) -> SwapChain {
         unsafe {
             // set flags, these could be passed in
@@ -1085,12 +1083,14 @@ impl super::Device for Device {
                 ..Default::default()
             };
 
+            let hwnd = HWND(win.get_native_handle().get_isize());
+
             // create swap chain itself
             let swap_chain1 = self
                 .dxgi_factory
                 .CreateSwapChainForHwnd(
                     &self.command_queue,
-                    win.get_hwnd(),
+                    hwnd,
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,
@@ -1950,7 +1950,7 @@ impl super::SwapChain<Device> for SwapChain {
         self.num_bb
     }
 
-    fn update(&mut self, device: &mut Device, window: &platform::Window, cmd: &mut CmdBuf) {
+    fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
         let size = window.get_size();
         if size.x != self.width || size.y != self.height {
             unsafe {
@@ -2403,6 +2403,10 @@ impl super::Texture<Device> for Texture {
     fn get_uav_index(&self) -> Option<usize> {
         self.uav_index
     }
+
+    fn clone_inner(&self) -> Texture {
+        self.clone()
+    }
 }
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {
@@ -2455,3 +2459,9 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 }
 
 impl super::ComputePipeline<Device> for ComputePipeline {}
+
+impl From<os::win32::NativeHandle> for HWND {
+    fn from(handle: os::win32::NativeHandle) -> HWND {
+        handle.hwnd
+    }
+}
