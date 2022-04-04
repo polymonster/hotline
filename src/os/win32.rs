@@ -17,14 +17,8 @@ pub struct App {
     window_class_imgui: String,
     hinstance: HINSTANCE,
     mouse_pos: super::Point<i32>,
-    mouse_down: [bool; super::MouseButton::Count as usize],
-    mouse_wheel: f32,
-    mouse_hwheel: f32,
-    utf16_inputs: Vec<u16>,
-    key_down: [bool; 256],
-    key_ctrl: bool,
-    key_shift: bool,
-    key_alt: bool,
+    proc_data: ProcData,
+    events: HashMap<isize, super::WindowEventFlags>
 }
 
 #[derive(Clone)]
@@ -40,6 +34,7 @@ pub struct NativeHandle {
     pub hwnd: HWND,
 }
 
+#[derive(Clone)]
 struct ProcData {
     mouse_hwnd: HWND,
     mouse_tracked: bool,
@@ -52,23 +47,6 @@ struct ProcData {
     key_shift: bool,
     key_alt: bool,
 }
-
-static mut PROC_DATA: ProcData = ProcData {
-    mouse_hwnd: HWND(0),
-    mouse_tracked: false,
-    mouse_down: [false; 5],
-    mouse_wheel: 0.0,
-    mouse_hwheel: 0.0,
-    utf16_inputs: Vec::new(),
-    key_down: [false; 256],
-    key_ctrl: false,
-    key_shift: false,
-    key_alt: false,
-};
-
-static mut EVENTS: Option<HashMap<isize, super::WindowEventFlags>> = None;
-
-static mut MONITOR_ENUM: Vec<super::MonitorInfo> = Vec::new();
 
 impl super::NativeHandle<App> for NativeHandle {
     fn get_isize(&self) -> isize {
@@ -160,8 +138,12 @@ fn adjust_window_rect(
 }
 
 impl App {
-    fn update_mouse(&mut self) {
+    fn update_input(&mut self) {
         unsafe {
+            // reset input state
+            self.proc_data.mouse_wheel = 0.0;
+            self.proc_data.mouse_hwheel = 0.0;
+            self.proc_data.utf16_inputs.clear();
             // mouse pos
             let mut mouse_pos = POINT::default();
             GetCursorPos(&mut mouse_pos);
@@ -169,29 +151,198 @@ impl App {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
             };
-
-            // mouse state
-            self.mouse_wheel = PROC_DATA.mouse_wheel;
-            self.mouse_hwheel = PROC_DATA.mouse_hwheel;
-            self.mouse_down = PROC_DATA.mouse_down;
-
-            // reset mouse deltas
-            PROC_DATA.mouse_wheel = 0.0;
-            PROC_DATA.mouse_hwheel = 0.0;
         }
     }
 
-    fn update_keyboard(&mut self) {
+    fn wndproc(&mut self, window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         unsafe {
-            // update char inputs
-            self.utf16_inputs = PROC_DATA.utf16_inputs.to_vec();
-            PROC_DATA.utf16_inputs.clear();
+            let mut proc_data = &mut self.proc_data;
+            match message as u32 {
+                WM_MOUSEMOVE => {
+                    proc_data.mouse_hwnd = window;
+                    if !proc_data.mouse_tracked {
+                        // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events
+                        TrackMouseEvent(&mut TRACKMOUSEEVENT {
+                            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+                            dwFlags: TME_LEAVE,
+                            hwndTrack: window,
+                            dwHoverTime: 0,
+                        });
+                        proc_data.mouse_tracked = true;
+                    }
+                    LRESULT(0)
+                }
+                WM_MOUSELEAVE => {
+                    proc_data.mouse_hwnd = HWND(0);
+                    proc_data.mouse_tracked = false;
+                    LRESULT(0)
+                }
+                WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
+                    proc_data.mouse_down[0] = true;
+                    self.set_capture(window);
+                    LRESULT(0)
+                }
+                WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
+                    proc_data.mouse_down[1] = true;
+                    self.set_capture(window);
+                    LRESULT(0)
+                }
+                WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
+                    proc_data.mouse_down[2] = true;
+                    self.set_capture(window);
+                    LRESULT(0)
+                }
+                WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
+                    let button = ((wparam.0 >> 16) & 0xffff) + 1;
+                    proc_data.mouse_down[button] = true;
+                    self.set_capture(window);
+                    LRESULT(0)
+                }
+                WM_LBUTTONUP => {
+                    proc_data.mouse_down[0] = false;
+                    self.release_capture(window);
+                    LRESULT(0)
+                }
+                WM_RBUTTONUP => {
+                    proc_data.mouse_down[1] = false;
+                    self.release_capture(window);
+                    LRESULT(0)
+                }
+                WM_MBUTTONUP => {
+                    proc_data.mouse_down[2] = false;
+                    self.release_capture(window);
+                    LRESULT(0)
+                }
+                WM_XBUTTONUP => {
+                    let button = ((wparam.0 >> 16) & 0xffff) + 1;
+                    proc_data.mouse_down[button] = true;
+                    self.release_capture(window);
+                    LRESULT(0)
+                }
+                WM_MOUSEWHEEL => {
+                    let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
+                    proc_data.mouse_wheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
+                    LRESULT(0)
+                }
+                WM_MOUSEHWHEEL => {
+                    let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
+                    proc_data.mouse_hwheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
+                    LRESULT(0)
+                }
+                WM_PAINT => {
+                    ValidateRect(window, std::ptr::null());
+                    LRESULT(0)
+                }
+                WM_CHAR => {
+                    if wparam.0 > 0 && wparam.0 < 0x10000 {
+                        proc_data.utf16_inputs.push(wparam.0 as u16);
+                    }
+                    LRESULT(0)
+                }
+                WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
+                    let down = (message == WM_KEYDOWN) || (message == WM_SYSKEYDOWN);
+    
+                    if wparam.0 < 256 {
+                        proc_data.key_down[wparam.0] = down;
+                    }
+    
+                    let vk = VIRTUAL_KEY(wparam.0 as u16);
+                    match vk {
+                        VK_CONTROL => {
+                            proc_data.key_ctrl = down;
+                        }
+                        VK_SHIFT => {
+                            proc_data.key_shift = down;
+                        }
+                        VK_MENU => {
+                            proc_data.key_alt = down;
+                        }
+                        _ => {}
+                    }
+    
+                    LRESULT(0)
+                }
+                _ => DefWindowProcA(window, message, wparam, lparam),
+            }
+        }
+    }
 
-            // update sys keys
-            self.key_down = PROC_DATA.key_down;
-            self.key_ctrl = PROC_DATA.key_ctrl;
-            self.key_shift = PROC_DATA.key_shift;
-            self.key_alt = PROC_DATA.key_alt;
+    extern "system" fn main_wndproc(
+        &mut self,
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        unsafe {
+            match message as u32 {
+                WM_DESTROY => {
+                    PostQuitMessage(0);
+                    LRESULT(0)
+                }
+                WM_SYSCOMMAND => {
+                    if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
+                        // Disable ALT application menu
+                        return LRESULT(0);
+                    } else {
+                        return self.wndproc(window, message, wparam, lparam);
+                    }
+                }
+                _ => self.wndproc(window, message, wparam, lparam),
+            }
+        }
+    }
+    
+    fn add_event(&mut self, window: HWND, flags: super::WindowEventFlags) {
+        if let Some(window_events) = self.events.get_mut(&window.0) {
+            // or into existsing key
+            *window_events |= flags;
+        } else {
+            // create new key
+            self.events.insert(window.0, flags);
+        }
+    }
+    
+    fn imgui_wndproc(
+        &mut self,
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+    ) -> LRESULT {
+        match message as u32 {
+            WM_CLOSE => {
+                self.add_event(window, super::WindowEventFlags::CLOSE);
+                LRESULT(0)
+            }
+            WM_MOVE => {
+                self.add_event(window, super::WindowEventFlags::MOVE);
+                LRESULT(0)
+            }
+            WM_SIZE => {
+                self.add_event(window, super::WindowEventFlags::SIZE);
+                LRESULT(0)
+            }
+            WM_MOUSEACTIVATE => LRESULT(0),
+            _ => self.wndproc(window, message, wparam, lparam),
+        }
+    }
+
+    fn set_capture(&mut self, window: HWND) {
+        unsafe {
+            let any_down = self.proc_data.mouse_down.iter().any(|v| v == &true);
+            if !any_down && GetCapture() == HWND(0) {
+                SetCapture(window);
+            }
+        }
+    }
+    
+    fn release_capture(&mut self, window: HWND) {
+        unsafe {
+            let any_down = self.proc_data.mouse_down.iter().any(|v| v == &true);
+            if !any_down && GetCapture() == window {
+                ReleaseCapture();
+            }
         }
     }
 }
@@ -240,13 +391,26 @@ impl super::App for App {
                 panic!("hotline::os::win32: imgui class already registered!");
             }
 
-            EVENTS = Some(HashMap::new());
-
             App {
                 window_class_imgui: window_class_imgui,
                 window_class: String::from(window_class),
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
+                proc_data: ProcData {
+                    mouse_hwnd: HWND(0),
+                    mouse_tracked: false,
+                    mouse_down: [false; 5],
+                    mouse_wheel: 0.0,
+                    mouse_hwheel: 0.0,
+                    utf16_inputs: Vec::new(),
+                    key_down: [false; 256],
+                    key_ctrl: false,
+                    key_shift: false,
+                    key_alt: false,
+                },
+                events: HashMap::new()
+
+                /*
                 mouse_wheel: 0.0,
                 mouse_hwheel: 0.0,
                 mouse_down: [false; super::MouseButton::Count as usize],
@@ -255,6 +419,7 @@ impl super::App for App {
                 key_ctrl: false,
                 key_shift: false,
                 key_alt: false,
+                */
             }
         }
     }
@@ -305,8 +470,8 @@ impl super::App for App {
         unsafe {
             let mut msg = MSG::default();
             let mut quit = false;
-            self.update_mouse();
-            self.update_keyboard();
+            
+            self.update_input();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
@@ -315,7 +480,19 @@ impl super::App for App {
                         quit = true;
                         break;
                     }
-                } else {
+                    // handle wnd proc on self functions, to avoid need for static mutable state
+                    let mut buffer : Vec<u8> = vec![0; 64];
+                    GetClassNameA(msg.hwnd, PSTR(buffer.as_mut_ptr() as *mut _), 64);
+                    let class = String::from_utf8(buffer).unwrap();
+
+                    if class == self.window_class {
+                        self.main_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+                    }
+                    else {
+                        self.imgui_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+                    }
+                } 
+                else {
                     break;
                 }
             }
@@ -328,30 +505,30 @@ impl super::App for App {
     }
 
     fn get_mouse_wheel(&self) -> f32 {
-        self.mouse_wheel
+        self.proc_data.mouse_wheel
     }
 
     fn get_mouse_hwheel(&self) -> f32 {
-        self.mouse_hwheel
+        self.proc_data.mouse_hwheel
     }
 
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
-        self.mouse_down
+        self.proc_data.mouse_down
     }
 
     fn get_utf16_input(&self) -> Vec<u16> {
-        self.utf16_inputs.to_vec()
+        self.proc_data.utf16_inputs.to_vec()
     }
 
     fn get_keys_down(&self) -> [bool; 256] {
-        self.key_down
+        self.proc_data.key_down
     }
 
     fn is_sys_key_down(&self, key: super::SysKey) -> bool {
         match key {
-            super::SysKey::Ctrl => self.key_ctrl,
-            super::SysKey::Shift => self.key_shift,
-            super::SysKey::Alt => self.key_alt,
+            super::SysKey::Ctrl => self.proc_data.key_ctrl,
+            super::SysKey::Shift => self.proc_data.key_shift,
+            super::SysKey::Alt => self.proc_data.key_alt,
         }
     }
 
@@ -436,15 +613,11 @@ impl super::Window<App> for Window {
         }
     }
 
-    fn update(&mut self) {
-        unsafe {
-            // take events
-            if let Some(events_map) = &mut EVENTS {
-                if let Some(window_events) = events_map.get_mut(&self.hwnd.0) {
-                    self.events = *window_events;
-                    *window_events = super::WindowEventFlags::NONE;
-                }
-            }
+    fn update(&mut self, app: &mut App) {
+        // take events
+        if let Some(window_events) = app.events.get_mut(&self.hwnd.0) {
+            self.events = *window_events;
+            *window_events = super::WindowEventFlags::NONE;
         }
     }
 
@@ -664,29 +837,10 @@ impl super::Window<App> for Window {
     }
 }
 
-fn set_capture(window: HWND) {
-    unsafe {
-        let any_down = PROC_DATA.mouse_down.iter().any(|v| v == &true);
-        if !any_down && GetCapture() == HWND(0) {
-            SetCapture(window);
-        }
-    }
-}
-
-fn release_capture(window: HWND) {
-    unsafe {
-        let any_down = PROC_DATA.mouse_down.iter().any(|v| v == &true);
-        if !any_down && GetCapture() == window {
-            ReleaseCapture();
-        }
-    }
-}
-
 /*
 TODO: wndproc
 WM_SETFOCUS => LRESULT(0),
 WM_KILLFOCUS => LRESULT(0),
-WM_SETCURSOR => LRESULT(0),
 WM_DEVICECHANGE => LRESULT(0),
 WM_DISPLAYCHANGE => LRESULT(0),
 */
@@ -697,36 +851,19 @@ extern "system" fn main_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    unsafe {
-        match message as u32 {
-            WM_DESTROY => {
-                PostQuitMessage(0);
-                LRESULT(0)
-            }
-            WM_SYSCOMMAND => {
-                if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
-                    // Disable ALT application menu
-                    return LRESULT(0);
-                } else {
-                    return wndproc(window, message, wparam, lparam);
-                }
-            }
-            _ => wndproc(window, message, wparam, lparam),
+    match message as u32 {
+        WM_DESTROY => {
+            LRESULT(0)
         }
-    }
-}
-
-fn add_event(window: HWND, flags: super::WindowEventFlags) {
-    unsafe {
-        if let Some(events_map) = &mut EVENTS {
-            if let Some(window_events) = events_map.get_mut(&window.0) {
-                // or into existsing key
-                *window_events |= flags;
+        WM_SYSCOMMAND => {
+            if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
+                // Disable ALT application menu
+                return LRESULT(0);
             } else {
-                // create new key
-                events_map.insert(window.0, flags);
+                return wndproc(window, message, wparam, lparam);
             }
         }
+        _ =>  wndproc(window, message, wparam, lparam),
     }
 }
 
@@ -737,19 +874,9 @@ extern "system" fn imgui_wndproc(
     lparam: LPARAM,
 ) -> LRESULT {
     match message as u32 {
-        WM_CLOSE => {
-            add_event(window, super::WindowEventFlags::CLOSE);
+        WM_CLOSE | WM_MOVE | WM_SIZE | WM_MOUSEACTIVATE => {
             LRESULT(0)
         }
-        WM_MOVE => {
-            add_event(window, super::WindowEventFlags::MOVE);
-            LRESULT(0)
-        }
-        WM_SIZE => {
-            add_event(window, super::WindowEventFlags::SIZE);
-            LRESULT(0)
-        }
-        WM_MOUSEACTIVATE => LRESULT(0),
         _ => wndproc(window, message, wparam, lparam),
     }
 }
@@ -758,113 +885,56 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
     unsafe {
         match message as u32 {
             WM_MOUSEMOVE => {
-                PROC_DATA.mouse_hwnd = window;
-                if !PROC_DATA.mouse_tracked {
-                    // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events
-                    TrackMouseEvent(&mut TRACKMOUSEEVENT {
-                        cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
-                        dwFlags: TME_LEAVE,
-                        hwndTrack: window,
-                        dwHoverTime: 0,
-                    });
-                    PROC_DATA.mouse_tracked = true;
-                }
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
-                PROC_DATA.mouse_hwnd = HWND(0);
-                PROC_DATA.mouse_tracked = false;
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
-                PROC_DATA.mouse_down[0] = true;
-                set_capture(window);
                 LRESULT(0)
             }
             WM_RBUTTONDOWN | WM_RBUTTONDBLCLK => {
-                PROC_DATA.mouse_down[1] = true;
-                set_capture(window);
                 LRESULT(0)
             }
             WM_MBUTTONDOWN | WM_MBUTTONDBLCLK => {
-                PROC_DATA.mouse_down[2] = true;
-                set_capture(window);
                 LRESULT(0)
             }
             WM_XBUTTONDOWN | WM_XBUTTONDBLCLK => {
-                let button = ((wparam.0 >> 16) & 0xffff) + 1;
-                PROC_DATA.mouse_down[button] = true;
-                set_capture(window);
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
-                PROC_DATA.mouse_down[0] = false;
-                release_capture(window);
                 LRESULT(0)
             }
             WM_RBUTTONUP => {
-                PROC_DATA.mouse_down[1] = false;
-                release_capture(window);
                 LRESULT(0)
             }
             WM_MBUTTONUP => {
-                PROC_DATA.mouse_down[2] = false;
-                release_capture(window);
                 LRESULT(0)
             }
             WM_XBUTTONUP => {
-                let button = ((wparam.0 >> 16) & 0xffff) + 1;
-                PROC_DATA.mouse_down[button] = true;
-                release_capture(window);
                 LRESULT(0)
             }
             WM_MOUSEWHEEL => {
-                let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
-                PROC_DATA.mouse_wheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
                 LRESULT(0)
             }
             WM_MOUSEHWHEEL => {
-                let wheel_delta = ((wparam.0 >> 16) & 0xffff) as i16;
-                PROC_DATA.mouse_hwheel += (wheel_delta as f32) / (WHEEL_DELTA as f32);
                 LRESULT(0)
             }
             WM_PAINT => {
-                ValidateRect(window, std::ptr::null());
                 LRESULT(0)
             }
             WM_CHAR => {
-                if wparam.0 > 0 && wparam.0 < 0x10000 {
-                    PROC_DATA.utf16_inputs.push(wparam.0 as u16);
-                }
                 LRESULT(0)
             }
             WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
-                let down = (message == WM_KEYDOWN) || (message == WM_SYSKEYDOWN);
-
-                if wparam.0 < 256 {
-                    PROC_DATA.key_down[wparam.0] = down;
-                }
-
-                let vk = VIRTUAL_KEY(wparam.0 as u16);
-                match vk {
-                    VK_CONTROL => {
-                        PROC_DATA.key_ctrl = down;
-                    }
-                    VK_SHIFT => {
-                        PROC_DATA.key_shift = down;
-                    }
-                    VK_MENU => {
-                        PROC_DATA.key_alt = down;
-                    }
-                    _ => {}
-                }
-
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
         }
     }
 }
+
+static mut MONITOR_ENUM: Vec<super::MonitorInfo> = Vec::new();
 
 extern "system" fn enum_func(
     monitor: HMONITOR,

@@ -193,8 +193,8 @@ pub trait Window<A: App>: Any + Sized {
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
     fn show(&self, show: bool, activate: bool);
-    /// Must be called each frame to handle resizes
-    fn update(&mut self);
+    /// Must be called each frame to handle resizes, parent App my have events to forward
+    fn update(&mut self, app: &mut A);
     /// Close the window
     fn close(&mut self);
     /// Change the windows style

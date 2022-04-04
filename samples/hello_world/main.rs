@@ -380,7 +380,7 @@ fn main() {
 
         let mut dev = arc_dev.lock().unwrap();
 
-        win.update();
+        win.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 

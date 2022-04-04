@@ -41,7 +41,6 @@ struct RenderBuffers<D: Device> {
     ib_size: i32,
 }
 
-//#[derive(Clone)]
 struct ViewportData<D: Device, A: App> {
     /// if viewport is main, we get the window from UserData and the rest of this struct is null
     main_viewport: bool,
@@ -984,7 +983,7 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
 unsafe extern "C" fn platform_update_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let window = get_viewport_window::<D, A>(vp);
     let mut vp_ref = &mut *vp;
-    window.update();
+    window.update(get_user_data::<D, A>().app);
     window.update_style(
         os::WindowStyleFlags::from(vp_ref.Flags),
         os::Rect {
@@ -1084,7 +1083,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
     let vp_rect = window.get_viewport_rect();
 
     // update
-    window.update();
+    window.update(ud.app);
     swap.update::<A>(&mut ud.device, &window, &mut cmd);
     cmd.reset(&swap);
 

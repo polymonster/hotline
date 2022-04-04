@@ -137,7 +137,7 @@ fn swap_chain_buffer() {
     let mut i = 0;
     let mut count = 0;
     while app.run() {
-        win.update();
+        win.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
 
         cmdbuffer.reset(&swap_chain);
@@ -311,7 +311,7 @@ fn draw_triangle() -> Result<(), gfx::Error> {
 
     while app.run() {
         // update window and swap chain
-        window.update();
+        window.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
 
         // update viewport from window size
