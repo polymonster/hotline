@@ -18,20 +18,22 @@ version = "0.27"
 features = [
     "alloc",
     "Win32_Foundation",
-    "Win32_Security",
     "Win32_Globalization",
     "Win32_Graphics_Gdi",
     "Win32_Graphics_Direct3D_Fxc",
     "Win32_Graphics_Direct3D12",
     "Win32_Graphics_Direct3D11",
     "Win32_Graphics_Dxgi_Common",
-    "Win32_UI_WindowsAndMessaging",
-    "Win32_UI_Controls",
-    "Win32_UI_Input_KeyboardAndMouse",
-    "Win32_UI_HiDpi",
+    "Win32_Media_MediaFoundation",
+    "Win32_Security",
+    "Win32_System_Com",
     "Win32_System_LibraryLoader",
     "Win32_System_Threading",
     "Win32_System_WindowsProgramming",
+    "Win32_UI_Controls",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
 ]
 
 [[bin]]
@@ -41,3 +43,7 @@ path = "samples/hello_world/main.rs"
 [[bin]]
 name = "imgui_demo"
 path = "samples/imgui_demo/main.rs"
+
+[[bin]]
+name = "play_video"
+path = "samples/play_video/main.rs"
