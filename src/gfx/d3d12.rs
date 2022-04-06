@@ -64,8 +64,9 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_begin_event: BeginEventOnCommandList = self.begin_event;
+            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
             fn_begin_event(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
         }
     }
@@ -73,8 +74,9 @@ impl WinPixEventRuntime {
     pub fn end_event_on_command_list(&self, command_list: ID3D12GraphicsCommandList) {
         unsafe {
             let fn_end_event: EndEventOnCommandList = self.end_event;
+            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
             fn_end_event(p_cmd_list);
         }
     }
@@ -88,8 +90,9 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_set_marker: SetMarkerOnCommandList = self.set_marker;
+            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(command_list.0.clone());
+                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
             fn_set_marker(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
         }
     }
@@ -256,10 +259,11 @@ fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D12_SHA
 }
 
 fn to_d3d12_sampler_boarder_colour(col: Option<u32>) -> D3D12_STATIC_BORDER_COLOR {
+    let mut r = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
     if col.is_some() {
-        return D3D12_STATIC_BORDER_COLOR::from(col.unwrap() as i32);
+        r = D3D12_STATIC_BORDER_COLOR(col.unwrap() as i32);
     }
-    D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK
+    r
 }
 
 fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
@@ -564,7 +568,8 @@ pub fn get_hardware_adapter(
                 }
             } else {
                 // auto select first non software adapter
-                if (DXGI_ADAPTER_FLAG::from(desc.Flags) & DXGI_ADAPTER_FLAG_SOFTWARE)
+                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags);
+                if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE)
                     == DXGI_ADAPTER_FLAG_NONE
                 {
                     if selected_index == -1 {
@@ -772,7 +777,7 @@ impl Device {
         let mut ielem = 0;
         for elem in layout {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
-                SemanticName: PSTR(null_terminated_semantics[ielem].as_ptr() as _),
+                SemanticName: PCSTR(null_terminated_semantics[ielem].as_ptr() as _),
                 SemanticIndex: elem.index,
                 Format: to_dxgi_format(elem.format),
                 InputSlot: elem.input_slot,
@@ -913,8 +918,8 @@ impl Device {
 
             // create signature
             let sig = signature.unwrap();
-            let sig =
-                self.device.CreateRootSignature(0, sig.GetBufferPointer(), sig.GetBufferSize())?;
+            let slice : &[u8] = std::slice::from_raw_parts(sig.GetBufferPointer() as *mut u8, sig.GetBufferSize());
+            let sig = self.device.CreateRootSignature(0, slice)?;
             Ok(sig)
         }
     }
@@ -1117,7 +1122,7 @@ impl super::Device for Device {
                 bb_index: 0,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
                 fence_last_signalled_value: 0,
-                fence_event: CreateEventA(std::ptr::null_mut(), false, false, None),
+                fence_event: CreateEventA(std::ptr::null(), false, false, None).unwrap(),
                 swap_chain: swap_chain,
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
@@ -1288,11 +1293,11 @@ impl super::Device for Device {
                 let result = D3DCompile(
                     nullt_data.as_ptr() as *const core::ffi::c_void,
                     src_u8.len(),
-                    PSTR(std::ptr::null_mut() as _),
+                    PCSTR(std::ptr::null_mut() as _),
                     std::ptr::null(),
                     None,
-                    PSTR(nullt_entry_point.as_ptr() as _),
-                    PSTR(nullt_target.as_ptr() as _),
+                    PCSTR(nullt_entry_point.as_ptr() as _),
+                    PCSTR(nullt_target.as_ptr() as _),
                     compile_flags,
                     0,
                     &mut shader_blob,
@@ -1420,14 +1425,14 @@ impl super::Device for Device {
                 );
 
                 // transition to shader resource
-                self.command_list.ResourceBarrier(1, &barrier);
+                self.command_list.ResourceBarrier(&[barrier.clone()]);
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+                self.command_queue.ExecuteCommandLists(&mut [Some(cmd.clone())]);
                 self.command_queue.Signal(&fence, 1)?;
 
-                let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+                let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
                 fence.SetEventOnCompletion(1, event)?;
                 WaitForSingleObject(event, INFINITE);
 
@@ -1613,17 +1618,17 @@ impl super::Device for Device {
                 );
 
                 // transition to shader resource
-                self.command_list.ResourceBarrier(1, &barrier);
+                self.command_list.ResourceBarrier(&[barrier.clone()]);
                 let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                     std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(1, &mut Some(cmd));
+                self.command_queue.ExecuteCommandLists(&mut [Some(cmd.clone())]);
                 self.command_queue.Signal(&fence, 1)?;
 
-                let event = CreateEventA(std::ptr::null_mut(), false, false, None);
+                let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
                 fence.SetEventOnCompletion(1, event)?;
                 WaitForSingleObject(event, INFINITE);
                 self.command_list.Reset(&self.command_allocator, None)?;
@@ -1888,7 +1893,7 @@ impl super::Device for Device {
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
-            self.command_queue.ExecuteCommandLists(1, &mut Some(command_list));
+            self.command_queue.ExecuteCommandLists(&mut[Some(command_list.clone())]);
         }
     }
 
@@ -1916,10 +1921,6 @@ impl super::Device for Device {
 impl SwapChain {
     fn wait_for_frame(&mut self, frame_index: usize) {
         unsafe {
-            let mut waitable: [HANDLE; 2] =
-                [self.swap_chain.GetFrameLatencyWaitableObject(), HANDLE(0)];
-
-            let mut num_waitable = 1;
             let mut fv = self.frame_fence_value[frame_index as usize];
 
             // 0 means no fence was signaled
@@ -1928,11 +1929,13 @@ impl SwapChain {
                 self.fence
                     .SetEventOnCompletion(fv as u64, self.fence_event)
                     .expect("hotline::gfx::d3d12: failed to set on completion event!");
-                waitable[1] = self.fence_event;
-                num_waitable = 2;
+                WaitForMultipleObjects(
+                    &[self.swap_chain.GetFrameLatencyWaitableObject(), self.fence_event], 
+                    true, INFINITE);
             }
-
-            WaitForMultipleObjects(num_waitable, waitable.as_ptr(), true, INFINITE);
+            else {
+                WaitForMultipleObjects(&[self.swap_chain.GetFrameLatencyWaitableObject()], true, INFINITE);
+            }
         }
     }
 }
@@ -2099,8 +2102,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.BeginRenderPass(
-                render_pass.rt.len() as u32,
-                render_pass.rt.as_mut_ptr(),
+                render_pass.rt.as_mut_slice(),
                 if let Some(ds) = &render_pass.ds {
                     ds
                 } else {
@@ -2141,7 +2143,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
             unsafe {
                 let bb = self.bb_index;
-                self.command_list[bb].ResourceBarrier(1, &barrier);
+                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
                 self.in_flight_barriers[bb].push(barrier);
             }
         }
@@ -2157,7 +2159,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             MaxDepth: viewport.max_depth,
         };
         unsafe {
-            self.cmd().RSSetViewports(1, &d3d12_vp);
+            self.cmd().RSSetViewports(&[d3d12_vp]);
         }
     }
 
@@ -2170,7 +2172,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         };
         let cmd = &self.command_list[self.bb_index];
         unsafe {
-            cmd.RSSetScissorRects(1, &d3d12_sr);
+            cmd.RSSetScissorRects(&[d3d12_sr]);
         }
     }
 
@@ -2178,7 +2180,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         let cmd = self.cmd();
         if buffer.vbv.is_some() {
             unsafe {
-                cmd.IASetVertexBuffers(slot, 1, &buffer.vbv.unwrap());
+                cmd.IASetVertexBuffers(slot, &[buffer.vbv.unwrap()]);
             }
         }
     }
@@ -2211,7 +2213,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_compute_heap(&self, slot: u32, heap: &Heap) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             self.cmd().SetComputeRootDescriptorTable(
                 slot,
                 &heap.heap.GetGPUDescriptorHandleForHeapStart(),
@@ -2221,7 +2223,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_render_heap(&self, slot: u32, heap: &Heap, offset: usize) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(1, &Some(heap.heap.clone()));
+            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
 
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
@@ -2299,7 +2301,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
             );
-            self.command_list[bb].ResourceBarrier(1, &barrier);
+            self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
             self.in_flight_barriers[bb].push(barrier);
 
             let src = D3D12_TEXTURE_COPY_LOCATION {
@@ -2336,7 +2338,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             );
 
             // transition back to render target
-            self.command_list[bb].ResourceBarrier(1, &barrier);
+            self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
             self.in_flight_barriers[bb].push(barrier);
 
             ReadBackRequest {

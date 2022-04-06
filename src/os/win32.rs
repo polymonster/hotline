@@ -1,4 +1,5 @@
 use windows::{
+    core::*,
     Win32::Foundation::*, Win32::Globalization::*, Win32::Graphics::Gdi::ClientToScreen,
     Win32::Graphics::Gdi::EnumDisplayMonitors, Win32::Graphics::Gdi::GetMonitorInfoA,
     Win32::Graphics::Gdi::MonitorFromWindow, Win32::Graphics::Gdi::ScreenToClient,
@@ -77,7 +78,7 @@ impl Drop for Window {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassA(PSTR(self.window_class.as_ptr() as _), self.hinstance);
+            UnregisterClassA(PCSTR(self.window_class.as_ptr() as _), self.hinstance);
         }
     }
 }
@@ -366,9 +367,9 @@ impl super::App for App {
             }
 
             let wc = WNDCLASSA {
-                hCursor: LoadCursorW(None, IDC_ARROW),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap(),
                 hInstance: instance,
-                lpszClassName: PSTR(window_class.as_ptr() as _),
+                lpszClassName: PCSTR(window_class.as_ptr() as _),
                 style: CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(main_wndproc),
                 ..Default::default()
@@ -379,9 +380,9 @@ impl super::App for App {
             }
 
             let wc2 = WNDCLASSA {
-                hCursor: LoadCursorW(None, IDC_ARROW),
+                hCursor: LoadCursorW(None, IDC_ARROW).unwrap(),
                 hInstance: instance,
-                lpszClassName: PSTR(window_class_imgui.as_ptr() as _),
+                lpszClassName: PCSTR(window_class_imgui.as_ptr() as _),
                 style: CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(imgui_wndproc),
                 ..Default::default()
@@ -409,17 +410,6 @@ impl super::App for App {
                     key_alt: false,
                 },
                 events: HashMap::new()
-
-                /*
-                mouse_wheel: 0.0,
-                mouse_hwheel: 0.0,
-                mouse_down: [false; super::MouseButton::Count as usize],
-                utf16_inputs: Vec::new(),
-                key_down: [false; 256],
-                key_ctrl: false,
-                key_shift: false,
-                key_alt: false,
-                */
             }
         }
     }
@@ -482,7 +472,7 @@ impl super::App for App {
                     }
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     let mut buffer : Vec<u8> = vec![0; 64];
-                    GetClassNameA(msg.hwnd, PSTR(buffer.as_mut_ptr() as *mut _), 64);
+                    GetClassNameA(msg.hwnd, buffer.as_mut_slice());
                     let class = String::from_utf8(buffer).unwrap();
 
                     if class == self.window_class {
@@ -569,15 +559,15 @@ impl super::App for App {
         unsafe {
             match cursor {
                 super::Cursor::None => SetCursor(HCURSOR(0)),
-                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, &IDC_ARROW)),
-                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, &IDC_IBEAM)),
-                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEALL)),
-                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEWE)),
-                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENS)),
-                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENESW)),
-                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENWSE)),
-                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, &IDC_HAND)),
-                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, &IDC_NO)),
+                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, &IDC_ARROW).unwrap()),
+                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, &IDC_IBEAM).unwrap()),
+                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEALL).unwrap()),
+                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEWE).unwrap()),
+                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENS).unwrap()),
+                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENESW).unwrap()),
+                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENWSE).unwrap()),
+                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, &IDC_HAND).unwrap()),
+                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, &IDC_NO).unwrap()),
             };
         }
     }
@@ -697,24 +687,21 @@ impl super::Window<App> for Window {
     fn set_title(&self, title: String) {
         unsafe {
             let null_title = CString::new(title).unwrap();
+            let mut vx : Vec<u16> = Vec::new();
             let n = MultiByteToWideChar(
                 windows::Win32::Globalization::CP_UTF8,
                 windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
-                PSTR(null_title.as_ptr() as _),
-                -1,
-                PWSTR(std::ptr::null_mut() as _),
-                0,
+                null_title.as_bytes(),
+                vx.as_mut_slice(),
             );
             let mut v: Vec<u16> = vec![0; n as usize];
             MultiByteToWideChar(
                 windows::Win32::Globalization::CP_UTF8,
                 windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
-                PSTR(null_title.as_ptr() as _),
-                -1,
-                PWSTR(v.as_mut_ptr() as _),
-                n,
+                null_title.as_bytes(),
+                v.as_mut_slice(),
             );
-            SetWindowTextW(self.hwnd, PWSTR(v.as_mut_ptr() as _));
+            SetWindowTextW(self.hwnd, PCWSTR(v.as_mut_ptr() as _));
         }
     }
 
