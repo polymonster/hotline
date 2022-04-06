@@ -1,5 +1,8 @@
 // TODO:
 
+// - rustup 1.61
+
+// - swap chain create return result
 // - fix location of imgui.ini and .gitignore
 
 // - Shaders from IR
