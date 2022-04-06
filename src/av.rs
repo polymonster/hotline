@@ -5,5 +5,6 @@ use crate::gfx;
 pub mod winmf;
 
 pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
-    fn create(device: &D);
+    fn create(device: &D) -> Self;
+    fn set_source(&self, file: String);
 }
