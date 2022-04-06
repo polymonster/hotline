@@ -17,6 +17,7 @@ features = ["docking"]
 version = "0.35.0"
 features = [
     "alloc",
+    "implement",
     "Win32_Foundation",
     "Win32_Globalization",
     "Win32_Graphics_Gdi",
