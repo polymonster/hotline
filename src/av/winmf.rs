@@ -2,6 +2,9 @@ use crate::gfx;
 use gfx::d3d12;
 use gfx::Device;
 
+use crate::os;
+use os::win32;
+
 use windows::{
     core::*, Win32::Foundation::*,
     Win32::Graphics::Direct3D11::*, Win32::Graphics::Direct3D::*, Win32::Foundation::HINSTANCE,
@@ -31,6 +34,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         let (adapter, _) = d3d12::get_hardware_adapter(factory, &Some(device.get_adapter_info().name.to_string())).unwrap();
         unsafe {
             MFStartup(MF_SDK_VERSION << 16 | MF_API_VERSION, 0);
+            CoInitialize(std::ptr::null_mut());
 
             // create device
             let mut device : Option<ID3D11Device> = None;
@@ -71,12 +75,11 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             attributes.SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0);
 
             // create event callback
-            let mut notify = MediaEngineNotify {};
+            let notify = MediaEngineNotify {};
             let imn : IMFMediaEngineNotify = notify.into();
             attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, imn);
 
             // create media engine
-            CoInitialize(std::ptr::null_mut());
             let mf_factory : IMFMediaEngineClassFactory = 
                 CoCreateInstance(&CLSID_MFMediaEngineClassFactory, None, CLSCTX_ALL).unwrap();
             let media_engine = mf_factory.CreateInstance(0, attributes).unwrap();
@@ -88,8 +91,11 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn set_source(&self, file: String) {
-        
-        //self.media_engine_ex.SetSource(BSTR());
+    fn set_source(&self, filepath: String) {
+        unsafe {
+            let mb = win32::string_to_multibyte(filepath);
+            let bstr = SysAllocString(PCWSTR(mb.as_ptr() as _));
+            self.media_engine_ex.SetSource(bstr);
+        }
     }
 }
