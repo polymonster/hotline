@@ -138,6 +138,27 @@ fn adjust_window_rect(
     }
 }
 
+pub fn string_to_multibyte(string: String) -> Vec<u16> {
+    unsafe {
+        let null_string = CString::new(string).unwrap();
+        let mut vx : Vec<u16> = Vec::new();
+        let n = MultiByteToWideChar(
+            windows::Win32::Globalization::CP_UTF8,
+            windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+            null_string.as_bytes(),
+            vx.as_mut_slice(),
+        );
+        let mut v: Vec<u16> = vec![0; n as usize];
+        MultiByteToWideChar(
+            windows::Win32::Globalization::CP_UTF8,
+            windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
+            null_string.as_bytes(),
+            v.as_mut_slice(),
+        );
+        v
+    }
+}
+
 impl App {
     fn update_input(&mut self) {
         unsafe {
@@ -686,22 +707,8 @@ impl super::Window<App> for Window {
 
     fn set_title(&self, title: String) {
         unsafe {
-            let null_title = CString::new(title).unwrap();
-            let mut vx : Vec<u16> = Vec::new();
-            let n = MultiByteToWideChar(
-                windows::Win32::Globalization::CP_UTF8,
-                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
-                null_title.as_bytes(),
-                vx.as_mut_slice(),
-            );
-            let mut v: Vec<u16> = vec![0; n as usize];
-            MultiByteToWideChar(
-                windows::Win32::Globalization::CP_UTF8,
-                windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
-                null_title.as_bytes(),
-                v.as_mut_slice(),
-            );
-            SetWindowTextW(self.hwnd, PCWSTR(v.as_mut_ptr() as _));
+            let mb = string_to_multibyte(title);
+            SetWindowTextW(self.hwnd, PCWSTR(mb.as_ptr() as _));
         }
     }
 

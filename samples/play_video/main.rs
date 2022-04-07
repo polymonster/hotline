@@ -31,6 +31,28 @@ fn main() {
         depth_stencil_heap_size: 100,
     });
 
+    // window
+    let mut win = app.create_window(os::WindowInfo {
+        title: String::from("hello_world!"),
+        rect: os::Rect {
+            x: 100,
+            y: 100,
+            width: 1280,
+            height: 720,
+        },
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
+
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+    let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_logo.mp4");
+
     // video player
     let player = av_platform::VideoPlayer::create(&dev);
+    player.set_source(String::from(video_path.to_str().unwrap()));
+
+    while app.run() {
+        win.update(&mut app);
+    }
 }
