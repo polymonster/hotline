@@ -33,7 +33,7 @@ fn main() {
 
     // window
     let mut win = app.create_window(os::WindowInfo {
-        title: String::from("hello_world!"),
+        title: String::from("play_video!"),
         rect: os::Rect {
             x: 100,
             y: 100,
@@ -49,10 +49,13 @@ fn main() {
     let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_logo.mp4");
 
     // video player
-    let player = av_platform::VideoPlayer::create(&dev);
+    let player = av_platform::VideoPlayer::create(&dev).unwrap();
     player.set_source(String::from(video_path.to_str().unwrap()));
+    player.play();
 
     while app.run() {
         win.update(&mut app);
+
+        //player.transfer_frame();
     }
 }
