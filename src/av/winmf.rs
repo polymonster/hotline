@@ -15,32 +15,34 @@ use windows::{
 
 pub struct VideoPlayer {
     device: ID3D11Device,
-    media_engine_ex: Option<IMFMediaEngineEx>,
+    media_engine_ex: IMFMediaEngineEx,
+    notify: *mut NotifyEvents
 }
 
+pub struct NotifyEvents {
+    can_play: bool,
+    playing: bool,
+    ended: bool
+}
 
-#[implement(IMFMediaEngineNotify)]
-struct MediaEngineNotify();
-
-#[allow(non_snake_case)]
-impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
-    fn EventNotify(&self, event: u32, param1: usize, param2: u32) -> ::windows::core::Result<()>  {
+impl NotifyEvents {
+    fn event(&mut self, event: u32) {
         match MF_MEDIA_ENGINE_EVENT(event as i32) {
             MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA => {
                 println!("MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA");
-
             },
             MF_MEDIA_ENGINE_EVENT_CANPLAY => {
-                println!("MF_MEDIA_ENGINE_EVENT_CANPLAY");
+                self.can_play = true;
             }
             MF_MEDIA_ENGINE_EVENT_PLAY => {
-                println!("MF_MEDIA_ENGINE_EVENT_PLAY");
+                self.playing = true;
             }
             MF_MEDIA_ENGINE_EVENT_PAUSE => {
                 println!("MF_MEDIA_ENGINE_EVENT_PAUSE");
             }
             MF_MEDIA_ENGINE_EVENT_ENDED => {
-                println!("MF_MEDIA_ENGINE_EVENT_ENDED");
+                self.ended = true;
+                self.playing = false;
             }
             MF_MEDIA_ENGINE_EVENT_TIMEUPDATE => {
                 println!("MF_MEDIA_ENGINE_EVENT_TIMEUPDATE");
@@ -71,7 +73,29 @@ impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
             }
             _ => ()
         }
+    }
+}
+
+#[implement(IMFMediaEngineNotify)]
+struct MediaEngineNotify {
+    pub notify: *mut NotifyEvents
+}
+
+#[allow(non_snake_case)]
+impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
+    fn EventNotify(&self, event: u32, _param1: usize, _param2: u32) -> ::windows::core::Result<()>  {
+        unsafe {
+            (*self.notify).event(event);
+        }
         Ok(())
+    }
+}
+
+fn new_notify_events() -> *mut NotifyEvents {
+    unsafe {
+        let layout =
+            std::alloc::Layout::from_size_align(std::mem::size_of::<NotifyEvents>(), 8).unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut NotifyEvents
     }
 }
 
@@ -122,12 +146,10 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 attributes.SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0)?;
 
                 // create event callback
-                let mut player = VideoPlayer {
-                    device: device,
-                    media_engine_ex: None,
+                let notify = new_notify_events();
+                let mn = MediaEngineNotify {
+                    notify: notify
                 };
-
-                let mn = MediaEngineNotify {};
                 let imn : IMFMediaEngineNotify = mn.into();
                 attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, imn)?;
     
@@ -136,7 +158,11 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     CoCreateInstance(&CLSID_MFMediaEngineClassFactory, None, CLSCTX_ALL)?;
                 let media_engine = mf_factory.CreateInstance(0, attributes)?;
                 
-                player.media_engine_ex = Some(media_engine.cast()?);
+                let player = VideoPlayer {
+                    device: device,
+                    media_engine_ex: media_engine.cast()?,
+                    notify: notify
+                };
 
                 return Ok(player);
             }
@@ -152,25 +178,39 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         unsafe {
             let mb = win32::string_to_multibyte(filepath);
             let bstr = SysAllocString(PCWSTR(mb.as_ptr() as _));
-            if let Some(media_engine) = &self.media_engine_ex {
-                media_engine.SetSource(bstr)?;
-            }
+            self.media_engine_ex.SetSource(bstr)?;
             Ok(())
         }
     }
 
-    fn play(&self) -> result::Result<(), super::Error> {
+    fn play(&self) {
         unsafe {
-            Ok(())
+            self.media_engine_ex.Play();
         }
     }
 
-    fn transfer_frame(&self, texture: &d3d12::Texture) -> result::Result<(), super::Error> {
+    fn transfer_frame(&self) {
         unsafe {
-            if let Some(media_engine) = &self.media_engine_ex {
-                let pts = media_engine.OnVideoStreamTick();
-            }
-            Ok(())
+            let pts = self.media_engine_ex.OnVideoStreamTick().unwrap();
+            println!("tick {}", pts);
+        }
+    }
+
+    fn is_loaded(&self) -> bool {
+        unsafe {
+            (*self.notify).can_play
+        }
+    }
+
+    fn is_playing(&self) -> bool {
+        unsafe {
+            (*self.notify).playing
+        }
+    }
+
+    fn is_ended(&self) -> bool {
+        unsafe {
+            (*self.notify).ended
         }
     }
 }
