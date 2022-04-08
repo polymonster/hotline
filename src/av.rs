@@ -19,6 +19,9 @@ pub type Error = super::Error<ErrorType>;
 pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     fn create(device: &D) -> Result<Self, Error>;
     fn set_source(&self, file: String) -> Result<(), Error>;
-    fn play(&self)-> Result<(), Error>;
-    fn transfer_frame(&self, texture: &D::Texture) -> Result<(), Error>;
+    fn is_loaded(&self) -> bool;
+    fn is_playing(&self) -> bool;
+    fn is_ended(&self) -> bool;
+    fn play(&self);
+    fn transfer_frame(&self);
 }

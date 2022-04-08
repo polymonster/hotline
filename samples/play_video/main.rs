@@ -56,6 +56,17 @@ fn main() {
     while app.run() {
         win.update(&mut app);
 
-        //player.transfer_frame();
+        // wait until player is ready to play
+        if player.is_loaded() && !player.is_playing() {
+            player.play();
+        }
+
+        if player.is_playing() {
+            player.transfer_frame();
+        }
+
+        if player.is_ended() {
+            println!("ended!");
+        }
     }
 }
