@@ -16,7 +16,10 @@ use windows::{
 pub struct VideoPlayer {
     device: ID3D11Device,
     media_engine_ex: IMFMediaEngineEx,
-    notify: *mut NotifyEvents
+    notify: *mut NotifyEvents,
+    texture: Option<d3d12::Texture>,
+    width: u32,
+    height: u32
 }
 
 pub struct NotifyEvents {
@@ -161,7 +164,10 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 let player = VideoPlayer {
                     device: device,
                     media_engine_ex: media_engine.cast()?,
-                    notify: notify
+                    notify: notify,
+                    texture: None,
+                    width: 0,
+                    height: 0
                 };
 
                 return Ok(player);
@@ -189,10 +195,66 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn transfer_frame(&self) {
+    fn transfer_frame(&mut self, device: &mut d3d12::Device) {
         unsafe {
-            let pts = self.media_engine_ex.OnVideoStreamTick().unwrap();
-            println!("tick {}", pts);
+            if !self.texture.is_some() && self.is_loaded() {
+                let mut x : u32 = 0;
+                let mut y : u32 = 0;
+                self.media_engine_ex.GetNativeVideoSize(&mut x, &mut y);
+
+                let info = gfx::TextureInfo {
+                    tex_type: gfx::TextureType::Texture2D,
+                    format: gfx::Format::BGRA8n,
+                    width: x as u64,
+                    height: y as u64,
+                    depth: 1,
+                    array_levels: 1,
+                    mip_levels: 1,
+                    samples: 1,
+                    usage: gfx::TextureUsage::VIDEO_DECODE_TARGET,
+                    initial_state: gfx::ResourceState::ShaderResource
+                };
+
+                self.texture = Some(device.create_texture::<u8>(&info, None).unwrap());
+                self.width = x;
+                self.height = y;
+            }
+
+            let pts = self.media_engine_ex.OnVideoStreamTick();
+            if pts.is_ok() {
+                if let Some(tex) = &self.texture {
+                    let sh = d3d12::get_texture_shared_handle(&tex);
+                    if let Some(handle) = sh {
+                        let mut media_texture : Option<ID3D11Texture2D> = None;
+                        self.device.OpenSharedResource(handle, &mut media_texture);
+
+                        let mf_rect = MFVideoNormalizedRect {
+                            left: 0.0,
+                            top: 0.0,
+                            right: self.width as f32,
+                            bottom: self.height as f32
+                        };
+
+                        let rect = RECT {
+                            left: 0,
+                            top: 0,
+                            right: self.width as i32,
+                            bottom: self.height as i32
+                        };
+
+                        let bg = MFARGB {
+                            rgbBlue: 0,
+                            rgbGreen: 0,
+                            rgbRed: 0,
+                            rgbAlpha: 0
+                        };
+
+                        if let Some(mtex) = media_texture {
+                            self.media_engine_ex.TransferVideoFrame(mtex, &mf_rect, &rect, &bg);
+                        }
+                    } 
+                }
+            }
         }
     }
 
