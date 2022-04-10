@@ -49,7 +49,7 @@ fn main() {
     let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_logo.mp4");
 
     // video player
-    let player = av_platform::VideoPlayer::create(&dev).unwrap();
+    let mut player = av_platform::VideoPlayer::create(&dev).unwrap();
     player.set_source(String::from(video_path.to_str().unwrap()));
     player.play();
 
@@ -62,7 +62,7 @@ fn main() {
         }
 
         if player.is_playing() {
-            player.transfer_frame();
+            player.transfer_frame(&mut dev);
         }
 
         if player.is_ended() {

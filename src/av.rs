@@ -23,5 +23,5 @@ pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     fn is_playing(&self) -> bool;
     fn is_ended(&self) -> bool;
     fn play(&self);
-    fn transfer_frame(&self);
+    fn transfer_frame(&mut self, device: &mut D);
 }

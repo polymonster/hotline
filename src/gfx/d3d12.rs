@@ -16,6 +16,7 @@ use windows::{
     Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
     Win32::System::LibraryLoader::*, Win32::System::Threading::*,
     Win32::System::WindowsProgramming::*,
+    Win32::System::SystemServices::GENERIC_ALL
 };
 
 type BeginEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
@@ -171,6 +172,7 @@ pub struct Texture {
     dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv_index: Option<usize>,
     uav_index: Option<usize>,
+    shared_handle: Option<HANDLE>
 }
 
 #[derive(Clone)]
@@ -347,6 +349,17 @@ fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FL
     }
     if usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
+    }
+    if usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
+    }
+    flags
+}
+
+fn to_d3d12_texture_heap_flags(usage: super::TextureUsage) -> D3D12_HEAP_FLAGS {
+    let mut flags = D3D12_HEAP_FLAG_NONE;
+    if usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
+        flags |= D3D12_HEAP_FLAG_SHARED;
     }
     flags
 }
@@ -683,6 +696,7 @@ fn create_swap_chain_rtv(
                 dsv: None,
                 srv_index: None,
                 uav_index: None,
+                shared_handle: None
             });
         }
         textures
@@ -1501,7 +1515,7 @@ impl super::Device for Device {
                     Type: D3D12_HEAP_TYPE_DEFAULT,
                     ..Default::default()
                 },
-                D3D12_HEAP_FLAG_NONE,
+                to_d3d12_texture_heap_flags(info.usage),
                 &D3D12_RESOURCE_DESC {
                     Dimension: match info.tex_type {
                         super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
@@ -1690,12 +1704,25 @@ impl super::Device for Device {
                 uav_index = Some(self.shader_heap.get_handle_index(&h));
             }
 
+            // create shared handle for video decode targets
+            let mut shared_handle = None;
+            if info.usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
+                let h = self.device.CreateSharedHandle(
+                    &tex.clone().unwrap(),
+                    std::ptr::null(),
+                    GENERIC_ALL,
+                    PCWSTR(std::ptr::null())
+                );
+                shared_handle = Some(h?);
+            }
+
             Ok(Texture {
                 resource: tex.unwrap(),
                 rtv: rtv_handle,
                 dsv: dsv_handle,
                 srv_index: srv_index,
                 uav_index: uav_index,
+                shared_handle: shared_handle
             })
         }
     }
@@ -2395,6 +2422,11 @@ impl super::Buffer<Device> for Buffer {
             self.resource.Unmap(info.subresource, &range);
         }
     }
+}
+
+// public accessors for texture
+pub fn get_texture_shared_handle(tex: &Texture) -> &Option<HANDLE> {
+    &tex.shared_handle
 }
 
 impl super::Texture<Device> for Texture {
