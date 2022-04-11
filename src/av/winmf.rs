@@ -25,7 +25,8 @@ pub struct VideoPlayer {
 pub struct NotifyEvents {
     can_play: bool,
     playing: bool,
-    ended: bool
+    ended: bool,
+    has_error: bool
 }
 
 impl NotifyEvents {
@@ -52,6 +53,9 @@ impl NotifyEvents {
             }
             MF_MEDIA_ENGINE_EVENT_ERROR => {
                 println!("MF_MEDIA_ENGINE_EVENT_ERROR");
+                self.has_error = true;
+
+
 /*
                 #ifdef _DEBUG
                 if (m_mediaEngine)
@@ -114,7 +118,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             let mut device : Option<ID3D11Device> = None;
             D3D11CreateDevice(
                 adapter, 
-                D3D_DRIVER_TYPE_UNKNOWN, 
+                D3D_DRIVER_TYPE_UNKNOWN,
                 HINSTANCE(0), 
                 D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 &[],
@@ -195,7 +199,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn transfer_frame(&mut self, device: &mut d3d12::Device) {
+    fn update(&mut self, device: &mut d3d12::Device) {
         unsafe {
             if !self.texture.is_some() && self.is_loaded() {
                 let mut x : u32 = 0;
@@ -211,7 +215,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     array_levels: 1,
                     mip_levels: 1,
                     samples: 1,
-                    usage: gfx::TextureUsage::VIDEO_DECODE_TARGET,
+                    usage: gfx::TextureUsage::VIDEO_DECODE_TARGET | gfx::TextureUsage::SHADER_RESOURCE,
                     initial_state: gfx::ResourceState::ShaderResource
                 };
 
@@ -225,14 +229,14 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 if let Some(tex) = &self.texture {
                     let sh = d3d12::get_texture_shared_handle(&tex);
                     if let Some(handle) = sh {
-                        let mut media_texture : Option<ID3D11Texture2D> = None;
-                        self.device.OpenSharedResource(handle, &mut media_texture);
+                        let dev1 : ID3D11Device1 = self.device.cast().unwrap();
+                        let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle).unwrap();
 
                         let mf_rect = MFVideoNormalizedRect {
                             left: 0.0,
                             top: 0.0,
-                            right: self.width as f32,
-                            bottom: self.height as f32
+                            right: 1.0,
+                            bottom: 1.0
                         };
 
                         let rect = RECT {
@@ -249,11 +253,13 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                             rgbAlpha: 0
                         };
 
-                        if let Some(mtex) = media_texture {
-                            self.media_engine_ex.TransferVideoFrame(mtex, &mf_rect, &rect, &bg);
-                        }
+                        self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg).unwrap();
                     } 
                 }
+            }
+
+            if (*self.notify).has_error {
+                println!("has error");
             }
         }
     }
@@ -274,6 +280,10 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         unsafe {
             (*self.notify).ended
         }
+    }
+
+    fn get_texture(&self) -> &Option<d3d12::Texture> {
+        &self.texture
     }
 }
 
