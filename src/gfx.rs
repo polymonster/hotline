@@ -4,26 +4,7 @@ use std::any::Any;
 /// Implemets this interface with a Direct3D12 backend.
 pub mod d3d12;
 
-/// Error types for different gfx backends and FFI calls
-#[derive(Debug)]
-pub enum ErrorType {
-    DataSize,
-    ShaderCompile,
-    DescriptorLayout,
-    RenderPass,
-    MapError,
-    Direct3D12,
-    Vulkan,
-    Metal,
-    WebGPU,
-    NulError,
-}
-
-/// Errors passed back from FFI calls to various gfx backends
-pub struct Error {
-    pub error_type: ErrorType,
-    pub msg: String,
-}
+type Error = super::Error;
 
 /// 3-Dimensional struct for compute shader thread count / thread group size
 pub struct Size3 {
@@ -948,7 +929,6 @@ impl From<std::ffi::NulError> for Error {
     fn from(err: std::ffi::NulError) -> Error {
         let v = err.into_vec();
         Error {
-            error_type: ErrorType::NulError,
             msg: String::from_utf8(v).unwrap(),
         }
     }
@@ -957,12 +937,6 @@ impl From<std::ffi::NulError> for Error {
 impl From<WriteMask> for u8 {
     fn from(mask: WriteMask) -> u8 {
         mask.bits
-    }
-}
-
-impl std::fmt::Debug for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\n{:?} Error: \n{}\n", self.error_type, self.msg)
     }
 }
 

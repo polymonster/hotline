@@ -1,20 +1,11 @@
 use std::any::Any;
 use crate::gfx;
 
-
 /// Implements this interface for windows media foundation with Direct3D
 pub mod winmf;
 
-/// Error types for different gfx backends and FFI calls
-#[derive(Debug)]
-pub enum ErrorType {
-    WindowsMediaFoundation,
-    InitFailed,
-    InvalidSource,
-}
-
 /// Errors passed back from av backends
-pub type Error = super::Error<ErrorType>;
+pub type Error = super::Error;
 
 pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     fn create(device: &D) -> Result<Self, Error>;
@@ -22,7 +13,7 @@ pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     fn is_loaded(&self) -> bool;
     fn is_playing(&self) -> bool;
     fn is_ended(&self) -> bool;
-    fn play(&self);
-    fn update(&mut self, device: &mut D);
+    fn play(&self) -> Result<(), Error>;
+    fn update(&mut self, device: &mut D) -> Result<(), Error>;
     fn get_texture(&self) -> &Option<D::Texture>;
 }

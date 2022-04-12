@@ -130,7 +130,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             let device = device.unwrap();
 
             // make thread safe
-            let mt : ID3D11Multithread = device.cast().unwrap();
+            let mt : ID3D11Multithread = device.cast()?;
             mt.SetMultithreadProtected(BOOL::from(true));
 
             // setup media engine
@@ -178,8 +178,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             }
 
             Err(super::Error {
-                error_type: super::ErrorType::InitFailed,
-                msg: String::from("hotline::av::wmf failed to initialised, could not create attributes"),
+                msg: String::from("hotline::av::wmf:: failed to initialis, could not create attributes"),
             })
         }
     }
@@ -193,18 +192,19 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn play(&self) {
+    fn play(&self) -> result::Result<(), super::Error> {
         unsafe {
-            self.media_engine_ex.Play();
+            self.media_engine_ex.Play()?;
         }
+        Ok(())
     }
 
-    fn update(&mut self, device: &mut d3d12::Device) {
+    fn update(&mut self, device: &mut d3d12::Device) -> result::Result<(), super::Error> {
         unsafe {
             if !self.texture.is_some() && self.is_loaded() {
                 let mut x : u32 = 0;
                 let mut y : u32 = 0;
-                self.media_engine_ex.GetNativeVideoSize(&mut x, &mut y);
+                self.media_engine_ex.GetNativeVideoSize(&mut x, &mut y)?;
 
                 let info = gfx::TextureInfo {
                     tex_type: gfx::TextureType::Texture2D,
@@ -219,7 +219,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     initial_state: gfx::ResourceState::ShaderResource
                 };
 
-                self.texture = Some(device.create_texture::<u8>(&info, None).unwrap());
+                self.texture = Some(device.create_texture::<u8>(&info, None)?);
                 self.width = x;
                 self.height = y;
             }
@@ -229,8 +229,8 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 if let Some(tex) = &self.texture {
                     let sh = d3d12::get_texture_shared_handle(&tex);
                     if let Some(handle) = sh {
-                        let dev1 : ID3D11Device1 = self.device.cast().unwrap();
-                        let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle).unwrap();
+                        let dev1 : ID3D11Device1 = self.device.cast()?;
+                        let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle)?;
 
                         let mf_rect = MFVideoNormalizedRect {
                             left: 0.0,
@@ -253,14 +253,20 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                             rgbAlpha: 0
                         };
 
-                        self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg).unwrap();
+                        self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg)?;
                     } 
                 }
             }
 
             if (*self.notify).has_error {
-                println!("has error");
+                let err = self.media_engine_ex.GetError()?;
+                let code = err.GetErrorCode();
+                return Err(super::Error{
+                    msg: format!("hotline::av::wmf: error code: {}", code).to_string()
+                });
             }
+
+            Ok(())
         }
     }
 
@@ -284,14 +290,5 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
 
     fn get_texture(&self) -> &Option<d3d12::Texture> {
         &self.texture
-    }
-}
-
-impl From<windows::core::Error> for super::Error {
-    fn from(err: windows::core::Error) -> super::Error {
-        super::Error {
-            error_type: super::ErrorType::WindowsMediaFoundation,
-            msg: err.message().to_string_lossy(),
-        }
     }
 }

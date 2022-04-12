@@ -18,14 +18,23 @@ pub mod imgui;
 extern crate bitflags;
 
 /// Generic errors for modules to define their own
-pub struct Error<E> {
-    pub error_type: E,
+pub struct Error {
     pub msg: String,
 }
 
 /// Generic debug for errors
-impl<E: std::fmt::Debug> std::fmt::Debug for Error<E> {
+impl std::fmt::Debug for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "\n{:?} Error: \n{}\n", self.error_type, self.msg)
+        write!(f, "\nError: \n{}\n", self.msg)
+    }
+}
+
+// conversion for win32 errors
+#[cfg(target_os = "windows")]
+impl From<windows::core::Error> for Error {
+    fn from(err: windows::core::Error) -> Error {
+        Error {
+            msg: err.message().to_string_lossy(),
+        }
     }
 }

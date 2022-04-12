@@ -91,7 +91,7 @@ fn new_monitors(monitors: &Vec<ImGuiPlatformMonitor>) -> *mut ImGuiPlatformMonit
 
 fn create_fonts_texture<D: Device>(
     device: &mut D,
-) -> Result<D::Texture, gfx::Error> {
+) -> Result<D::Texture, super::Error> {
     unsafe {
         let io = &*igGetIO();
         let mut out_pixels: *mut u8 = std::ptr::null_mut();
@@ -126,7 +126,7 @@ fn create_fonts_texture<D: Device>(
     }
 }
 
-fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D::RenderPipeline, gfx::Error> {
+fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D::RenderPipeline, super::Error> {
     let device = &info.device;
     let swap_chain = &info.swap_chain;
 
@@ -278,7 +278,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
 fn create_vertex_buffer<D: Device>(
     device: &mut D,
     size: i32,
-) -> Result<D::Buffer, gfx::Error> {
+) -> Result<D::Buffer, super::Error> {
     Ok(device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Vertex,
@@ -294,7 +294,7 @@ fn create_vertex_buffer<D: Device>(
 fn create_index_buffer<D: Device>(
     device: &mut D,
     size: i32,
-) -> Result<D::Buffer, gfx::Error> {
+) -> Result<D::Buffer, super::Error> {
     Ok(device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
@@ -314,7 +314,7 @@ fn render_draw_data<D: Device>(
     buffers: &mut Vec<RenderBuffers<D>>,
     pipeline: &D::RenderPipeline,
     font_texture: &D::Texture,
-) -> Result<(), gfx::Error> {
+) -> Result<(), super::Error> {
     unsafe {
         let font_tex_index = font_texture.get_srv_index().unwrap();
         let bb = cmd.get_backbuffer_index() as usize;
@@ -431,7 +431,7 @@ fn render_draw_data<D: Device>(
 }
 
 impl<D, A> ImGui<D, A> where D: Device, A: App {
-    pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, gfx::Error> {
+    pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, super::Error> {
         unsafe {
             igCreateContext(std::ptr::null_mut());
             let mut io = &mut *igGetIO();
