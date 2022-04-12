@@ -164,7 +164,7 @@ fn swap_chain_buffer() {
 }
 
 #[test]
-fn draw_triangle() -> Result<(), gfx::Error> {
+fn draw_triangle() -> Result<(), hotline::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("draw_triangle"),
         window: false,
