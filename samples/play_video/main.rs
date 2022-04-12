@@ -15,7 +15,7 @@ use std::fs;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
 use hotline::gfx::d3d12 as gfx_platform;
-use hotline::av::winmf as av_platform;
+use hotline::av::wmf as av_platform;
 
 #[repr(C)]
 struct Vertex {

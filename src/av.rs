@@ -1,8 +1,8 @@
 use std::any::Any;
 use crate::gfx;
 
-/// Implements this interface for windows media foundation with Direct3D
-pub mod winmf;
+/// Implements this interface for windows media foundation with Direct3D12
+pub mod wmf;
 
 /// Errors passed back from av backends
 pub type Error = super::Error;
