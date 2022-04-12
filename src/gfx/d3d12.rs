@@ -721,7 +721,6 @@ fn validate_data_size<T: Sized>(
         let data_size_bytes = data.len() * std::mem::size_of::<T>();
         if data_size_bytes != size_bytes {
             return Err(super::Error {
-                error_type: super::ErrorType::DataSize,
                 msg: String::from(format!(
                     "data size: ({}) bytes does not match expected size: ({}) bytes",
                     data_size_bytes, size_bytes
@@ -736,14 +735,6 @@ impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::RenderPass<Device> for RenderPass {}
 
-impl From<windows::core::Error> for super::Error {
-    fn from(err: windows::core::Error) -> super::Error {
-        super::Error {
-            error_type: ErrorType::Direct3D12,
-            msg: err.message().to_string_lossy(),
-        }
-    }
-}
 
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -925,7 +916,6 @@ impl Device {
             if error.is_some() {
                 let blob = error.unwrap();
                 return Err(super::Error {
-                    error_type: super::ErrorType::DescriptorLayout,
                     msg: get_d3d12_error_blob_string(&blob),
                 });
             }
@@ -1323,7 +1313,6 @@ impl super::Device for Device {
                         let c_str: &CStr = CStr::from_ptr(buf as *const i8);
                         let str_slice: &str = c_str.to_str().unwrap();
                         return Err(super::Error {
-                            error_type: super::ErrorType::ShaderCompile,
                             msg: String::from(str_slice),
                         });
                     }
@@ -1757,7 +1746,6 @@ impl super::Device for Device {
             } else {
                 if sample_count.unwrap() != target_sample_count {
                     return Err( super::Error {
-                        error_type: super::ErrorType::RenderPass,
                         msg: format!("Sample counts must match on all targets: expected {} samples, found {}", 
                         sample_count.unwrap(),
                         target_sample_count
@@ -2477,7 +2465,6 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                 }
             }
             Err(super::Error {
-                error_type: super::ErrorType::MapError,
                 msg: format!("Failed to map readback buffer"),
             })
         }
