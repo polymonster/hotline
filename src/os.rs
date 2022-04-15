@@ -198,7 +198,7 @@ pub trait App: 'static + Any + Sized {
     /// Sets the mouse cursor
     fn set_cursor(&self, cursor: &Cursor);
     /// Opens a native open file dialog window
-    fn open_file_dialog(flags: OpenFileDialogFlags, exts: &Vec<String>) -> Result<Vec<String>, Error>;
+    fn open_file_dialog(flags: OpenFileDialogFlags, exts: &Vec<&str>) -> Result<Vec<String>, Error>;
 }
 
 /// An instance of an operating system window
