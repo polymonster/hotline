@@ -107,7 +107,7 @@ fn main() -> Result<(), hotline::Error> {
 
         if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::NONE) {
             if imgui.button("Open") {
-                if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, &vec![".mp4"]) {
+                if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".mp4"]) {
                     if files.len() > 0 {
                         player.set_source(files[0].to_string())?;
                     }

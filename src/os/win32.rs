@@ -620,7 +620,7 @@ impl super::App for App {
         }
     }
 
-    fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: &Vec<&str>) -> result::Result<Vec<String>, super::Error> {
+    fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: Vec<&str>) -> result::Result<Vec<String>, super::Error> {
         unsafe {
             let open_dialog : IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL)?;
 
@@ -639,7 +639,7 @@ impl super::App for App {
 
             // set file filters
             let mut wide_exts : Vec<Vec<u16>> = Vec::new();
-            for ext in exts {
+            for ext in &exts {
                 wide_exts.push(string_to_wide(format!("*{}", ext).to_string()));
             }
             if wide_exts.len() > 0 {
