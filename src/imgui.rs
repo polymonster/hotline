@@ -27,7 +27,7 @@ pub struct ImGuiInfo<'a, D: Device, A: App> {
 
 pub struct ImGui<D: Device, A: App> {
     _native_handle: A::NativeHandle,
-    font_texture: D::Texture,
+    _font_texture: D::Texture,
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
     last_cursor: os::Cursor,
@@ -54,8 +54,43 @@ struct UserData<'a, D: Device, A: App> {
     app: &'a mut A,
     device: &'a mut D,
     main_window: &'a mut A::Window,
-    pipeline: &'a D::RenderPipeline,
-    font_texture: &'a D::Texture,
+    pipeline: &'a D::RenderPipeline
+}
+
+bitflags! {
+    pub struct WindowFlags : i32 {
+        const NONE = 0;
+        const NO_TITLE_BAR = 1 << 0;
+        const NO_RESIZE = 1 << 1;
+        const NO_MOVE = 1 << 2;
+        const NO_SCROLLBAR = 1 << 3;
+        const NO_SCROLL_WITH_MOUSE = 1 << 4;
+        const NO_COLLAPSE = 1 << 5;
+        const ALWAYS_AUTO_RESIZE = 1 << 6;
+        const NO_BACKGROUND = 1 << 7;
+        const NO_SAVED_SETTINGS = 1 << 8;
+        const NO_MOUSE_INPUTS = 1 << 9;
+        const MENU_BAR = 1 << 10;
+        const HORIZONTAL_SCROLLBAR = 1 << 11;
+        const NO_FOCUS_ON_APPEARING = 1 << 12;
+        const NO_BRING_TO_FRONT_ON_FOCUS = 1 << 13;
+        const ALWAYS_VERTICAL_SCROLLBAR = 1 << 14;
+        const ALWAYS_HORIZONTAL_SCROLLBAR = 1 << 15;
+        const ALWAYS_USE_WINDOW_PADDING = 1 << 16;
+        const NO_NAV_INPUTS = 1 << 18;
+        const NO_NAV_FOCUS = 1 << 19;
+        const UNSAVED_DOCUMENT = 1 << 20;
+        const NO_DOCKING = 1 << 21;
+        const NO_NAV = (1 << 18 | 1 << 19);
+        const NO_DECORATION = (1 << 0 | 1 << 1 | 1 << 3 | 1 << 5);
+        const NO_INPUTS = (1 << 9 | 1 << 18 | 1 << 19);
+    }
+}
+
+impl From<WindowFlags> for i32 {
+    fn from(mask: WindowFlags) -> i32 {
+        mask.bits as i32
+    }
 }
 
 fn new_viewport_data<D: Device, A: App>() -> *mut ViewportData<D, A> {
@@ -86,6 +121,14 @@ fn new_monitors(monitors: &Vec<ImGuiPlatformMonitor>) -> *mut ImGuiPlatformMonit
         let ptr = std::alloc::alloc_zeroed(layout) as *mut ImGuiPlatformMonitor;
         std::ptr::copy_nonoverlapping(monitors.as_ptr(), ptr, monitors.len());
         ptr
+    }
+}
+
+fn to_imgui_texture_id<D: Device>(tex: &D::Texture) -> ImTextureID {
+    unsafe {
+        let srv_index = tex.get_srv_index().unwrap();
+        let tex_id : *mut cty::c_void = std::ptr::null_mut();
+        tex_id.offset(srv_index as isize)
     }
 }
 
@@ -313,10 +356,8 @@ fn render_draw_data<D: Device>(
     cmd: &mut D::CmdBuf,
     buffers: &mut Vec<RenderBuffers<D>>,
     pipeline: &D::RenderPipeline,
-    font_texture: &D::Texture,
 ) -> Result<(), super::Error> {
     unsafe {
-        let font_tex_index = font_texture.get_srv_index().unwrap();
         let bb = cmd.get_backbuffer_index() as usize;
 
         let mut buffers = &mut buffers[bb];
@@ -396,7 +437,9 @@ fn render_draw_data<D: Device>(
             for i in 0..imgui_cmd_buffer.Size as usize {
                 let imgui_cmd = &imgui_cmd_data[i];
                 if imgui_cmd.UserCallback.is_some() {
-                } else {
+                    // TODO:
+                } 
+                else {
                     let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
                     let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
                     let clip_max_x = imgui_cmd.ClipRect.z - clip_off.x;
@@ -412,7 +455,7 @@ fn render_draw_data<D: Device>(
                         bottom: clip_max_y as i32,
                     };
 
-                    cmd.set_render_heap(1, device.get_shader_heap(), font_tex_index);
+                    cmd.set_render_heap(1, device.get_shader_heap(), imgui_cmd.TextureId as usize);
                     cmd.set_scissor_rect(&scissor);
                     cmd.draw_indexed_instanced(
                         imgui_cmd.ElemCount,
@@ -502,6 +545,10 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             let num_buffers = (*info.swap_chain).get_num_buffers();
 
             let font_tex = create_fonts_texture::<D>(&mut info.device)?;
+
+            let font_tex_id = to_imgui_texture_id::<D>(&font_tex);
+            ImFontAtlas_SetTexID(io.Fonts, font_tex_id);
+
             let pipeline = create_render_pipeline(info)?;
 
             for _i in 0..num_buffers {
@@ -560,7 +607,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             //
             let imgui = ImGui {
                 _native_handle: info.main_window.get_native_handle(),
-                font_texture: font_tex,
+                _font_texture: font_tex,
                 pipeline: pipeline,
                 buffers: buffers,
                 last_cursor: os::Cursor::None,
@@ -615,8 +662,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 device: device,
                 app: app,
                 main_window: main_window,
-                pipeline: &self.pipeline,
-                font_texture: &self.font_texture,
+                pipeline: &self.pipeline
             };
             io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
@@ -713,7 +759,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 cmd,
                 &mut self.buffers,
                 &self.pipeline,
-                &self.font_texture,
             )
             .unwrap();
 
@@ -724,7 +769,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                     app: app,
                     main_window: main_window,
                     pipeline: &self.pipeline,
-                    font_texture: &self.font_texture,
                 };
                 io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
@@ -828,6 +872,43 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
                 igEnd();
             }
+        }
+    }
+
+    pub fn begin(&self, title: &str, open: &mut bool, flags: WindowFlags) -> bool {
+        unsafe {
+            let null_title = CString::new(title).unwrap();
+            igBegin(
+                null_title.as_ptr() as *const i8,
+                open as *mut bool,
+                i32::from(flags),
+            )
+        }
+    }
+
+    pub fn end(&self) {
+        unsafe { igEnd() };
+    }
+
+    pub fn button(&self, label: &str) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0})
+        }
+    }
+
+    pub fn image(&self, tex: &D::Texture, w: f32, h: f32) {
+        unsafe {
+            let id = to_imgui_texture_id::<D>(tex);
+
+            igImage(
+                id, 
+                ImVec2 {x: w, y: h},
+                ImVec2 {x: 0.0, y: 0.0},
+                ImVec2 {x: 1.0, y: 1.0},
+                ImVec4 {x: 1.0, y: 1.0, z: 1.0, w: 1.0},
+                ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
+            );
         }
     }
 }
@@ -1111,7 +1192,6 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         &mut cmd,
         &mut vd.buffers,
         &ud.pipeline,
-        &ud.font_texture,
     )
     .unwrap();
 
