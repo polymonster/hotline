@@ -13,7 +13,7 @@ use windows::{
     core::*, Win32::Foundation::*,
     Win32::Graphics::Direct3D11::*, Win32::Graphics::Direct3D::*, Win32::Foundation::HINSTANCE,
     Win32::Media::MediaFoundation::*, Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
-    Win32::System::Com::CoCreateInstance, Win32::System::Com::CoInitialize, Win32::System::Com::CLSCTX_ALL,
+    Win32::System::Com::CoCreateInstance, Win32::System::Com::CLSCTX_ALL,
 };
 
 pub struct VideoPlayer {
@@ -126,7 +126,6 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         let (adapter, _) = d3d12::get_hardware_adapter(factory, &Some(device.get_adapter_info().name.to_string())).unwrap();
         unsafe {
             MFStartup(MF_SDK_VERSION << 16 | MF_API_VERSION, 0)?;
-            CoInitialize(std::ptr::null_mut())?;
 
             // create device
             let mut device : Option<ID3D11Device> = None;
@@ -209,6 +208,13 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
     fn play(&self) -> result::Result<(), super::Error> {
         unsafe {
             self.media_engine_ex.Play()?;
+        }
+        Ok(())
+    }
+
+    fn pause(&self) -> result::Result<(), super::Error> {
+        unsafe {
+            self.media_engine_ex.Pause()?;
         }
         Ok(())
     }
