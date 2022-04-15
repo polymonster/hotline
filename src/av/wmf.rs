@@ -196,10 +196,13 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn set_source(&self, filepath: String) -> result::Result<(), super::Error> {
+    fn set_source(&mut self, filepath: String) -> result::Result<(), super::Error> {
         unsafe {
-            let mb = win32::string_to_multibyte(filepath);
-            let bstr = SysAllocString(PCWSTR(mb.as_ptr() as _));
+            // reset state
+            (*self.notify).can_play = false;
+            self.texture = None;
+            let wp = win32::string_to_wide(filepath);
+            let bstr = SysAllocString(PCWSTR(wp.as_ptr() as _));
             self.media_engine_ex.SetSource(bstr)?;
             Ok(())
         }

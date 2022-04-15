@@ -59,7 +59,6 @@ fn main() -> Result<(), hotline::Error> {
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
-    let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_logo.mp4");
 
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
@@ -74,7 +73,6 @@ fn main() -> Result<(), hotline::Error> {
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
     let mut player = av_platform::VideoPlayer::create(&dev).unwrap();
-    player.set_source(String::from(video_path.to_str().unwrap()))?;
 
     // ..
     let mut ci = 0;
@@ -108,10 +106,14 @@ fn main() -> Result<(), hotline::Error> {
         }
 
         if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::NONE) {
-            if player.is_loaded() {
-                if imgui.button("Open") {
-                    os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, &vec![]);
+            if imgui.button("Open") {
+                if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, &vec![".mp4"]) {
+                    if files.len() > 0 {
+                        player.set_source(files[0].to_string())?;
+                    }
                 }
+            }
+            if player.is_loaded() {
                 imgui.same_line();
                 if imgui.button("Play") {
                     player.play()?;

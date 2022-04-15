@@ -8,7 +8,7 @@ use windows::{
     Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::HiDpi::*,
     Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*,
     Win32::System::Com::CoCreateInstance, Win32::System::Com::CoInitialize, Win32::System::Com::CLSCTX_ALL,
-    Win32::UI::Shell::*
+    Win32::UI::Shell::*, Win32::UI::Shell::Common::COMDLG_FILTERSPEC
 };
 
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
@@ -143,7 +143,7 @@ fn adjust_window_rect(
     }
 }
 
-pub fn string_to_multibyte(string: String) -> Vec<u16> {
+pub fn string_to_wide(string: String) -> Vec<u16> {
     unsafe {
         let null_string = CString::new(string).unwrap();
         let mut vx : Vec<u16> = Vec::new();
@@ -620,26 +620,52 @@ impl super::App for App {
         }
     }
 
-    fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: &Vec<String>) -> result::Result<Vec<String>, super::Error> {
+    fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: &Vec<&str>) -> result::Result<Vec<String>, super::Error> {
         unsafe {
             let open_dialog : IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL)?;
 
-            // set types
+            // set option flags
+            let mut ioptions = 0;
+            if flags.contains(super::OpenFileDialogFlags::FOLDERS) {
+                ioptions |= FOS_PICKFOLDERS.0;
+            }
+
+            if flags.contains(super::OpenFileDialogFlags::MULTI_SELECT) {
+                ioptions |= FOS_ALLOWMULTISELECT.0;
+            }
 
             // set options
+            open_dialog.SetOptions(FILEOPENDIALOGOPTIONS(ioptions))?;
 
+            // set file filters
+            let mut wide_exts : Vec<Vec<u16>> = Vec::new();
+            for ext in exts {
+                wide_exts.push(string_to_wide(format!("*{}", ext).to_string()));
+            }
+            if wide_exts.len() > 0 {
+                let mut specs : Vec<COMDLG_FILTERSPEC> = Vec::new();
+                for w in wide_exts {
+                    specs.push(COMDLG_FILTERSPEC {
+                        pszName: PCWSTR(w.as_ptr() as _),
+                        pszSpec: PCWSTR(w.as_ptr() as _),
+                    });
+                }
+                open_dialog.SetFileTypes(&specs)?;
+            }
+            
             open_dialog.Show(HWND(0))?;
             let results : IShellItemArray = open_dialog.GetResults()?;
 
+            let mut output_results : Vec<String> = Vec::new();
             let count = results.GetCount()?;
             for i in 0..count {
                 let item : IShellItem = results.GetItemAt(i)?;
                 let name = item.GetDisplayName(SIGDN_FILESYSPATH)?;
                 let name = wide_to_string(name);
-                println!("{}", name);
+                output_results.push(name);
             }
 
-            Ok(vec![])
+            Ok(output_results)
         }
     }
 }
@@ -757,7 +783,7 @@ impl super::Window<App> for Window {
 
     fn set_title(&self, title: String) {
         unsafe {
-            let mb = string_to_multibyte(title);
+            let mb = string_to_wide(title);
             SetWindowTextW(self.hwnd, PCWSTR(mb.as_ptr() as _));
         }
     }
