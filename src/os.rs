@@ -3,6 +3,8 @@ pub mod win32;
 
 use std::any::Any;
 
+type Error = super::Error;
+
 /// Information to describe the Application properties
 pub struct AppInfo {
     /// Name of the application
@@ -133,6 +135,16 @@ bitflags! {
         /// Window was requested to resize
         const SIZE = 1<<2;
     }
+
+    /// Flags to control the open file dialog window
+    pub struct OpenFileDialogFlags : u32 {
+        /// Open dialog to look for files 
+        const FILES = 1<<0;
+        /// Open dialog to look for folders
+        const FOLDERS = 1<<1;
+        /// Allow multiple selections
+        const MULTI_SELECT = 1<<2;
+    }
 }
 
 /// Filled out to specify various window parameters when a window is created by `App::create_window`
@@ -185,6 +197,8 @@ pub trait App: 'static + Any + Sized {
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
     /// Sets the mouse cursor
     fn set_cursor(&self, cursor: &Cursor);
+    /// Opens a native open file dialog window
+    fn open_file_dialog(flags: OpenFileDialogFlags, exts: &Vec<String>) -> Result<Vec<String>, Error>;
 }
 
 /// An instance of an operating system window

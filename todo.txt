@@ -1,12 +1,12 @@
 // TODO:
 
 // video player
-// - pause
-// - change source
-// - stop?
+// x pause
 // - open file dialog
+// - change source
 // - fix location of imgui.ini and .gitignore
 // - imgui image
+// - font awesome
 
 // - Shaders from IR
 // - pmfx Shaders

@@ -7,7 +7,12 @@ use windows::{
     Win32::Graphics::Gdi::MONITORINFO, Win32::Graphics::Gdi::MONITOR_DEFAULTTONEAREST,
     Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::HiDpi::*,
     Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*,
+    Win32::System::Com::CoCreateInstance, Win32::System::Com::CoInitialize, Win32::System::Com::CLSCTX_ALL,
+    Win32::UI::Shell::*
 };
+
+use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
+use std::result;
 
 use std::collections::HashMap;
 use std::ffi::CString;
@@ -157,6 +162,25 @@ pub fn string_to_multibyte(string: String) -> Vec<u16> {
         );
         v
     }
+}
+
+pub fn wide_to_string(wide: PWSTR) -> String {
+    let mut v : Vec<u16> = Vec::new();
+    let mut counter = 0;
+    unsafe {
+        // run the string length to find the terminator
+        while *wide.0.offset(counter) != 0 {
+            v.push(*wide.0.offset(counter));
+            counter += 1;
+        }
+    }
+    let decoded = decode_utf16(v)
+        .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
+        .collect::<String>();
+
+    // trim utf-16 nul terminators
+    let x: &[_] = &['\0', '\0'];
+    decoded.trim_matches(x).to_string()
 }
 
 impl App {
@@ -375,6 +399,9 @@ impl super::App for App {
 
     fn create(info: super::AppInfo) -> Self {
         unsafe {
+            // initialise com
+            CoInitialize(std::ptr::null_mut()).unwrap();
+
             let window_class = info.name.to_string() + "\0";
             let window_class_imgui = info.name.to_string() + "_imgui\0";
             let instance = GetModuleHandleA(None);
@@ -590,6 +617,29 @@ impl super::App for App {
                 super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, &IDC_HAND).unwrap()),
                 super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, &IDC_NO).unwrap()),
             };
+        }
+    }
+
+    fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: &Vec<String>) -> result::Result<Vec<String>, super::Error> {
+        unsafe {
+            let open_dialog : IFileOpenDialog = CoCreateInstance(&FileOpenDialog, None, CLSCTX_ALL)?;
+
+            // set types
+
+            // set options
+
+            open_dialog.Show(HWND(0))?;
+            let results : IShellItemArray = open_dialog.GetResults()?;
+
+            let count = results.GetCount()?;
+            for i in 0..count {
+                let item : IShellItem = results.GetItemAt(i)?;
+                let name = item.GetDisplayName(SIGDN_FILESYSPATH)?;
+                let name = wide_to_string(name);
+                println!("{}", name);
+            }
+
+            Ok(vec![])
         }
     }
 }

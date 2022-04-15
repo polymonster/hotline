@@ -101,11 +101,6 @@ fn main() -> Result<(), hotline::Error> {
         // imgui
         imgui.new_frame(&mut app, &mut win, &mut dev);
 
-        // wait until player is ready to play
-        if player.is_loaded() && !player.is_playing() {
-            player.play()?;
-        }
-
         player.update(&mut dev)?;
 
         if player.is_ended() {
@@ -113,7 +108,19 @@ fn main() -> Result<(), hotline::Error> {
         }
 
         if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::NONE) {
-            imgui.button("Play >>");
+            if player.is_loaded() {
+                if imgui.button("Open") {
+                    os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, &vec![]);
+                }
+                imgui.same_line();
+                if imgui.button("Play") {
+                    player.play()?;
+                }
+                imgui.same_line();
+                if imgui.button("Pause") {
+                    player.pause()?;
+                }
+            }
         }
 
         if let Some(video_tex) = &player.get_texture() {

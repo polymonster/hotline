@@ -887,7 +887,15 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     pub fn end(&self) {
-        unsafe { igEnd() };
+        unsafe { 
+            igEnd();
+        };
+    }
+
+    pub fn same_line(&self) {
+        unsafe { 
+            igSameLine(0.0, 0.0);
+        };
     }
 
     pub fn button(&self, label: &str) -> bool {
