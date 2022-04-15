@@ -7,9 +7,9 @@ use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
 
-use hotline::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
+use hotline::gfx::d3d12 as gfx_platform;
 
 fn main() -> Result<(), hotline::Error> {
     // app

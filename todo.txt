@@ -1,5 +1,10 @@
 // TODO:
 
+// video player
+// - pause
+// - change source
+// - stop?
+// - open file dialog
 // - fix location of imgui.ini and .gitignore
 // - imgui image
 
