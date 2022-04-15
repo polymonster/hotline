@@ -23,7 +23,7 @@ struct Vertex {
     color: [f32; 4],
 }
 
-fn main() {
+fn main() -> Result<(), hotline::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
@@ -79,7 +79,7 @@ fn main() {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
@@ -115,7 +115,7 @@ fn main() {
         num_elements: 4,
     };
 
-    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices))).unwrap();
+    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
     // index buffer
     let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
@@ -128,7 +128,7 @@ fn main() {
         num_elements: 6,
     };
 
-    let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices))).unwrap();
+    let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
     // shaders
     let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
@@ -163,9 +163,9 @@ fn main() {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs = dev.create_shader(&vs_info, contents.as_bytes()).unwrap();
-    let fs = dev.create_shader(&fs_info, contents.as_bytes()).unwrap();
-    let cs = dev.create_shader(&cs_info, contents.as_bytes()).unwrap();
+    let vs = dev.create_shader(&vs_info, contents.as_bytes())?;
+    let fs = dev.create_shader(&fs_info, contents.as_bytes())?;
+    let cs = dev.create_shader(&cs_info, contents.as_bytes())?;
 
     let num_descriptors = 10;
 
@@ -474,4 +474,6 @@ fn main() {
 
     // must wait for the final frame to be completed
     cmdbuffer.reset(&swap_chain);
+
+    Ok(())
 }

@@ -11,7 +11,7 @@ use hotline::gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
 
-fn main() {
+fn main() -> Result<(), hotline::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
@@ -51,7 +51,7 @@ fn main() {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let exe_path = std::env::current_exe().ok().unwrap();
@@ -117,4 +117,6 @@ fn main() {
 
     // must wait for the final frame to be completed
     cmdbuffer.reset(&swap_chain);
+
+    Ok(())
 }
