@@ -6,6 +6,9 @@ use crate::os;
 use os::win32;
 use std::result;
 
+// Reference C++ implementation
+// https://github.com/microsoft/Xbox-ATG-Samples/blob/master/UWPSamples/Graphics/VideoTextureUWP12
+
 use windows::{
     core::*, Win32::Foundation::*,
     Win32::Graphics::Direct3D11::*, Win32::Graphics::Direct3D::*, Win32::Foundation::HINSTANCE,
@@ -23,6 +26,8 @@ pub struct VideoPlayer {
 }
 
 pub struct NotifyEvents {
+    load_meta_data: bool,
+    paused: bool,
     can_play: bool,
     playing: bool,
     ended: bool,
@@ -33,7 +38,7 @@ impl NotifyEvents {
     fn event(&mut self, event: u32) {
         match MF_MEDIA_ENGINE_EVENT(event as i32) {
             MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA => {
-                println!("MF_MEDIA_ENGINE_EVENT_LOADEDMETADATA");
+                self.load_meta_data = true;
             },
             MF_MEDIA_ENGINE_EVENT_CANPLAY => {
                 self.can_play = true;
@@ -42,41 +47,17 @@ impl NotifyEvents {
                 self.playing = true;
             }
             MF_MEDIA_ENGINE_EVENT_PAUSE => {
-                println!("MF_MEDIA_ENGINE_EVENT_PAUSE");
+                self.paused = true;
             }
             MF_MEDIA_ENGINE_EVENT_ENDED => {
                 self.ended = true;
                 self.playing = false;
             }
             MF_MEDIA_ENGINE_EVENT_TIMEUPDATE => {
-                println!("MF_MEDIA_ENGINE_EVENT_TIMEUPDATE");
+
             }
             MF_MEDIA_ENGINE_EVENT_ERROR => {
-                println!("MF_MEDIA_ENGINE_EVENT_ERROR");
                 self.has_error = true;
-
-
-/*
-                #ifdef _DEBUG
-                if (m_mediaEngine)
-                {
-                    ComPtr<IMFMediaError> error;
-                    if (SUCCEEDED(m_mediaEngine->GetError(&error)))
-                    {
-                        USHORT errorCode = error->GetErrorCode();
-                        HRESULT hr = error->GetExtendedErrorCode();
-                        char buff[128] = {};
-                        sprintf_s(buff, "ERROR: Media Foundation Event Error %u (%08X)\n", errorCode, static_cast<unsigned int>(hr));
-                        OutputDebugStringA(buff);
-                    }
-                    else
-                    {
-                        OutputDebugStringA("ERROR: Media Foundation Event Error *FAILED GetError*\n");
-                    }
-                }
-                #endif
-                break;
-*/
             }
             _ => ()
         }
@@ -103,6 +84,39 @@ fn new_notify_events() -> *mut NotifyEvents {
         let layout =
             std::alloc::Layout::from_size_align(std::mem::size_of::<NotifyEvents>(), 8).unwrap();
         std::alloc::alloc_zeroed(layout) as *mut NotifyEvents
+    }
+}
+
+impl VideoPlayer {
+    fn handle_error(&self) -> result::Result<(), super::Error> {
+        unsafe {
+            if (*self.notify).has_error {
+                // error
+                let err = self.media_engine_ex.GetError()?;
+                let code = err.GetErrorCode();
+                let msgs = [
+                    "MF_MEDIA_ENGINE_ERR_NOERROR",
+                    "MF_MEDIA_ENGINE_ERR_ABORTED",
+                    "MF_MEDIA_ENGINE_ERR_NETWORK",
+                    "MF_MEDIA_ENGINE_ERR_DECODE",
+                    "MF_MEDIA_ENGINE_ERR_SRC_NOT_SUPPORTED",
+                    "MF_MEDIA_ENGINE_ERR_ENCRYPTED",
+                ];
+
+                // extended error
+                let mut ext_str = "".to_string();
+                let ext = err.GetExtendedErrorCode();
+                if let Err(e) = &ext {
+                    ext_str = e.message().to_string_lossy();
+                }
+
+                // error code with extended info
+                return Err(super::Error{
+                    msg: format!("hotline::av::wmf: {} : {}", msgs[code as usize], ext_str).to_string()
+                });
+            }
+            Ok(())
+        }
     }
 }
 
@@ -178,7 +192,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             }
 
             Err(super::Error {
-                msg: String::from("hotline::av::wmf:: failed to initialis, could not create attributes"),
+                msg: String::from("hotline::av::wmf:: failed to initialise, could not create attributes"),
             })
         }
     }
@@ -201,6 +215,15 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
 
     fn update(&mut self, device: &mut d3d12::Device) -> result::Result<(), super::Error> {
         unsafe {
+            // handle errors and return early
+            self.handle_error()?;
+
+            // return early if not loaded
+            if !self.is_loaded() {
+                return Ok(());
+            }
+
+            // create texture
             if !self.texture.is_some() && self.is_loaded() {
                 let mut x : u32 = 0;
                 let mut y : u32 = 0;
@@ -224,6 +247,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 self.height = y;
             }
 
+            // update
             let pts = self.media_engine_ex.OnVideoStreamTick();
             if pts.is_ok() {
                 if let Some(tex) = &self.texture {
@@ -256,14 +280,6 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                         self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg)?;
                     } 
                 }
-            }
-
-            if (*self.notify).has_error {
-                let err = self.media_engine_ex.GetError()?;
-                let code = err.GetErrorCode();
-                return Err(super::Error{
-                    msg: format!("hotline::av::wmf: error code: {}", code).to_string()
-                });
             }
 
             Ok(())

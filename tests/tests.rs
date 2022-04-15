@@ -72,7 +72,7 @@ fn create_window() {
 }
 
 #[test]
-fn swap_chain_buffer() {
+fn swap_chain_buffer() -> Result<(), hotline::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("swap_chain_buffer"),
         window: false,
@@ -104,7 +104,7 @@ fn swap_chain_buffer() {
         clear_colour: None,
     };
 
-    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let clears_colours: [gfx::ClearColour; 4] = [
@@ -161,6 +161,8 @@ fn swap_chain_buffer() {
             break;
         }
     }
+
+    Ok(())
 }
 
 #[test]
@@ -202,7 +204,7 @@ fn draw_triangle() -> Result<(), hotline::Error> {
         }),
     };
 
-    let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window);
+    let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     let mut cmd = device.create_cmd_buf(2);
 
     let vertices = [

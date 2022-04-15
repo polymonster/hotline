@@ -55,7 +55,7 @@ fn main() -> Result<(), hotline::Error> {
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
-    let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_logo.mp4");
+    let video_path = asset_path.join("..\\..\\samples\\play_video\\touch_video_pogo.mp4");
 
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers: 2,
@@ -67,7 +67,7 @@ fn main() -> Result<(), hotline::Error> {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win);
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
 
     // cmd buffer
     let mut cmdbuffer = dev.create_cmd_buf(2);
@@ -228,9 +228,7 @@ fn main() -> Result<(), hotline::Error> {
             player.play()?;
         }
 
-        if player.is_playing() {
-            player.update(&mut dev)?;
-        }
+        player.update(&mut dev)?;
 
         if player.is_ended() {
             println!("ended!");

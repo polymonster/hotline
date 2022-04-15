@@ -939,7 +939,7 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
             a: 1.00,
         }),
     };
-    vd.swap_chain = vec![device.create_swap_chain::<A>(&swap_chain_info, &vd.window[0])];
+    vd.swap_chain = vec![device.create_swap_chain::<A>(&swap_chain_info, &vd.window[0]).unwrap()];
 
     // create render buffers
     let mut buffers: Vec<RenderBuffers<D>> = Vec::new();

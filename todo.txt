@@ -1,7 +1,5 @@
 // TODO:
 
-// - single error type?
-// - swap chain create return result
 // - fix location of imgui.ini and .gitignore
 // - imgui image
 
@@ -20,10 +18,10 @@
 // - Samples
 // - Automate docs update
 
-// - WMF D3D12
-// -- https://github.com/microsoft/Xbox-ATG-Samples/blob/master/UWPSamples/Graphics/VideoTextureUWP12
-
 // DONE:
+// x WMF errors
+// x swap chain create return result
+// x single error type?
 // x CI runner
 // x Handle CPU access flags for buffers in a nicer way
 // x Handle buffers with no data

@@ -676,7 +676,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any {
         &mut self,
         info: &SwapChainInfo,
         window: &A::Window,
-    ) -> Self::SwapChain;
+    ) -> Result<Self::SwapChain, Error>;
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
     fn create_buffer<T: Sized>(

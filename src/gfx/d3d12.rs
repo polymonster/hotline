@@ -1068,7 +1068,7 @@ impl super::Device for Device {
         &mut self,
         info: &super::SwapChainInfo,
         win: &A::Window,
-    ) -> SwapChain {
+    ) -> result::Result<SwapChain, super::Error> {
         unsafe {
             // set flags, these could be passed in
             let flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0;
@@ -1103,9 +1103,8 @@ impl super::Device for Device {
                     &swap_chain_desc,
                     std::ptr::null(),
                     None,
-                )
-                .expect("hotline::gfx::d3d12: failed to create swap chain for window");
-            let swap_chain: IDXGISwapChain3 = swap_chain1.cast().unwrap();
+                )?;
+            let swap_chain: IDXGISwapChain3 = swap_chain1.cast()?;
 
             // create rtv heap and handles
             let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
@@ -1117,16 +1116,16 @@ impl super::Device for Device {
                 info.clear_colour,
             );
 
-            SwapChain {
+            Ok(SwapChain {
                 width: size.x,
                 height: size.y,
                 format: format,
                 num_bb: info.num_buffers,
                 flags: flags as u32,
                 bb_index: 0,
-                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap(),
+                fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?,
                 fence_last_signalled_value: 0,
-                fence_event: CreateEventA(std::ptr::null(), false, false, None).unwrap(),
+                fence_event: CreateEventA(std::ptr::null(), false, false, None)?,
                 swap_chain: swap_chain,
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
@@ -1135,7 +1134,7 @@ impl super::Device for Device {
                 readback_buffer: create_read_back_buffer(&self, data_size),
                 require_wait: vec![false; info.num_buffers as usize],
                 clear_col: info.clear_colour,
-            }
+            })
         }
     }
 
