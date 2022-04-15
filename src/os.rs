@@ -197,8 +197,8 @@ pub trait App: 'static + Any + Sized {
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
     /// Sets the mouse cursor
     fn set_cursor(&self, cursor: &Cursor);
-    /// Opens a native open file dialog window
-    fn open_file_dialog(flags: OpenFileDialogFlags, exts: &Vec<&str>) -> Result<Vec<String>, Error>;
+    /// Opens a native open file dialog window, exts are provided to filer selections. ie vec![".txt", ".png"]
+    fn open_file_dialog(flags: OpenFileDialogFlags, exts: Vec<&str>) -> Result<Vec<String>, Error>;
 }
 
 /// An instance of an operating system window
