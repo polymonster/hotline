@@ -20,13 +20,13 @@
 
 #### In Progress
 - API (gfx::, os::) / Backend (d3d12::, win32::)
+- API (av::) / Windows Media Foundation (HW Video / Audio Decoding)
 - ~~Imgui support w/ Viewports~~
 
 #### Future Work
 - Multi-threading support (async command buffer generation and job dispatches)
 - High level graphics api (render graphs, data driven, Uber shaders)
 - Hot reloading
-- API (av::) / Windows Media Foundation (HW Video / Audio Decoding)
 - Samples and Demos
 - Linux
 - Vulkan
