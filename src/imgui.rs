@@ -482,6 +482,18 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
             io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
+            // construct path for ini to be along side the exe
+            let exe_path = std::env::current_exe().ok().unwrap();
+            if let Some(parent) = exe_path.parent() {
+                // create static here, for persistent pointer
+                let ini_file = parent.join("imgui.ini");
+                static mut NULL_INI_FILE : Option<CString> = None;
+                NULL_INI_FILE = Some(CString::new(ini_file.to_str().unwrap().to_string()).unwrap());
+                if let Some(i) = &NULL_INI_FILE {
+                    io.IniFilename = i.as_ptr() as _;
+                }
+            };
+        
             igStyleColorsLight(std::ptr::null_mut());
 
             let mut style = &mut *igGetStyle();
