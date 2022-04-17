@@ -14,7 +14,39 @@ use hotline::os::win32 as os_platform;
 use hotline::gfx::d3d12 as gfx_platform;
 use hotline::av::wmf as av_platform;
 
+pub struct Vec<T, const N: usize> {
+    v: [T; N]
+}
+
+impl<T, const N: usize> Vec<T, N> where T: std::ops::AddAssign + std::fmt::Display {
+    fn print(&self) {
+        for i in 0..N {
+            print!("{}, ", self.v[i]);
+        }
+        print!("\n");
+    }
+}
+
 fn main() -> Result<(), hotline::Error> {
+
+    let v2 = Vec::<f32, 2> {
+        v: [6.0, 9.0]
+    };
+
+    v2.print();
+
+    let v3 = Vec::<f32, 3> {
+        v: [6.0, 9.0, 8.0]
+    };
+
+    v3.print();
+
+    let v4 = Vec::<f32, 4> {
+        v: [6.0, 9.0, 8.0, 4.0]
+    };
+
+    v4.print();
+
     // app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),

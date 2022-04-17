@@ -1,12 +1,8 @@
 // TODO:
 
-// video player
-// x pause
-// - open file dialog
-// - change source
-// - fix location of imgui.ini and .gitignore
-// - imgui image
 // - font awesome
+// - clean up video textures properly
+// - av documentation / update docs
 
 // - Shaders from IR
 // - pmfx Shaders
@@ -24,6 +20,11 @@
 // - Automate docs update
 
 // DONE:
+// x fix location of imgui.ini and .gitignore
+// x video player pause
+// x open file dialog
+// x imgui image
+// x change source
 // x WMF errors
 // x swap chain create return result
 // x single error type?
