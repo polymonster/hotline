@@ -501,15 +501,35 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             style.Colors[imgui_sys::ImGuiCol_WindowBg as usize].w = 1.0;
 
             // add fonts
+            let mut merge = false;
             for font_name in &info.fonts {
                 let null_font_name = CString::new(font_name.clone()).unwrap();
-                ImFontAtlas_AddFontFromFileTTF(
-                    io.Fonts,
-                    null_font_name.as_ptr() as *const i8,
-                    16.0,
-                    std::ptr::null_mut(),
-                    std::ptr::null_mut(),
-                );
+
+                let config = ImFontConfig_ImFontConfig();
+                (*config).MergeMode = merge;
+
+                if merge {
+                    let ranges : [ImWchar; 3] = [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32, 0];
+                    ImFontAtlas_AddFontFromFileTTF(
+                        io.Fonts,
+                        null_font_name.as_ptr() as *const i8,
+                        16.0,
+                        config,
+                        &ranges[0],
+                    );
+                }
+                else {
+                    ImFontAtlas_AddFontFromFileTTF(
+                        io.Fonts,
+                        null_font_name.as_ptr() as *const i8,
+                        16.0,
+                        config,
+                        std::ptr::null_mut(),
+                    );
+                }
+
+                // subsequent fonts are merged
+                merge = true;
             }
 
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard as i32;

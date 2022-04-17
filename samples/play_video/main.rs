@@ -92,15 +92,23 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
+    let roboto = asset_path
+        .join("..\\..\\samples\\imgui_demo\\Roboto-Medium.ttf")
+        .to_str()
+        .unwrap()
+        .to_string();
+
+    let font_awesome = asset_path
+        .join("..\\..\\samples\\imgui_demo\\FontAwesome.ttf")
+        .to_str()
+        .unwrap()
+        .to_string(); 
+
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
-        fonts: vec![asset_path
-            .join("..\\..\\samples\\imgui_demo\\Roboto-Medium.ttf")
-            .to_str()
-            .unwrap()
-            .to_string()],
+        fonts: vec![roboto, font_awesome],
     };
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
@@ -147,11 +155,11 @@ fn main() -> Result<(), hotline::Error> {
             }
             if player.is_loaded() {
                 imgui.same_line();
-                if imgui.button("Play") {
+                if imgui.button(font_awesome::strs::PLAY) {
                     player.play()?;
                 }
                 imgui.same_line();
-                if imgui.button("Pause") {
+                if imgui.button(font_awesome::strs::PAUSE) {
                     player.pause()?;
                 }
             }
