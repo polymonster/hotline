@@ -519,9 +519,12 @@ impl super::App for App {
                         break;
                     }
                     // handle wnd proc on self functions, to avoid need for static mutable state
-                    let mut buffer : Vec<u8> = vec![0; 64];
+                    let mut buffer : Vec<u8> = vec![0; 256];
                     GetClassNameA(msg.hwnd, buffer.as_mut_slice());
                     let class = String::from_utf8(buffer).unwrap();
+
+                    let x: &[_] = &['\0'];
+                    let class = class.trim_matches(x);
 
                     if class == self.window_class {
                         self.main_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
