@@ -18,11 +18,20 @@ use std::ffi::CString;
 const DEFAULT_VB_SIZE: i32 = 5000;
 const DEFAULT_IB_SIZE: i32 = 10000;
 
+/// Info to supply fonts from .ttf files for use with imgui
+pub struct FontInfo {
+    /// filepath to a .ttf file
+    pub filepath: String,
+    /// optional to specify ranges, which are wide char u32 code points. defaults to basic latin & extended latin
+    pub glyph_ranges: Option<Vec<[u32; 2]>>
+}
+
+/// Info required to create an instance of imgui
 pub struct ImGuiInfo<'a, D: Device, A: App> {
     pub device: &'a mut D,
     pub swap_chain: &'a mut D::SwapChain,
     pub main_window: &'a A::Window,
-    pub fonts: Vec<String>,
+    pub fonts: Vec<FontInfo>,
 }
 
 pub struct ImGui<D: Device, A: App> {
@@ -502,31 +511,37 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             // add fonts
             let mut merge = false;
-            for font_name in &info.fonts {
-                let null_font_name = CString::new(font_name.clone()).unwrap();
+            for font in &info.fonts {
+                let null_font_name = CString::new(font.filepath.clone()).unwrap();
 
                 let config = ImFontConfig_ImFontConfig();
                 (*config).MergeMode = merge;
 
-                if merge {
-                    let ranges : [ImWchar; 3] = [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32, 0];
-                    ImFontAtlas_AddFontFromFileTTF(
-                        io.Fonts,
-                        null_font_name.as_ptr() as *const i8,
-                        16.0,
-                        config,
-                        &ranges[0],
-                    );
+                // copy over the font ranges
+                let mut null_term_ranges : Vec<u32> = Vec::new();
+                if let Some(ranges) = &font.glyph_ranges {
+                    for range in ranges {
+                        null_term_ranges.push(range[0]);
+                        null_term_ranges.push(range[1]);
+                    }
+                }
+                null_term_ranges.push(0); // null terminate
+
+                // pass ranges or null
+                let p_ranges = if null_term_ranges.len() > 1 {
+                    null_term_ranges.as_mut_ptr()
                 }
                 else {
-                    ImFontAtlas_AddFontFromFileTTF(
-                        io.Fonts,
-                        null_font_name.as_ptr() as *const i8,
-                        16.0,
-                        config,
-                        std::ptr::null_mut(),
-                    );
-                }
+                    std::ptr::null_mut()
+                };
+
+                ImFontAtlas_AddFontFromFileTTF(
+                    io.Fonts,
+                    null_font_name.as_ptr() as *const i8,
+                    16.0,
+                    config,
+                    p_ranges,
+                );
 
                 // subsequent fonts are merged
                 merge = true;

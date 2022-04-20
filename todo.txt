@@ -1,6 +1,8 @@
 // TODO:
 
-// - font awesome
+// - bug with bad chars being passed as ext filters
+// - crash on shutdown not seletcing correct wndproc
+// - path utilities
 // - clean up video textures properly
 // - av documentation / update docs
 
@@ -20,6 +22,8 @@
 // - Automate docs update
 
 // DONE:
+// x add glyph ranges to imgui info
+// x font awesome
 // x fix location of imgui.ini and .gitignore
 // x video player pause
 // x open file dialog

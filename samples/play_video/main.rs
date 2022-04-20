@@ -108,10 +108,21 @@ fn main() -> Result<(), hotline::Error> {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
-        fonts: vec![roboto, font_awesome],
+        fonts: vec![
+            imgui::FontInfo{
+                filepath: roboto,
+                glyph_ranges: None 
+            },
+            imgui::FontInfo{
+                filepath: font_awesome,
+                glyph_ranges: Some(vec![
+                    [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32]
+                ])
+            }
+        ],
     };
+    
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
-
     let mut player = av_platform::VideoPlayer::create(&dev).unwrap();
 
     // ..

@@ -57,15 +57,20 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
+    let font_path = asset_path
+        .join("..\\..\\samples\\imgui_demo\\Roboto-Medium.ttf")
+        .to_str()
+        .unwrap()
+        .to_string();
+
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
-        fonts: vec![asset_path
-            .join("..\\..\\samples\\imgui_demo\\Roboto-Medium.ttf")
-            .to_str()
-            .unwrap()
-            .to_string()],
+        fonts: vec![imgui::FontInfo {
+            filepath: font_path,
+            glyph_ranges: None
+        }],
     };
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
 
