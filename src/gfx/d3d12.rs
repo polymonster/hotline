@@ -1969,7 +1969,7 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
         let size = window.get_size();
-        if size.x != self.width || size.y != self.height {
+        if (size.x != self.width || size.y != self.height) && size.x > 0 && size.y > 0 {
             unsafe {
                 self.wait_for_frame(self.bb_index as usize);
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
