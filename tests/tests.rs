@@ -45,7 +45,7 @@ fn create_d3d12_device() {
 
 #[test]
 fn create_window() {
-    let app = os_platform::App::create(os::AppInfo {
+    let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("create_window"),
         window: false,
         num_buffers: 0,
