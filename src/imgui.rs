@@ -1104,6 +1104,12 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
         vd.swap_chain[0].wait_for_last_frame();
     }
 
+    // unregister window tracking... if USerData is null we are shutting down
+    let io = &mut *igGetIO();
+    if io.UserData != std::ptr::null_mut() {
+        get_user_data::<D, A>().app.destroy_window(&vd.window[0]);
+    }
+    
     vd.swap_chain.clear();
     vd.cmd.clear();
     vd.buffers.clear();

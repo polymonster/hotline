@@ -121,7 +121,7 @@ fn main() -> Result<(), hotline::Error> {
             }
         ],
     };
-    
+
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
     let mut player = av_platform::VideoPlayer::create(&dev).unwrap();
 

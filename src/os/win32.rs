@@ -24,7 +24,8 @@ pub struct App {
     hinstance: HINSTANCE,
     mouse_pos: super::Point<i32>,
     proc_data: ProcData,
-    events: HashMap<isize, super::WindowEventFlags>
+    events: HashMap<isize, super::WindowEventFlags>,
+    hwnd_flags: HashMap<isize, super::WindowStyleFlags>
 }
 
 #[derive(Clone)]
@@ -313,29 +314,26 @@ impl App {
         }
     }
 
-    extern "system" fn main_wndproc(
+    fn main_wndproc(
         &mut self,
         window: HWND,
         message: u32,
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        unsafe {
-            match message as u32 {
-                WM_DESTROY => {
-                    PostQuitMessage(0);
-                    LRESULT(0)
-                }
-                WM_SYSCOMMAND => {
-                    if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
-                        // Disable ALT application menu
-                        return LRESULT(0);
-                    } else {
-                        return self.wndproc(window, message, wparam, lparam);
-                    }
-                }
-                _ => self.wndproc(window, message, wparam, lparam),
+        match message as u32 {
+            WM_DESTROY => {
+                LRESULT(0)
             }
+            WM_SYSCOMMAND => {
+                if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
+                    // Disable ALT application menu
+                    return LRESULT(0);
+                } else {
+                    return self.wndproc(window, message, wparam, lparam);
+                }
+            }
+            _ => self.wndproc(window, message, wparam, lparam),
         }
     }
     
@@ -404,6 +402,7 @@ impl super::App for App {
 
             let window_class = info.name.to_string() + "\0";
             let window_class_imgui = info.name.to_string() + "_imgui\0";
+
             let instance = GetModuleHandleA(None);
             debug_assert!(instance.0 != 0);
 
@@ -457,12 +456,13 @@ impl super::App for App {
                     key_shift: false,
                     key_alt: false,
                 },
-                events: HashMap::new()
+                events: HashMap::new(),
+                hwnd_flags: HashMap::new()
             }
         }
     }
 
-    fn create_window(&self, info: super::WindowInfo<Self>) -> Window {
+    fn create_window(&mut self, info: super::WindowInfo<Self>) -> Window {
         unsafe {
             let ws = to_win32_dw_style(&info.style);
             let wsex = to_win32_dw_ex_style(&info.style);
@@ -495,6 +495,9 @@ impl super::App for App {
                 std::ptr::null_mut(),
             );
 
+            // track window style to send to correct wnd proc
+            self.hwnd_flags.insert(hwnd.0, info.style);
+
             Window {
                 hwnd: hwnd,
                 ws: ws,
@@ -502,6 +505,10 @@ impl super::App for App {
                 events: super::WindowEventFlags::NONE,
             }
         }
+    }
+
+    fn destroy_window(&mut self, window: &Window) {
+        self.hwnd_flags.remove(&window.hwnd.0);
     }
 
     fn run(&mut self) -> bool {
@@ -514,23 +521,20 @@ impl super::App for App {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&mut msg);
                     DispatchMessageA(&mut msg);
+
+                    // handle wnd proc on self functions, to avoid need for static mutable state
+                    if let Some(hwnd_flags) = self.hwnd_flags.get(&msg.hwnd.0) {
+                        if hwnd_flags.contains(super::WindowStyleFlags::IMGUI) {
+                            self.imgui_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+                        }
+                        else {
+                            self.main_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
+                        }
+                    }
+
                     if msg.message == WM_QUIT {
                         quit = true;
                         break;
-                    }
-                    // handle wnd proc on self functions, to avoid need for static mutable state
-                    let mut buffer : Vec<u8> = vec![0; 256];
-                    GetClassNameA(msg.hwnd, buffer.as_mut_slice());
-                    let class = String::from_utf8(buffer).unwrap();
-
-                    let x: &[_] = &['\0'];
-                    let class = class.trim_matches(x);
-
-                    if class == self.window_class {
-                        self.main_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
-                    }
-                    else {
-                        self.imgui_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
                     }
                 } 
                 else {
@@ -926,7 +930,11 @@ extern "system" fn main_wndproc(
 ) -> LRESULT {
     match message as u32 {
         WM_DESTROY => {
-            LRESULT(0)
+            unsafe {
+                // PostQuitMessage must happen here, not in the member wnd proc function
+                PostQuitMessage(0);
+                LRESULT(0)
+            }
         }
         WM_SYSCOMMAND => {
             if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {

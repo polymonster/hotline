@@ -174,7 +174,9 @@ pub trait App: 'static + Any + Sized {
     /// Create an application instance
     fn create(info: AppInfo) -> Self;
     /// Create a new operating system window
-    fn create_window(&self, info: WindowInfo<Self>) -> Self::Window;
+    fn create_window(&mut self, info: WindowInfo<Self>) -> Self::Window;
+    /// Destroy window, unregistering app tracking
+    fn destroy_window(&mut self, window: &Self::Window);
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool;
     /// Retuns the mouse in screen coordinates
