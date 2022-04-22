@@ -649,17 +649,18 @@ impl super::App for App {
             for ext in &exts {
                 wide_exts.push(string_to_wide(format!("*{}", ext).to_string()));
             }
+
+            // keep specs in scope
+            let mut specs : Vec<COMDLG_FILTERSPEC> = Vec::new();
             if wide_exts.len() > 0 {
-                let mut specs : Vec<COMDLG_FILTERSPEC> = Vec::new();
                 for w in wide_exts {
                     specs.push(COMDLG_FILTERSPEC {
                         pszName: PCWSTR(w.as_ptr() as _),
                         pszSpec: PCWSTR(w.as_ptr() as _),
                     });
                 }
-                open_dialog.SetFileTypes(&specs)?;
             }
-            
+            open_dialog.SetFileTypes(&specs)?;
             open_dialog.Show(HWND(0))?;
             let results : IShellItemArray = open_dialog.GetResults()?;
 

@@ -1,15 +1,13 @@
 // TODO:
-
 // - bug with bad chars being passed as ext filters
-// - crash on shutdown not seletcing correct wndproc
 // - path utilities
-// - clean up video textures properly
-// - av documentation / update docs
+// - wait frames before properly dropping gpu resources
 
 // - Shaders from IR
 // - pmfx Shaders
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
+// - automate update docs
 
 // - GPU Timer Query
 // - Draw Instanced
@@ -22,6 +20,10 @@
 // - Automate docs update
 
 // DONE:
+// x clean up video textures properly
+// x av documentation
+
+// x crash on shutdown not seletcing correct wndproc
 // x add glyph ranges to imgui info
 // x font awesome
 // x fix location of imgui.ini and .gitignore
