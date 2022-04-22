@@ -1,6 +1,8 @@
 use crate::gfx;
 use gfx::d3d12;
 use gfx::Device;
+use gfx::Heap;
+use gfx::Texture;
 
 use crate::os;
 use os::win32;
@@ -22,7 +24,8 @@ pub struct VideoPlayer {
     notify: *mut NotifyEvents,
     texture: Option<d3d12::Texture>,
     width: u32,
-    height: u32
+    height: u32,
+    cleanup_textures: Vec<d3d12::Texture>
 }
 
 pub struct NotifyEvents {
@@ -84,6 +87,14 @@ fn new_notify_events() -> *mut NotifyEvents {
         let layout =
             std::alloc::Layout::from_size_align(std::mem::size_of::<NotifyEvents>(), 8).unwrap();
         std::alloc::alloc_zeroed(layout) as *mut NotifyEvents
+    }
+}
+
+impl Drop for VideoPlayer {
+    fn drop(&mut self) {
+        if self.texture.is_some() || self.cleanup_textures.len() > 0 {
+            panic!("hotline::av::wmf: dropping video player with live textures, call shutdown with d3d12::device to free srv heap memory.");
+        };
     }
 }
 
@@ -183,6 +194,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     media_engine_ex: media_engine.cast()?,
                     notify: notify,
                     texture: None,
+                    cleanup_textures: vec![],
                     width: 0,
                     height: 0
                 };
@@ -196,10 +208,30 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
+    fn shutdown(&mut self, device: &mut d3d12::Device) {
+        // cleanup - cleanup
+        for tex in &self.cleanup_textures {
+            if let Some(srv) = tex.get_srv_index() {
+                device.get_shader_heap_mut().deallocate(srv);
+            }
+        }
+        self.cleanup_textures.clear();
+        // cleanup last
+        if let Some(tex) = &self.texture {
+            if let Some(srv) = tex.get_srv_index() {
+                device.get_shader_heap_mut().deallocate(srv);
+            }
+        }
+        self.texture = None;
+    }
+
     fn set_source(&mut self, filepath: String) -> result::Result<(), super::Error> {
         unsafe {
             // reset state
             (*self.notify).can_play = false;
+            if let Some(tex) = &self.texture {
+                self.cleanup_textures.push(tex.clone());
+            }
             self.texture = None;
             let wp = win32::string_to_wide(filepath);
             let bstr = SysAllocString(PCWSTR(wp.as_ptr() as _));
@@ -231,6 +263,15 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             if !self.is_loaded() {
                 return Ok(());
             }
+
+            // release memory from cleanup textures
+            for tex in &self.cleanup_textures {
+                if let Some(srv) = tex.get_srv_index() {
+                    device.get_shader_heap_mut().deallocate(srv);
+                }
+            }
+
+            self.cleanup_textures.clear();
 
             // create texture
             if !self.texture.is_some() && self.is_loaded() {
