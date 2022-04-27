@@ -1,5 +1,4 @@
 // TODO:
-// - bug with bad chars being passed as ext filters
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
@@ -20,9 +19,10 @@
 // - Automate docs update
 
 // DONE:
+// x make const conversion functions
 // x clean up video textures properly
 // x av documentation
-
+// x bug with bad chars being passed as ext filters
 // x crash on shutdown not seletcing correct wndproc
 // x add glyph ranges to imgui info
 // x font awesome
