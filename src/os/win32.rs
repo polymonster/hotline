@@ -122,6 +122,27 @@ fn to_win32_dw_ex_style(style: &super::WindowStyleFlags) -> WINDOW_EX_STYLE {
     WINDOW_EX_STYLE(win32_style)
 }
 
+const fn to_win32_key_code(key: super::Key) -> i32 {
+    match key {
+        super::Key::Tab => VK_TAB.0 as i32,
+        super::Key::Left => VK_LEFT.0 as i32,
+        super::Key::Right => VK_RIGHT.0 as i32,
+        super::Key::Up => VK_UP.0 as i32,
+        super::Key::Down => VK_DOWN.0 as i32,
+        super::Key::PageUp => VK_PRIOR.0 as i32,
+        super::Key::PageDown => VK_NEXT.0 as i32,
+        super::Key::Home => VK_HOME.0 as i32,
+        super::Key::End => VK_END.0 as i32,
+        super::Key::Insert => VK_INSERT.0 as i32,
+        super::Key::Delete => VK_DELETE.0 as i32,
+        super::Key::Backspace => VK_BACK.0 as i32,
+        super::Key::Space => VK_SPACE.0 as i32,
+        super::Key::Enter => VK_RETURN.0 as i32,
+        super::Key::Escape => VK_ESCAPE.0 as i32,
+        super::Key::KeyPadEnter => VK_RETURN.0 as i32,
+    }
+}
+
 fn adjust_window_rect(
     rect: &super::Rect<i32>,
     ws: WINDOW_STYLE,
@@ -578,24 +599,7 @@ impl super::App for App {
     }
 
     fn get_key_code(key: super::Key) -> i32 {
-        match key {
-            super::Key::Tab => VK_TAB.0 as i32,
-            super::Key::Left => VK_LEFT.0 as i32,
-            super::Key::Right => VK_RIGHT.0 as i32,
-            super::Key::Up => VK_UP.0 as i32,
-            super::Key::Down => VK_DOWN.0 as i32,
-            super::Key::PageUp => VK_PRIOR.0 as i32,
-            super::Key::PageDown => VK_NEXT.0 as i32,
-            super::Key::Home => VK_HOME.0 as i32,
-            super::Key::End => VK_END.0 as i32,
-            super::Key::Insert => VK_INSERT.0 as i32,
-            super::Key::Delete => VK_DELETE.0 as i32,
-            super::Key::Backspace => VK_BACK.0 as i32,
-            super::Key::Space => VK_SPACE.0 as i32,
-            super::Key::Enter => VK_RETURN.0 as i32,
-            super::Key::Escape => VK_ESCAPE.0 as i32,
-            super::Key::KeyPadEnter => VK_RETURN.0 as i32,
-        }
+        to_win32_key_code(key)
     }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
@@ -653,13 +657,14 @@ impl super::App for App {
             // keep specs in scope
             let mut specs : Vec<COMDLG_FILTERSPEC> = Vec::new();
             if wide_exts.len() > 0 {
-                for w in wide_exts {
+                for w in &wide_exts {
                     specs.push(COMDLG_FILTERSPEC {
                         pszName: PCWSTR(w.as_ptr() as _),
                         pszSpec: PCWSTR(w.as_ptr() as _),
                     });
                 }
             }
+            
             open_dialog.SetFileTypes(&specs)?;
             open_dialog.Show(HWND(0))?;
             let results : IShellItemArray = open_dialog.GetResults()?;
@@ -1037,7 +1042,8 @@ extern "system" fn enum_func(
         let dpi_scale =
             if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
                 (xdpi as f32) / 96.0
-            } else {
+            } 
+            else {
                 1.0
             };
 

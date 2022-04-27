@@ -207,7 +207,7 @@ pub struct ComputePipeline {
     root_signature: ID3D12RootSignature,
 }
 
-fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
+const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     match format {
         super::Format::Unknown => DXGI_FORMAT_UNKNOWN,
         super::Format::R16n => DXGI_FORMAT_R16_UNORM,
@@ -240,7 +240,7 @@ fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     }
 }
 
-fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
+const fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     let mut d3d12_flags = 0;
     if flags.contains(super::ShaderCompileFlags::SKIP_OPTIMIZATION) {
         d3d12_flags |= D3DCOMPILE_SKIP_OPTIMIZATION;
@@ -251,7 +251,7 @@ fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     d3d12_flags
 }
 
-fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D12_SHADER_VISIBILITY {
+const fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D12_SHADER_VISIBILITY {
     match visibility {
         super::ShaderVisibility::All => D3D12_SHADER_VISIBILITY_ALL,
         super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
@@ -268,7 +268,7 @@ fn to_d3d12_sampler_boarder_colour(col: Option<u32>) -> D3D12_STATIC_BORDER_COLO
     r
 }
 
-fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
+const fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
     match filter {
         super::SamplerFilter::Point => D3D12_FILTER_MIN_MAG_MIP_POINT,
         super::SamplerFilter::Linear => D3D12_FILTER_MIN_MAG_MIP_LINEAR,
@@ -276,7 +276,7 @@ fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
     }
 }
 
-fn to_d3d12_address_mode(mode: super::SamplerAddressMode) -> D3D12_TEXTURE_ADDRESS_MODE {
+const fn to_d3d12_address_mode(mode: super::SamplerAddressMode) -> D3D12_TEXTURE_ADDRESS_MODE {
     match mode {
         super::SamplerAddressMode::Wrap => D3D12_TEXTURE_ADDRESS_MODE_WRAP,
         super::SamplerAddressMode::Mirror => D3D12_TEXTURE_ADDRESS_MODE_MIRROR,
@@ -286,7 +286,7 @@ fn to_d3d12_address_mode(mode: super::SamplerAddressMode) -> D3D12_TEXTURE_ADDRE
     }
 }
 
-fn to_d3d12_comparison_func(func: super::ComparisonFunc) -> D3D12_COMPARISON_FUNC {
+const fn to_d3d12_comparison_func(func: super::ComparisonFunc) -> D3D12_COMPARISON_FUNC {
     match func {
         super::ComparisonFunc::Never => D3D12_COMPARISON_FUNC_NEVER,
         super::ComparisonFunc::Less => D3D12_COMPARISON_FUNC_LESS,
@@ -306,7 +306,7 @@ fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D1
     D3D12_COMPARISON_FUNC_ALWAYS
 }
 
-fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES {
+const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES {
     match state {
         super::ResourceState::RenderTarget => D3D12_RESOURCE_STATE_RENDER_TARGET,
         super::ResourceState::Present => D3D12_RESOURCE_STATE_PRESENT,
@@ -321,7 +321,7 @@ fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES
     }
 }
 
-fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_TYPE {
+const fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_TYPE {
     match heap_type {
         super::HeapType::Shader => D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV,
         super::HeapType::RenderTarget => D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
@@ -330,7 +330,7 @@ fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESCRIPTOR
     }
 }
 
-fn to_d3d12_descriptor_heap_flags(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_FLAGS {
+const fn to_d3d12_descriptor_heap_flags(heap_type: super::HeapType) -> D3D12_DESCRIPTOR_HEAP_FLAGS {
     match heap_type {
         super::HeapType::Shader => D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE,
         super::HeapType::RenderTarget => D3D12_DESCRIPTOR_HEAP_FLAG_NONE,
@@ -364,7 +364,7 @@ fn to_d3d12_texture_heap_flags(usage: super::TextureUsage) -> D3D12_HEAP_FLAGS {
     flags
 }
 
-fn to_d3d12_primitive_topology(
+const fn to_d3d12_primitive_topology(
     topology: super::Topology,
     patch_index: u32,
 ) -> D3D_PRIMITIVE_TOPOLOGY {
@@ -385,7 +385,7 @@ fn to_d3d12_primitive_topology(
     }
 }
 
-fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PRIMITIVE_TOPOLOGY_TYPE {
+const fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PRIMITIVE_TOPOLOGY_TYPE {
     match topology {
         super::Topology::Undefined => D3D12_PRIMITIVE_TOPOLOGY_TYPE_UNDEFINED,
         super::Topology::PointList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_POINT,
@@ -401,14 +401,14 @@ fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PRIMITIV
     }
 }
 
-fn to_d3d12_fill_mode(fill_mode: &super::FillMode) -> D3D12_FILL_MODE {
+const fn to_d3d12_fill_mode(fill_mode: &super::FillMode) -> D3D12_FILL_MODE {
     match fill_mode {
         super::FillMode::Wireframe => D3D12_FILL_MODE_WIREFRAME,
         super::FillMode::Solid => D3D12_FILL_MODE_SOLID,
     }
 }
 
-fn to_d3d12_cull_mode(cull_mode: &super::CullMode) -> D3D12_CULL_MODE {
+const fn to_d3d12_cull_mode(cull_mode: &super::CullMode) -> D3D12_CULL_MODE {
     match cull_mode {
         super::CullMode::None => D3D12_CULL_MODE_NONE,
         super::CullMode::Front => D3D12_CULL_MODE_FRONT,
@@ -416,14 +416,14 @@ fn to_d3d12_cull_mode(cull_mode: &super::CullMode) -> D3D12_CULL_MODE {
     }
 }
 
-fn to_d3d12_write_mask(mask: &super::DepthWriteMask) -> D3D12_DEPTH_WRITE_MASK {
+const fn to_d3d12_write_mask(mask: &super::DepthWriteMask) -> D3D12_DEPTH_WRITE_MASK {
     match mask {
         super::DepthWriteMask::Zero => D3D12_DEPTH_WRITE_MASK_ZERO,
         super::DepthWriteMask::All => D3D12_DEPTH_WRITE_MASK_ALL,
     }
 }
 
-fn to_d3d12_stencil_op(op: &super::StencilOp) -> D3D12_STENCIL_OP {
+const fn to_d3d12_stencil_op(op: &super::StencilOp) -> D3D12_STENCIL_OP {
     match op {
         super::StencilOp::Keep => D3D12_STENCIL_OP_KEEP,
         super::StencilOp::Zero => D3D12_STENCIL_OP_ZERO,
@@ -460,7 +460,7 @@ fn to_d3d12_render_target_blend(
     rtb
 }
 
-fn to_d3d12_blend_factor(factor: &super::BlendFactor) -> D3D12_BLEND {
+const fn to_d3d12_blend_factor(factor: &super::BlendFactor) -> D3D12_BLEND {
     match factor {
         super::BlendFactor::Zero => D3D12_BLEND_ZERO,
         super::BlendFactor::One => D3D12_BLEND_ONE,
@@ -482,7 +482,7 @@ fn to_d3d12_blend_factor(factor: &super::BlendFactor) -> D3D12_BLEND {
     }
 }
 
-fn to_d3d12_blend_op(op: &super::BlendOp) -> D3D12_BLEND_OP {
+const fn to_d3d12_blend_op(op: &super::BlendOp) -> D3D12_BLEND_OP {
     match op {
         super::BlendOp::Add => D3D12_BLEND_OP_ADD,
         super::BlendOp::Subtract => D3D12_BLEND_OP_SUBTRACT,
@@ -492,7 +492,7 @@ fn to_d3d12_blend_op(op: &super::BlendOp) -> D3D12_BLEND_OP {
     }
 }
 
-fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
+const fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
     match op {
         super::LogicOp::Clear => D3D12_LOGIC_OP_CLEAR,
         super::LogicOp::Set => D3D12_LOGIC_OP_SET,

@@ -57,7 +57,7 @@ impl NotifyEvents {
                 self.playing = false;
             }
             MF_MEDIA_ENGINE_EVENT_TIMEUPDATE => {
-
+                
             }
             MF_MEDIA_ENGINE_EVENT_ERROR => {
                 self.has_error = true;

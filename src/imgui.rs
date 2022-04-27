@@ -1313,7 +1313,7 @@ impl From<ImGuiViewportFlags> for os::WindowStyleFlags {
 }
 
 #[allow(non_upper_case_globals)]
-fn to_os_cursor(cursor: ImGuiMouseCursor) -> os::Cursor {
+const fn to_os_cursor(cursor: ImGuiMouseCursor) -> os::Cursor {
     match cursor {
         ImGuiMouseCursor_Arrow => os::Cursor::Arrow,
         ImGuiMouseCursor_TextInput => os::Cursor::TextInput,
