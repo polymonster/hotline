@@ -1,0 +1,10 @@
+{
+    win32: {
+        copy: {
+            files: [
+                ["bin/win32/WinPixEventRuntime.dll", "target/debug/WinPixEventRuntime.dll"]
+                ["bin/win32/WinPixEventRuntime.dll", "target/release/WinPixEventRuntime.dll"]
+            ]
+        }
+    }
+}
