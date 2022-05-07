@@ -1,4 +1,6 @@
 // TODO:
+
+// - automat pmbuild / pmfx update
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
@@ -19,6 +21,7 @@
 // - Automate docs update
 
 // DONE:
+// x build scripts
 // x make const conversion functions
 // x clean up video textures properly
 // x av documentation
