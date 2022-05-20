@@ -1,6 +1,6 @@
 // TODO:
 
-// - automat pmbuild / pmfx update
+// - automate pmbuild / pmfx update
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
