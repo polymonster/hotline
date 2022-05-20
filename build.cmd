@@ -1,0 +1,1 @@
+%~dp0bin\win32\pmbuild.exe %*
