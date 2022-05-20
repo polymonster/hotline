@@ -3,6 +3,12 @@
         pmfx: "bin/win32/pmfx/build_pmfx.exe"
     }
 
+    tools_help: {
+        pmfx: {
+            help_arg: "-help"
+        }
+    }
+
     win32: {
         copy: {
             files: [
