@@ -65,9 +65,8 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_begin_event: BeginEventOnCommandList = self.begin_event;
-            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
+                std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_begin_event(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
         }
     }
@@ -75,9 +74,8 @@ impl WinPixEventRuntime {
     pub fn end_event_on_command_list(&self, command_list: ID3D12GraphicsCommandList) {
         unsafe {
             let fn_end_event: EndEventOnCommandList = self.end_event;
-            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
+                std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_end_event(p_cmd_list);
         }
     }
@@ -91,9 +89,8 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_set_marker: SetMarkerOnCommandList = self.set_marker;
-            let icmdlist : IUnknown = command_list.cast().unwrap();
             let p_cmd_list =
-                std::mem::transmute::<IUnknown, *const core::ffi::c_void>(icmdlist.clone());
+                std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_set_marker(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
         }
     }
