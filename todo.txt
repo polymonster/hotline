@@ -4,8 +4,7 @@
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
-// - Shaders from IR
-// - pmfx Shaders
+// - add dxc and suppor for sm_6_0
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
 // - automate update docs
@@ -21,6 +20,8 @@
 // - Automate docs update
 
 // DONE:
+// x Shaders from IR
+// x pmfx Shaders
 // x build scripts
 // x make const conversion functions
 // x clean up video textures properly

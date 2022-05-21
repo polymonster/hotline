@@ -105,7 +105,7 @@ fn swap_chain_buffer() -> Result<(), hotline::Error> {
     };
 
     let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
-    let mut cmdbuffer = dev.create_cmd_buf(2);
+    let mut cmd = dev.create_cmd_buf(2);
 
     let clears_colours: [gfx::ClearColour; 4] = [
         gfx::ClearColour {
@@ -138,19 +138,19 @@ fn swap_chain_buffer() -> Result<(), hotline::Error> {
     let mut count = 0;
     while app.run() {
         win.update(&mut app);
-        swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
+        swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmd);
 
-        cmdbuffer.reset(&swap_chain);
+        cmd.reset(&swap_chain);
 
         // TODO: pass on the fly
         let mut pass = swap_chain.get_backbuffer_pass_mut();
 
-        cmdbuffer.begin_render_pass(&mut pass);
-        cmdbuffer.end_render_pass();
+        cmd.begin_render_pass(&mut pass);
+        cmd.end_render_pass();
 
-        cmdbuffer.close(&swap_chain);
+        cmd.close(&swap_chain);
 
-        dev.execute(&cmdbuffer);
+        dev.execute(&cmd);
         swap_chain.swap(&dev);
 
         std::thread::sleep(std::time::Duration::from_millis(60));
@@ -161,6 +161,9 @@ fn swap_chain_buffer() -> Result<(), hotline::Error> {
             break;
         }
     }
+
+    swap_chain.wait_for_last_frame();
+    cmd.reset(&swap_chain);
 
     Ok(())
 }
@@ -341,7 +344,9 @@ fn draw_triangle() -> Result<(), hotline::Error> {
         break;
     }
 
+    swap_chain.wait_for_last_frame();
     cmd.reset(&swap_chain);
+
     Ok(())
 }
 
