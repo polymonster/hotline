@@ -42,6 +42,10 @@ features = [
 ]
 
 [[bin]]
+name = "triangle"
+path = "samples/triangle/main.rs"
+
+[[bin]]
 name = "hello_world"
 path = "samples/hello_world/main.rs"
 

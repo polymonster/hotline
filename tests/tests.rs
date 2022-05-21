@@ -7,9 +7,9 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
-use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
+use gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
 struct Vertex {
