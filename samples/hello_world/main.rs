@@ -167,6 +167,20 @@ fn main() -> Result<(), hotline::Error> {
     let fs = dev.create_shader(&fs_info, contents.as_bytes())?;
     let cs = dev.create_shader(&cs_info, contents.as_bytes())?;
 
+    // shader ir
+    let test_vsc_filepath = asset_path.join("data\\shaders\\basictri\\default.vsc");
+    let test_psc_filepath = asset_path.join("data\\shaders\\basictri\\default.psc");
+
+    let test_vsc_data = fs::read(test_vsc_filepath)?;
+    let test_psc_data = fs::read(test_psc_filepath)?;
+
+    let vsc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let _vsc = dev.create_shader(&vsc_info, &test_vsc_data)?;
+    let _psc = dev.create_shader(&vsc_info, &test_psc_data)?;
+
     let num_descriptors = 10;
 
     // pipeline

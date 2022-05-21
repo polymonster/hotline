@@ -38,3 +38,12 @@ impl From<windows::core::Error> for Error {
         }
     }
 }
+
+// std errors
+impl From<std::io::Error> for Error {
+    fn from(err: std::io::Error) -> Error {
+        Error {
+            msg: err.to_string()
+        }
+    }
+}

@@ -159,7 +159,8 @@ pub struct Buffer {
 }
 
 pub struct Shader {
-    blob: ID3DBlob,
+    blob: Option<ID3DBlob>,
+    precompiled: Option<Vec<u8>>
 }
 
 #[derive(Clone)]
@@ -732,7 +733,6 @@ impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::RenderPass<Device> for RenderPass {}
 
-
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         unsafe {
@@ -952,6 +952,32 @@ impl Device {
 // public accessor for device
 pub fn get_dxgi_factory(device: &Device) -> &IDXGIFactory4 {
     &device.dxgi_factory
+}
+
+impl Shader {
+    fn get_buffer_pointer(&self) -> *const std::ffi::c_void {
+        if let Some(blob) = &self.blob {
+            return unsafe { blob.GetBufferPointer() }
+        }
+        else if let Some(precompiled) = &self.precompiled {
+            return precompiled.as_ptr() as _
+        }
+        else {
+            std::ptr::null()
+        }
+    }
+
+    fn get_buffer_size(&self) -> usize {
+        if let Some(blob) = &self.blob {
+            unsafe { blob.GetBufferSize() }
+        }
+        else if let Some(precompiled) = &self.precompiled {
+            precompiled.len()
+        }
+        else {
+            0
+        }
+    }
 }
 
 impl super::Device for Device {
@@ -1197,16 +1223,16 @@ impl super::Device for Device {
             pRootSignature: Some(root_signature.clone()),
             VS: if let Some(vs) = &info.vs {
                 D3D12_SHADER_BYTECODE {
-                    pShaderBytecode: unsafe { vs.blob.GetBufferPointer() },
-                    BytecodeLength: unsafe { vs.blob.GetBufferSize() },
+                    pShaderBytecode: vs.get_buffer_pointer(),
+                    BytecodeLength: vs.get_buffer_size(),
                 }
             } else {
                 null_bytecode
             },
             PS: if let Some(ps) = &info.fs {
                 D3D12_SHADER_BYTECODE {
-                    pShaderBytecode: unsafe { ps.blob.GetBufferPointer() },
-                    BytecodeLength: unsafe { ps.blob.GetBufferSize() },
+                    pShaderBytecode: ps.get_buffer_pointer(),
+                    BytecodeLength: ps.get_buffer_size(),
                 }
             } else {
                 null_bytecode
@@ -1281,6 +1307,7 @@ impl super::Device for Device {
         info: &super::ShaderInfo,
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
+        // compile source
         let mut shader_blob = None;
         if let Some(compile_info) = &info.compile_info {
             let compile_flags = to_d3d12_compile_flags(&compile_info.flags);
@@ -1315,10 +1342,44 @@ impl super::Device for Device {
                     panic!("hotline::gfx::d3d12: shader compile failed with no error information!");
                 }
             }
+
+            return Ok(Shader {
+                blob: Some(shader_blob.unwrap()),
+                precompiled: None
+            });
         }
 
-        Ok(Shader {
-            blob: shader_blob.unwrap(),
+        // copy byte code
+        // we need at least 4 bytes to check the fourcc code
+        if src.len() > 4 {
+            // copies precompiled shader to be re-used in pipelines etc
+            let mut bytes: Vec<u8> = vec![0; src.len()];
+            unsafe {
+                std::ptr::copy_nonoverlapping(src.as_ptr() as *mut u8, bytes.as_mut_ptr(), src.len());
+            }
+
+            // validate DXBC 
+            // TODO: DXIL
+            let mut valid = true;
+            let validate = ['D' as u8, 'X' as u8, 'B' as u8, 'C' as u8];
+            for i in 0..4 {
+                if bytes[i] != validate[i] {
+                    valid = false;
+                    break;
+                }
+            }
+
+            if valid {
+                return Ok(Shader {
+                    blob: None,
+                    precompiled: Some(bytes)
+                });
+            }
+        }
+
+        // invalid dxil shader bytecode
+        Err( super::Error {
+            msg: String::from("hotline::gfx::d3d12: shader byte code (src) is not valid"),
         })
     }
 
@@ -1881,13 +1942,13 @@ impl super::Device for Device {
         &self,
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
-        let cs = &info.cs.blob;
+        let cs = &info.cs;
         let root_signature = self.create_root_signature(&info.descriptor_layout)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
             CS: D3D12_SHADER_BYTECODE {
-                pShaderBytecode: unsafe { cs.GetBufferPointer() },
-                BytecodeLength: unsafe { cs.GetBufferSize() },
+                pShaderBytecode: cs.get_buffer_pointer(),
+                BytecodeLength: cs.get_buffer_size(),
             },
             pRootSignature: Some(root_signature.clone()),
             ..Default::default()
