@@ -124,7 +124,7 @@ fn main() -> Result<(), hotline::Error> {
             println!("ended!");
         }
 
-        if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::NONE) {
+        if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::ALWAYS_AUTO_RESIZE) {
             if imgui.button("Open") {
                 if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".mp4"]) {
                     if files.len() > 0 {
@@ -145,7 +145,8 @@ fn main() -> Result<(), hotline::Error> {
         }
 
         if let Some(video_tex) = &player.get_texture() {
-            imgui.image(video_tex, 1280.0, 720.0);
+            let size = player.get_size();
+            imgui.image(video_tex, size.x as f32, size.y as f32);
         }
 
         imgui.end();
@@ -169,8 +170,6 @@ fn main() -> Result<(), hotline::Error> {
         swap_chain.swap(&dev);
         ci = (ci + 1) % 4;
     }
-
-    // player.shutdown(&mut dev);
 
     swap_chain.wait_for_last_frame();
 

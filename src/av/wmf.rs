@@ -336,6 +336,13 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
+    fn get_size(&self) -> os::Size<u32> {
+        os::Size {
+            x: self.width,
+            y: self.height
+        }
+    }
+
     fn is_loaded(&self) -> bool {
         unsafe {
             (*self.notify).can_play

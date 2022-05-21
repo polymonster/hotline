@@ -1,5 +1,6 @@
 use std::any::Any;
 use crate::gfx;
+use crate::os;
 
 /// Implements this interface for Windows Media Foundation with Direct3D12
 pub mod wmf;
@@ -29,4 +30,6 @@ pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     fn is_playing(&self) -> bool;
     /// Check if video has played and ended
     fn is_ended(&self) -> bool;
+    /// Return the dimensions of the video
+    fn get_size(&self) -> os::Size<u32>;
 }
