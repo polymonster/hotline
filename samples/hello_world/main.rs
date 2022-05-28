@@ -134,24 +134,6 @@ fn main() -> Result<(), hotline::Error> {
     let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
     let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
 
-    let vs_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain"),
-            target: String::from("vs_5_1"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
-    };
-
-    let fs_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Fragment,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain"),
-            target: String::from("ps_5_1"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
-    };
-
     let cs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
         compile_info: Some(gfx::ShaderCompileInfo {
@@ -163,8 +145,24 @@ fn main() -> Result<(), hotline::Error> {
 
     let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
 
-    let vs = dev.create_shader(&vs_info, contents.as_bytes())?;
-    let fs = dev.create_shader(&fs_info, contents.as_bytes())?;
+    let vsc_filepath = asset_path.join("data\\shaders\\bindless\\default.vsc");
+    let psc_filepath = asset_path.join("data\\shaders\\bindless\\default.psc");
+
+    let vsc_data = fs::read(vsc_filepath)?;
+    let psc_data = fs::read(psc_filepath)?;
+
+    let vsc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let vs = dev.create_shader(&vsc_info, &vsc_data)?;
+    
+    let psc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let fs = dev.create_shader(&psc_info, &psc_data)?;
+
     let cs = dev.create_shader(&cs_info, contents.as_bytes())?;
 
     let num_descriptors = 10;

@@ -8,6 +8,14 @@
             help_arg: "-help"
         }
     }
+	
+	tools_update: {
+		pmfx: {
+			tag_name: latest
+			repository: "https://api.github.com/repos/polymonster/pmfx-shader/releases"
+			asset_name<windows>: Windows-x64.zip
+		}
+	}
 
     win32: {
         copy: {
@@ -20,7 +28,7 @@
         pmfx: {
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 5_0"
+                "-shader_version 5_1"
                 "-i samples/"
                 "-o target/debug/data/shaders"
                 "-t target/temp/shaders"

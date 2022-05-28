@@ -1,0 +1,111 @@
+struct vs_input
+{
+    float4 position : POSITION; 
+    float4 colour : COLOR;
+};
+
+struct ps_input
+{
+    float4 position : SV_POSITION;
+    float4 colour : COLOR;
+};
+
+struct ps_output
+{
+    float4 colour : SV_Target;
+};
+
+cbuffer push_constants : register(b0, space0)
+{
+    float4 my_rgba;
+};
+
+cbuffer mush_constants : register(b1, space0)
+{
+    float4 by_bbbs;
+};
+
+struct data
+{
+    float4 rgba;
+};
+
+shader_resources
+{
+    texture2d_table(texture0, float4, [6], 0, 0);
+    sampler_state(sampler0, 0);
+    cbuffer_table(constant_buffer0, data, [6], 1, 0);
+};
+
+ps_input vs_main(vs_input input)
+{
+    ps_input output;
+    output.position = input.position;
+    output.colour = input.colour;
+    return output;
+}
+
+ps_output ps_main(ps_input input)
+{
+    ps_output output;
+
+    float4 final = float4(0.0, 0.0, 0.0, 0.0);
+    float2 uv = input.colour.rg * float2(1.0, -1.0);
+
+    float4 r0 = texture_sample(texture0[0], sampler0, uv * 2.0);
+    float4 r1 = texture_sample(texture0[1], sampler0, (uv * 2.0) + float2(0.0, 1.0));
+    float4 r2 = texture_sample(texture0[2], sampler0, (uv * 2.0) + float2(1.0, 1.0));
+    float4 r3 = texture_sample(texture0[5], sampler0, (input.colour.rg * 2.0) + float2(1.0, 0.0));
+    r3 += texture_sample(texture0[6], sampler0, (input.colour.rg * 2.0) + float2(1.0, 0.0));
+
+    if(input.colour.r < 0.5 && input.colour.g < 0.5)
+    {
+        final = r0;
+    }
+    else if(input.colour.r < 0.5 && input.colour.g > 0.5)
+    {
+        final = r1;
+    }
+    else if(input.colour.r > 0.5 && input.colour.g > 0.5)
+    {
+        final = r2;
+    }
+    else if(input.colour.r > 0.5 && input.colour.g < 0.5)
+    {
+        final = r3;
+    }
+
+    final *= constant_buffer0[4].rgba;
+    
+    /*
+    ;
+    float4 r0 = texture0[0].Sample(sampler0, uv * 2.0);
+    float4 r1 = texture0[1].Sample(sampler0, (uv * 2.0) + float2(0.0, 1.0));
+    float4 r2 = texture0[2].Sample(sampler0, (uv * 2.0) + float2(1.0, 1.0));
+
+    float4 r3 = texture0[5].Sample(sampler0, (input.color.rg * 2.0) + float2(1.0, 0.0));
+    r3 += texture0[6].Sample(sampler0, (input.color.rg * 2.0) + float2(1.0, 0.0));
+
+    if(input.color.r < 0.5 && input.color.g < 0.5)
+    {
+        final = r0;
+    }
+    else if(input.color.r < 0.5 && input.color.g > 0.5)
+    {
+        final = r1;
+    }
+    else if(input.color.r > 0.5 && input.color.g > 0.5)
+    {
+        final = r2;
+    }
+    else if(input.color.r > 0.5 && input.color.g < 0.5)
+    {
+        final = r3;
+    }
+
+    final *= cbs[4].rgba;
+    */
+
+    output.colour = final;
+    return output;
+}

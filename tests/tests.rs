@@ -142,9 +142,7 @@ fn swap_chain_buffer() -> Result<(), hotline::Error> {
 
         cmd.reset(&swap_chain);
 
-        // TODO: pass on the fly
         let mut pass = swap_chain.get_backbuffer_pass_mut();
-
         cmd.begin_render_pass(&mut pass);
         cmd.end_render_pass();
 
