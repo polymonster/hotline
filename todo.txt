@@ -4,6 +4,7 @@
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
+// - bindless in pmfx
 // - add dxc and suppor for sm_6_0
 // - pmfx Input Layout
 // - pmfx Descriptor Layout
