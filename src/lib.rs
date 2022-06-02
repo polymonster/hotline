@@ -13,6 +13,9 @@ pub mod image;
 /// Imgui rendering and platform implementation using imgui_sys
 pub mod imgui;
 
+/// Immediate mode primitive rendering API
+pub mod imdraw;
+
 /// Use bitmask for flags
 #[macro_use]
 extern crate bitflags;
