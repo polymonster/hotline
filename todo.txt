@@ -1,6 +1,5 @@
 // TODO:
 
-// - automate pmbuild / pmfx update
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
@@ -10,17 +9,22 @@
 // - pmfx Descriptor Layout
 // - automate update docs
 
+// - Math lib
+// - camera
+// - debug rendering
+
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
 // - Stencil Ref
 // - MRT
 // - MSAA
-// - Math lib
+
 // - Samples
 // - Automate docs update
 
 // DONE:
+// x automate pmbuild / pmfx update
 // x Shaders from IR
 // x pmfx Shaders
 // x build scripts
