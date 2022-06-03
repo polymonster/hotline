@@ -2,8 +2,8 @@ use crate::gfx;
 use gfx::Buffer;
 use gfx::CmdBuf;
 
-pub type Vec2f = cgmath::Vector2<f32>;
-pub type Vec4f = cgmath::Vector4<f32>;
+use crate::Vec2f;
+use crate::Vec4f;
 
 /// A coherent cpu/gpu buffer back by multiple gpu buffers to allow cpu writes while gpu is inflight 
 struct DynamicBuffer<D: gfx::Device> {
@@ -82,6 +82,36 @@ impl<D> ImDraw<D> where D: gfx::Device {
         self.add_vertex_2d(end, col);
     }
 
+    pub fn add_tri_2d(&mut self, p1: Vec2f, p2: Vec2f, p3: Vec2f, col: Vec4f) {
+        // edge 1
+        self.add_vertex_2d(p1, col);
+        self.add_vertex_2d(p2, col);
+        // edge 2
+        self.add_vertex_2d(p2, col);
+        self.add_vertex_2d(p3, col);
+        // edge 3
+        self.add_vertex_2d(p3, col);
+        self.add_vertex_2d(p1, col);
+    }
+
+    pub fn add_rect_2d(&mut self, p: Vec2f, size: Vec2f, col: Vec4f) {
+        let p1 = p + Vec2f::new(size.x, 0.0);
+        let p2 = p + size;
+        let p3 = p + Vec2f::new(0.0, size.y);
+        // edge 1
+        self.add_vertex_2d(p, col);
+        self.add_vertex_2d(p1, col);
+        // edge 2
+        self.add_vertex_2d(p1, col);
+        self.add_vertex_2d(p2, col);
+        // edge 3
+        self.add_vertex_2d(p2, col);
+        self.add_vertex_2d(p3, col);
+        // edge 4
+        self.add_vertex_2d(p3, col);
+        self.add_vertex_2d(p, col);
+    }
+
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
         if self.vertices_2d.cpu_data.len() > 0 {
             let num_elems = self.vertices_2d.cpu_data.len() / 6;
@@ -109,7 +139,6 @@ impl<D> ImDraw<D> where D: gfx::Device {
     }
 
     pub fn draw(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
-        let num_elems = self.vertices_2d.cpu_data.len() / 6;
         cmd.set_vertex_buffer(&self.vertices_2d.gpu_data[buffer_index], 0);
         cmd.draw_instanced(self.vertices_2d.vertex_count, 1, 0, 0);
     }

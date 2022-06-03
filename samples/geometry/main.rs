@@ -9,6 +9,7 @@ use os::Window;
 
 use std::fs;
 use imdraw::*;
+use camera::*;
 
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
@@ -16,7 +17,7 @@ use gfx::d3d12 as gfx_platform;
 
 fn main() -> Result<(), hotline::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
-        name: String::from("triangle"),
+        name: String::from("imdraw"),
         window: false,
         num_buffers: 0,
         dpi_aware: true,
@@ -30,7 +31,7 @@ fn main() -> Result<(), hotline::Error> {
     });
 
     let mut window = app.create_window(os::WindowInfo {
-        title: String::from("triangle!"),
+        title: String::from("imdraw!"),
         rect: os::Rect {
             x: 100,
             y: 100,
@@ -58,8 +59,8 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
-    let vsc_filepath = asset_path.join("data\\shaders\\imdraw\\default.vsc");
-    let psc_filepath = asset_path.join("data\\shaders\\imdraw\\default.psc");
+    let vsc_filepath = asset_path.join("data/shaders/imdraw/default.vsc");
+    let psc_filepath = asset_path.join("data/shaders/imdraw/default.psc");
 
     let vsc_data = fs::read(vsc_filepath)?;
     let psc_data = fs::read(psc_filepath)?;
@@ -99,7 +100,16 @@ fn main() -> Result<(), hotline::Error> {
                 step_rate: 0,
             },
         ],
-        descriptor_layout: gfx::DescriptorLayout::default(),
+        descriptor_layout: gfx::DescriptorLayout {
+            push_constants: Some(vec![gfx::PushConstantInfo {
+                visibility: gfx::ShaderVisibility::Vertex,
+                num_values: 16,
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            static_samplers: None,
+            bindings: None,
+        },
         raster_info: gfx::RasterInfo::default(),
         depth_stencil_info: gfx::DepthStencilInfo::default(),
         blend_info: gfx::BlendInfo {
@@ -128,7 +138,11 @@ fn main() -> Result<(), hotline::Error> {
         let viewport = gfx::Viewport::from(window_rect);
         let scissor = gfx::ScissorRect::from(window_rect);
 
-        imdraw.add_line_2d(Vec2f::new(0.0, 0.0), Vec2f::new(0.0, 1.0), Vec4f::new(1.0, 0.0, 1.0, 1.0));
+        let ortho = camera::create_ortho_matrix(0.0, window_rect.width as f32, window_rect.height as f32, 0.0, 0.0, 1.0);
+        
+        imdraw.add_line_2d(Vec2f::new(600.0, 100.0), Vec2f::new(600.0, 500.0), Vec4f::new(1.0, 0.0, 1.0, 1.0));
+        imdraw.add_tri_2d(Vec2f::new(100.0, 100.0), Vec2f::new(100.0, 400.0), Vec2f::new(400.0, 400.0), Vec4f::new(0.0, 1.0, 1.0, 1.0));
+        imdraw.add_rect_2d(Vec2f::new(800.0, 100.0), Vec2f::new(200.0, 400.0), Vec4f::new(1.0, 0.5, 0.0, 1.0));
 
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
@@ -136,6 +150,8 @@ fn main() -> Result<(), hotline::Error> {
         cmd.set_viewport(&viewport);
         cmd.set_scissor_rect(&scissor);
         cmd.set_render_pipeline(&pso);
+
+        cmd.push_constants(0, 16, 0, gfx::as_u8_slice(&ortho));
 
         let bb = cmd.get_backbuffer_index() as usize;
         imdraw.submit(&mut device, bb)?;
