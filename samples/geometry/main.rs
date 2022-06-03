@@ -11,6 +11,8 @@ use std::fs;
 use imdraw::*;
 use camera::*;
 
+use pmfx;
+
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
@@ -61,6 +63,11 @@ fn main() -> Result<(), hotline::Error> {
 
     let vsc_filepath = asset_path.join("data/shaders/imdraw/default.vsc");
     let psc_filepath = asset_path.join("data/shaders/imdraw/default.psc");
+    let info_filepath = asset_path.join("data/shaders/imdraw/info.json");
+
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device>= pmfx::Pmfx::create();
+    pmfx.load_shader(info_filepath.to_str().unwrap());
+
 
     let vsc_data = fs::read(vsc_filepath)?;
     let psc_data = fs::read(psc_filepath)?;

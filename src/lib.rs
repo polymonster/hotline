@@ -19,6 +19,9 @@ pub mod imdraw;
 /// Camera
 pub mod camera;
 
+/// High level graphics
+pub mod pmfx;
+
 /// Use bitmask for flags
 #[macro_use]
 extern crate bitflags;
