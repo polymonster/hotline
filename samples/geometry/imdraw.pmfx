@@ -15,13 +15,16 @@ struct ps_output
     float4 colour : SV_Target;
 };
 
+cbuffer push_constants : register(b0)
+{
+    float4x4 projection_matrix;
+};
+
 vs_output vs_main( vs_input input )
 {
     vs_output output;
     
-    output.position.xy = input.position.xy;
-    output.position.zw = float2(0.0, 1.0); 
-
+    output.position = mul(projection_matrix, float4(input.position.xy, 0.0, 1.0));
     output.colour = input.colour;
     
     return output;
