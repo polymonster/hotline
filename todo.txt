@@ -3,10 +3,9 @@
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
-// - bindless in pmfx
 // - add dxc and suppor for sm_6_0
-// - pmfx Input Layout
 // - pmfx Descriptor Layout
+// - pmfx pipelines
 // - automate update docs
 
 // - Math lib
@@ -24,6 +23,8 @@
 // - Automate docs update
 
 // DONE:
+// x bindless in pmfx
+// x pmfx Input Layout
 // x debug rendering 2d
 // x automate pmbuild / pmfx update
 // x Shaders from IR
