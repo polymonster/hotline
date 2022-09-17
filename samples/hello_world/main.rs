@@ -435,8 +435,8 @@ fn main() -> Result<(), hotline::Error> {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
-        let mut pass = swap_chain.get_backbuffer_pass_mut();
-        cmdbuffer.begin_render_pass(&mut pass);
+        let pass = swap_chain.get_backbuffer_pass_mut();
+        cmdbuffer.begin_render_pass(pass);
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
