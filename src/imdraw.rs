@@ -2,8 +2,8 @@ use crate::gfx;
 use gfx::Buffer;
 use gfx::CmdBuf;
 
-use crate::Vec2f;
-use crate::Vec4f;
+use maths_rs::Vec2f;
+use maths_rs::Vec4f;
 
 /// A coherent cpu/gpu buffer back by multiple gpu buffers to allow cpu writes while gpu is inflight 
 struct DynamicBuffer<D: gfx::Device> {

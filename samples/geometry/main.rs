@@ -11,6 +11,10 @@ use std::fs;
 use imdraw::*;
 use camera::*;
 
+use maths_rs::Vec2f;
+use maths_rs::Vec4f;
+use maths_rs::Mat4f;
+
 use pmfx;
 
 #[cfg(target_os = "windows")]
