@@ -162,7 +162,7 @@ fn main() -> Result<(), hotline::Error> {
         cmd.set_scissor_rect(&scissor);
         cmd.set_render_pipeline(&pso);
 
-        cmd.push_constants(0, 16, 0, gfx::as_u8_slice(&ortho));
+        cmd.push_constants(0, 16, 0, &ortho);
 
         let bb = cmd.get_backbuffer_index() as usize;
         imdraw.submit(&mut device, bb)?;
