@@ -9,7 +9,7 @@ homepage = "https://github.com/polymonster/hotline"
 repository = "https://github.com/polymonster/hotline"
 keywords = ["graphics-engine", "compute", "video-decoding", "hot-reloading", "live-coding"]
 categories = ["game-development", "graphics"]
-license-file = "license.md"
+license-file = "license"
 
 [dependencies]
 bitflags = "1.3.2"
