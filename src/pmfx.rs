@@ -1,6 +1,6 @@
 
 use serde::{Deserialize, Serialize};
-use serde_json::Result;
+// use serde_json::Result;
 
 use crate::gfx;
 
@@ -125,8 +125,6 @@ impl<'a, D> Pmfx<'a, D> where D: gfx::Device {
                     step_rate: 0,
                 });
             }
-
-            let a = 0;
         }
     }
 
