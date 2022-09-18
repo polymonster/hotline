@@ -155,6 +155,14 @@ fn main() -> Result<(), hotline::Error> {
 
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
+
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::Present,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+
         cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
         cmd.set_viewport(&viewport);
         cmd.set_scissor_rect(&scissor);
@@ -162,7 +170,15 @@ fn main() -> Result<(), hotline::Error> {
         cmd.set_vertex_buffer(&vertex_buffer, 0);
         cmd.draw_instanced(3, 1, 0, 0);
         cmd.end_render_pass();
-        cmd.close(&swap_chain);
+
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::Present,
+        });
+
+        cmd.close(&swap_chain)?;
 
         // execute command buffer
         device.execute(&cmd);

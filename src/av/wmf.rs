@@ -179,7 +179,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 // create event callback
                 let notify = new_notify_events();
                 let mn = MediaEngineNotify {
-                    notify: notify
+                    notify
                 };
                 let imn : IMFMediaEngineNotify = mn.into();
                 attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, imn)?;
@@ -190,9 +190,9 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 let media_engine = mf_factory.CreateInstance(0, attributes)?;
                 
                 let player = VideoPlayer {
-                    device: device,
+                    device,
                     media_engine_ex: media_engine.cast()?,
-                    notify: notify,
+                    notify,
                     texture: None,
                     cleanup_textures: vec![],
                     width: 0,
