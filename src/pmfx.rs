@@ -69,7 +69,7 @@ struct PmfxShader {
 }
 
 pub struct Pmfx<'a, D: gfx::Device> {
-    pipelines: Vec<gfx::RenderPipelineInfo<'a, D>>
+    _pipelines: Vec<gfx::RenderPipelineInfo<'a, D>>
 }
 
 const SEMANTIC_NAMES : [&str; 9] = [
@@ -104,7 +104,7 @@ fn get_format_for_semantic(semantic_size: u32, num_elements: u32) -> gfx::Format
 impl<'a, D> Pmfx<'a, D> where D: gfx::Device {
     pub fn create() -> Self {
         Pmfx {
-            pipelines: Vec::new()
+            _pipelines: Vec::new()
         }
     }
 

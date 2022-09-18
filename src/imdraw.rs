@@ -15,15 +15,17 @@ struct DynamicBuffer<D: gfx::Device> {
 
 /// 2d vertex with position and colour
 struct ImDrawVertex2d {
-    position: [f32; 2],
-    color: [f32; 4],
+    _position: [f32; 2],
+    _color: [f32; 4],
 }
 
+/*
 /// 3d vertex with position and colour
 struct ImDrawVertex3d {
     position: [f32; 3],
     color: [f32; 4],
 }
+*/
 
 /// Information to create an instance of ImDraw
 pub struct ImDrawInfo {
@@ -34,7 +36,7 @@ pub struct ImDrawInfo {
 /// Immediate mode primitive drawing API struct
 pub struct ImDraw<D: gfx::Device> {
     vertices_2d: DynamicBuffer<D>,
-    vertices_3d: DynamicBuffer<D>
+    _vertices_3d: DynamicBuffer<D>
 }
 
 /// Immediate mode primitive drawing API implementation
@@ -57,7 +59,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
                 gpu_data_size: Vec::new(),
                 vertex_count: 0
             },
-            vertices_3d: DynamicBuffer {
+            _vertices_3d: DynamicBuffer {
                 cpu_data: Vec::with_capacity(info.initial_buffer_size_3d),
                 gpu_data: Vec::new(),
                 gpu_data_size: Vec::new(),

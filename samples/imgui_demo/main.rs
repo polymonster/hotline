@@ -110,7 +110,7 @@ fn main() -> Result<(), hotline::Error> {
         });
         cmdbuffer.end_event();
 
-        cmdbuffer.close(&swap_chain);
+        cmdbuffer.close(&swap_chain)?;
 
         dev.execute(&cmdbuffer);
 

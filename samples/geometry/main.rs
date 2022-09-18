@@ -8,12 +8,9 @@ use os::App;
 use os::Window;
 
 use std::fs;
-use imdraw::*;
-use camera::*;
 
 use maths_rs::Vec2f;
 use maths_rs::Vec4f;
-use maths_rs::Mat4f;
 
 use pmfx;
 
@@ -157,6 +154,15 @@ fn main() -> Result<(), hotline::Error> {
 
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
+
+        // transition to RT
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::Present,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+
         cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
         cmd.set_viewport(&viewport);
         cmd.set_scissor_rect(&scissor);
@@ -169,7 +175,16 @@ fn main() -> Result<(), hotline::Error> {
         imdraw.draw(&mut cmd, bb);
 
         cmd.end_render_pass();
-        cmd.close(&swap_chain);
+
+        // transition to present
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::Present,
+        });
+
+        cmd.close(&swap_chain)?;
 
         // execute command buffer
         device.execute(&cmd);

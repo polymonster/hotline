@@ -728,12 +728,12 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<D: Device> {
     fn reset(&mut self, swap_chain: &D::SwapChain);
-    fn close(&mut self, swap_chain: &D::SwapChain);
+    fn close(&mut self, swap_chain: &D::SwapChain) -> Result<(), Error>;
     fn get_backbuffer_index(&self) -> u32;
     fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
     fn end_render_pass(&self);
-    fn begin_event(&self, colour: u32, name: &str);
-    fn end_event(&self);
+    fn begin_event(&mut self, colour: u32, name: &str);
+    fn end_event(&mut self);
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
