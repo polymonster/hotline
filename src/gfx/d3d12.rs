@@ -34,64 +34,70 @@ impl WinPixEventRuntime {
     pub fn create() -> Option<WinPixEventRuntime> {
         unsafe {
             let module = LoadLibraryA("WinPixEventRuntime.dll\0");
-
             let p_begin_event = GetProcAddress(module, "PIXBeginEventOnCommandList\0");
             let p_end_event = GetProcAddress(module, "PIXEndEventOnCommandList\0");
             let p_set_marker = GetProcAddress(module, "PIXSetMarkerOnCommandList\0");
-
-            if p_begin_event.is_some() && p_end_event.is_some() && p_set_marker.is_some() {
-                return Some(WinPixEventRuntime {
+            if let (Some(begin), Some(end), Some(marker)) = (p_begin_event, p_end_event, p_set_marker) {
+                Some(WinPixEventRuntime {
                     begin_event: std::mem::transmute::<*const usize, BeginEventOnCommandList>(
-                        p_begin_event.unwrap() as *const usize,
+                        begin as *const usize,
                     ),
                     end_event: std::mem::transmute::<*const usize, EndEventOnCommandList>(
-                        p_end_event.unwrap() as *const usize,
+                        end as *const usize,
                     ),
                     set_marker: std::mem::transmute::<*const usize, SetMarkerOnCommandList>(
-                        p_set_marker.unwrap() as *const usize,
+                        marker as *const usize,
                     ),
-                });
+                })
             }
-            None
+            else {
+                None
+            }
         }
     }
 
     pub fn begin_event_on_command_list(
         &self,
-        command_list: ID3D12GraphicsCommandList,
+        command_list: &ID3D12GraphicsCommandList,
         color: u64,
         name: &str,
     ) {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_begin_event: BeginEventOnCommandList = self.begin_event;
-            let p_cmd_list =
+            let p_cmd_list = 
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_begin_event(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
+            // this ensures we drop the command_list ref
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
         }
     }
 
-    pub fn end_event_on_command_list(&self, command_list: ID3D12GraphicsCommandList) {
+    pub fn end_event_on_command_list(&self, command_list: &ID3D12GraphicsCommandList) {
         unsafe {
             let fn_end_event: EndEventOnCommandList = self.end_event;
-            let p_cmd_list =
+            let p_cmd_list = 
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_end_event(p_cmd_list);
+            // this ensures we drop the command_list ref
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
         }
     }
 
     pub fn set_marker_on_command_list(
         &self,
-        command_list: ID3D12GraphicsCommandList,
+        command_list: &ID3D12GraphicsCommandList,
         color: u64,
         name: &str,
     ) {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_set_marker: SetMarkerOnCommandList = self.set_marker;
-            let p_cmd_list =
+            let p_cmd_list = 
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_set_marker(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
+            // this ensures we drop the command_list ref
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
         }
     }
 }
@@ -261,8 +267,8 @@ const fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D
 
 fn to_d3d12_sampler_boarder_colour(col: Option<u32>) -> D3D12_STATIC_BORDER_COLOR {
     let mut r = D3D12_STATIC_BORDER_COLOR_TRANSPARENT_BLACK;
-    if col.is_some() {
-        r = D3D12_STATIC_BORDER_COLOR(col.unwrap() as i32);
+    if let Some(col) = col {
+        r = D3D12_STATIC_BORDER_COLOR(col as i32);
     }
     r
 }
@@ -299,10 +305,12 @@ const fn to_d3d12_comparison_func(func: super::ComparisonFunc) -> D3D12_COMPARIS
 }
 
 fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D12_COMPARISON_FUNC {
-    if func.is_some() {
-        return to_d3d12_comparison_func(func.unwrap());
+    if let Some(func) = func {
+        to_d3d12_comparison_func(func)
     }
-    D3D12_COMPARISON_FUNC_ALWAYS
+    else {
+        D3D12_COMPARISON_FUNC_ALWAYS
+    }
 }
 
 const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_STATES {
@@ -436,12 +444,11 @@ const fn to_d3d12_stencil_op(op: &super::StencilOp) -> D3D12_STENCIL_OP {
 }
 
 fn to_d3d12_render_target_blend(
-    blend_info: &Vec<super::RenderTargetBlendInfo>,
+    blend_info: &[super::RenderTargetBlendInfo],
 ) -> [D3D12_RENDER_TARGET_BLEND_DESC; 8] {
     let mut rtb: [D3D12_RENDER_TARGET_BLEND_DESC; 8] =
         [D3D12_RENDER_TARGET_BLEND_DESC::default(); 8];
-    let mut i = 0;
-    for b in blend_info {
+    for (i, b) in blend_info.iter().enumerate() {
         rtb[i] = D3D12_RENDER_TARGET_BLEND_DESC {
             BlendEnable: BOOL::from(b.blend_enabled),
             LogicOpEnable: BOOL::from(b.logic_op_enabled),
@@ -454,7 +461,6 @@ fn to_d3d12_render_target_blend(
             LogicOp: to_d3d12_logic_op(&b.logic_op),
             RenderTargetWriteMask: u8::from(b.write_mask),
         };
-        i += 1;
     }
     rtb
 }
@@ -558,7 +564,7 @@ pub fn get_hardware_adapter(
         let mut selected_index = -1;
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i);
-            if !adapter.is_ok() {
+            if adapter.is_err() {
                 break;
             }
             let desc = adapter.unwrap().GetDesc1()?;
@@ -575,18 +581,15 @@ pub fn get_hardware_adapter(
 
             if let Some(adapter_name) = &adapter_name {
                 let s = adapter_name.to_string();
-                if s == decoded.to_string() {
+                if s == *decoded {
                     selected_index = i as i32;
                 }
             } else {
                 // auto select first non software adapter
                 let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags);
-                if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE)
-                    == DXGI_ADAPTER_FLAG_NONE
-                {
-                    if selected_index == -1 {
-                        selected_index = i as i32;
-                    }
+                if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE && 
+                    selected_index == -1 {
+                    selected_index = i as i32;
                 }
             }
         }
@@ -667,7 +670,7 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
         let base_address = heap.GetCPUDescriptorHandleForHeapStart().ptr;
         let incr = device.GetDescriptorHandleIncrementSize(d3d12_type) as usize;
         Heap {
-            heap: heap,
+            heap,
             base_address: base_address as usize,
             increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
             capacity: info.num_descriptors * incr,
@@ -715,15 +718,14 @@ fn validate_data_size<T: Sized>(
     size_bytes: usize,
     data: Option<&[T]>,
 ) -> result::Result<(), super::Error> {
-    if data.is_some() {
-        let data = data.unwrap();
+    if let Some(data) = data {
         let data_size_bytes = data.len() * std::mem::size_of::<T>();
         if data_size_bytes != size_bytes {
             return Err(super::Error {
-                msg: String::from(format!(
+                msg: format!(
                     "data size: ({}) bytes does not match expected size: ({}) bytes",
                     data_size_bytes, size_bytes
-                )),
+                ),
             });
         }
     }
@@ -744,7 +746,7 @@ impl Heap {
                 }
                 let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
                 self.offset += self.increment_size;
-                return D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
+                return D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
             }
             // pulls new handle from the free list
             D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -766,7 +768,7 @@ impl Heap {
 impl super::Heap<Device> for Heap {
     fn deallocate(&mut self, index: usize) {
         let ptr = self.base_address + self.increment_size * index;
-        let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr: ptr };
+        let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
         self.deallocate_internal(&handle);
     }
 }
@@ -774,11 +776,10 @@ impl super::Heap<Device> for Heap {
 impl Device {
     fn create_d3d12_input_element_desc(
         layout: &super::InputLayout,
-        null_terminated_semantics: &Vec<CString>,
+        null_terminated_semantics: &[CString],
     ) -> Vec<D3D12_INPUT_ELEMENT_DESC> {
         let mut d3d12_elems: Vec<D3D12_INPUT_ELEMENT_DESC> = Vec::new();
-        let mut ielem = 0;
-        for elem in layout {
+        for (ielem, elem) in layout.iter().enumerate() {
             d3d12_elems.push(D3D12_INPUT_ELEMENT_DESC {
                 SemanticName: PCSTR(null_terminated_semantics[ielem].as_ptr() as _),
                 SemanticIndex: elem.index,
@@ -793,7 +794,6 @@ impl Device {
                 },
                 InstanceDataStepRate: elem.step_rate,
             });
-            ielem = ielem + 1;
         }
         d3d12_elems
     }
@@ -844,10 +844,9 @@ impl Device {
                     OffsetInDescriptorsFromTableStart: 0,
                 };
 
-                // TODO: if let
                 let map = visibility_map.get_mut(&binding.visibility);
-                if map.is_some() {
-                    map.unwrap().push(range);
+                if let Some(map) = map {
+                    map.push(range);
                 } else {
                     visibility_map.insert(binding.visibility, vec![range]);
                 }
@@ -896,7 +895,6 @@ impl Device {
             pParameters: root_params.as_mut_ptr(),
             NumStaticSamplers: static_samplers.len() as u32,
             pStaticSamplers: static_samplers.as_mut_ptr(),
-            ..Default::default()
         };
 
         unsafe {
@@ -911,8 +909,7 @@ impl Device {
             );
 
             // handle errors
-            if error.is_some() {
-                let blob = error.unwrap();
+            if let Some(blob) = error {
                 return Err(super::Error {
                     msg: get_d3d12_error_blob_string(&blob),
                 });
@@ -929,14 +926,14 @@ impl Device {
     fn create_render_passes_for_swap_chain(
         &self,
         num_buffers: u32,
-        textures: &Vec<Texture>,
+        textures: &[Texture],
         clear_col: Option<ClearColour>,
     ) -> Vec<RenderPass> {
         let mut passes = Vec::new();
-        for i in 0..num_buffers as usize {
+        for texture in textures.iter().take(num_buffers as usize) {
             passes.push(
                 self.create_render_pass(&super::RenderPassInfo {
-                    render_targets: vec![textures[i].clone()],
+                    render_targets: vec![texture.clone()],
                     rt_clear: clear_col,
                     depth_stencil: None,
                     ds_clear: None,
@@ -958,10 +955,10 @@ pub fn get_dxgi_factory(device: &Device) -> &IDXGIFactory4 {
 impl Shader {
     fn get_buffer_pointer(&self) -> *const std::ffi::c_void {
         if let Some(blob) = &self.blob {
-            return unsafe { blob.GetBufferPointer() }
+            unsafe { blob.GetBufferPointer() }
         }
         else if let Some(precompiled) = &self.precompiled {
-            return precompiled.as_ptr() as _
+            precompiled.as_ptr() as _
         }
         else {
             std::ptr::null()
@@ -1070,16 +1067,16 @@ impl super::Device for Device {
 
             // initialise struct
             Device {
-                adapter_info: adapter_info,
-                device: device,
-                dxgi_factory: dxgi_factory,
-                command_allocator: command_allocator,
-                command_list: command_list,
-                command_queue: command_queue,
+                adapter_info,
+                device,
+                dxgi_factory,
+                command_allocator,
+                command_list,
+                command_queue,
                 pix: WinPixEventRuntime::create(),
-                shader_heap: shader_heap,
-                rtv_heap: rtv_heap,
-                dsv_heap: dsv_heap,
+                shader_heap,
+                rtv_heap,
+                dsv_heap,
             }
         }
     }
@@ -1143,14 +1140,14 @@ impl super::Device for Device {
             Ok(SwapChain {
                 width: size.x,
                 height: size.y,
-                format: format,
+                format,
                 num_bb: info.num_buffers,
                 flags: flags as u32,
                 bb_index: 0,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?,
                 fence_last_signalled_value: 0,
                 fence_event: CreateEventA(std::ptr::null(), false, false, None)?,
-                swap_chain: swap_chain,
+                swap_chain,
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
                 frame_index: 0,
@@ -1299,7 +1296,7 @@ impl super::Device for Device {
 
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
-            root_signature: root_signature,
+            root_signature,
             topology: to_d3d12_primitive_topology(info.topology, info.patch_index),
         })
     }
@@ -1332,7 +1329,7 @@ impl super::Device for Device {
                     &mut shader_blob,
                     &mut errors,
                 );
-                if !result.is_ok() {
+                if result.is_err() {
                     if let Some(e) = errors {
                         let buf = e.GetBufferPointer();
                         let c_str: &CStr = CStr::from_ptr(buf as *const i8);
@@ -1363,7 +1360,7 @@ impl super::Device for Device {
             // validate DXBC 
             // TODO: DXIL
             let mut valid = true;
-            let validate = ['D' as u8, 'X' as u8, 'B' as u8, 'C' as u8];
+            let validate = [b'D', b'X', b'B', b'C'];
             for i in 0..4 {
                 if bytes[i] != validate[i] {
                     valid = false;
@@ -1421,12 +1418,12 @@ impl super::Device for Device {
                 // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
-                } else {
-                    if data.is_some() {
-                        D3D12_RESOURCE_STATE_COPY_DEST
-                    } else {
-                        D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
-                    }
+                } 
+                else if data.is_some() {
+                    D3D12_RESOURCE_STATE_COPY_DEST
+                }
+                else {
+                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
                 },
                 std::ptr::null(),
                 &mut buf,
@@ -1469,7 +1466,7 @@ impl super::Device for Device {
                 let mut map_data = std::ptr::null_mut();
                 let res = upload.clone().unwrap();
                 res.Map(0, &range, &mut map_data)?;
-                if map_data != std::ptr::null_mut() {
+                if !map_data.is_null() {
                     let src = data.as_ptr() as *mut u8;
                     std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes as usize);
                 }
@@ -1538,9 +1535,9 @@ impl super::Device for Device {
 
             Ok(Buffer {
                 resource: buf.unwrap(),
-                vbv: vbv,
-                ibv: ibv,
-                srv_index: srv_index,
+                vbv,
+                ibv,
+                srv_index,
                 uav_index: None,
             })
         }
@@ -1634,7 +1631,7 @@ impl super::Device for Device {
                 let mut map_data = std::ptr::null_mut();
                 let res = upload.clone().unwrap();
                 res.Map(0, &range, &mut map_data)?;
-                if map_data != std::ptr::null_mut() {
+                if !map_data.is_null() {
                     for y in 0..info.height {
                         let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
                         let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
@@ -1768,9 +1765,9 @@ impl super::Device for Device {
                 resource: tex.unwrap(),
                 rtv: rtv_handle,
                 dsv: dsv_handle,
-                srv_index: srv_index,
-                uav_index: uav_index,
-                shared_handle: shared_handle
+                srv_index,
+                uav_index,
+                shared_handle
             })
         }
     }
@@ -1802,14 +1799,13 @@ impl super::Device for Device {
             let target_sample_count = desc.SampleDesc.Count;
             if sample_count.is_none() {
                 sample_count = Some(target_sample_count);
-            } else {
-                if sample_count.unwrap() != target_sample_count {
-                    return Err( super::Error {
-                        msg: format!("Sample counts must match on all targets: expected {} samples, found {}", 
-                        sample_count.unwrap(),
-                        target_sample_count
-                    )});
-                }
+            } 
+            else if sample_count.unwrap() != target_sample_count {
+                return Err( super::Error {
+                    msg: format!("Sample counts must match on all targets: expected {} samples, found {}", 
+                    sample_count.unwrap(),
+                    target_sample_count
+                )});
             }
             let begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
                 Type: begin_type,
@@ -1932,9 +1928,9 @@ impl super::Device for Device {
         }
 
         Ok(RenderPass {
-            rt: rt,
-            ds: ds,
-            ds_format: ds_format,
+            rt,
+            ds,
+            ds_format,
             rt_formats: formats,
             sample_count: sample_count.unwrap(),
         })
@@ -1959,7 +1955,7 @@ impl super::Device for Device {
         unsafe {
             Ok(ComputePipeline {
                 pso: self.device.CreateComputePipelineState(&desc)?,
-                root_signature: root_signature,
+                root_signature,
             })
         }
     }
@@ -1969,6 +1965,14 @@ impl super::Device for Device {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
             self.command_queue.ExecuteCommandLists(&mut[Some(command_list.clone())]);
         }
+    }
+
+    fn report_live_objects(&self) -> result::Result<(), super::Error> {
+        let debug_device : ID3D12DebugDevice = self.device.cast()?;
+        unsafe {
+            debug_device.ReportLiveDeviceObjects(D3D12_RLDO_DETAIL)?;
+        }
+        Ok(())
     }
 
     fn get_shader_heap(&self) -> &Self::Heap {
@@ -2082,15 +2086,15 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_backbuffer_texture(&self) -> &Texture {
-        return &self.backbuffer_textures[self.bb_index as usize];
+        &self.backbuffer_textures[self.bb_index as usize]
     }
 
     fn get_backbuffer_pass(&self) -> &RenderPass {
-        return &self.backbuffer_passes[self.bb_index as usize];
+        &self.backbuffer_passes[self.bb_index as usize]
     }
 
     fn get_backbuffer_pass_mut(&mut self) -> &mut RenderPass {
-        return &mut self.backbuffer_passes[self.bb_index as usize];
+        &mut self.backbuffer_passes[self.bb_index as usize]
     }
 
     fn swap(&mut self, device: &Device) {
@@ -2111,7 +2115,7 @@ impl super::SwapChain<Device> for SwapChain {
             self.require_wait[self.bb_index] = true;
 
             // swap buffers
-            self.frame_index = self.frame_index + 1;
+            self.frame_index += 1;
             self.bb_index = (self.bb_index + 1) % self.num_bb as usize;
         }
     }
@@ -2167,11 +2171,11 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }
         if self.event_stack_count != 0 {
-            return Err(super::Error {
-                msg: String::from(format!(
+            Err(super::Error {
+                msg: format!(
                     "mismatch begin/end events called on cmdbuf!",
-                ))
-            });
+                )
+            })
         }
         else {
             Ok(())
@@ -2207,7 +2211,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn begin_event(&mut self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
-            self.pix.unwrap().begin_event_on_command_list(cmd.clone(), colour as u64, name);
+            self.pix.unwrap().begin_event_on_command_list(cmd, colour as u64, name);
         }
         self.event_stack_count += 1;
     }
@@ -2215,7 +2219,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn end_event(&mut self) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
-            self.pix.unwrap().end_event_on_command_list(cmd.clone());
+            self.pix.unwrap().end_event_on_command_list(cmd);
         }
         self.event_stack_count -= 1;
     }
@@ -2321,7 +2325,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_marker(&self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
-            self.pix.unwrap().set_marker_on_command_list(cmd.clone(), colour as u64, name);
+            self.pix.unwrap().set_marker_on_command_list(cmd, colour as u64, name);
         }
     }
 
@@ -2536,7 +2540,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
                 }
             }
             Err(super::Error {
-                msg: format!("Failed to map readback buffer"),
+                msg: "Failed to map readback buffer".to_string(),
             })
         }
     }

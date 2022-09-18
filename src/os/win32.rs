@@ -349,9 +349,9 @@ impl App {
             WM_SYSCOMMAND => {
                 if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
                     // Disable ALT application menu
-                    return LRESULT(0);
+                    LRESULT(0)
                 } else {
-                    return self.wndproc(window, message, wparam, lparam);
+                    self.wndproc(window, message, wparam, lparam)
                 }
             }
             _ => self.wndproc(window, message, wparam, lparam),
@@ -429,7 +429,7 @@ impl super::App for App {
 
             if info.dpi_aware {
                 SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
-                if !SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_ok() {
+                if SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_err() {
                     println!("hotline::os::win32: SetProcessDpiAwareness failed");
                 }
             }
@@ -461,8 +461,8 @@ impl super::App for App {
             }
 
             App {
-                window_class_imgui: window_class_imgui,
-                window_class: String::from(window_class),
+                window_class_imgui,
+                window_class,
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
                 proc_data: ProcData {
@@ -520,9 +520,9 @@ impl super::App for App {
             self.hwnd_flags.insert(hwnd.0, info.style);
 
             Window {
-                hwnd: hwnd,
-                ws: ws,
-                wsex: wsex,
+                hwnd,
+                ws,
+                wsex,
                 events: super::WindowEventFlags::NONE,
             }
         }
@@ -540,8 +540,8 @@ impl super::App for App {
             self.update_input();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
-                    TranslateMessage(&mut msg);
-                    DispatchMessageA(&mut msg);
+                    TranslateMessage(&msg);
+                    DispatchMessageA(&msg);
 
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     if let Some(hwnd_flags) = self.hwnd_flags.get(&msg.hwnd.0) {
@@ -656,7 +656,7 @@ impl super::App for App {
 
             // keep specs in scope
             let mut specs : Vec<COMDLG_FILTERSPEC> = Vec::new();
-            if wide_exts.len() > 0 {
+            if !wide_exts.is_empty() {
                 for w in &wide_exts {
                     specs.push(COMDLG_FILTERSPEC {
                         pszName: PCWSTR(w.as_ptr() as _),
@@ -775,7 +775,7 @@ impl super::Window<App> for Window {
     }
 
     fn is_minimised(&self) -> bool {
-        unsafe { IsIconic(self.hwnd) == BOOL::from(true) }
+        unsafe { IsIconic(self.hwnd) == true }
     }
 
     fn set_focused(&self) {
@@ -891,7 +891,7 @@ impl super::Window<App> for Window {
             let monitor = MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST);
             let mut xdpi: u32 = 0;
             let mut ydpi: u32 = 0;
-            if !GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
+            if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_err() {
                 println!("hotline::os::win32: GetDpiForMonitor failed");
                 return 1.0;
             }
@@ -945,9 +945,9 @@ extern "system" fn main_wndproc(
         WM_SYSCOMMAND => {
             if (wparam.0 & 0xfff0) == SC_KEYMENU as usize {
                 // Disable ALT application menu
-                return LRESULT(0);
+                LRESULT(0)
             } else {
-                return wndproc(window, message, wparam, lparam);
+                wndproc(window, message, wparam, lparam)
             }
         }
         _ =>  wndproc(window, message, wparam, lparam),
@@ -1030,9 +1030,11 @@ extern "system" fn enum_func(
     _lparam: LPARAM,
 ) -> BOOL {
     unsafe {
-        let mut info: MONITORINFO = MONITORINFO::default();
-        info.cbSize = std::mem::size_of::<MONITORINFO>() as u32;
-        if GetMonitorInfoA(monitor, &mut info) == BOOL::from(false) {
+        let mut info = MONITORINFO {
+            cbSize: std::mem::size_of::<MONITORINFO>() as u32,
+            ..Default::default()
+        };
+        if GetMonitorInfoA(monitor, &mut info) == false {
             return BOOL::from(false);
         }
 
@@ -1060,7 +1062,7 @@ extern "system" fn enum_func(
                 width: info.rcWork.right - info.rcWork.left,
                 height: info.rcWork.bottom - info.rcWork.top,
             },
-            dpi_scale: dpi_scale,
+            dpi_scale,
             primary: (info.dwFlags & MONITORINFOF_PRIMARY) != 0,
         });
         BOOL::from(true)

@@ -655,8 +655,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             let imgui = ImGui {
                 _native_handle: info.main_window.get_native_handle(),
                 _font_texture: font_tex,
-                pipeline: pipeline,
-                buffers: buffers,
+                pipeline,
+                buffers,
                 last_cursor: os::Cursor::None,
             };
 
@@ -706,9 +706,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             // gotta pack the refs into a pointer and into UserData for callbacks
             let mut ud = UserData {
-                device: device,
-                app: app,
-                main_window: main_window,
+                device,
+                app,
+                main_window,
                 pipeline: &self.pipeline
             };
             io.UserData = (&mut ud as *mut UserData<D, A>) as _;
@@ -740,10 +740,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 let p_vp = *vp;
                 let vp_ref = &*p_vp;
                 let win = get_viewport_window::<D, A>(p_vp);
-                if win.is_mouse_hovered() {
-                    if (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
-                        io.MouseHoveredViewport = vp_ref.ID;
-                    }
+                if win.is_mouse_hovered() && (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
+                    io.MouseHoveredViewport = vp_ref.ID;
                 }
             }
 
@@ -812,9 +810,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
                 // gotta pack the refs into a pointer and into io.UserData
                 let mut ud = UserData {
-                    device: device,
-                    app: app,
-                    main_window: main_window,
+                    device,
+                    app,
+                    main_window,
                     pipeline: &self.pipeline,
                 };
                 io.UserData = (&mut ud as *mut UserData<D, A>) as _;
@@ -1058,7 +1056,7 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
             height: vp_ref.Size.y as i32,
         },
         style: os::WindowStyleFlags::from(vp_ref.Flags),
-        parent_handle: parent_handle,
+        parent_handle,
     })];
 
     // create cmd buffer
@@ -1266,7 +1264,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         state_after: gfx::ResourceState::Present,
     });
 
-    cmd.close(&swap);
+    cmd.close(&swap).unwrap();
 
     ud.device.execute(cmd);
 }

@@ -699,6 +699,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any {
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
     fn execute(&self, cmd: &Self::CmdBuf);
+    fn report_live_objects(&self) -> Result<(), Error>;
     fn get_shader_heap(&self) -> &Self::Heap;
     fn get_shader_heap_mut(&mut self) -> &mut Self::Heap;
     fn get_adapter_info(&self) -> &AdapterInfo;
@@ -888,7 +889,7 @@ pub fn size_for_format(format: Format, width: u64, height: u64, depth: u32) -> u
 
 /// Aligns value to the alignment specified by align. value must be a power of 2
 pub fn align_pow2(value: u64, align: u64) -> u64 {
-    value + (align - 1) & !(align - 1)
+    (value + (align - 1)) & !(align - 1)
 }
 
 /// Aligns value to the alignment specified by align. value can be non-power of 2

@@ -47,7 +47,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVertex2d>(),
-            num_elements: num_elements,
+            num_elements,
         }
     }
 
@@ -124,12 +124,10 @@ impl<D> ImDraw<D> where D: gfx::Device {
                 );
                 self.vertices_2d.gpu_data_size.push(num_elems);
             }
-            else {
-                if num_elems > self.vertices_2d.gpu_data_size[buffer_index] {
-                    // resize buffer
-                    self.vertices_2d.gpu_data[buffer_index] = device.create_buffer::<u8>(
-                        &Self::new_buffer_2d_info(num_elems), None)?;
-                }
+            else if num_elems > self.vertices_2d.gpu_data_size[buffer_index] {
+                // resize buffer
+                self.vertices_2d.gpu_data[buffer_index] = device.create_buffer::<u8>(
+                    &Self::new_buffer_2d_info(num_elems), None)?;
             }
             // update buffer
             self.vertices_2d.gpu_data[buffer_index].update(0, self.vertices_2d.cpu_data.as_slice())?;

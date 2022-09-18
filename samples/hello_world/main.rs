@@ -328,7 +328,7 @@ fn main() -> Result<(), hotline::Error> {
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(depth_stencil),
+            depth_stencil: Some(depth_stencil.clone()),
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
@@ -460,7 +460,7 @@ fn main() -> Result<(), hotline::Error> {
         });
         cmdbuffer.end_event();
 
-        cmdbuffer.close(&swap_chain);
+        cmdbuffer.close(&swap_chain)?;
 
         dev.execute(&cmdbuffer);
 
