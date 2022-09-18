@@ -147,6 +147,7 @@ pub struct CmdBuf {
     command_list: Vec<ID3D12GraphicsCommandList>,
     pix: Option<WinPixEventRuntime>,
     in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>,
+    event_stack_count: u32
 }
 
 #[derive(Clone)]
@@ -1192,6 +1193,7 @@ impl super::Device for Device {
                 command_list: command_lists,
                 pix: self.pix,
                 in_flight_barriers: barriers,
+                event_stack_count: 0
             }
         }
     }
@@ -2159,12 +2161,22 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
-    fn close(&mut self, swap_chain: &SwapChain) {
+    fn close(&mut self, swap_chain: &SwapChain) -> result::Result<(), super::Error> {
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         unsafe {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }
-    }
+        if self.event_stack_count != 0 {
+            return Err(super::Error {
+                msg: String::from(format!(
+                    "mismatch begin/end events called on cmdbuf!",
+                ))
+            });
+        }
+        else {
+            Ok(())
+        }
+    }   
 
     fn get_backbuffer_index(&self) -> u32 {
         self.bb_index as u32
@@ -2192,18 +2204,20 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn begin_event(&self, colour: u32, name: &str) {
+    fn begin_event(&mut self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
             self.pix.unwrap().begin_event_on_command_list(cmd.clone(), colour as u64, name);
         }
+        self.event_stack_count += 1;
     }
 
-    fn end_event(&self) {
+    fn end_event(&mut self) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
             self.pix.unwrap().end_event_on_command_list(cmd.clone());
         }
+        self.event_stack_count -= 1;
     }
 
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {

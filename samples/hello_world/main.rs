@@ -328,7 +328,7 @@ fn main() -> Result<(), hotline::Error> {
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(depth_stencil.clone()),
+            depth_stencil: Some(depth_stencil),
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
