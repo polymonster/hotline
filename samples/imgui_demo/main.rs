@@ -123,7 +123,5 @@ fn main() -> Result<(), hotline::Error> {
     // must wait for the final frame to be completed
     cmdbuffer.reset(&swap_chain);
 
-    dev.report_live_objects()?;
-
     Ok(())
 }

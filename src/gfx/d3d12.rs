@@ -1160,7 +1160,6 @@ impl super::Device for Device {
     }
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
-        println!("create command buffer");
         unsafe {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
