@@ -23,6 +23,7 @@ struct Vertex {
     color: [f32; 4],
 }
 
+#[warn(clippy::redundant_clone)]
 fn main() -> Result<(), hotline::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
@@ -328,7 +329,7 @@ fn main() -> Result<(), hotline::Error> {
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(depth_stencil.clone()),
+            depth_stencil: Some(depth_stencil.clone()), // DO NOT FIX CLIPPY. IT MOVES depth_stencil
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
@@ -355,7 +356,7 @@ fn main() -> Result<(), hotline::Error> {
 
     let compute_pipeline = dev
         .create_compute_pipeline(&gfx::ComputePipelineInfo {
-            cs: cs,
+            cs,
             descriptor_layout: gfx::DescriptorLayout {
                 static_samplers: None,
                 push_constants: None,

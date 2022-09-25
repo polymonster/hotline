@@ -16,7 +16,6 @@ use gfx::d3d12 as gfx_platform;
 #[repr(C)]
 struct Vertex {
     position: [f32; 3],
-
     color: [f32; 4],
 }
 
