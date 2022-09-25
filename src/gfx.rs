@@ -6,6 +6,17 @@ pub mod d3d12;
 
 type Error = super::Error;
 
+/// macro to pass data![expression] or data![] (None) to a create function, so you don't have to deduce a 'T'
+#[macro_export]
+macro_rules! data {
+    () => {
+        None::<&[()]>
+    };
+    ($input:expr) => {
+        Some($input)
+    }
+}
+
 /// 3-Dimensional struct for compute shader thread count / thread group size
 pub struct Size3 {
     pub x: u32,
@@ -587,13 +598,13 @@ pub struct ClearDepthStencil {
 }
 
 /// Information to create a render pass
-pub struct RenderPassInfo<D: Device> {
+pub struct RenderPassInfo<'a, D: Device> {
     /// Array of textures which have been created with render target flags
-    pub render_targets: Vec<D::Texture>,
+    pub render_targets: Vec<&'a D::Texture>,
     /// Colour to clear render target when the pass starts, use None to preserve previous contents
     pub rt_clear: Option<ClearColour>,
     /// A texture which was created with depth stencil flags
-    pub depth_stencil: Option<D::Texture>,
+    pub depth_stencil: Option<&'a D::Texture>,
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
     pub ds_clear: Option<ClearDepthStencil>,
     /// Choose to resolve multi-sample AA targets,

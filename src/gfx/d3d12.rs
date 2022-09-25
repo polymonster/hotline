@@ -933,7 +933,7 @@ impl Device {
         for texture in textures.iter().take(num_buffers as usize) {
             passes.push(
                 self.create_render_pass(&super::RenderPassInfo {
-                    render_targets: vec![texture.clone()],
+                    render_targets: vec![texture],
                     rt_clear: clear_col,
                     depth_stencil: None,
                     ds_clear: None,
@@ -1160,6 +1160,7 @@ impl super::Device for Device {
     }
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
+        println!("create command buffer");
         unsafe {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();

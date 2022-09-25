@@ -9,9 +9,9 @@ use gfx::SwapChain;
 
 use std::fs;
 
-use std::thread;
-use std::sync::Arc;
-use std::sync::Mutex;
+//use std::thread;
+//use std::sync::Arc;
+//use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
 use hotline::os::win32 as os_platform;
@@ -23,7 +23,6 @@ struct Vertex {
     color: [f32; 4],
 }
 
-#[warn(clippy::redundant_clone)]
 fn main() -> Result<(), hotline::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
@@ -269,7 +268,7 @@ fn main() -> Result<(), hotline::Error> {
             usage: gfx::TextureUsage::SHADER_RESOURCE,
             initial_state: gfx::ResourceState::ShaderResource,
         };
-        let tex = dev.create_texture(&tex_info, Some(image.data.as_slice())).unwrap();
+        let tex = dev.create_texture(&tex_info, data![image.data.as_slice()]).unwrap();
         textures.push(tex);
     }
 
@@ -291,7 +290,7 @@ fn main() -> Result<(), hotline::Error> {
         num_elements: 1,
     };
 
-    let _constant_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&cbuffer)));
+    let _constant_buffer = dev.create_buffer(&info, data![gfx::as_u8_slice(&cbuffer)]);
 
     // render target
     let rt_info = gfx::TextureInfo {
@@ -306,7 +305,7 @@ fn main() -> Result<(), hotline::Error> {
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
         initial_state: gfx::ResourceState::ShaderResource,
     };
-    let render_target = dev.create_texture::<u8>(&rt_info, None).unwrap();
+    let render_target = dev.create_texture(&rt_info, data![]).unwrap();
 
     // depth stencil target
     let ds_info = gfx::TextureInfo {
@@ -326,14 +325,14 @@ fn main() -> Result<(), hotline::Error> {
     // pass for render target with depth stencil
     let mut render_target_pass = dev
         .create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![render_target.clone()],
+            render_targets: vec![&render_target],
             rt_clear: Some(gfx::ClearColour {
                 r: 1.0,
                 g: 0.0,
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(depth_stencil.clone()), // DO NOT FIX CLIPPY. IT MOVES depth_stencil
+            depth_stencil: Some(&depth_stencil),
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
