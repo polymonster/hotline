@@ -42,6 +42,7 @@ fn main() -> Result<(), hotline::Error> {
     });
     print!("{}", device.get_adapter_info());
 
+    /*
     let arc_dev = Arc::new(Mutex::new(device));
 
     let d2 = arc_dev.clone();
@@ -56,6 +57,9 @@ fn main() -> Result<(), hotline::Error> {
     });
 
     let mut dev = arc_dev.lock().unwrap();
+    */
+
+    let mut dev = device;
 
     // window
     let mut win = app.create_window(os::WindowInfo {
@@ -371,13 +375,13 @@ fn main() -> Result<(), hotline::Error> {
         })
         .unwrap();
 
-    std::mem::drop(dev);
+    //std::mem::drop(dev);
 
     // ..
     let mut ci = 0;
     while app.run() {
 
-        let mut dev = arc_dev.lock().unwrap();
+        //let mut dev = arc_dev.lock().unwrap();
 
         win.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
@@ -468,6 +472,9 @@ fn main() -> Result<(), hotline::Error> {
         swap_chain.swap(&dev);
         ci = (ci + 1) % 4;
     }
+
+    //let dev = arc_dev.lock().unwrap();
+    //dev.report_live_objects()?;
 
     // must wait for the final frame to be completed
     swap_chain.wait_for_last_frame();
