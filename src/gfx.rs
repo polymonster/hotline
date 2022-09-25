@@ -78,6 +78,7 @@ pub enum Format {
 
 /// Information to create a device, it contains default heaps for resource views
 /// resources will be automatically allocated into these heaps, you can supply custom heaps if necessary
+#[derive(Default)]
 pub struct DeviceInfo {
     /// optional adapter to choose a specific adapter in the scenario of a multi-adapter system
     /// if None is supplied the first non-software emulation adapter would be selected
@@ -207,6 +208,7 @@ bitflags! {
 }
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
+#[derive(Default)]
 pub struct DescriptorLayout {
     pub bindings: Option<Vec<DescriptorBinding>>,
     pub push_constants: Option<Vec<PushConstantInfo>>,
@@ -445,6 +447,7 @@ pub enum StencilOp {
 }
 
 /// Information to control blending operations on render targets
+#[derive(Default)]
 pub struct BlendInfo {
     pub alpha_to_coverage_enabled: bool,
     /// Separate blending on colour and alpha channels
@@ -629,6 +632,7 @@ pub enum ResourceState {
 }
 
 /// Info to control mapping of resources for read/write access
+#[derive(Default)]
 pub struct MapInfo {
     /// Sub resource to map ie. mip level, cubemap face, array slice
     pub subresource: u32,
@@ -968,17 +972,6 @@ Available Adapters:
     }
 }
 
-impl Default for DeviceInfo {
-    fn default() -> Self {
-        DeviceInfo {
-            adapter_name: None,
-            shader_heap_size: 0,
-            depth_stencil_heap_size: 0,
-            render_target_heap_size: 0,
-        }
-    }
-}
-
 impl Default for RasterInfo {
     fn default() -> Self {
         RasterInfo {
@@ -1042,16 +1035,6 @@ impl Default for DepthStencilInfo {
     }
 }
 
-impl Default for BlendInfo {
-    fn default() -> Self {
-        BlendInfo {
-            alpha_to_coverage_enabled: false,
-            independent_blend_enabled: false,
-            render_target: Vec::new(),
-        }
-    }
-}
-
 impl Default for RenderTargetBlendInfo {
     fn default() -> Self {
         RenderTargetBlendInfo {
@@ -1065,26 +1048,6 @@ impl Default for RenderTargetBlendInfo {
             blend_op_alpha: BlendOp::Add,
             logic_op: LogicOp::Clear,
             write_mask: WriteMask::ALL,
-        }
-    }
-}
-
-impl Default for DescriptorLayout {
-    fn default() -> Self {
-        DescriptorLayout {
-            push_constants: None,
-            bindings: None,
-            static_samplers: None,
-        }
-    }
-}
-
-impl Default for MapInfo {
-    fn default() -> Self {
-        MapInfo {
-            subresource: 0,
-            read_start: 0,
-            read_end: 0,
         }
     }
 }

@@ -115,7 +115,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
     }
 
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
-        if self.vertices_2d.cpu_data.len() > 0 {
+        if !self.vertices_2d.cpu_data.is_empty() {
             let num_elems = self.vertices_2d.cpu_data.len() / 6;
             if buffer_index >= self.vertices_2d.gpu_data.len() {
                 // push a new buffer

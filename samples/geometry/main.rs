@@ -12,7 +12,7 @@ use std::fs;
 use maths_rs::Vec2f;
 use maths_rs::Vec4f;
 
-use pmfx;
+// use pmfx;
 
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;

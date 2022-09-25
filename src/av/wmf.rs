@@ -92,7 +92,7 @@ fn new_notify_events() -> *mut NotifyEvents {
 
 impl Drop for VideoPlayer {
     fn drop(&mut self) {
-        if self.texture.is_some() || self.cleanup_textures.len() > 0 {
+        if self.texture.is_some() || !self.cleanup_textures.is_empty() {
             panic!("hotline::av::wmf: dropping video player with live textures, call shutdown with d3d12::device to free srv heap memory.");
         };
     }
@@ -123,7 +123,7 @@ impl VideoPlayer {
 
                 // error code with extended info
                 return Err(super::Error{
-                    msg: format!("hotline::av::wmf: {} : {}", msgs[code as usize], ext_str).to_string()
+                    msg: format!("hotline::av::wmf: {} : {}", msgs[code as usize], ext_str)
                 });
             }
             Ok(())
@@ -133,7 +133,7 @@ impl VideoPlayer {
 
 impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
     fn create(device: &d3d12::Device) -> result::Result<VideoPlayer, super::Error> {
-        let factory = d3d12::get_dxgi_factory(&device);
+        let factory = d3d12::get_dxgi_factory(device);
         let (adapter, _) = d3d12::get_hardware_adapter(factory, &Some(device.get_adapter_info().name.to_string())).unwrap();
         unsafe {
             MFStartup(MF_SDK_VERSION << 16 | MF_API_VERSION, 0)?;
@@ -274,7 +274,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             self.cleanup_textures.clear();
 
             // create texture
-            if !self.texture.is_some() && self.is_loaded() {
+            if self.texture.is_none() && self.is_loaded() {
                 let mut x : u32 = 0;
                 let mut y : u32 = 0;
                 self.media_engine_ex.GetNativeVideoSize(&mut x, &mut y)?;
@@ -301,7 +301,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             let pts = self.media_engine_ex.OnVideoStreamTick();
             if pts.is_ok() {
                 if let Some(tex) = &self.texture {
-                    let sh = d3d12::get_texture_shared_handle(&tex);
+                    let sh = d3d12::get_texture_shared_handle(tex);
                     if let Some(handle) = sh {
                         let dev1 : ID3D11Device1 = self.device.cast()?;
                         let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle)?;

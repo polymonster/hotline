@@ -995,7 +995,7 @@ impl super::Device for Device {
             let mut dxgi_factory_flags: u32 = 0;
             if cfg!(debug_assertions) {
                 let mut debug: Option<ID3D12Debug> = None;
-                if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and_then(|_| debug) {
+                if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                     debug.EnableDebugLayer();
                     println!("hotline::gfx::d3d12: enabling debug layer");
                 }
@@ -1012,7 +1012,7 @@ impl super::Device for Device {
 
             // create device
             let mut d3d12_device: Option<ID3D12Device> = None;
-            D3D12CreateDevice(adapter.clone(), D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
+            D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
                 .expect("hotline::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
@@ -1082,7 +1082,7 @@ impl super::Device for Device {
     }
 
     fn create_heap(&self, info: &HeapInfo) -> Heap {
-        create_heap(&self.device, &info)
+        create_heap(&self.device, info)
     }
 
     fn create_swap_chain<A: os::App>(
@@ -1152,7 +1152,7 @@ impl super::Device for Device {
                 backbuffer_passes: passes,
                 frame_index: 0,
                 frame_fence_value: vec![0; info.num_buffers as usize],
-                readback_buffer: create_read_back_buffer(&self, data_size),
+                readback_buffer: create_read_back_buffer(self, data_size),
                 require_wait: vec![false; info.num_buffers as usize],
                 clear_col: info.clear_colour,
             })
@@ -1488,7 +1488,7 @@ impl super::Device for Device {
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(&mut [Some(cmd.clone())]);
+                self.command_queue.ExecuteCommandLists(&[Some(cmd)]);
                 self.command_queue.Signal(&fence, 1)?;
 
                 let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
@@ -1644,7 +1644,7 @@ impl super::Device for Device {
                 let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
 
                 let src = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(upload.clone().unwrap()),
+                    pResource: Some(upload.unwrap()),
                     Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
@@ -1684,7 +1684,7 @@ impl super::Device for Device {
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(&mut [Some(cmd.clone())]);
+                self.command_queue.ExecuteCommandLists(&[Some(cmd)]);
                 self.command_queue.Signal(&fence, 1)?;
 
                 let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
@@ -1963,7 +1963,7 @@ impl super::Device for Device {
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
-            self.command_queue.ExecuteCommandLists(&mut[Some(command_list.clone())]);
+            self.command_queue.ExecuteCommandLists(&[Some(command_list)]);
         }
     }
 
@@ -2071,7 +2071,7 @@ impl super::SwapChain<Device> for SwapChain {
                     self.clear_col,
                 );
 
-                self.readback_buffer = create_read_back_buffer(&device, data_size);
+                self.readback_buffer = create_read_back_buffer(device, data_size);
                 self.width = size.x;
                 self.height = size.y;
                 self.bb_index = 0;
@@ -2172,9 +2172,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
         if self.event_stack_count != 0 {
             Err(super::Error {
-                msg: format!(
-                    "mismatch begin/end events called on cmdbuf!",
-                )
+                msg: "mismatch begin/end events called on cmdbuf!".to_string()
             })
         }
         else {
@@ -2387,7 +2385,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             // transition to copy source
             let barrier = transition_barrier(
-                &r2.unwrap(),
+                r2.unwrap(),
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
             );
@@ -2422,7 +2420,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
 
             let barrier = transition_barrier(
-                &r2.unwrap(),
+                r2.unwrap(),
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
             );
@@ -2527,7 +2525,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         unsafe {
             if let Some(res) = &self.resource {
                 res.Map(0, &range, &mut map_data)?;
-                if map_data != std::ptr::null_mut() {
+                if !map_data.is_null() {
                     let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
                     let rb_data = super::ReadBackData {
                         data: slice,

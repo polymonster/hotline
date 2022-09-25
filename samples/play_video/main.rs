@@ -112,8 +112,8 @@ fn main() -> Result<(), hotline::Error> {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
-        let mut pass = swap_chain.get_backbuffer_pass_mut();
-        cmdbuffer.begin_render_pass(&mut pass);
+        let pass = swap_chain.get_backbuffer_pass_mut();
+        cmdbuffer.begin_render_pass(pass);
 
         // imgui
         imgui.new_frame(&mut app, &mut win, &mut dev);
@@ -127,7 +127,7 @@ fn main() -> Result<(), hotline::Error> {
         if imgui.begin("Video Player", &mut player_open, imgui::WindowFlags::ALWAYS_AUTO_RESIZE) {
             if imgui.button("Open") {
                 if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".mp4"]) {
-                    if files.len() > 0 {
+                    if !files.is_empty() {
                         player.set_source(files[0].to_string())?;
                     }
                 }

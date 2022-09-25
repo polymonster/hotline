@@ -137,7 +137,7 @@ fn to_imgui_texture_id<D: Device>(tex: &D::Texture) -> ImTextureID {
     unsafe {
         let srv_index = tex.get_srv_index().unwrap();
         let tex_id : *mut cty::c_void = std::ptr::null_mut();
-        tex_id.offset(srv_index as isize)
+        tex_id.add(srv_index)
     }
 }
 
@@ -174,7 +174,7 @@ fn create_fonts_texture<D: Device>(
             initial_state: gfx::ResourceState::ShaderResource,
         };
 
-        Ok(device.create_texture(&tex_info, Some(data_slice))?)
+        device.create_texture(&tex_info, Some(data_slice))
     }
 }
 
@@ -241,7 +241,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
     let vs = device.create_shader(&vs_info, src.as_bytes())?;
     let fs = device.create_shader(&fs_info, src.as_bytes())?;
 
-    Ok(device.create_render_pipeline(&gfx::RenderPipelineInfo {
+    device.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(vs),
         fs: Some(fs),
         input_layout: vec![
@@ -324,14 +324,14 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
         topology: gfx::Topology::TriangleList,
         patch_index: 0,
         pass: swap_chain.get_backbuffer_pass(),
-    })?)
+    })
 }
 
 fn create_vertex_buffer<D: Device>(
     device: &mut D,
     size: i32,
 ) -> Result<D::Buffer, super::Error> {
-    Ok(device.create_buffer::<u8>(
+    device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Vertex,
             cpu_access: gfx::CpuAccessFlags::WRITE,
@@ -340,14 +340,14 @@ fn create_vertex_buffer<D: Device>(
             num_elements: size as usize,
         },
         None,
-    )?)
+    )
 }
 
 fn create_index_buffer<D: Device>(
     device: &mut D,
     size: i32,
 ) -> Result<D::Buffer, super::Error> {
-    Ok(device.create_buffer::<u8>(
+    device.create_buffer::<u8>(
         &gfx::BufferInfo {
             usage: gfx::BufferUsage::Index,
             cpu_access: gfx::CpuAccessFlags::WRITE,
@@ -356,14 +356,14 @@ fn create_index_buffer<D: Device>(
             num_elements: size as usize,
         },
         None,
-    )?)
+    )
 }
 
 fn render_draw_data<D: Device>(
     draw_data: &ImDrawData,
     device: &mut D,
     cmd: &mut D::CmdBuf,
-    buffers: &mut Vec<RenderBuffers<D>>,
+    buffers: &mut [RenderBuffers<D>],
     pipeline: &D::RenderPipeline,
 ) -> Result<(), super::Error> {
     unsafe {
@@ -431,7 +431,7 @@ fn render_draw_data<D: Device>(
         cmd.set_viewport(&viewport);
         cmd.set_vertex_buffer(&buffers.vb, 0);
         cmd.set_index_buffer(&buffers.ib);
-        cmd.set_render_pipeline(&pipeline);
+        cmd.set_render_pipeline(pipeline);
         cmd.push_constants(0, 16, 0, &mvp);
 
         let clip_off = draw_data.DisplayPos;
@@ -443,8 +443,8 @@ fn render_draw_data<D: Device>(
                 std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
             let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
             let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
-            for i in 0..imgui_cmd_buffer.Size as usize {
-                let imgui_cmd = &imgui_cmd_data[i];
+            for cmd_data in imgui_cmd_data.iter().take(imgui_cmd_buffer.Size as usize) {
+                let imgui_cmd = &cmd_data;
                 if imgui_cmd.UserCallback.is_some() {
                     // TODO:
                 } 
@@ -591,7 +591,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             let mut buffers: Vec<RenderBuffers<D>> = Vec::new();
             let num_buffers = (*info.swap_chain).get_num_buffers();
 
-            let font_tex = create_fonts_texture::<D>(&mut info.device)?;
+            let font_tex = create_fonts_texture::<D>(info.device)?;
 
             let font_tex_id = to_imgui_texture_id::<D>(&font_tex);
             ImFontAtlas_SetTexID(io.Fonts, font_tex_id);
@@ -600,9 +600,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             for _i in 0..num_buffers {
                 buffers.push(RenderBuffers {
-                    vb: create_vertex_buffer::<D>(&mut info.device, DEFAULT_VB_SIZE)?,
+                    vb: create_vertex_buffer::<D>(info.device, DEFAULT_VB_SIZE)?,
                     vb_size: DEFAULT_VB_SIZE,
-                    ib: create_index_buffer::<D>(&mut info.device, DEFAULT_IB_SIZE)?,
+                    ib: create_index_buffer::<D>(info.device, DEFAULT_IB_SIZE)?,
                     ib_size: DEFAULT_IB_SIZE,
                 })
             }
@@ -1006,7 +1006,7 @@ fn get_viewport_window<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut
             let ud = &mut *(io.UserData as *mut UserData<D, A>);
             return ud.main_window;
         }
-        return &mut vd.window[0];
+        &mut vd.window[0]
     }
 }
 
@@ -1014,8 +1014,7 @@ fn get_viewport_window<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut
 fn get_viewport_data<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut ViewportData<D, A> {
     unsafe {
         let vp_ref = &mut *vp;
-        let vd = &mut *(vp_ref.PlatformUserData as *mut ViewportData<D, A>);
-        vd
+        &mut *(vp_ref.PlatformUserData as *mut ViewportData<D, A>)
     }
 }
 
@@ -1023,15 +1022,14 @@ fn get_viewport_data<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut V
 fn get_user_data<'a, D: Device, A: App>() -> &'a mut UserData<'a, D, A> {
     unsafe {
         let io = &mut *igGetIO();
-        let ud = &mut *(io.UserData as *mut UserData<D, A>);
-        ud
+        &mut *(io.UserData as *mut UserData<D, A>)
     }
 }
 
 unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let io = &mut *igGetIO();
     let ud = &mut *(io.UserData as *mut UserData<D, A>);
-    let mut device = &mut ud.device;
+    let device = &mut ud.device;
     let mut vp_ref = &mut *vp;
 
     // alloc viewport data
@@ -1080,9 +1078,9 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
     let num_buffers = vd.swap_chain[0].get_num_buffers();
     for _i in 0..num_buffers {
         buffers.push(RenderBuffers {
-            vb: create_vertex_buffer::<D>(&mut device, DEFAULT_VB_SIZE).unwrap(),
+            vb: create_vertex_buffer::<D>(device, DEFAULT_VB_SIZE).unwrap(),
             vb_size: DEFAULT_VB_SIZE,
-            ib: create_index_buffer::<D>(&mut device, DEFAULT_IB_SIZE).unwrap(),
+            ib: create_index_buffer::<D>(device, DEFAULT_IB_SIZE).unwrap(),
             ib_size: DEFAULT_IB_SIZE,
         })
     }
@@ -1098,13 +1096,13 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
     let vd = get_viewport_data::<D, A>(vp);
     let mut vp_ref = &mut *vp;
 
-    if vd.swap_chain.len() > 0 {
+    if !vd.swap_chain.is_empty() {
         vd.swap_chain[0].wait_for_last_frame();
     }
 
     // unregister window tracking... if USerData is null we are shutting down
     let io = &mut *igGetIO();
-    if io.UserData != std::ptr::null_mut() {
+    if !io.UserData.is_null() {
         get_user_data::<D, A>().app.destroy_window(&vd.window[0]);
     }
     
@@ -1162,11 +1160,7 @@ unsafe extern "C" fn platform_get_window_size<D: Device, A: App>(vp: *mut ImGuiV
 
 unsafe extern "C" fn platform_show_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let window = get_viewport_window::<D, A>(vp);
-    let activate = if (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 != 0 {
-        false
-    } else {
-        true
-    };
+    let activate = (*vp).Flags & ImGuiViewportFlags_NoFocusOnAppearing as i32 == 0;
     window.show(true, activate);
 }
 
@@ -1218,14 +1212,14 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
 
     // unpack from vec
     let window = &mut vd.window[0];
-    let mut cmd = &mut vd.cmd[0];
+    let cmd = &mut vd.cmd[0];
     let swap = &mut vd.swap_chain[0];
     let vp_rect = window.get_viewport_rect();
 
     // update
     window.update(ud.app);
-    swap.update::<A>(&mut ud.device, &window, &mut cmd);
-    cmd.reset(&swap);
+    swap.update::<A>(ud.device, window, cmd);
+    cmd.reset(swap);
 
     // render
     let viewport = gfx::Viewport::from(vp_rect);
@@ -1239,18 +1233,18 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         state_after: gfx::ResourceState::RenderTarget,
     });
 
-    let mut pass = swap.get_backbuffer_pass_mut();
-    cmd.begin_render_pass(&mut pass);
+    let pass = swap.get_backbuffer_pass_mut();
+    cmd.begin_render_pass(pass);
 
     cmd.set_viewport(&viewport);
     cmd.set_scissor_rect(&scissor);
 
     render_draw_data::<D>(
         &*vp_ref.DrawData,
-        &mut ud.device,
-        &mut cmd,
+        ud.device,
+        cmd,
         &mut vd.buffers,
-        &ud.pipeline,
+        ud.pipeline,
     )
     .unwrap();
 
@@ -1264,7 +1258,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         state_after: gfx::ResourceState::Present,
     });
 
-    cmd.close(&swap).unwrap();
+    cmd.close(swap).unwrap();
 
     ud.device.execute(cmd);
 }
@@ -1273,7 +1267,7 @@ unsafe extern "C" fn renderer_swap_buffers<D: Device, A: App>(vp: *mut ImGuiView
     let ud = get_user_data::<D, A>();
     let vd = get_viewport_data::<D, A>(vp);
     assert_ne!(vd.swap_chain.len(), 0);
-    vd.swap_chain[0].swap(&ud.device);
+    vd.swap_chain[0].swap(ud.device);
 }
 
 pub type WindowSizeCallback = unsafe extern "C" fn(vp: *mut ImGuiViewport, out_pos: *mut ImVec2);
