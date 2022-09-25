@@ -1098,6 +1098,7 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
 
     if !vd.swap_chain.is_empty() {
         vd.swap_chain[0].wait_for_last_frame();
+        vd.cmd[0].reset(&vd.swap_chain[0]);
     }
 
     // unregister window tracking... if UserData is null we are shutting down
