@@ -614,9 +614,9 @@ pub struct RenderPassInfo<'a, D: Device> {
 }
 
 /// Transitions are required to be performed to switch resources from reading to writing or into different formats
-pub struct TransitionBarrier<D: Device> {
-    pub texture: Option<D::Texture>,
-    pub buffer: Option<D::Buffer>,
+pub struct TransitionBarrier<'a, D: Device> {
+    pub texture: Option<&'a D::Texture>,
+    pub buffer: Option<&'a D::Buffer>,
     pub state_before: ResourceState,
     pub state_after: ResourceState,
 }

@@ -3,6 +3,7 @@ use gfx::Buffer;
 use gfx::CmdBuf;
 
 use maths_rs::Vec2f;
+use maths_rs::Vec3f;
 use maths_rs::Vec4f;
 
 /// A coherent cpu/gpu buffer back by multiple gpu buffers to allow cpu writes while gpu is inflight 
@@ -14,18 +15,18 @@ struct DynamicBuffer<D: gfx::Device> {
 }
 
 /// 2d vertex with position and colour
+#[repr(C)]
 struct ImDrawVertex2d {
     _position: [f32; 2],
     _color: [f32; 4],
 }
 
-/*
 /// 3d vertex with position and colour
+#[repr(C)]
 struct ImDrawVertex3d {
-    position: [f32; 3],
-    color: [f32; 4],
+    _position: [f32; 3],
+    _color: [f32; 4],
 }
-*/
 
 /// Information to create an instance of ImDraw
 pub struct ImDrawInfo {
@@ -36,7 +37,7 @@ pub struct ImDrawInfo {
 /// Immediate mode primitive drawing API struct
 pub struct ImDraw<D: gfx::Device> {
     vertices_2d: DynamicBuffer<D>,
-    _vertices_3d: DynamicBuffer<D>
+    vertices_3d: DynamicBuffer<D>
 }
 
 /// Immediate mode primitive drawing API implementation
@@ -51,6 +52,16 @@ impl<D> ImDraw<D> where D: gfx::Device {
         }
     }
 
+    fn new_buffer_3d_info(num_elements: usize) -> gfx::BufferInfo {
+        gfx::BufferInfo {
+            usage: gfx::BufferUsage::Vertex,
+            cpu_access: gfx::CpuAccessFlags::WRITE,
+            format: gfx::Format::Unknown,
+            stride: std::mem::size_of::<ImDrawVertex3d>(),
+            num_elements,
+        }
+    }
+
     pub fn create(info: &ImDrawInfo) -> Result<Self, super::Error> {
         Ok(ImDraw {
             vertices_2d: DynamicBuffer {
@@ -59,7 +70,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
                 gpu_data_size: Vec::new(),
                 vertex_count: 0
             },
-            _vertices_3d: DynamicBuffer {
+            vertices_3d: DynamicBuffer {
                 cpu_data: Vec::with_capacity(info.initial_buffer_size_3d),
                 gpu_data: Vec::new(),
                 gpu_data_size: Vec::new(),
@@ -114,6 +125,22 @@ impl<D> ImDraw<D> where D: gfx::Device {
         self.add_vertex_2d(p, col);
     }
 
+    pub fn add_vertex_3d(&mut self, v: Vec3f, col: Vec4f) {
+        // push position
+        for i in 0..3 {
+            self.vertices_3d.cpu_data.push(v[i])
+        }
+        // push colour
+        for i in 0..4 {
+            self.vertices_3d.cpu_data.push(col[i])
+        }
+    }
+
+    pub fn add_line_3d(&mut self, start: Vec3f, end: Vec3f, col: Vec4f) {
+        self.add_vertex_3d(start, col);
+        self.add_vertex_3d(end, col);
+    }
+
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
         if !self.vertices_2d.cpu_data.is_empty() {
             let num_elems = self.vertices_2d.cpu_data.len() / 6;
@@ -135,11 +162,36 @@ impl<D> ImDraw<D> where D: gfx::Device {
             self.vertices_2d.vertex_count = num_elems as u32;
             self.vertices_2d.cpu_data.clear();
         }
+        if !self.vertices_3d.cpu_data.is_empty() {
+            let num_elems = self.vertices_3d.cpu_data.len() / 7;
+            if buffer_index >= self.vertices_3d.gpu_data.len() {
+                // push a new buffer
+                self.vertices_3d.gpu_data.push(
+                    device.create_buffer::<u8>(&Self::new_buffer_3d_info(num_elems), None)?
+                );
+                self.vertices_3d.gpu_data_size.push(num_elems);
+            }
+            else if num_elems > self.vertices_3d.gpu_data_size[buffer_index] {
+                // resize buffer
+                self.vertices_3d.gpu_data[buffer_index] = device.create_buffer::<u8>(
+                    &Self::new_buffer_3d_info(num_elems), None)?;
+            }
+            // update buffer
+            self.vertices_3d.gpu_data[buffer_index].update(0, self.vertices_3d.cpu_data.as_slice())?;
+            self.vertices_3d.gpu_data_size[buffer_index] = num_elems;
+            self.vertices_3d.vertex_count = num_elems as u32;
+            self.vertices_3d.cpu_data.clear();
+        }
         Ok(())     
     }
 
-    pub fn draw(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
+    pub fn draw_2d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
         cmd.set_vertex_buffer(&self.vertices_2d.gpu_data[buffer_index], 0);
         cmd.draw_instanced(self.vertices_2d.vertex_count, 1, 0, 0);
+    }
+
+    pub fn draw_3d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
+        cmd.set_vertex_buffer(&self.vertices_3d.gpu_data[buffer_index], 0);
+        cmd.draw_instanced(self.vertices_3d.vertex_count, 1, 0, 0);
     }
 }

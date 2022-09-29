@@ -156,7 +156,7 @@ fn main() -> Result<(), hotline::Error> {
         cmd.reset(&swap_chain);
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
@@ -171,7 +171,7 @@ fn main() -> Result<(), hotline::Error> {
         cmd.end_render_pass();
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::Present,
