@@ -409,7 +409,7 @@ fn main() -> Result<(), hotline::Error> {
         // render target pass
         cmdbuffer.begin_event(0xff0000ff, "Render Target Pass");
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(render_target.clone()),
+            texture: Some(&render_target),
             buffer: None,
             state_before: gfx::ResourceState::ShaderResource,
             state_after: gfx::ResourceState::RenderTarget,
@@ -419,7 +419,7 @@ fn main() -> Result<(), hotline::Error> {
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(render_target.clone()),
+            texture: Some(&render_target),
             buffer: None,
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::ShaderResource,
@@ -433,7 +433,7 @@ fn main() -> Result<(), hotline::Error> {
         let scissor = gfx::ScissorRect::from(vp_rect);
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
@@ -457,7 +457,7 @@ fn main() -> Result<(), hotline::Error> {
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture().clone()),
+            texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::Present,

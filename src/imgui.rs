@@ -1228,7 +1228,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
 
     // TODO:
     cmd.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(swap.get_backbuffer_texture().clone_inner()),
+        texture: Some(swap.get_backbuffer_texture()),
         buffer: None,
         state_before: gfx::ResourceState::Present,
         state_after: gfx::ResourceState::RenderTarget,
@@ -1253,7 +1253,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
 
     // TODO:
     cmd.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(swap.get_backbuffer_texture().clone_inner()),
+        texture: Some(swap.get_backbuffer_texture()),
         buffer: None,
         state_before: gfx::ResourceState::RenderTarget,
         state_after: gfx::ResourceState::Present,
