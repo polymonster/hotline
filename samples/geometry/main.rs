@@ -219,6 +219,8 @@ fn main() -> Result<(), hotline::Error> {
     };
     let mut imdraw : imdraw::ImDraw<gfx_platform::Device> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
+    let mut xr = 0.0;
+
     while app.run() {
         // update window and swap chain
         window.update(&mut app);
@@ -262,13 +264,26 @@ fn main() -> Result<(), hotline::Error> {
         // 3d pass
         if true {
             let aspect = window_rect.width as f32 / window_rect.height as f32;
-            let proj = camera::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 10000.0);
-            let view = Mat4f::from_translation(Vec3f::new(0.0, 10.0, 0.0));
+            let proj = camera::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
 
-            imdraw.add_line_3d(Vec3f::unit_z() * -1000.0, Vec3f::unit_z() * 1000.0, Vec4f::white());
-            imdraw.add_line_3d(Vec3f::unit_x() * -1000.0, Vec3f::unit_x() * 1000.0, Vec4f::white());
+            let translate = Mat4f::from_translation(Vec3f::new(0.0, 100.0, 0.0));
+            let rotate_x = Mat4f::from_x_rotation(f32::deg_to_rad(-45.0));
+            
+            let rotate_y = Mat4f::from_y_rotation(f32::deg_to_rad(45.0));
+            let view = rotate_x * rotate_y * translate;
 
-            let view_proj = view * proj;
+            let scale = 1000.0;
+            let divisions = 10.0;
+            for i in 0..((scale * 2.0) /divisions) as usize {
+                let offset = -scale + i as f32 * divisions;
+                imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::cyan());
+                imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::magenta());
+            }
+
+            imdraw.add_line_3d(Vec3f::new(0.0, 0.0, -1000.0), Vec3f::new(0.0, 0.0, 1000.0), Vec4f::blue());
+            imdraw.add_line_3d(Vec3f::new(-1000.0, 0.0, 0.0), Vec3f::new(1000.0, 0.0, 0.0), Vec4f::red());
+
+            let view_proj = proj * view;
 
             cmd.set_render_pipeline(&pso_3d);
             cmd.push_constants(0, 16, 0, &view_proj);
