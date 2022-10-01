@@ -23,6 +23,7 @@ pub struct App {
     window_class_imgui: String,
     hinstance: HINSTANCE,
     mouse_pos: super::Point<i32>,
+    mouse_pos_delta: super::Point<i32>,
     proc_data: ProcData,
     events: HashMap<isize, super::WindowEventFlags>,
     hwnd_flags: HashMap<isize, super::WindowStyleFlags>
@@ -212,13 +213,20 @@ impl App {
             self.proc_data.mouse_wheel = 0.0;
             self.proc_data.mouse_hwheel = 0.0;
             self.proc_data.utf16_inputs.clear();
-            // mouse pos
+            // get new mouse pos
             let mut mouse_pos = POINT::default();
             GetCursorPos(&mut mouse_pos);
-            self.mouse_pos = super::Point {
+            let new_mouse_pos = super::Point {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
             };
+            // mouse pos delta
+            self.mouse_pos_delta = super::Point {
+                x: new_mouse_pos.x - self.mouse_pos.x,
+                y: new_mouse_pos.y - self.mouse_pos.y,
+            };
+            // set new mouse pos as current
+            self.mouse_pos = new_mouse_pos;
         }
     }
 
@@ -465,6 +473,7 @@ impl super::App for App {
                 window_class,
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
+                mouse_pos_delta: super::Point::default(),
                 proc_data: ProcData {
                     mouse_hwnd: HWND(0),
                     mouse_tracked: false,
@@ -580,6 +589,10 @@ impl super::App for App {
 
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
         self.proc_data.mouse_down
+    }
+
+    fn get_mouse_pos_delta(&self) -> super::Size<i32> {
+        self.mouse_pos_delta
     }
 
     fn get_utf16_input(&self) -> Vec<u16> {
