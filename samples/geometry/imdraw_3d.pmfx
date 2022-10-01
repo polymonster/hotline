@@ -23,8 +23,9 @@ cbuffer push_constants : register(b0)
 vs_output vs_main( vs_input input )
 {
     vs_output output;
-    
-    output.position = mul(float4(input.position.xyz, 1.0), projection_matrix);
+
+	float4 pos = float4(input.position.xyz, 1.0);
+    output.position = mul(pos, projection_matrix);
     output.colour = input.colour;
     
     return output;
