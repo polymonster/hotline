@@ -219,12 +219,35 @@ fn main() -> Result<(), hotline::Error> {
     };
     let mut imdraw : imdraw::ImDraw<gfx_platform::Device> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
-    let mut xr = 0.0;
+    //let mut cam_rot = Vec2f::new(45.0, 0.0);
+    
+    let mut cam_move = Vec3f::new(0.0, 100.0, 0.0);
 
     while app.run() {
         // update window and swap chain
         window.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
+
+        let keys = app.get_keys_down();
+        
+        if keys['A' as usize] {
+            cam_move.x -= 1.0;
+        }
+        if keys['D' as usize] {
+            cam_move.x += 1.0;
+        }
+        if keys['Q' as usize] {
+            cam_move.y -= 1.0;
+        }
+        if keys['E' as usize] {
+            cam_move.y += 1.0;
+        }
+        if keys['W' as usize] {
+            cam_move.z -= 1.0;
+        }
+        if keys['S' as usize] {
+            cam_move.z += 1.0;
+        }
 
         // update viewport from window size
         let window_rect = window.get_viewport_rect();
@@ -264,24 +287,29 @@ fn main() -> Result<(), hotline::Error> {
         // 3d pass
         if true {
             let aspect = window_rect.width as f32 / window_rect.height as f32;
-            let proj = camera::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
+            let proj = camera::create_perspective_projection_rh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
 
-            let translate = Mat4f::from_translation(Vec3f::new(0.0, 100.0, 0.0));
-            let rotate_x = Mat4f::from_x_rotation(f32::deg_to_rad(-45.0));
+            let translate = Mat4f::from_translation(cam_move);
+            let rotate_x = Mat4f::from_x_rotation(f32::deg_to_rad(45.0));
             
-            let rotate_y = Mat4f::from_y_rotation(f32::deg_to_rad(45.0));
-            let view = rotate_x * rotate_y * translate;
+            let view = translate * rotate_x;
+            let view = view.inverse();
 
             let scale = 1000.0;
             let divisions = 10.0;
             for i in 0..((scale * 2.0) /divisions) as usize {
                 let offset = -scale + i as f32 * divisions;
-                imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::cyan());
-                imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::magenta());
+                imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(0.3));
+                imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(0.3));
             }
 
-            imdraw.add_line_3d(Vec3f::new(0.0, 0.0, -1000.0), Vec3f::new(0.0, 0.0, 1000.0), Vec4f::blue());
-            imdraw.add_line_3d(Vec3f::new(-1000.0, 0.0, 0.0), Vec3f::new(1000.0, 0.0, 0.0), Vec4f::red());
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, 0.0, 1000.0), Vec4f::blue());
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(1000.0, 0.0, 0.0), Vec4f::red());
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, 1000.0, 0.0), Vec4f::green());
+
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, 0.0, -1000.0), Vec4f::yellow());
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(-1000.0, 0.0, 0.0), Vec4f::cyan());
+            imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, -1000.0, 0.0), Vec4f::magenta());
 
             let view_proj = proj * view;
 
