@@ -9,6 +9,7 @@ use os::Window;
 
 use std::fs;
 
+use maths_rs::*;
 use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
@@ -22,16 +23,6 @@ use maths_rs::Mat4f;
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
-
-/*
-fn scene_2d() {
-
-}
-
-fn scene_3d() {
-
-}
-*/
 
 fn main() -> Result<(), hotline::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
@@ -320,6 +311,36 @@ fn main() -> Result<(), hotline::Error> {
             imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, 0.0, -1000.0), Vec4f::yellow());
             imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(-1000.0, 0.0, 0.0), Vec4f::cyan());
             imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, -1000.0, 0.0), Vec4f::magenta());
+
+            //
+            let l1 = Vec3f::new(10.0, 0.0, 100.0);
+            let l2 = Vec3f::new(-10.0, 0.0, 10.0);
+            let ll = length(l2 - l1);
+            let lv = normalize(l2 - l1);
+            let lp = Vec3f::new(lv.z, 0.0, lv.x);
+            let r = 10.0;
+
+            imdraw.add_line_3d(l1, l2, Vec4f::white());
+
+            let sp = l1 + (lv * ll * 0.8) + (lp * r * 0.7);
+            
+            imdraw.add_point_3d(sp, 1.0, Vec4f::red());
+            imdraw.add_circle_3d_xz(sp, r, Vec4f::red());
+
+            let cp = closest_point_on_line_segment(sp, l1, l2);
+
+            let lp = sp - l1;
+            let t = dot(lv, lp);
+            let cp2 = l1 + lv * t;
+
+            imdraw.add_point_3d(cp2, 1.0, Vec4f::red());
+
+            if length(sp - cp) < r {
+                let cv = normalize(sp - cp);
+                let rp = cp + cv * r;
+                imdraw.add_point_3d(rp, 1.0, Vec4f::green());
+                imdraw.add_circle_3d_xz(rp, r, Vec4f::green());
+            }
 
             let view_proj = proj * view;
 

@@ -10,22 +10,6 @@ pub fn create_ortho_matrix(left: f32, right: f32, bottom: f32, top: f32, near: f
     ))
 }
 
-// RH
-/*
-xScale     0          0              0
-0        yScale       0              0
-0        0        zf/(zn-zf)        -1
-0        0        zn*zf/(zn-zf)      0
-*/
-
-// LH
-/*
-xScale     0          0               0
-0        yScale       0               0
-0          0       zf/(zf-zn)         1
-0          0       -zn*zf/(zf-zn)     0
-*/
-
 fn create_perspective_matrix_internal_lh(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Mat4f {
     Mat4f::from((
         Vec4f::new((2.0 * near) / (right - left), 0.0, (right + left) / (right - left), 0.0),

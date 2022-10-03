@@ -5,6 +5,8 @@ use gfx::CmdBuf;
 use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
+use maths_rs::vec::*;
+use maths_rs::num::*;
 
 /// A coherent cpu/gpu buffer back by multiple gpu buffers to allow cpu writes while gpu is inflight 
 struct DynamicBuffer<D: gfx::Device> {
@@ -139,6 +141,23 @@ impl<D> ImDraw<D> where D: gfx::Device {
     pub fn add_line_3d(&mut self, start: Vec3f, end: Vec3f, col: Vec4f) {
         self.add_vertex_3d(start, col);
         self.add_vertex_3d(end, col);
+    }
+
+    pub fn add_point_3d(&mut self, pos: Vec3f, size: f32, col: Vec4f) {
+        self.add_line_3d(pos - Vec3f::unit_x() * size, pos + Vec3f::unit_x() * size, col);
+        self.add_line_3d(pos - Vec3f::unit_y() * size, pos + Vec3f::unit_y() * size, col);
+        self.add_line_3d(pos - Vec3f::unit_z() * size, pos + Vec3f::unit_z() * size, col);
+    }
+
+    pub fn add_circle_3d_xz(&mut self, pos: Vec3f, radius: f32, col: Vec4f) {
+        let segs = 16;
+        let step = (f32::pi() * 2.0) / segs as f32;
+        for i in 0..16 {
+            let ix = i as f32 * step;
+            let iy = (i + 1) as f32 * step;
+            self.add_line_3d(pos + Vec3f::new(f32::sin(ix), 0.0, f32::cos(ix)) * radius, 
+                pos + Vec3f::new(f32::sin(iy), 0.0, f32::cos(iy)) * radius, col);
+        }
     }
 
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
