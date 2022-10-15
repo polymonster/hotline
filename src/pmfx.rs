@@ -120,9 +120,11 @@ fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Opti
             shader_type: gfx::ShaderType::Vertex,
             compile_info: None
         };
-        device.create_shader(&shader_info, &shader_data)?;
+        Ok(Some(device.create_shader(&shader_info, &shader_data)?))
     }
-    Ok(None)
+    else {
+        Ok(None)
+    }
 }
 
 fn create_input_layout_from_technique(vs_inputs: Vec<PmfxInputStruct>, instance_inputs: Vec<PmfxInputStruct>) -> Vec<gfx::InputElementInfo> {
@@ -181,8 +183,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // render technique
                 let rt = RenderTechnique::<D> {
                     input_layout: create_input_layout_from_technique(technique.vs_inputs, technique.instance_inputs),
-                    vs: create_shader_from_file(device, &folder, technique.vs_file)?,
-                    fs: create_shader_from_file(device, &folder, technique.ps_file)?,
+                    vs: create_shader_from_file(device, folder, technique.vs_file)?,
+                    fs: create_shader_from_file(device, folder, technique.ps_file)?,
                     descriptor_layout: 0
                 };
 
