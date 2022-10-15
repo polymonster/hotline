@@ -174,8 +174,8 @@ fn main() -> Result<(), hotline::Error> {
     // pipeline
     let pso = dev
         .create_render_pipeline(&gfx::RenderPipelineInfo {
-            vs: Some(vs),
-            fs: Some(fs),
+            vs: Some(&vs),
+            fs: Some(&fs),
             input_layout: vec![
                 gfx::InputElementInfo {
                     semantic: String::from("POSITION"),
