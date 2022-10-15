@@ -242,8 +242,8 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
     let fs = device.create_shader(&fs_info, src.as_bytes())?;
 
     device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: Some(vs),
-        fs: Some(fs),
+        vs: Some(&vs),
+        fs: Some(&fs),
         input_layout: vec![
             gfx::InputElementInfo {
                 semantic: String::from("POSITION"),

@@ -71,6 +71,17 @@
             "console": "externalTerminal"
         },
         {
+            "name": "maths (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/maths.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal"
+        },
+        {
             "name": "Test",
             "type": "cppvsdbg",
             "request": "launch",

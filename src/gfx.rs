@@ -277,6 +277,7 @@ pub struct PushConstantInfo {
 type InputLayout = Vec<InputElementInfo>;
 
 /// Describe a single element of an `InputLayoutInfo`
+#[derive(Clone)]
 pub struct InputElementInfo {
     pub semantic: String,
     pub index: u32,
@@ -288,6 +289,7 @@ pub struct InputElementInfo {
 }
 
 /// Describes the frequency of which elements are fetched from a vertex input element.
+#[derive(Clone)]
 pub enum InputSlotClass {
     PerVertex,
     PerInstance,
@@ -349,9 +351,9 @@ pub enum ComparisonFunc {
 /// Information to create a pipeline through `Device::create_render_pipeline`.
 pub struct RenderPipelineInfo<'a, D: Device> {
     /// Vertex Shader
-    pub vs: Option<D::Shader>,
+    pub vs: Option<&'a D::Shader>,
     /// Fragment Shader
-    pub fs: Option<D::Shader>,
+    pub fs: Option<&'a D::Shader>,
     /// Vertex shader input layout
     pub input_layout: InputLayout,
     /// Layout of shader resources (constant buffers, structured buffers, textures, etc)

@@ -277,8 +277,8 @@ fn draw_triangle() -> Result<(), hotline::Error> {
     let fs = device.create_shader(&fs_info, src.as_bytes())?;
 
     let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: Some(vs),
-        fs: Some(fs),
+        vs: Some(&vs),
+        fs: Some(&fs),
         input_layout: vec![
             gfx::InputElementInfo {
                 semantic: String::from("POSITION"),
