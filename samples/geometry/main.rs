@@ -7,9 +7,6 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
-use std::fs;
-
-use maths_rs::*;
 use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
@@ -18,25 +15,22 @@ use maths_rs::vec::*;
 use maths_rs::mat::*;
 use maths_rs::Mat4f;
 
-
-// use pmfx;
-
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
 fn main() -> Result<(), hotline::Error> {    
+    let num_buffers = 2;
+
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("imdraw"),
         window: false,
-        num_buffers: 0,
+        num_buffers: num_buffers,
         dpi_aware: true,
     });
 
-    let num_buffers = 2;
-
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
-        render_target_heap_size: num_buffers,
+        render_target_heap_size: num_buffers as usize,
         ..Default::default()
     });
 
@@ -69,52 +63,18 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
-    // 2d
-    let vsc_filepath = asset_path.join("data/shaders/imdraw_2d/default.vsc");
-    let psc_filepath = asset_path.join("data/shaders/imdraw_2d/default.psc");
-    let info_filepath = asset_path.join("data/shaders/imdraw_2d");
-
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device>= pmfx::Pmfx::create();
-    pmfx.load(&device, info_filepath.to_str().unwrap())?;
 
-    let vsc_data = fs::read(vsc_filepath)?;
-    let psc_data = fs::read(psc_filepath)?;
+    // 2d
+    let pmfx_imdraw_2d = asset_path.join("data/shaders/imdraw_2d");
+    pmfx.load(&device, pmfx_imdraw_2d.to_str().unwrap())?;
 
-    let vsc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let vs = device.create_shader(&vsc_info, &vsc_data)?;
-    
-    let psc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let fs = device.create_shader(&psc_info, &psc_data)?;
+    let technique_2d = pmfx.get_technique("imdraw_2d", "default").unwrap();
 
     let pso_2d = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: Some(&vs),
-        fs: Some(&fs),
-        input_layout: vec![
-            gfx::InputElementInfo {
-                semantic: String::from("POSITION"),
-                index: 0,
-                format: gfx::Format::RG32f,
-                input_slot: 0,
-                aligned_byte_offset: 0,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-            gfx::InputElementInfo {
-                semantic: String::from("COLOR"),
-                index: 0,
-                format: gfx::Format::RGBA32f,
-                input_slot: 0,
-                aligned_byte_offset: 8,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-        ],
+        vs: technique_2d.vs.as_ref(),
+        fs: technique_2d.fs.as_ref(),
+        input_layout: technique_2d.input_layout.to_vec(),
         descriptor_layout: gfx::DescriptorLayout {
             push_constants: Some(vec![gfx::PushConstantInfo {
                 visibility: gfx::ShaderVisibility::Vertex,
@@ -138,51 +98,15 @@ fn main() -> Result<(), hotline::Error> {
     })?;
 
     // 3d
-    let vsc_filepath = asset_path.join("data/shaders/imdraw_3d/default.vsc");
-    let psc_filepath = asset_path.join("data/shaders/imdraw_3d/default.psc");
-    let info_filepath = asset_path.join("data/shaders/imdraw_3d");
+    let pmfx_imdraw_3d = asset_path.join("data/shaders/imdraw_3d");
+    pmfx.load(&device, pmfx_imdraw_3d.to_str().unwrap())?;
 
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device>= pmfx::Pmfx::create();
-    pmfx.load(&device, info_filepath.to_str().unwrap())?;
-
-    let vsc_data = fs::read(vsc_filepath)?;
-    let psc_data = fs::read(psc_filepath)?;
-
-    let vsc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let vs = device.create_shader(&vsc_info, &vsc_data)?;
-    
-    let psc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let fs = device.create_shader(&psc_info, &psc_data)?;
+    let technique_3d = pmfx.get_technique("imdraw_3d", "default").unwrap();
 
     let pso_3d = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: Some(&vs),
-        fs: Some(&fs),
-        input_layout: vec![
-            gfx::InputElementInfo {
-                semantic: String::from("POSITION"),
-                index: 0,
-                format: gfx::Format::RGB32f,
-                input_slot: 0,
-                aligned_byte_offset: 0,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-            gfx::InputElementInfo {
-                semantic: String::from("COLOR"),
-                index: 0,
-                format: gfx::Format::RGBA32f,
-                input_slot: 0,
-                aligned_byte_offset: 12,
-                input_slot_class: gfx::InputSlotClass::PerVertex,
-                step_rate: 0,
-            },
-        ],
+        vs: technique_3d.vs.as_ref(),
+        fs: technique_3d.fs.as_ref(),
+        input_layout: technique_3d.input_layout.to_vec(),
         descriptor_layout: gfx::DescriptorLayout {
             push_constants: Some(vec![gfx::PushConstantInfo {
                 visibility: gfx::ShaderVisibility::Vertex,
@@ -293,8 +217,8 @@ fn main() -> Result<(), hotline::Error> {
         let bb = cmd.get_backbuffer_index() as usize;
 
         // 2d pass
-        if false {
-            let ortho = camera::create_ortho_matrix(0.0, window_rect.width as f32, window_rect.height as f32, 0.0, 0.0, 1.0);
+        if true {
+            let ortho = Mat4f::create_ortho_matrix(0.0, window_rect.width as f32, window_rect.height as f32, 0.0, 0.0, 1.0);
             imdraw.add_line_2d(Vec2f::new(600.0, 100.0), Vec2f::new(600.0, 500.0), Vec4f::new(1.0, 0.0, 1.0, 1.0));
             imdraw.add_tri_2d(Vec2f::new(100.0, 100.0), Vec2f::new(100.0, 400.0), Vec2f::new(400.0, 400.0), Vec4f::new(0.0, 1.0, 1.0, 1.0));
             imdraw.add_rect_2d(Vec2f::new(800.0, 100.0), Vec2f::new(200.0, 400.0), Vec4f::new(1.0, 0.5, 0.0, 1.0));
@@ -308,7 +232,7 @@ fn main() -> Result<(), hotline::Error> {
         // 3d pass
         if true {
             let aspect = window_rect.width as f32 / window_rect.height as f32;
-            let proj = camera::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
+            let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
 
             let scale = 1000.0;
             let divisions = 10.0;
