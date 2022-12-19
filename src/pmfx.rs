@@ -83,6 +83,20 @@ pub struct Pmfx<D: gfx::Device> {
     render_techniques: HashMap<String, HashMap<String, RenderTechnique<D>>>
 }
 
+#[derive(Serialize, Deserialize)]
+pub struct Pmxf2 {
+    pipelines: HashMap<String, PmfxPipeline>
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct PmfxPipeline {
+    vs: Option<String>,
+    ps: Option<String>,
+    cs: Option<String>,
+    vertex_layout: Option<gfx::InputLayout>,
+    descriptor_layout: gfx::DescriptorLayout
+}
+
 const SEMANTIC_NAMES : [&str; 9] = [
     "SV_POSITION",
     "POSITION",
@@ -208,6 +222,58 @@ impl<D> Pmfx<D> where D: gfx::Device {
         else {
             None
         }
+    }
+
+    /// load a pmfx friom a folder, where the folder contains a pmfx info.json and shader source in separate files
+    /// within the directory
+    pub fn load2(&mut self, device: &D, filepath: &str) -> Result<(), super::Error> {        
+        // get the name for indexing by pmfx name/folder
+        let folder = Path::new(filepath);
+        let pmfx_name = if let Some(name) = folder.file_name() {
+            String::from(name.to_os_string().to_str().unwrap())
+        }
+        else {
+            String::from(filepath)
+        };
+        
+        //  parse pmfx itself
+        let info_filepath = folder.join(format!("{}.json", pmfx_name));
+        let pmfx_data = fs::read(info_filepath).unwrap();
+        let shader: Pmxf2 = serde_json::from_slice(&pmfx_data).unwrap();
+
+        for (_, pipeline) in shader.pipelines {
+            // vertex layouts
+            if let Some(vertex_layout) = &pipeline.vertex_layout {
+                for elem in vertex_layout {
+                    println!("input: {}", elem.semantic);
+                }
+            }
+
+            // bindings
+            if let Some(bindings) = &pipeline.descriptor_layout.bindings {
+                for binding in bindings {
+                    println!("binding: {}", binding.shader_register);
+                }
+            }
+
+            // shader source
+            if let Some(vs) = &pipeline.vs {
+                println!("shader_file: {}", vs);
+            }
+
+            if let Some(ps) = &pipeline.ps {
+                println!("shader_file: {}", ps);
+            }
+
+            if let Some(cs) = &pipeline.cs {
+                println!("shader_file: {}", cs);
+            }
+
+            // pipeline states
+            // ..
+        }
+
+        Ok(())
     }
 }
 

@@ -1,5 +1,6 @@
 use crate::os;
 use std::any::Any;
+use serde::{Deserialize, Serialize};
 
 /// Implemets this interface with a Direct3D12 backend.
 pub mod d3d12;
@@ -55,7 +56,7 @@ pub struct ScissorRect {
 /// u = unsigned integer,
 /// i = signed integer,
 /// f = float
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Format {
     Unknown,
     R16n,
@@ -218,8 +219,9 @@ bitflags! {
     }
 }
 
+
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
-#[derive(Default)]
+#[derive(Default, Serialize, Deserialize)]
 pub struct DescriptorLayout {
     pub bindings: Option<Vec<DescriptorBinding>>,
     pub push_constants: Option<Vec<PushConstantInfo>>,
@@ -227,6 +229,7 @@ pub struct DescriptorLayout {
 }
 
 /// Describes a range of resources for access on the GPU.
+#[derive(Serialize, Deserialize)]
 pub struct DescriptorBinding {
     /// The shader stage the resources will be accessible to
     pub visibility: ShaderVisibility,
@@ -241,6 +244,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
+#[derive(Serialize, Deserialize)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers
     ShaderResource,
@@ -253,7 +257,7 @@ pub enum DescriptorType {
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
-#[derive(Copy, Clone, Hash, PartialEq, Eq)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShaderVisibility {
     All,
     Vertex,
@@ -262,6 +266,7 @@ pub enum ShaderVisibility {
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
+#[derive(Serialize, Deserialize)]
 pub struct PushConstantInfo {
     /// The shader stage the constants will be accessible to
     pub visibility: ShaderVisibility,
@@ -274,10 +279,10 @@ pub struct PushConstantInfo {
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
-type InputLayout = Vec<InputElementInfo>;
+pub type InputLayout = Vec<InputElementInfo>;
 
 /// Describe a single element of an `InputLayoutInfo`
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct InputElementInfo {
     pub semantic: String,
     pub index: u32,
@@ -289,14 +294,14 @@ pub struct InputElementInfo {
 }
 
 /// Describes the frequency of which elements are fetched from a vertex input element.
-#[derive(Clone)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum InputSlotClass {
     PerVertex,
     PerInstance,
 }
 
 /// Info to create a sampler state object to sample textures in shaders.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct SamplerInfo {
     /// The shader stage the sampler will be accessible to
     pub visibility: ShaderVisibility,
@@ -318,7 +323,7 @@ pub struct SamplerInfo {
 }
 
 /// Filtering mode for the sampler (controls bilinear and trilinear interpolation).
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum SamplerFilter {
     Point,
     Linear,
@@ -326,7 +331,7 @@ pub enum SamplerFilter {
 }
 
 /// Address mode for the sampler (controls wrapping and clamping).
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum SamplerAddressMode {
     Wrap,
     Mirror,
@@ -336,7 +341,7 @@ pub enum SamplerAddressMode {
 }
 
 /// Used for comparison ops in depth testing, samplers.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum ComparisonFunc {
     Never,
     Less,
