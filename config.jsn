@@ -1,6 +1,8 @@
 {
     tools<windows>: {
-        pmfx: "bin/win32/pmfx/build_pmfx.exe"
+        // pmfx: "bin/win32/pmfx/build_pmfx.exe"
+        // pmfx: "../pmfx-shader/build_pmfx.py"
+        pmfx: "../pmfx-shader/pmfx2.py"
     }
 
     tools_help: {

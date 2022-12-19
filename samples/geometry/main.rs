@@ -63,7 +63,11 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device>= pmfx::Pmfx::create();
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
+
+    //
+    let pmfx_imdraw = asset_path.join("data/shaders/imdraw");
+    pmfx.load2(&device, pmfx_imdraw.to_str().unwrap())?;
 
     // 2d
     let pmfx_imdraw_2d = asset_path.join("data/shaders/imdraw_2d");
