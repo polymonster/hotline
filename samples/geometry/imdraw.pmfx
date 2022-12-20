@@ -1,5 +1,10 @@
-struct vs_input {
+struct vs_input_2d {
     float2 position : POSITION;
+    float4 colour: TEXCOORD;
+};
+
+struct vs_input_3d {
+    float3 position : POSITION;
     float4 colour: TEXCOORD;
 };
 
@@ -12,11 +17,11 @@ struct ps_output {
     float4 colour : SV_Target;
 };
 
-cbuffer push_constants : register(b0) {
+cbuffer view_push_constants : register(b0) {
     float4x4 projection_matrix;
 };
 
-vs_output vs_2d( vs_input input ) {
+vs_output vs_2d( vs_input_2d input ) {
     vs_output output;
     
     output.position = mul(projection_matrix, float4(input.position.xy, 0.0, 1.0));
@@ -33,7 +38,7 @@ ps_output ps_main( vs_output input ) {
     return output;
 }
 
-vs_output vs_3d( vs_input input )
+vs_output vs_3d( vs_input_3d input )
 {
     vs_output output;
 
@@ -49,10 +54,12 @@ pmfx: {
         imdraw_2d: {
             vs: vs_2d,
             ps: ps_main,
+            push_constants: ["view_push_constants"]
         }
         imdraw_3d: {
             vs: vs_3d,
             ps: ps_main,
+            push_constants: ["view_push_constants"]
         }
     }
 }

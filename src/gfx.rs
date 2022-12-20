@@ -221,7 +221,7 @@ bitflags! {
 
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
-#[derive(Default, Serialize, Deserialize)]
+#[derive(Default, Clone, Serialize, Deserialize)]
 pub struct DescriptorLayout {
     pub bindings: Option<Vec<DescriptorBinding>>,
     pub push_constants: Option<Vec<PushConstantInfo>>,
@@ -229,7 +229,7 @@ pub struct DescriptorLayout {
 }
 
 /// Describes a range of resources for access on the GPU.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DescriptorBinding {
     /// The shader stage the resources will be accessible to
     pub visibility: ShaderVisibility,
@@ -244,7 +244,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers
     ShaderResource,
@@ -266,7 +266,7 @@ pub enum ShaderVisibility {
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
-#[derive(Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct PushConstantInfo {
     /// The shader stage the constants will be accessible to
     pub visibility: ShaderVisibility,
@@ -354,11 +354,11 @@ pub enum ComparisonFunc {
 }
 
 /// Information to create a pipeline through `Device::create_render_pipeline`.
-pub struct RenderPipelineInfo<'a, D: Device> {
+pub struct RenderPipelineInfo<'stack, D: Device> {
     /// Vertex Shader
-    pub vs: Option<&'a D::Shader>,
+    pub vs: Option<&'stack D::Shader>,
     /// Fragment Shader
-    pub fs: Option<&'a D::Shader>,
+    pub fs: Option<&'stack D::Shader>,
     /// Vertex shader input layout
     pub input_layout: InputLayout,
     /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
@@ -375,7 +375,7 @@ pub struct RenderPipelineInfo<'a, D: Device> {
     pub patch_index: u32,
     /// A valid render pass, you can share pipelines across passes providing the render target
     /// formats and sample count are the same of the passes you wish to use the pipeline on
-    pub pass: &'a D::RenderPass,
+    pub pass: &'stack D::RenderPass,
 }
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage

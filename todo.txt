@@ -1,16 +1,16 @@
 // TODO:
 
+// - add dxc and support for sm_6_0
+// - pmfx Descriptor Layout
+// - pmfx pipelines
+// - debug rendering 3d
+// - camera
+
 // - path utilities
 // - wait frames before properly dropping gpu resources
 
-// - add dxc and suppor for sm_6_0
-// - pmfx Descriptor Layout
-// - pmfx pipelines
-// - automate update docs
-
-// - Math lib
-// - camera
-// - debug rendering 3d
+// - window utilities
+// - - rember window and console positions
 
 // - GPU Timer Query
 // - Draw Instanced
@@ -23,6 +23,7 @@
 // - Automate docs update
 
 // DONE:
+// x Math lib
 // x bindless in pmfx
 // x pmfx Input Layout
 // x debug rendering 2d

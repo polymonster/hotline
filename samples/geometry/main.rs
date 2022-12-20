@@ -20,6 +20,11 @@ use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
 fn main() -> Result<(), hotline::Error> {    
+
+    //
+    // window and swapchain
+    //
+
     let num_buffers = 2;
 
     let mut app = os_platform::App::create(os::AppInfo {
@@ -63,75 +68,24 @@ fn main() -> Result<(), hotline::Error> {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
 
+    //
+    // pmfx
+    //
+
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
+    let pmfx_imdraw = asset_path.join("data/shaders/imdraw");
+    
+    pmfx.load(pmfx_imdraw.to_str().unwrap())?;
+
+    pmfx.create_pipeline(&device, "imdraw_2d", swap_chain.get_backbuffer_pass())?;
+    pmfx.create_pipeline(&device, "imdraw_3d", swap_chain.get_backbuffer_pass())?;
+
+    let pso_3d = pmfx.get_pipeline("imdraw_3d").unwrap();
+    let pso_2d = pmfx.get_pipeline("imdraw_2d").unwrap();
 
     //
-    let pmfx_imdraw = asset_path.join("data/shaders/imdraw");
-    pmfx.load2(&device, pmfx_imdraw.to_str().unwrap())?;
-
-    // 2d
-    let pmfx_imdraw_2d = asset_path.join("data/shaders/imdraw_2d");
-    pmfx.load(&device, pmfx_imdraw_2d.to_str().unwrap())?;
-
-    let technique_2d = pmfx.get_technique("imdraw_2d", "default").unwrap();
-
-    let pso_2d = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: technique_2d.vs.as_ref(),
-        fs: technique_2d.fs.as_ref(),
-        input_layout: technique_2d.input_layout.to_vec(),
-        descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![gfx::PushConstantInfo {
-                visibility: gfx::ShaderVisibility::Vertex,
-                num_values: 16,
-                shader_register: 0,
-                register_space: 0,
-            }]),
-            static_samplers: None,
-            bindings: None,
-        },
-        raster_info: gfx::RasterInfo::default(),
-        depth_stencil_info: gfx::DepthStencilInfo::default(),
-        blend_info: gfx::BlendInfo {
-            alpha_to_coverage_enabled: false,
-            independent_blend_enabled: false,
-            render_target: vec![gfx::RenderTargetBlendInfo::default()],
-        },
-        topology: gfx::Topology::LineList,
-        patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass(),
-    })?;
-
-    // 3d
-    let pmfx_imdraw_3d = asset_path.join("data/shaders/imdraw_3d");
-    pmfx.load(&device, pmfx_imdraw_3d.to_str().unwrap())?;
-
-    let technique_3d = pmfx.get_technique("imdraw_3d", "default").unwrap();
-
-    let pso_3d = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-        vs: technique_3d.vs.as_ref(),
-        fs: technique_3d.fs.as_ref(),
-        input_layout: technique_3d.input_layout.to_vec(),
-        descriptor_layout: gfx::DescriptorLayout {
-            push_constants: Some(vec![gfx::PushConstantInfo {
-                visibility: gfx::ShaderVisibility::Vertex,
-                num_values: 16, 
-                shader_register: 0,
-                register_space: 0,
-            }]),
-            static_samplers: None,
-            bindings: None,
-        },
-        raster_info: gfx::RasterInfo::default(),
-        depth_stencil_info: gfx::DepthStencilInfo::default(),
-        blend_info: gfx::BlendInfo {
-            alpha_to_coverage_enabled: false,
-            independent_blend_enabled: false,
-            render_target: vec![gfx::RenderTargetBlendInfo::default()],
-        },
-        topology: gfx::Topology::LineList,
-        patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass(),
-    })?;
+    // state
+    // 
 
     let imdraw_info = imdraw::ImDrawInfo {
         initial_buffer_size_2d: 1024,
@@ -284,13 +238,6 @@ fn main() -> Result<(), hotline::Error> {
 
         // swap for the next frame
         swap_chain.swap(&device);
-
-        //
-        /*
-        if write_debug(&input_data, &result_data) {
-            break;
-        }
-        */
     }
 
     // must wait for the final frame to be completed
