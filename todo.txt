@@ -1,8 +1,11 @@
 // TODO:
 
-// - add dxc and support for sm_6_0
+
 // - pmfx Descriptor Layout
-// - pmfx pipelines
+// - x bindings
+// - x push constants
+// - - samplers
+
 // - debug rendering 3d
 // - camera
 
@@ -19,10 +22,11 @@
 // - MRT
 // - MSAA
 
-// - Samples
 // - Automate docs update
 
 // DONE:
+// x pmfx pipelines
+// x add dxc and support for sm_6_0
 // x Math lib
 // x bindless in pmfx
 // x pmfx Input Layout
