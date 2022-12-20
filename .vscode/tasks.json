@@ -3,7 +3,7 @@
 	"tasks": [
 		{
 			"type": "cargo",
-			"subcommand": "build",
+			"command": "build",
 			"problemMatcher": [
 				"$rustc"
 			],
@@ -11,7 +11,7 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "Rust: cargo build - hello_rs"
+			"label": "cargo_build"
 		}
 	]
 }
