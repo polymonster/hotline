@@ -103,6 +103,7 @@ pub struct DeviceInfo {
     pub depth_stencil_heap_size: usize,
 }
 
+#[derive(Clone)]
 /// Information returned from `Device::get_adapter_info`
 pub struct AdapterInfo {
     /// The chosen adapter a device was created with
@@ -681,17 +682,17 @@ pub struct UnmapInfo {
 }
 
 /// An opaque Shader type
-pub trait Shader<D: Device> {}
+pub trait Shader<D: Device>: Send + Sync {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
-pub trait RenderPipeline<D: Device> {}
+pub trait RenderPipeline<D: Device>: Send + Sync  {}
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
-pub trait RenderPass<D: Device> {}
+pub trait RenderPass<D: Device>: Send + Sync  {}
 /// An opaque compute pipeline type..
-pub trait ComputePipeline<D: Device> {}
+pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame.
-pub trait Device: 'static + Send + Sync + Sized + Any {
+pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
     type Buffer: Buffer<Self>;
@@ -740,7 +741,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any {
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
-pub trait SwapChain<D: Device>: 'static + Sized + Any {
+pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn new_frame(&mut self);
     fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
     fn wait_for_last_frame(&mut self);
@@ -759,7 +760,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any {
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
 /// which buffer we are writing to. At the end of each frame `close` must be called
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
-pub trait CmdBuf<D: Device> {
+pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain) -> Result<(), Error>;
     fn get_backbuffer_index(&self) -> u32;
@@ -799,7 +800,7 @@ pub trait CmdBuf<D: Device> {
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
-pub trait Buffer<D: Device> {
+pub trait Buffer<D: Device>: Send + Sync {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
     fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
@@ -814,7 +815,7 @@ pub trait Buffer<D: Device> {
 }
 
 /// An opaque Texture type
-pub trait Texture<D: Device> {
+pub trait Texture<D: Device>: Send + Sync {
     /// Return the index to access in a shader
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
@@ -824,7 +825,7 @@ pub trait Texture<D: Device> {
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
-pub trait Heap<D: Device> {
+pub trait Heap<D: Device>: Send + Sync {
     /// Deallocate a resource from the heap and mark space in free list for re-use
     fn deallocate(&mut self, index: usize);
 }

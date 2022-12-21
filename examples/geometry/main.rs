@@ -15,26 +15,56 @@ use maths_rs::vec::*;
 use maths_rs::mat::*;
 use maths_rs::Mat4f;
 
+use bevy_ecs::prelude::*;
+
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
-fn main() -> Result<(), hotline_rs::Error> {    
+#[derive(Component)]
+struct Position {
+    pos: Vec3f 
+}
 
-    //
-    // window and swapchain
-    //
+#[derive(Component)]
+struct Velocity {
+    vel: Vec3f 
+}
 
+#[derive(Resource)]
+struct Context<D: Device, A: App> {
+    app: A,
+    device: D,
+    main_window: A::Window,
+    swap_chain: D::SwapChain,
+    pmfx: pmfx::Pmfx<D>,
+    cmd_buf: D::CmdBuf,
+    imdraw: imdraw::ImDraw<D>
+}
+
+impl<D, A> Context<D, A> where D: Device, A:App {
+    pub fn update(&mut self) {
+        self.main_window.update(&mut self.app);
+        self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
+        self.cmd_buf.reset(&self.swap_chain);
+        self.cmd_buf.close(&self.swap_chain);
+        self.device.execute(&self.cmd_buf);
+        self.swap_chain.swap(&self.device);
+    }
+}
+
+fn create_hotline_context<D: Device, A: App>() -> Result<Context<D, A>, hotline_rs::Error> {
+    let exe_path = std::env::current_exe().ok().unwrap();
     let num_buffers = 2;
 
-    let mut app = os_platform::App::create(os::AppInfo {
+    let mut app = A::create(os::AppInfo {
         name: String::from("imdraw"),
         window: false,
         num_buffers: num_buffers,
         dpi_aware: true,
     });
 
-    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
+    let mut device = D::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers as usize,
         ..Default::default()
     });
@@ -51,7 +81,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         parent_handle: None,
     });
 
-    let swap_chain_info = gfx::SwapChainInfo {
+    let mut swap_chain_info = gfx::SwapChainInfo {
         num_buffers: num_buffers as u32,
         format: gfx::Format::RGBA8n,
         clear_colour: Some(gfx::ClearColour {
@@ -62,36 +92,95 @@ fn main() -> Result<(), hotline_rs::Error> {
         }),
     };
 
-    let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
-    let mut cmd = device.create_cmd_buf(2);
-
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
-
-    //
-    // pmfx
-    //
-
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
-    let pmfx_imdraw = asset_path.join("data/shaders/imdraw");
-    
-    pmfx.load(pmfx_imdraw.to_str().unwrap())?;
-
-    pmfx.create_pipeline(&device, "imdraw_2d", swap_chain.get_backbuffer_pass())?;
-    pmfx.create_pipeline(&device, "imdraw_3d", swap_chain.get_backbuffer_pass())?;
-
-    let pso_3d = pmfx.get_render_pipeline("imdraw_3d").unwrap();
-    let pso_2d = pmfx.get_render_pipeline("imdraw_2d").unwrap();
-
-    //
-    // state
-    // 
+    let mut swap_chain = device.create_swap_chain::<A>(&swap_chain_info, &window)?;
+    let mut cmd_buf = device.create_cmd_buf(num_buffers);
 
     let imdraw_info = imdraw::ImDrawInfo {
         initial_buffer_size_2d: 1024,
         initial_buffer_size_3d: 1024
     };
-    let mut imdraw : imdraw::ImDraw<gfx_platform::Device> = imdraw::ImDraw::create(&imdraw_info).unwrap();
+    let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
+
+    Ok(Context {
+        app,
+        device,
+        main_window: window,
+        swap_chain,
+        cmd_buf,
+        pmfx: pmfx::Pmfx::create(),
+        imdraw
+    })
+}
+
+
+
+// update
+fn movement(mut query: Query<(&mut Position, &Velocity)>) {
+    for (mut position, velocity) in &mut query {
+        position.pos += velocity.vel;
+    }
+}
+
+
+// 
+fn render<D: Device, A: App>(mut ctx: ResMut<Context<D, A>>, mut query: Query<()>) {
+    ctx.update();
+}
+
+// Define a unique public name for a new Stage.
+#[derive(StageLabel)]
+pub struct UpdateMovement;
+
+fn main() -> Result<(), hotline_rs::Error> {    
+
+    //
+    // create context
+    //
+
+    let mut ctx = create_hotline_context::<gfx_platform::Device, os_platform::App>()?;
+
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+
+    //
+    // create pipelines
+    //
+
+    ctx.pmfx.load(asset_path.join("data/shaders/imdraw").to_str().unwrap())?;
+    ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
+
+    let pso_3d = ctx.pmfx.get_render_pipeline("imdraw_3d").unwrap();
+    let pso_2d = ctx.pmfx.get_render_pipeline("imdraw_2d").unwrap();
+
+    //
+    // main loop
+    //
+
+    let mut world = World::new();
+    let mut schedule = Schedule::default();
+
+    world.spawn((
+        Position { pos: Vec3f::zero() },
+        Velocity { vel: Vec3f::one() },
+    ));
+
+    let mut app = ctx.app.clone();
+    world.insert_resource(ctx);
+
+    schedule.add_stage(UpdateMovement, SystemStage::parallel()
+        .with_system(movement)
+        .with_system(render::<gfx_platform::Device, os_platform::App>)
+    );
+
+    while app.run() {
+        schedule.run(&mut world);
+    }
+
+    // exited with code 0
+    Ok(())
+    
+    /*
 
     let mut cam_rot = Vec2f::new(-45.0, 0.0);
     let mut cam_pos = Vec3f::new(0.0, 100.0, 0.0);
@@ -245,4 +334,5 @@ fn main() -> Result<(), hotline_rs::Error> {
     cmd.reset(&swap_chain);
 
     Ok(())
+    */
 }

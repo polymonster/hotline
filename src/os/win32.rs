@@ -37,6 +37,9 @@ pub struct Window {
     events: super::WindowEventFlags,
 }
 
+unsafe impl Send for Window {}
+unsafe impl Sync for Window {}
+
 #[derive(Clone, Copy)]
 pub struct NativeHandle {
     pub hwnd: HWND,

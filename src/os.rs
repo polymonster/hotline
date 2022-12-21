@@ -168,7 +168,7 @@ pub trait NativeHandle<A: App> {
 }
 
 /// An interface which all platforms need to implement for general operating system calls
-pub trait App: 'static + Any + Sized {
+pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     type Window: Window<Self>;
     type NativeHandle: NativeHandle<Self>;
     /// Create an application instance
@@ -206,7 +206,7 @@ pub trait App: 'static + Any + Sized {
 }
 
 /// An instance of an operating system window
-pub trait Window<A: App>: Any + Sized {
+pub trait Window<A: App>: 'static + Send + Sync + Any + Sized + Clone {
     /// Bring window to front and draw ontop of all others
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
