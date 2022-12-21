@@ -1,3 +1,0 @@
-local defs = {}
-
-return defs
