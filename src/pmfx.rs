@@ -10,11 +10,10 @@ use std::fs;
 pub struct Pmfx<D: gfx::Device> {
     pmfx: HashMap<String, PmfxPipeline>,
     pmfx_folders: HashMap<String, String>,
-    pipelines: HashMap<String, D::RenderPipeline>,
+    render_pipelines: HashMap<String, D::RenderPipeline>,
+    compute_pipelines: HashMap<String, D::ComputePipeline>,
     shaders: HashMap<String, D::Shader>,
-    blend_info: HashMap<String, PmfxPipeline>,
-    depth_stencil_info: HashMap<String, PmfxPipeline>,
-    raster_info: HashMap<String, PmfxPipeline>,
+    depth_stencil_states: HashMap<String, PmfxPipeline>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -29,9 +28,9 @@ pub struct PmfxPipeline {
     cs: Option<String>,
     vertex_layout: Option<gfx::InputLayout>,
     descriptor_layout: gfx::DescriptorLayout,
-    blend_info: Option<String>,
-    depth_stencil_info: Option<String>,
-    raster_info: Option<String>
+    blend_state: Option<String>,
+    depth_stencil_state: Option<String>,
+    raster_state: Option<String>
 }
 
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {
@@ -54,10 +53,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Pmfx {
             pmfx: HashMap::new(),
             pmfx_folders: HashMap::new(),
-            pipelines: HashMap::new(),
-            blend_info: HashMap::new(),
-            depth_stencil_info: HashMap::new(),
-            raster_info: HashMap::new(),
+            render_pipelines: HashMap::new(),
+            compute_pipelines: HashMap::new(),
+            depth_stencil_states: HashMap::new(),
             shaders: HashMap::new()
         }
     }
@@ -142,8 +140,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // TODO: infer compute or graphics pipeline from pmfx
             let cs = self.get_shader(&pipeline.cs);
-            if let Some(_cs) = cs {
-                // compute pipeline
+            if let Some(cs) = cs {
+                let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
+                    cs: cs,
+                    descriptor_layout: pipeline.descriptor_layout.clone(),
+                })?;
+                println!("hotline::pmfx:: compiled compute pipeline: {}", pipeline_name);
+                self.compute_pipelines.insert(pipeline_name.to_string(), pso);
             }
             else {
                 let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
@@ -159,12 +162,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         independent_blend_enabled: false,
                         render_target: vec![gfx::RenderTargetBlendInfo::default()],
                     },
-                    topology: gfx::Topology::LineList,
+                    topology: gfx::Topology::TriangleList,
                     patch_index: 0,
                     pass: pass,
                 })?;
-                println!("hotline::pmfx:: compiled pipeline: {}", pipeline_name);
-                self.pipelines.insert(pipeline_name.to_string(), pso);
+                println!("hotline::pmfx:: compiled render pipeline: {}", pipeline_name);
+                self.render_pipelines.insert(pipeline_name.to_string(), pso);
             }
             Ok(())
         }
@@ -175,10 +178,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Fetch a prebuilt RenderPipeline or create a new one on the fly if it does not exist
-    pub fn get_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Option<&'stack D::RenderPipeline> {
-        if self.pipelines.contains_key(pipeline_name) {
-            Some(&self.pipelines[pipeline_name])
+    /// Fetch a prebuilt RenderPipeline
+    pub fn get_render_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Option<&'stack D::RenderPipeline> {
+        if self.render_pipelines.contains_key(pipeline_name) {
+            Some(&self.render_pipelines[pipeline_name])
+        }
+        else {
+            None
+        }
+    }
+
+    /// Fetch a prebuilt ComputePipeline
+    pub fn get_compute_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Option<&'stack D::ComputePipeline> {
+        if self.compute_pipelines.contains_key(pipeline_name) {
+            Some(&self.compute_pipelines[pipeline_name])
         }
         else {
             None

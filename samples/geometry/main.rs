@@ -80,8 +80,8 @@ fn main() -> Result<(), hotline::Error> {
     pmfx.create_pipeline(&device, "imdraw_2d", swap_chain.get_backbuffer_pass())?;
     pmfx.create_pipeline(&device, "imdraw_3d", swap_chain.get_backbuffer_pass())?;
 
-    let pso_3d = pmfx.get_pipeline("imdraw_3d").unwrap();
-    let pso_2d = pmfx.get_pipeline("imdraw_2d").unwrap();
+    let pso_3d = pmfx.get_render_pipeline("imdraw_3d").unwrap();
+    let pso_2d = pmfx.get_render_pipeline("imdraw_2d").unwrap();
 
     //
     // state

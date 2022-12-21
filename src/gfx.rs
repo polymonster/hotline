@@ -225,7 +225,7 @@ bitflags! {
 pub struct DescriptorLayout {
     pub bindings: Option<Vec<DescriptorBinding>>,
     pub push_constants: Option<Vec<PushConstantInfo>>,
-    pub static_samplers: Option<Vec<SamplerInfo>>,
+    pub static_samplers: Option<Vec<SamplerBinding>>,
 }
 
 /// Describes a range of resources for access on the GPU.
@@ -300,15 +300,21 @@ pub enum InputSlotClass {
     PerInstance,
 }
 
-/// Info to create a sampler state object to sample textures in shaders.
 #[derive(Copy, Clone, Serialize, Deserialize)]
-pub struct SamplerInfo {
+pub struct SamplerBinding {
     /// The shader stage the sampler will be accessible to
     pub visibility: ShaderVisibility,
     /// Register index to bind to (supplied in shader)
     pub shader_register: u32,
     /// Register space to bind to (supplied in shader)
     pub register_space: u32,
+    /// Sampler Info
+    pub sampler_info: SamplerInfo
+}
+
+/// Info to create a sampler state object to sample textures in shaders.
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub struct SamplerInfo {
     pub filter: SamplerFilter,
     pub address_u: SamplerAddressMode,
     pub address_v: SamplerAddressMode,
@@ -539,9 +545,9 @@ pub enum LogicOp {
 }
 
 /// Information to create a compute pipeline through `Device::create_compute_pipeline`
-pub struct ComputePipelineInfo<D: Device> {
+pub struct ComputePipelineInfo<'stack, D: Device> {
     /// Compute Shader
-    pub cs: D::Shader,
+    pub cs: &'stack D::Shader,
     pub descriptor_layout: DescriptorLayout,
 }
 
@@ -1011,7 +1017,6 @@ impl Default for RasterInfo {
 impl Default for SamplerInfo {
     fn default() -> Self {
         SamplerInfo {
-            visibility: ShaderVisibility::Fragment,
             filter: SamplerFilter::Linear,
             address_u: SamplerAddressMode::Wrap,
             address_v: SamplerAddressMode::Wrap,
@@ -1022,8 +1027,6 @@ impl Default for SamplerInfo {
             max_aniso: 0,
             min_lod: -1.0,
             max_lod: -1.0,
-            shader_register: 0,
-            register_space: 0,
         }
     }
 }

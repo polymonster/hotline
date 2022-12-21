@@ -134,118 +134,15 @@ fn main() -> Result<(), hotline::Error> {
 
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
-    // shaders
-    let shaders_hlsl_path = asset_path.join("..\\..\\samples\\hello_world\\shaders.hlsl");
-    let shaders_hlsl = shaders_hlsl_path.to_str().unwrap();
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
 
-    let cs_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Fragment,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("CSMain"),
-            target: String::from("cs_5_1"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
-    };
-
-    let contents = fs::read_to_string(shaders_hlsl).expect("failed to read file");
-
-    let vsc_filepath = asset_path.join("data\\shaders\\bindless\\default.vsc");
-    let psc_filepath = asset_path.join("data\\shaders\\bindless\\default.psc");
-
-    let vsc_data = fs::read(vsc_filepath)?;
-    let psc_data = fs::read(psc_filepath)?;
-
-    let vsc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let vs = dev.create_shader(&vsc_info, &vsc_data)?;
+    let pmfx_bindless = asset_path.join("data/shaders/bindless");
+    pmfx.load(pmfx_bindless.to_str().unwrap())?;
+    pmfx.create_pipeline(&dev, "compute_rw", swap_chain.get_backbuffer_pass())?;
+    pmfx.create_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
     
-    let psc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
-    };
-    let fs = dev.create_shader(&psc_info, &psc_data)?;
-
-    let cs = dev.create_shader(&cs_info, contents.as_bytes())?;
-
-    let num_descriptors = 10;
-
-    // pipeline
-    let pso = dev
-        .create_render_pipeline(&gfx::RenderPipelineInfo {
-            vs: Some(&vs),
-            fs: Some(&fs),
-            input_layout: vec![
-                gfx::InputElementInfo {
-                    semantic: String::from("POSITION"),
-                    index: 0,
-                    format: gfx::Format::RGB32f,
-                    input_slot: 0,
-                    aligned_byte_offset: 0,
-                    input_slot_class: gfx::InputSlotClass::PerVertex,
-                    step_rate: 0,
-                },
-                gfx::InputElementInfo {
-                    semantic: String::from("COLOR"),
-                    index: 0,
-                    format: gfx::Format::RGBA32f,
-                    input_slot: 0,
-                    aligned_byte_offset: 12,
-                    input_slot_class: gfx::InputSlotClass::PerVertex,
-                    step_rate: 0,
-                },
-            ],
-            descriptor_layout: gfx::DescriptorLayout {
-                push_constants: Some(vec![gfx::PushConstantInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    num_values: 4,
-                    shader_register: 0,
-                    register_space: 0,
-                }]),
-                bindings: Some(vec![
-                    gfx::DescriptorBinding {
-                        visibility: gfx::ShaderVisibility::Fragment,
-                        binding_type: gfx::DescriptorType::ShaderResource,
-                        num_descriptors: Some(num_descriptors),
-                        shader_register: 0,
-                        register_space: 0,
-                    },
-                    gfx::DescriptorBinding {
-                        visibility: gfx::ShaderVisibility::Fragment,
-                        binding_type: gfx::DescriptorType::ConstantBuffer,
-                        num_descriptors: Some(num_descriptors),
-                        shader_register: 1,
-                        register_space: 0,
-                    },
-                ]),
-                static_samplers: Some(vec![gfx::SamplerInfo {
-                    visibility: gfx::ShaderVisibility::Fragment,
-                    filter: gfx::SamplerFilter::Linear,
-                    address_u: gfx::SamplerAddressMode::Wrap,
-                    address_v: gfx::SamplerAddressMode::Wrap,
-                    address_w: gfx::SamplerAddressMode::Wrap,
-                    comparison: None,
-                    border_colour: None,
-                    mip_lod_bias: 0.0,
-                    max_aniso: 0,
-                    min_lod: -1.0,
-                    max_lod: -1.0,
-                    shader_register: 0,
-                    register_space: 0,
-                }]),
-            },
-            raster_info: gfx::RasterInfo::default(),
-            depth_stencil_info: gfx::DepthStencilInfo::default(),
-            blend_info: gfx::BlendInfo {
-                render_target: vec![gfx::RenderTargetBlendInfo::default()],
-                ..Default::default()
-            },
-            topology: gfx::Topology::TriangleList,
-            patch_index: 0,
-            pass: swap_chain.get_backbuffer_pass(),
-        })
-        .expect("failed to create pipeline!");
+    let pso_pmfx = pmfx.get_render_pipeline("bindless").unwrap();
+    let pso_compute = pmfx.get_compute_pipeline("compute_rw").unwrap();
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
@@ -278,7 +175,7 @@ fn main() -> Result<(), hotline::Error> {
     // constant buffer
     let mut cbuffer: [f32; 64] = [0.0; 64];
     cbuffer[0] = 1.0;
-    cbuffer[1] = 1.0;
+    cbuffer[1] = 0.0;
     cbuffer[2] = 1.0;
     cbuffer[3] = 1.0;
 
@@ -357,23 +254,6 @@ fn main() -> Result<(), hotline::Error> {
     };
     let _rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
 
-    let compute_pipeline = dev
-        .create_compute_pipeline(&gfx::ComputePipelineInfo {
-            cs,
-            descriptor_layout: gfx::DescriptorLayout {
-                static_samplers: None,
-                push_constants: None,
-                bindings: Some(vec![gfx::DescriptorBinding {
-                    visibility: gfx::ShaderVisibility::Compute,
-                    binding_type: gfx::DescriptorType::UnorderedAccess,
-                    num_descriptors: Some(num_descriptors),
-                    shader_register: 0,
-                    register_space: 0,
-                }]),
-            },
-        })
-        .unwrap();
-
     //std::mem::drop(dev);
 
     // ..
@@ -390,7 +270,7 @@ fn main() -> Result<(), hotline::Error> {
         cmdbuffer.set_marker(0xff00ffff, "START!!!");
 
         cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
-        cmdbuffer.set_compute_pipeline(&compute_pipeline);
+        cmdbuffer.set_compute_pipeline(&pso_compute);
         cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
         cmdbuffer.dispatch(
             gfx::Size3 {
@@ -444,7 +324,9 @@ fn main() -> Result<(), hotline::Error> {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_render_pipeline(&pso);
+
+        cmdbuffer.set_render_pipeline(&pso_pmfx);
+        
         cmdbuffer.set_render_heap(1, dev.get_shader_heap(), 0);
 
         cmdbuffer.set_index_buffer(&index_buffer);
