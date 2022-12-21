@@ -31,8 +31,8 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i samples/"
-                "-o target/debug/data/shaders"
+                "-i examples/"
+                "-o target/debug/examples/data/shaders"
                 "-t target/temp/shaders"
                 "-source"
             ]
