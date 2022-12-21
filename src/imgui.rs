@@ -287,8 +287,11 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 shader_register: 0,
                 register_space: 0,
             }]),
-            static_samplers: Some(vec![gfx::SamplerInfo {
+            static_samplers: Some(vec![gfx::SamplerBinding {
                 visibility: gfx::ShaderVisibility::Fragment,
+                shader_register: 0,
+                register_space: 0,
+                sampler_info: gfx::SamplerInfo {
                 filter: gfx::SamplerFilter::Linear,
                 address_u: gfx::SamplerAddressMode::Wrap,
                 address_v: gfx::SamplerAddressMode::Wrap,
@@ -299,9 +302,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 max_aniso: 0,
                 min_lod: -1.0,
                 max_lod: -1.0,
-                shader_register: 0,
-                register_space: 0,
-            }]),
+            }}]),
         },
         raster_info: gfx::RasterInfo::default(),
         depth_stencil_info: gfx::DepthStencilInfo::default(),
