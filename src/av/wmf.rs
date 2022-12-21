@@ -67,6 +67,7 @@ impl NotifyEvents {
     }
 }
 
+
 #[implement(IMFMediaEngineNotify)]
 struct MediaEngineNotify {
     pub notify: *mut NotifyEvents

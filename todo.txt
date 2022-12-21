@@ -1,11 +1,5 @@
 // TODO:
 
-
-// - pmfx Descriptor Layout
-// - x bindings
-// - x push constants
-// - - samplers
-
 // - debug rendering 3d
 // - camera
 
@@ -15,16 +9,25 @@
 // - window utilities
 // - - rember window and console positions
 
+// - automate cargo publish
+
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
 // - Stencil Ref
 // - MRT
 // - MSAA
-
-// - Automate docs update
+// - Blend
+// - Depth Stencil
+// - Raster
+// - Texture Formats
 
 // DONE:
+// x Automate docs update
+// x pmfx Descriptor Layout
+// - x bindings
+// - x push constants
+// - x samplers
 // x pmfx pipelines
 // x add dxc and support for sm_6_0
 // x Math lib

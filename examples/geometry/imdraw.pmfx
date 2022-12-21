@@ -55,11 +55,13 @@ pmfx: {
             vs: vs_2d,
             ps: ps_main,
             push_constants: ["view_push_constants"]
+            topology: "LineList"
         }
         imdraw_3d: {
             vs: vs_3d,
             ps: ps_main,
             push_constants: ["view_push_constants"]
+            topology: "LineList"
         }
     }
 }

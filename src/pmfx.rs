@@ -12,12 +12,13 @@ pub struct Pmfx<D: gfx::Device> {
     render_pipelines: HashMap<String, D::RenderPipeline>,
     compute_pipelines: HashMap<String, D::ComputePipeline>,
     shaders: HashMap<String, D::Shader>,
-    depth_stencil_states: HashMap<String, PmfxPipeline>
+    depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct Pmxf2 {
     pipelines: HashMap<String, PmfxPipeline>,
+    depth_stencil_states: Option<HashMap<String, gfx::DepthStencilInfo>>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -29,7 +30,8 @@ pub struct PmfxPipeline {
     descriptor_layout: gfx::DescriptorLayout,
     blend_state: Option<String>,
     depth_stencil_state: Option<String>,
-    raster_state: Option<String>
+    raster_state: Option<String>,
+    topology: Option<gfx::Topology>
 }
 
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {
@@ -44,6 +46,20 @@ fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Opti
     }
     else {
         Ok(None)
+    }
+}
+
+fn info_from_state<T: Default + Copy>(name: &Option<String>, map: &HashMap<String, T>) -> T {
+    if let Some(name) = &name {
+        if map.contains_key(name) {
+            map[name]
+        }
+        else {
+            T::default()
+        }
+    }
+    else {
+        T::default()
     }
 }
 
@@ -82,8 +98,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
         }
 
-        // blend states ...
-
+        // states ...
+        if let Some(states) = shader.depth_stencil_states {
+            for (name, state) in states {
+                self.depth_stencil_states.insert(name, state);
+            }
+        }
+        
         Ok(())
     }
 
@@ -141,7 +162,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let cs = self.get_shader(&pipeline.cs);
             if let Some(cs) = cs {
                 let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
-                    cs: cs,
+                    cs,
                     descriptor_layout: pipeline.descriptor_layout.clone(),
                 })?;
                 println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
@@ -155,15 +176,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     input_layout: vertex_layout.to_vec(),
                     descriptor_layout: pipeline.descriptor_layout.clone(),
                     raster_info: gfx::RasterInfo::default(),
-                    depth_stencil_info: gfx::DepthStencilInfo::default(),
+                    depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.depth_stencil_states),
                     blend_info: gfx::BlendInfo {
                         alpha_to_coverage_enabled: false,
                         independent_blend_enabled: false,
                         render_target: vec![gfx::RenderTargetBlendInfo::default()],
                     },
-                    topology: gfx::Topology::TriangleList,
+                    topology: 
+                        if let Some(topology) = pipeline.topology {
+                            topology
+                        }
+                        else {
+                            gfx::Topology::TriangleList
+                        },
                     patch_index: 0,
-                    pass: pass,
+                    pass,
                 })?;
                 println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
                 self.render_pipelines.insert(pipeline_name.to_string(), pso);
