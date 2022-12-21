@@ -233,7 +233,7 @@ impl App {
     fn wndproc(&mut self, window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         unsafe {
             let mut proc_data = &mut self.proc_data;
-            match message as u32 {
+            match message {
                 WM_MOUSEMOVE => {
                     proc_data.mouse_hwnd = window;
                     if !proc_data.mouse_tracked {
@@ -350,7 +350,7 @@ impl App {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        match message as u32 {
+        match message {
             WM_DESTROY => {
                 LRESULT(0)
             }
@@ -383,7 +383,7 @@ impl App {
         wparam: WPARAM,
         lparam: LPARAM,
     ) -> LRESULT {
-        match message as u32 {
+        match message {
             WM_CLOSE => {
                 self.add_event(window, super::WindowEventFlags::CLOSE);
                 LRESULT(0)
@@ -631,15 +631,15 @@ impl super::App for App {
         unsafe {
             match cursor {
                 super::Cursor::None => SetCursor(HCURSOR(0)),
-                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, &IDC_ARROW).unwrap()),
-                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, &IDC_IBEAM).unwrap()),
-                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEALL).unwrap()),
-                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZEWE).unwrap()),
-                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENS).unwrap()),
-                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENESW).unwrap()),
-                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, &IDC_SIZENWSE).unwrap()),
-                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, &IDC_HAND).unwrap()),
-                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, &IDC_NO).unwrap()),
+                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, IDC_ARROW).unwrap()),
+                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, IDC_IBEAM).unwrap()),
+                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, IDC_SIZEALL).unwrap()),
+                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, IDC_SIZEWE).unwrap()),
+                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENS).unwrap()),
+                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENESW).unwrap()),
+                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENWSE).unwrap()),
+                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, IDC_HAND).unwrap()),
+                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, IDC_NO).unwrap()),
             };
         }
     }

@@ -386,7 +386,7 @@ pub struct RenderPipelineInfo<'stack, D: Device> {
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage
 /// This will be also used to infer primitive topology types for geometry or hull shaders
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize)]
 pub enum Topology {
     Undefined,
     PointList,
@@ -430,6 +430,7 @@ pub enum CullMode {
 }
 
 /// Information to control the depth and stencil testing of primitves when using a `RenderPipeline`
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct DepthStencilInfo {
     /// Enable depth testing
     pub depth_enabled: bool,
@@ -445,12 +446,14 @@ pub struct DepthStencilInfo {
 }
 
 /// Write to the depth buffer, or omit writes and just perform depth testing
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum DepthWriteMask {
     Zero,
     All,
 }
 
 /// Stencil info for various outcomes of the depth stencil test
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct StencilInfo {
     pub fail: StencilOp,
     pub depth_fail: StencilOp,
@@ -459,6 +462,7 @@ pub struct StencilInfo {
 }
 
 /// Stencil operations
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum StencilOp {
     Keep,
     Zero,

@@ -107,6 +107,7 @@ pmfx: {
                 sampler0: "wrap_linear"
             }
             depth_stencil_state: "depth_tested"
+            topology: "TriangleList"
         }
 
         compute_rw: {
