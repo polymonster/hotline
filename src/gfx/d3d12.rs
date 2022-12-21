@@ -102,6 +102,7 @@ impl WinPixEventRuntime {
     }
 }
 
+#[derive(Clone)]
 pub struct Device {
     adapter_info: super::AdapterInfo,
     dxgi_factory: IDXGIFactory4,
@@ -117,6 +118,24 @@ pub struct Device {
 
 unsafe impl Send for Device {}
 unsafe impl Sync for Device {}
+unsafe impl Send for SwapChain {}
+unsafe impl Sync for SwapChain {}
+unsafe impl Send for RenderPass {}
+unsafe impl Sync for RenderPass {}
+unsafe impl Send for RenderPipeline {}
+unsafe impl Sync for RenderPipeline {}
+unsafe impl Send for ComputePipeline {}
+unsafe impl Sync for ComputePipeline {}
+unsafe impl Send for Shader {}
+unsafe impl Sync for Shader {}
+unsafe impl Send for CmdBuf {}
+unsafe impl Sync for CmdBuf {}
+unsafe impl Send for Buffer {}
+unsafe impl Sync for Buffer {}
+unsafe impl Send for Texture {}
+unsafe impl Sync for Texture {}
+unsafe impl Send for Heap {}
+unsafe impl Sync for Heap {}
 
 #[derive(Clone)]
 pub struct SwapChain {
@@ -165,6 +184,7 @@ pub struct Buffer {
     uav_index: Option<usize>,
 }
 
+#[derive(Clone)]
 pub struct Shader {
     blob: Option<ID3DBlob>,
     precompiled: Option<Vec<u8>>
@@ -198,6 +218,7 @@ pub struct RenderPass {
     sample_count: u32,
 }
 
+#[derive(Clone)]
 pub struct Heap {
     heap: ID3D12DescriptorHeap,
     base_address: usize,
@@ -207,6 +228,7 @@ pub struct Heap {
     free_list: Vec<usize>,
 }
 
+#[derive(Clone)]
 pub struct ComputePipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
