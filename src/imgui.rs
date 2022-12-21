@@ -1011,7 +1011,7 @@ fn get_viewport_window<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut
     }
 }
 
-/// get a hotline::imgui::ViewportData mutable reference from an ImGuiViewport
+/// get a hotline_rs::imgui::ViewportData mutable reference from an ImGuiViewport
 fn get_viewport_data<'a, D: Device, A: App>(vp: *mut ImGuiViewport) -> &'a mut ViewportData<D, A> {
     unsafe {
         let vp_ref = &mut *vp;

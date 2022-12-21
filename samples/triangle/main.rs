@@ -1,4 +1,4 @@
-use hotline::*;
+use hotline_rs::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
@@ -19,7 +19,7 @@ struct Vertex {
     color: [f32; 4],
 }
 
-fn main() -> Result<(), hotline::Error> {
+fn main() -> Result<(), hotline_rs::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("triangle"),
         window: false,

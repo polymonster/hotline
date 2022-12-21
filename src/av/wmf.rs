@@ -93,7 +93,7 @@ fn new_notify_events() -> *mut NotifyEvents {
 impl Drop for VideoPlayer {
     fn drop(&mut self) {
         if self.texture.is_some() || !self.cleanup_textures.is_empty() {
-            panic!("hotline::av::wmf: dropping video player with live textures, call shutdown with d3d12::device to free srv heap memory.");
+            panic!("hotline_rs::av::wmf: dropping video player with live textures, call shutdown with d3d12::device to free srv heap memory.");
         };
     }
 }
@@ -123,7 +123,7 @@ impl VideoPlayer {
 
                 // error code with extended info
                 return Err(super::Error{
-                    msg: format!("hotline::av::wmf: {} : {}", msgs[code as usize], ext_str)
+                    msg: format!("hotline_rs::av::wmf: {} : {}", msgs[code as usize], ext_str)
                 });
             }
             Ok(())
@@ -203,7 +203,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             }
 
             Err(super::Error {
-                msg: String::from("hotline::av::wmf:: failed to initialise, could not create attributes"),
+                msg: String::from("hotline_rs::av::wmf:: failed to initialise, could not create attributes"),
             })
         }
     }

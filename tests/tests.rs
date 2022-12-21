@@ -1,4 +1,4 @@
-use hotline::*;
+use hotline_rs::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
@@ -72,7 +72,7 @@ fn create_window() {
 }
 
 #[test]
-fn swap_chain_buffer() -> Result<(), hotline::Error> {
+fn swap_chain_buffer() -> Result<(), hotline_rs::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("swap_chain_buffer"),
         window: false,
@@ -167,7 +167,7 @@ fn swap_chain_buffer() -> Result<(), hotline::Error> {
 }
 
 #[test]
-fn draw_triangle() -> Result<(), hotline::Error> {
+fn draw_triangle() -> Result<(), hotline_rs::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("draw_triangle"),
         window: false,

@@ -438,7 +438,7 @@ impl super::App for App {
             if info.dpi_aware {
                 SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
                 if SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE).is_err() {
-                    println!("hotline::os::win32: SetProcessDpiAwareness failed");
+                    println!("hotline_rs::os::win32: SetProcessDpiAwareness failed");
                 }
             }
 
@@ -452,7 +452,7 @@ impl super::App for App {
             };
 
             if RegisterClassA(&wc) == 0 {
-                panic!("hotline::os::win32: class already registered!");
+                panic!("hotline_rs::os::win32: class already registered!");
             }
 
             let wc2 = WNDCLASSA {
@@ -465,7 +465,7 @@ impl super::App for App {
             };
 
             if RegisterClassA(&wc2) == 0 {
-                panic!("hotline::os::win32: imgui class already registered!");
+                panic!("hotline_rs::os::win32: imgui class already registered!");
             }
 
             App {
@@ -905,7 +905,7 @@ impl super::Window<App> for Window {
             let mut xdpi: u32 = 0;
             let mut ydpi: u32 = 0;
             if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_err() {
-                println!("hotline::os::win32: GetDpiForMonitor failed");
+                println!("hotline_rs::os::win32: GetDpiForMonitor failed");
                 return 1.0;
             }
             (xdpi as f32) / 96.0
