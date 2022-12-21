@@ -1,4 +1,4 @@
-use hotline::*;
+use hotline_rs::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
@@ -19,7 +19,7 @@ use maths_rs::Mat4f;
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
-fn main() -> Result<(), hotline::Error> {    
+fn main() -> Result<(), hotline_rs::Error> {    
 
     //
     // window and swapchain

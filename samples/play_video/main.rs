@@ -1,4 +1,4 @@
-use hotline::*;
+use hotline_rs::*;
 
 use os::App;
 use os::Window;
@@ -10,11 +10,11 @@ use gfx::SwapChain;
 use av::VideoPlayer;
 
 #[cfg(target_os = "windows")]
-use hotline::os::win32 as os_platform;
-use hotline::gfx::d3d12 as gfx_platform;
-use hotline::av::wmf as av_platform;
+use hotline_rs::os::win32 as os_platform;
+use hotline_rs::gfx::d3d12 as gfx_platform;
+use hotline_rs::av::wmf as av_platform;
 
-fn main() -> Result<(), hotline::Error> {
+fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),

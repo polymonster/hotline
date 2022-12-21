@@ -91,10 +91,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
     fn create_shader<'stack>(shaders: &'stack mut HashMap<String, D::Shader>, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
         if let Some(file) = file {
             if !shaders.contains_key(file) {
-                println!("hotline::pmfx:: compiling shader: {}", file);
+                println!("hotline_rs::pmfx:: compiling shader: {}", file);
                 let shader = create_shader_from_file(device, folder, Some(file.to_string()));
                 if let Some(shader) = shader.unwrap() {
-                    println!("hotline::pmfx:: success: {}", file);
+                    println!("hotline_rs::pmfx:: success: {}", file);
                     shaders.insert(file.to_string(), shader);
                     Ok(())
                 }
@@ -145,7 +145,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     cs: cs,
                     descriptor_layout: pipeline.descriptor_layout.clone(),
                 })?;
-                println!("hotline::pmfx:: compiled compute pipeline: {}", pipeline_name);
+                println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
                 self.compute_pipelines.insert(pipeline_name.to_string(), pso);
             }
             else {
@@ -166,14 +166,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     patch_index: 0,
                     pass: pass,
                 })?;
-                println!("hotline::pmfx:: compiled render pipeline: {}", pipeline_name);
+                println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
                 self.render_pipelines.insert(pipeline_name.to_string(), pso);
             }
             Ok(())
         }
         else {
             Err(super::Error {
-                msg: String::from(format!("hotline::pmfx:: could not find pipeline: {}", pipeline_name)),
+                msg: String::from(format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name)),
             })
         }
     }

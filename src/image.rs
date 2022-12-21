@@ -68,18 +68,18 @@ pub fn write_to_file(
             _ => {
                 if os_str.to_str().is_some() {
                     return Err(format!(
-                        "hotline::image: Image format '{}' is not supported",
+                        "hotline_rs::image: Image format '{}' is not supported",
                         os_str.to_str().unwrap()
                     ));
                 } else {
                     Err(format!(
-                        "hotline::image: Filename '{}' did not specify image format extension!",
+                        "hotline_rs::image: Filename '{}' did not specify image format extension!",
                         filename
                     ))
                 }
             }
         },
-        _ => Err(format!("hotline::image: Filename '{}' has no extension!", filename)),
+        _ => Err(format!("hotline_rs::image: Filename '{}' has no extension!", filename)),
     }
 }
 
@@ -89,10 +89,10 @@ pub fn load_from_file(filename: String) -> ImageData {
     // read file
     let path = std::path::Path::new(&filename);
     println!("{}", path.display());
-    let mut f = fs::File::open(path).expect("hotline::image: File not found");
+    let mut f = fs::File::open(path).expect("hotline_rs::image: File not found");
 
     let mut contents = vec![];
-    f.read_to_end(&mut contents).expect("hotline::image: Failed to read file.");
+    f.read_to_end(&mut contents).expect("hotline_rs::image: Failed to read file.");
 
     let mut x = 0;
     let mut y = 0;

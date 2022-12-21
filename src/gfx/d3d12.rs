@@ -610,7 +610,7 @@ pub fn get_hardware_adapter(
         .is_ok()
         {
             // fill adapter info out
-            adapter_info.name = String::from("hotline::d3d12::Device");
+            adapter_info.name = String::from("hotline_rs::d3d12::Device");
             adapter_info.description = adapter_info.available[selected_index as usize].to_string();
             adapter_info.dedicated_video_memory = desc.DedicatedVideoMemory;
             adapter_info.dedicated_system_memory = desc.DedicatedSystemMemory;
@@ -651,7 +651,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
                 std::ptr::null(),
                 &mut readback_buffer,
             )
-            .expect("hotline::gfx::d3d12: failed to create readback buffer");
+            .expect("hotline_rs::gfx::d3d12: failed to create readback buffer");
     }
     readback_buffer
 }
@@ -666,7 +666,7 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
                 Flags: to_d3d12_descriptor_heap_flags(info.heap_type),
                 ..Default::default()
             })
-            .expect("hotline::gfx::d3d12: failed to create heap");
+            .expect("hotline_rs::gfx::d3d12: failed to create heap");
         let base_address = heap.GetCPUDescriptorHandleForHeapStart().ptr;
         let incr = device.GetDescriptorHandleIncrementSize(d3d12_type) as usize;
         Heap {
@@ -742,7 +742,7 @@ impl Heap {
             if self.free_list.is_empty() {
                 // allocates a new handle
                 if self.offset >= self.capacity {
-                    panic!("hotline::gfx::d3d12: heap is full!");
+                    panic!("hotline_rs::gfx::d3d12: heap is full!");
                 }
                 let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
                 self.offset += self.increment_size;
@@ -997,34 +997,34 @@ impl super::Device for Device {
                 let mut debug: Option<ID3D12Debug> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                     debug.EnableDebugLayer();
-                    println!("hotline::gfx::d3d12: enabling debug layer");
+                    println!("hotline_rs::gfx::d3d12: enabling debug layer");
                 }
                 dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
             }
 
             // create dxgi factory
             let dxgi_factory = CreateDXGIFactory2(dxgi_factory_flags)
-                .expect("hotline::gfx::d3d12: failed to create dxgi factory");
+                .expect("hotline_rs::gfx::d3d12: failed to create dxgi factory");
 
             // create adapter
             let (adapter, adapter_info) = get_hardware_adapter(&dxgi_factory, &info.adapter_name)
-                .expect("hotline::gfx::d3d12: failed to get hardware adapter");
+                .expect("hotline_rs::gfx::d3d12: failed to get hardware adapter");
 
             // create device
             let mut d3d12_device: Option<ID3D12Device> = None;
             D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
-                .expect("hotline::gfx::d3d12: failed to create d3d12 device");
+                .expect("hotline_rs::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
             // create command allocator
             let command_allocator = device
                 .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-                .expect("hotline::gfx::d3d12: failed to create command allocator");
+                .expect("hotline_rs::gfx::d3d12: failed to create command allocator");
 
             // create command list
             let command_list = device
                 .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
-                .expect("hotline::gfx::d3d12: failed to create command list");
+                .expect("hotline_rs::gfx::d3d12: failed to create command list");
 
             // create queue
             let desc = D3D12_COMMAND_QUEUE_DESC {
@@ -1034,7 +1034,7 @@ impl super::Device for Device {
             };
             let command_queue = device
                 .CreateCommandQueue(&desc)
-                .expect("hotline::gfx::d3d12: failed to create command queue");
+                .expect("hotline_rs::gfx::d3d12: failed to create command queue");
 
             // default heaps
 
@@ -1170,13 +1170,13 @@ impl super::Device for Device {
                 let command_allocator = self
                     .device
                     .CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT)
-                    .expect("hotline::gfx::d3d12: failed to create command allocator");
+                    .expect("hotline_rs::gfx::d3d12: failed to create command allocator");
 
                 // create command list
                 let command_list = self
                     .device
                     .CreateCommandList(0, D3D12_COMMAND_LIST_TYPE_DIRECT, &command_allocator, None)
-                    .expect("hotline::gfx::d3d12: failed to create command list");
+                    .expect("hotline_rs::gfx::d3d12: failed to create command list");
 
                 command_allocators.push(command_allocator);
                 command_lists.push(command_list);
@@ -1338,7 +1338,7 @@ impl super::Device for Device {
                             msg: String::from(str_slice),
                         });
                     }
-                    panic!("hotline::gfx::d3d12: shader compile failed with no error information!");
+                    panic!("hotline_rs::gfx::d3d12: shader compile failed with no error information!");
                 }
             }
 
@@ -1378,7 +1378,7 @@ impl super::Device for Device {
 
         // invalid dxil shader bytecode
         Err( super::Error {
-            msg: String::from("hotline::gfx::d3d12: shader byte code (src) is not valid"),
+            msg: String::from("hotline_rs::gfx::d3d12: shader byte code (src) is not valid"),
         })
     }
 
@@ -2006,7 +2006,7 @@ impl SwapChain {
                 fv = 0;
                 self.fence
                     .SetEventOnCompletion(fv as u64, self.fence_event)
-                    .expect("hotline::gfx::d3d12: failed to set on completion event!");
+                    .expect("hotline_rs::gfx::d3d12: failed to set on completion event!");
                 WaitForMultipleObjects(
                     &[self.swap_chain.GetFrameLatencyWaitableObject(), self.fence_event], 
                     true, INFINITE);
@@ -2056,7 +2056,7 @@ impl super::SwapChain<Device> for SwapChain {
                         DXGI_FORMAT_UNKNOWN,
                         self.flags,
                     )
-                    .expect("hotline::gfx::d3d12: warning: present failed!");
+                    .expect("hotline_rs::gfx::d3d12: warning: present failed!");
 
                 let data_size = super::slice_pitch_for_format(
                     self.format,
@@ -2100,14 +2100,14 @@ impl super::SwapChain<Device> for SwapChain {
     fn swap(&mut self, device: &Device) {
         unsafe {
             // present
-            self.swap_chain.Present(1, 0).expect("hotline::gfx::d3d12: warning: present failed!");
+            self.swap_chain.Present(1, 0).expect("hotline_rs::gfx::d3d12: warning: present failed!");
 
             // signal fence
             let fv = self.fence_last_signalled_value + 1;
             device
                 .command_queue
                 .Signal(&self.fence, fv as u64)
-                .expect("hotline::gfx::d3d12: warning: command_queue.Signal failed!");
+                .expect("hotline_rs::gfx::d3d12: warning: command_queue.Signal failed!");
 
             // update fence tracking
             self.fence_last_signalled_value = fv;
@@ -2156,10 +2156,10 @@ impl super::CmdBuf<Device> for CmdBuf {
             unsafe {
                 self.command_allocator[bb]
                     .Reset()
-                    .expect("hotline::gfx::d3d12: failed to reset command_allocator!");
+                    .expect("hotline_rs::gfx::d3d12: failed to reset command_allocator!");
                 self.command_list[bb]
                     .Reset(&self.command_allocator[bb], None)
-                    .expect("hotline::gfx::d3d12: failed to reset command_list!");
+                    .expect("hotline_rs::gfx::d3d12: failed to reset command_list!");
             }
         }
         self.drop_complete_in_flight_barriers(prev_bb);

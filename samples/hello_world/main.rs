@@ -1,4 +1,4 @@
-use hotline::*;
+use hotline_rs::*;
 
 use os::App;
 use os::Window;
@@ -14,8 +14,8 @@ use std::fs;
 //use std::sync::Mutex;
 
 #[cfg(target_os = "windows")]
-use hotline::os::win32 as os_platform;
-use hotline::gfx::d3d12 as gfx_platform;
+use hotline_rs::os::win32 as os_platform;
+use hotline_rs::gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
 struct Vertex {
@@ -23,7 +23,7 @@ struct Vertex {
     color: [f32; 4],
 }
 
-fn main() -> Result<(), hotline::Error> {
+fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("window_set_rect"),
