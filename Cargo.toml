@@ -10,7 +10,7 @@ repository = "https://github.com/polymonster/hotline"
 keywords = ["graphics-engine", "compute", "video-decoding", "hot-reloading", "live-coding"]
 categories = ["game-development", "graphics"]
 license-file = "license"
-max_upload_size = 104857600
+exclude = ["bin/"]
 
 [dependencies]
 bitflags = "1.3.2"
@@ -53,26 +53,22 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
-[[bin]]
-name = "geometry"
-path = "samples/geometry/main.rs"
-
-[[bin]]
-name = "triangle"
-path = "samples/triangle/main.rs"
-
-[[bin]]
+[[example]]
 name = "hello_world"
-path = "samples/hello_world/main.rs"
+crate-type = ["bin"]
 
-[[bin]]
+[[example]]
+name = "geometry"
+crate-type = ["bin"]
+
+[[example]]
 name = "imgui_demo"
-path = "samples/imgui_demo/main.rs"
+crate-type = ["bin"]
 
-[[bin]]
+[[example]]
 name = "play_video"
-path = "samples/play_video/main.rs"
+crate-type = ["bin"]
 
-[[bin]]
-name = "maths"
-path = "samples/maths/main.rs"
+[[example]]
+name = "triangle"
+crate-type = ["bin"]
