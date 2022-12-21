@@ -10,6 +10,7 @@ repository = "https://github.com/polymonster/hotline"
 keywords = ["graphics-engine", "compute", "video-decoding", "hot-reloading", "live-coding"]
 categories = ["game-development", "graphics"]
 license-file = "license"
+max_upload_size = 104857600
 
 [dependencies]
 bitflags = "1.3.2"
