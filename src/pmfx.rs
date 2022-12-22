@@ -154,9 +154,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // TODO: shader array
             let folder = self.pmfx_folders[pipeline_name].to_string();
-            Self::create_shader(shaders, device, &Path::new(&folder), &pipeline.vs)?;
-            Self::create_shader(shaders, device, &Path::new(&folder), &pipeline.ps)?;
-            Self::create_shader(shaders, device, &Path::new(&folder), &pipeline.cs)?;
+            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.vs)?;
+            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.ps)?;
+            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.cs)?;
 
             // TODO: infer compute or graphics pipeline from pmfx
             let cs = self.get_shader(&pipeline.cs);
@@ -199,7 +199,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
         else {
             Err(super::Error {
-                msg: String::from(format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name)),
+                msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
             })
         }
     }

@@ -59,28 +59,6 @@
             "cwd": "${fileDirname}",
             "environment": [],
             "console": "externalTerminal"
-        },
-        {
-            "name": "play_video (Release)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/target/release/examples/play_video.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "console": "externalTerminal"
-        },
-        {
-            "name": "Test",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/target/debug/deps/tests-a7b6515cd8077829.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "console": "externalTerminal"
         }
     ]
 }
