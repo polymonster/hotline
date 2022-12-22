@@ -98,7 +98,7 @@ bitflags! {
 
 impl From<WindowFlags> for i32 {
     fn from(mask: WindowFlags) -> i32 {
-        mask.bits as i32
+        mask.bits
     }
 }
 

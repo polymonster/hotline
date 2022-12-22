@@ -410,7 +410,7 @@ const fn to_d3d12_primitive_topology(
         super::Topology::TriangleListAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ,
         super::Topology::TriangleStripAdj => D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP_ADJ,
         super::Topology::PatchList => D3D_PRIMITIVE_TOPOLOGY(
-            D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST.0 as i32 + patch_index as i32,
+            D3D_PRIMITIVE_TOPOLOGY_1_CONTROL_POINT_PATCHLIST.0 + patch_index as i32,
         ),
     }
 }
@@ -694,7 +694,7 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
         let incr = device.GetDescriptorHandleIncrementSize(d3d12_type) as usize;
         Heap {
             heap,
-            base_address: base_address as usize,
+            base_address,
             increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
             capacity: info.num_descriptors * incr,
             offset: 0,
@@ -714,7 +714,7 @@ fn create_swap_chain_rtv(
         for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = device.rtv_heap.allocate();
-            device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), &h);
+            device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), h);
             textures.push(Texture {
                 resource: render_target.clone(),
                 rtv: Some(h),
@@ -1153,7 +1153,7 @@ impl super::Device for Device {
             // create rtv heap and handles
             let textures = create_swap_chain_rtv(&swap_chain, self, info.num_buffers);
 
-            let data_size = size_for_format(format, size.x as u64, size.y as u64, 1) as u64;
+            let data_size = size_for_format(format, size.x as u64, size.y as u64, 1);
             let passes = self.create_render_passes_for_swap_chain(
                 info.num_buffers,
                 &textures,
@@ -1491,14 +1491,14 @@ impl super::Device for Device {
                 // copy data to upload buffer
                 let range = D3D12_RANGE {
                     Begin: 0,
-                    End: size_bytes as usize,
+                    End: size_bytes,
                 };
                 let mut map_data = std::ptr::null_mut();
                 let res = upload.clone().unwrap();
                 res.Map(0, &range, &mut map_data)?;
                 if !map_data.is_null() {
                     let src = data.as_ptr() as *mut u8;
-                    std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes as usize);
+                    std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes);
                 }
                 res.Unmap(0, std::ptr::null());
 
@@ -1557,7 +1557,7 @@ impl super::Device for Device {
                             BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
                             SizeInBytes: size_bytes as u32,
                         },
-                        &h,
+                        h,
                     );
                     srv_index = Some(self.shader_heap.get_handle_index(&h));
                 }
@@ -1598,13 +1598,13 @@ impl super::Device for Device {
                         super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
                     },
                     Alignment: 0,
-                    Width: info.width as u64,
+                    Width: info.width,
                     Height: info.height as u32,
                     DepthOrArraySize: info.depth as u16,
                     MipLevels: info.mip_levels as u16,
                     Format: dxgi_format,
                     SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: info.samples as u32,
+                        Count: info.samples,
                         Quality: 0,
                     },
                     Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
@@ -1745,7 +1745,7 @@ impl super::Device for Device {
                         },
                         Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                     },
-                    &h,
+                    h,
                 );
                 srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
@@ -1754,7 +1754,7 @@ impl super::Device for Device {
             let mut rtv_handle = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
                 let h = self.rtv_heap.allocate();
-                self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
+                self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), h);
                 rtv_handle = Some(h);
             }
 
@@ -1762,7 +1762,7 @@ impl super::Device for Device {
             let mut dsv_handle = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
                 let h = self.dsv_heap.allocate();
-                self.device.CreateDepthStencilView(&tex.clone().unwrap(), std::ptr::null_mut(), &h);
+                self.device.CreateDepthStencilView(&tex.clone().unwrap(), std::ptr::null_mut(), h);
                 dsv_handle = Some(h);
             }
 
@@ -1774,7 +1774,7 @@ impl super::Device for Device {
                     &tex.clone().unwrap(),
                     None,
                     std::ptr::null_mut(),
-                    &h,
+                    h,
                 );
                 uav_index = Some(self.shader_heap.get_handle_index(&h));
             }
@@ -2018,24 +2018,24 @@ impl super::Device for Device {
     }
 
     fn as_ptr(&self) -> *const Self {
-        unsafe { std::mem::transmute(self) }
+        self as *const Self
     }
 
     fn as_mut_ptr(&mut self) -> *mut Self {
-        unsafe { std::mem::transmute(self) }
+        self as *mut Self
     }
 }
 
 impl SwapChain {
     fn wait_for_frame(&mut self, frame_index: usize) {
         unsafe {
-            let mut fv = self.frame_fence_value[frame_index as usize];
+            let mut fv = self.frame_fence_value[frame_index];
 
             // 0 means no fence was signaled
             if fv != 0 {
                 fv = 0;
                 self.fence
-                    .SetEventOnCompletion(fv as u64, self.fence_event)
+                    .SetEventOnCompletion(fv, self.fence_event)
                     .expect("hotline_rs::gfx::d3d12: failed to set on completion event!");
                 WaitForMultipleObjects(
                     &[self.swap_chain.GetFrameLatencyWaitableObject(), self.fence_event], 
@@ -2050,11 +2050,11 @@ impl SwapChain {
 
 impl super::SwapChain<Device> for SwapChain {
     fn new_frame(&mut self) {
-        self.wait_for_frame(self.bb_index as usize);
+        self.wait_for_frame(self.bb_index);
     }
 
     fn wait_for_last_frame(&mut self) {
-        self.wait_for_frame(self.bb_index as usize);
+        self.wait_for_frame(self.bb_index);
     }
 
     fn get_num_buffers(&self) -> u32 {
@@ -2065,7 +2065,7 @@ impl super::SwapChain<Device> for SwapChain {
         let size = window.get_size();
         if (size.x != self.width || size.y != self.height) && size.x > 0 && size.y > 0 {
             unsafe {
-                self.wait_for_frame(self.bb_index as usize);
+                self.wait_for_frame(self.bb_index);
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
 
                 // clean up rtv handles
@@ -2121,23 +2121,23 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_backbuffer_texture(&self) -> &Texture {
-        &self.backbuffer_textures[self.bb_index as usize]
+        &self.backbuffer_textures[self.bb_index]
     }
 
     fn get_backbuffer_pass(&self) -> &RenderPass {
-        &self.backbuffer_passes[self.bb_index as usize]
+        &self.backbuffer_passes[self.bb_index]
     }
 
     fn get_backbuffer_pass_mut(&mut self) -> &mut RenderPass {
-        &mut self.backbuffer_passes[self.bb_index as usize]
+        &mut self.backbuffer_passes[self.bb_index]
     }
 
     fn get_backbuffer_pass_no_clear(&self) -> &RenderPass {
-        &self.backbuffer_passes_no_clear[self.bb_index as usize]
+        &self.backbuffer_passes_no_clear[self.bb_index]
     }
 
     fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut RenderPass {
-        &mut self.backbuffer_passes_no_clear[self.bb_index as usize]
+        &mut self.backbuffer_passes_no_clear[self.bb_index]
     }
 
     fn swap(&mut self, device: &Device) {
@@ -2149,12 +2149,12 @@ impl super::SwapChain<Device> for SwapChain {
             let fv = self.fence_last_signalled_value + 1;
             device
                 .command_queue
-                .Signal(&self.fence, fv as u64)
+                .Signal(&self.fence, fv)
                 .expect("hotline_rs::gfx::d3d12: warning: command_queue.Signal failed!");
 
             // update fence tracking
             self.fence_last_signalled_value = fv;
-            self.frame_fence_value[self.bb_index as usize] = fv;
+            self.frame_fence_value[self.bb_index] = fv;
             self.require_wait[self.bb_index] = true;
 
             // swap buffers
@@ -2164,11 +2164,11 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn as_ptr(&self) -> *const Self {
-        unsafe { std::mem::transmute(self) }
+        self as *const Self
     }
 
     fn as_mut_ptr(&mut self) -> *mut Self {
-        unsafe { std::mem::transmute(self) }
+        self as *mut Self
     }
 }
 
@@ -2347,7 +2347,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             self.cmd().SetComputeRootDescriptorTable(
                 slot,
-                &heap.heap.GetGPUDescriptorHandleForHeapStart(),
+                heap.heap.GetGPUDescriptorHandleForHeapStart(),
             );
         }
     }
@@ -2359,7 +2359,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
 
-            self.cmd().SetGraphicsRootDescriptorTable(slot, &base);
+            self.cmd().SetGraphicsRootDescriptorTable(slot, base);
         }
     }
 

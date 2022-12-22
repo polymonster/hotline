@@ -555,6 +555,8 @@ impl super::App for App {
                     TranslateMessage(&msg);
                     DispatchMessageA(&msg);
 
+                    println!("msg.message {}", msg.message);
+
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     if let Some(hwnd_flags) = self.hwnd_flags.get(&msg.hwnd.0) {
                         if hwnd_flags.contains(super::WindowStyleFlags::IMGUI) {
@@ -928,11 +930,11 @@ impl super::Window<App> for Window {
     }
 
     fn as_ptr(&self) -> *const Self {
-        unsafe { std::mem::transmute(self) }
+        self as *const Self
     }
 
     fn as_mut_ptr(&mut self) -> *mut Self {
-        unsafe { std::mem::transmute(self) }
+        self as *mut Self
     }
 }
 
@@ -950,7 +952,7 @@ extern "system" fn main_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    match message as u32 {
+    match message {
         WM_DESTROY => {
             unsafe {
                 // PostQuitMessage must happen here, not in the member wnd proc function
@@ -966,7 +968,7 @@ extern "system" fn main_wndproc(
                 wndproc(window, message, wparam, lparam)
             }
         }
-        _ =>  wndproc(window, message, wparam, lparam),
+        _ => wndproc(window, message, wparam, lparam),
     }
 }
 
@@ -976,7 +978,7 @@ extern "system" fn imgui_wndproc(
     wparam: WPARAM,
     lparam: LPARAM,
 ) -> LRESULT {
-    match message as u32 {
+    match message {
         WM_CLOSE | WM_MOVE | WM_SIZE | WM_MOUSEACTIVATE => {
             LRESULT(0)
         }
@@ -986,11 +988,20 @@ extern "system" fn imgui_wndproc(
 
 extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
-        match message as u32 {
+        match message {
             WM_MOUSEMOVE => {
                 LRESULT(0)
             }
             WM_MOUSELEAVE => {
+                LRESULT(0)
+            }
+            WM_NCLBUTTONDOWN | WM_NCLBUTTONUP => {
+                LRESULT(0)
+            }
+            WM_NCMBUTTONDOWN | WM_NCMBUTTONUP => {
+                LRESULT(0)
+            }
+            WM_NCRBUTTONDOWN | WM_NCRBUTTONUP => {
                 LRESULT(0)
             }
             WM_LBUTTONDOWN | WM_LBUTTONDBLCLK => {
@@ -1030,6 +1041,9 @@ extern "system" fn wndproc(window: HWND, message: u32, wparam: WPARAM, lparam: L
                 LRESULT(0)
             }
             WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
+                LRESULT(0)
+            }
+            WM_SIZE => {
                 LRESULT(0)
             }
             _ => DefWindowProcA(window, message, wparam, lparam),
