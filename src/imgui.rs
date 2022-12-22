@@ -951,6 +951,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    pub fn checkbox(&self, label: &str, v: &mut bool) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            igCheckbox(null_label.as_ptr() as *const i8, v)
+        }
+    }
+
     pub fn image(&self, tex: &D::Texture, w: f32, h: f32) {
         unsafe {
             let id = to_imgui_texture_id::<D>(tex);

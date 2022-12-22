@@ -149,6 +149,7 @@ pub struct SwapChain {
     swap_chain: IDXGISwapChain3,
     backbuffer_textures: Vec<Texture>,
     backbuffer_passes: Vec<RenderPass>,
+    backbuffer_passes_no_clear: Vec<RenderPass>,
     fence: ID3D12Fence,
     fence_last_signalled_value: u64,
     fence_event: HANDLE,
@@ -1159,6 +1160,12 @@ impl super::Device for Device {
                 info.clear_colour,
             );
 
+            let passes_no_clear = self.create_render_passes_for_swap_chain(
+                info.num_buffers,
+                &textures,
+                None,
+            );
+
             Ok(SwapChain {
                 width: size.x,
                 height: size.y,
@@ -1172,6 +1179,7 @@ impl super::Device for Device {
                 swap_chain,
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
+                backbuffer_passes_no_clear: passes_no_clear,
                 frame_index: 0,
                 frame_fence_value: vec![0; info.num_buffers as usize],
                 readback_buffer: create_read_back_buffer(self, data_size),
@@ -2092,6 +2100,11 @@ impl super::SwapChain<Device> for SwapChain {
                     &self.backbuffer_textures,
                     self.clear_col,
                 );
+                self.backbuffer_passes_no_clear = device.create_render_passes_for_swap_chain(
+                    self.num_bb,
+                    &self.backbuffer_textures,
+                    None,
+                );
 
                 self.readback_buffer = create_read_back_buffer(device, data_size);
                 self.width = size.x;
@@ -2117,6 +2130,14 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn get_backbuffer_pass_mut(&mut self) -> &mut RenderPass {
         &mut self.backbuffer_passes[self.bb_index as usize]
+    }
+
+    fn get_backbuffer_pass_no_clear(&self) -> &RenderPass {
+        &self.backbuffer_passes_no_clear[self.bb_index as usize]
+    }
+
+    fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut RenderPass {
+        &mut self.backbuffer_passes_no_clear[self.bb_index as usize]
     }
 
     fn swap(&mut self, device: &Device) {

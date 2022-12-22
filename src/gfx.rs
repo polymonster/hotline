@@ -750,6 +750,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn get_backbuffer_texture(&self) -> &D::Texture;
     fn get_backbuffer_pass(&self) -> &D::RenderPass;
     fn get_backbuffer_pass_mut(&mut self) -> &mut D::RenderPass;
+    fn get_backbuffer_pass_no_clear(&self) -> &D::RenderPass;
+    fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut D::RenderPass;
     fn swap(&mut self, device: &D);
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;

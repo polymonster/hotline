@@ -7,8 +7,6 @@ use gfx::CmdBuf;
 use gfx::Device;
 use gfx::SwapChain;
 
-use std::fs;
-
 //use std::thread;
 //use std::sync::Arc;
 //use std::sync::Mutex;
