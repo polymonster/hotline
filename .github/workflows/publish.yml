@@ -1,0 +1,42 @@
+name: publish
+on:
+  push:
+    tags:
+    - '*'
+env:
+  CARGO_TERM_COLOR: always
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    - name: build
+      run: cargo build --verbose
+    - name: test
+      run: cargo test --verbose
+    - name: create_release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+    - name: bump_version
+      run: |
+        export REFS_VERSION=${{ github.ref }}
+        export VERSION=$(echo $REFS_VERSION| cut -d'/' -f 3)
+        echo $VERSION
+        sed -i -E "s/[0-9]+.[0-9]+.[0-9]+/$VERSION/g" Cargo.toml
+        git config user.name github-actions
+        git config user.email github-actions@github.com
+        git add .
+        git commit -m "-  bump Cargo.toml version to $VERSION for publish"
+        git push origin HEAD:master
+    - name: publish
+      run: |
+        cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        cargo publish --dry-run
+        cargo publish
