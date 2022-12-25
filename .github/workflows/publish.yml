@@ -10,10 +10,6 @@ jobs:
     runs-on: windows-latest
     steps:
     - uses: actions/checkout@v3
-    - name: build
-      run: cargo build --verbose
-    - name: test
-      run: cargo test --verbose
     - name: create_release
       id: create_release
       uses: actions/create-release@v1
