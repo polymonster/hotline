@@ -1,6 +1,6 @@
 [package]
 name = "hotline-rs"
-version = "0.1.0"
+version = "0.1.3"
 edition = "2021"
 authors = ["polymonster <alexandercdixon@gmail.com>"]
 description = "Graphics, compute and hardware acellerated A/V decoding"
