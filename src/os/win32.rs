@@ -554,9 +554,7 @@ impl super::App for App {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     TranslateMessage(&msg);
                     DispatchMessageA(&msg);
-
-                    println!("msg.message {}", msg.message);
-
+                    
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     if let Some(hwnd_flags) = self.hwnd_flags.get(&msg.hwnd.0) {
                         if hwnd_flags.contains(super::WindowStyleFlags::IMGUI) {
