@@ -1,14 +1,10 @@
 // TODO:
 
-// - debug rendering 3d
-// - camera
-
+// - focus checks for imgui input hovers etc
 // - path utilities
 // - wait frames before properly dropping gpu resources
-
 // - window utilities
 // - - rember window and console positions
-
 // - automate cargo publish
 
 // - GPU Timer Query
@@ -23,6 +19,8 @@
 // - Texture Formats
 
 // DONE:
+// x debug rendering 3d
+// x camera
 // x Automate docs update
 // x pmfx Descriptor Layout
 // - x bindings

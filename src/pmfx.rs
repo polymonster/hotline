@@ -6,8 +6,10 @@ use std::path::Path;
 use crate::gfx;
 use std::fs;
 
+type PipelinePermutations = HashMap<String, PmfxPipeline>;
+
 pub struct Pmfx<D: gfx::Device> {
-    pmfx: HashMap<String, PmfxPipeline>,
+    pmfx: HashMap<String, PipelinePermutations>,
     pmfx_folders: HashMap<String, String>,
     render_pipelines: HashMap<String, D::RenderPipeline>,
     compute_pipelines: HashMap<String, D::ComputePipeline>,
@@ -17,7 +19,7 @@ pub struct Pmfx<D: gfx::Device> {
 
 #[derive(Serialize, Deserialize)]
 pub struct Pmxf2 {
-    pipelines: HashMap<String, PmfxPipeline>,
+    pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: Option<HashMap<String, gfx::DepthStencilInfo>>
 }
 
@@ -90,16 +92,23 @@ impl<D> Pmfx<D> where D: gfx::Device {
         //  deserialise pmfx pipelines from file
         let info_filepath = folder.join(format!("{}.json", pmfx_name));
         let pmfx_data = fs::read(info_filepath).unwrap();
-        let shader: Pmxf2 = serde_json::from_slice(&pmfx_data).unwrap();
+
+        let pmfx: Pmxf2 = serde_json::from_slice(&pmfx_data).unwrap();
 
         // track pipelines
-        for (name, pipeline) in shader.pipelines {            
-            self.pmfx.insert(name.to_string(), pipeline);
+        for (name, pipeline_permutations) in pmfx.pipelines {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
+            
+            let mut permutations = HashMap::new();
+            for (permutation, pipeline) in pipeline_permutations {          
+                permutations.insert(permutation.to_string(), pipeline);
+            }
+
+            self.pmfx.insert(name.to_string(), permutations);
         }
 
         // states ...
-        if let Some(states) = shader.depth_stencil_states {
+        if let Some(states) = pmfx.depth_stencil_states {
             for (name, state) in states {
                 self.depth_stencil_states.insert(name, state);
             }
@@ -149,7 +158,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {        
         // grab the pmfx pipeline info
         if self.pmfx.contains_key(pipeline_name) {
-            let pipeline = &self.pmfx[pipeline_name];
+            let pipeline = &self.pmfx[pipeline_name]["0"];
             let shaders = &mut self.shaders;
 
             // TODO: shader array
