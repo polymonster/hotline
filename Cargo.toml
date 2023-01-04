@@ -57,8 +57,6 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
-
-
 [[example]]
 name = "hello_world"
 crate-type = ["bin"]

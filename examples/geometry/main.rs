@@ -26,6 +26,13 @@ struct Position {
     pos: Vec3f 
 }
 
+#[derive(Component, Resource)]
+struct Mesh {
+    vb: gfx_platform::Buffer,
+    ib: gfx_platform::Buffer,
+    num_indices: u32
+}
+
 #[derive(Component)]
 struct Velocity {
     vel: Vec3f 
@@ -64,6 +71,7 @@ type AppRes = HotlineResource::<os_platform::App>;
 type MainWindowRes = HotlineResource::<os_platform::Window>;
 type CmdBufRes = HotlineResource::<gfx_platform::CmdBuf>;
 type ImGuiRes = HotlineResource::<imgui::ImGui::<gfx_platform::Device, os_platform::App>>;
+type MeshRes = HotlineResource::<Mesh>;
 
 fn create_hotline_context() -> Result<Context, hotline_rs::Error> {
     let num_buffers = 2;
@@ -279,6 +287,265 @@ fn render_grid(
     }
 }
 
+fn render_cube(
+    main_window: ResMut<MainWindowRes>,
+    mut swap_chain: ResMut<SwapChainRes>, 
+    mut device: ResMut<DeviceRes>,
+    mut cmd_buf: ResMut<CmdBufRes>,
+    mut imdraw: ResMut<ImDrawRes>,
+    cube_mesh: ResMut<MeshRes>,
+    pmfx: ResMut<PmfxRes>,
+    mut query: Query<&ViewProjectionMatrix> ) {
+
+    for view_proj in &mut query {
+        // render grid
+        let cmd_buf = &mut cmd_buf.res;
+        let swap_chain = &mut swap_chain.res;
+        let main_window = &main_window.res;
+        let imdraw = &mut imdraw.res;
+        let pmfx = &pmfx.res;
+
+        let draw_bb = swap_chain.get_backbuffer_index() as usize;
+        let window_rect = main_window.get_viewport_rect();
+        let viewport = gfx::Viewport::from(window_rect);
+        let scissor = gfx::ScissorRect::from(window_rect);
+
+        cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_no_clear_mut());
+        cmd_buf.set_viewport(&viewport);
+        cmd_buf.set_scissor_rect(&scissor);
+
+        cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_mesh").unwrap());
+        cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+
+        // drw here
+        cmd_buf.set_index_buffer(&cube_mesh.res.ib);
+        cmd_buf.set_vertex_buffer(&cube_mesh.res.vb, 0);
+        cmd_buf.draw_indexed_instanced(cube_mesh.res.num_indices, 1, 0, 0, 0);
+
+        cmd_buf.end_render_pass();
+    }
+}
+
+struct Vertex {
+    position: Vec3f,
+    texcoord: Vec2f,
+    normal: Vec3f,
+    tangent: Vec3f,
+    bitangent: Vec3f,
+}
+
+// create a cube mesh index 
+fn create_cube_mesh(dev: &mut gfx_platform::Device) -> Mesh {
+    // cube veritces
+    let vertices: Vec<Vertex> = vec![
+        // front face
+        Vertex {
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, -1.0,  1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, 1.0, 1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // back face
+        Vertex {
+            position: vec3f(-1.0, -1.0, -1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // right face
+        Vertex {
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, -1.0, 1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // left face
+        Vertex {
+            position: vec3f(-1.0, -1.0, -1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, 1.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // top face
+        Vertex {
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, 1.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, 1.0, 1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // bottom face
+        Vertex {
+            position: vec3f(-1.0, -1.0, -1.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(1.0, -1.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex {
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+    ];
+
+    let indices: Vec<u16> = vec![
+        0,  1,  2,  2,  3,  0,   // front face
+        4,  5,  6,  6,  7,  4,   // back face
+        8,  9,  10, 10, 11, 8,   // right face
+        12, 13, 14, 14, 15, 12,  // left face
+        16, 17, 18, 18, 19, 16,  // top face
+        20, 21, 22, 22, 23, 20   // bottom face
+    ];
+
+    Mesh {
+        vb: dev.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::Vertex,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 24,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<Vertex>() 
+            }, 
+            data![vertices.as_slice()]
+        ).unwrap(),
+        ib: dev.create_buffer(&gfx::BufferInfo {
+            usage: gfx::BufferUsage::Index,
+            cpu_access: gfx::CpuAccessFlags::NONE,
+            num_elements: 36,
+            format: gfx::Format::R16u,
+            stride: std::mem::size_of::<u16>()
+            },
+            data![indices.as_slice()]
+        ).unwrap(),
+        num_indices: 36
+    } 
+}
+
 fn render_imgui(
     mut app: ResMut<AppRes>,
     mut swap_chain: ResMut<SwapChainRes>,
@@ -339,6 +606,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ctx.pmfx.load(asset_path.join("data/shaders/imdraw").to_str().unwrap())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
 
     //
     // main loop
@@ -362,6 +630,8 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut imgui_open = true;
     let mut call_render_2d = false;
     let mut call_render_3d = true;
+
+    let mut cube_mesh = create_cube_mesh(&mut ctx.device);
 
     while ctx.app.run() {
 
@@ -405,6 +675,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         world.insert_resource(ImDrawRes {res: ctx.imdraw});
         world.insert_resource(PmfxRes {res: ctx.pmfx});
         world.insert_resource(ImGuiRes {res: imgui});
+        world.insert_resource(MeshRes {res: cube_mesh});
 
         let mut schedule = Schedule::default();
         schedule.add_stage(StageUpdate, SystemStage::parallel()
@@ -415,6 +686,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         if call_render_3d {
             schedule.add_stage(StageRender3D, SystemStage::single_threaded()
                 .with_system(render_grid)
+                .with_system(render_cube)
             );
         }
 
@@ -440,6 +712,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         ctx.pmfx = world.remove_resource::<PmfxRes>().unwrap().res;
         ctx.swap_chain = world.remove_resource::<SwapChainRes>().unwrap().res;
         imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
+        cube_mesh = world.remove_resource::<MeshRes>().unwrap().res;
 
         // transition to present
         ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {

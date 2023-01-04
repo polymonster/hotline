@@ -21,6 +21,14 @@ cbuffer view_push_constants : register(b0) {
     float4x4 projection_matrix;
 };
 
+struct vs_input_mesh {
+    float3 position : POSITION;
+    float2 texcoord: TEXCOORD0;
+    float3 normal : TEXCOORD1;
+    float3 tangent : TEXCOORD2;
+    float3 bitangent : TEXCOORD3;
+};
+
 vs_output vs_2d( vs_input_2d input ) {
     vs_output output;
     
@@ -49,6 +57,17 @@ vs_output vs_3d( vs_input_3d input )
     return output;
 }
 
+vs_output vs_mesh(vs_input_mesh input)
+{
+    vs_output output;
+
+	float4 pos = float4(input.position.xyz, 1.0);
+    output.position = mul(pos, projection_matrix);
+    output.colour = float4(input.normal.xyz, 1.0);
+    
+    return output;
+}
+
 pmfx: {
     pipelines: {
         imdraw_2d: {
@@ -62,6 +81,12 @@ pmfx: {
             ps: ps_main,
             push_constants: ["view_push_constants"]
             topology: "LineList"
+        }
+        imdraw_mesh: {
+            vs: vs_mesh,
+            ps: ps_main,
+            push_constants: ["view_push_constants"]
+            topology: "TriangleList"
         }
     }
 }
