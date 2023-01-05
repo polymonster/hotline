@@ -67,10 +67,16 @@ impl NotifyEvents {
     }
 }
 
-#[implement(IMFMediaEngineNotify)]
-struct MediaEngineNotify {
-    pub notify: *mut NotifyEvents
+#[allow(unused_must_use)]
+mod imp {
+    use windows::{core::*, Win32::Media::MediaFoundation::*};
+    #[implement(IMFMediaEngineNotify)]
+    pub struct MediaEngineNotify {
+        pub notify: *mut super::NotifyEvents
+    }
 }
+pub use imp::*;
+
 
 #[allow(non_snake_case)]
 impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
