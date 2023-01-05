@@ -1,6 +1,10 @@
 // TODO:
 
-// - focus checks for imgui input hovers etc
+// - draw boxes
+// - depth buffer
+// - depth test
+
+
 // - path utilities
 // - wait frames before properly dropping gpu resources
 // - window utilities
@@ -19,6 +23,7 @@
 // - Texture Formats
 
 // DONE:
+// x focus checks for imgui input hovers etc
 // x debug rendering 3d
 // x camera
 // x Automate docs update
