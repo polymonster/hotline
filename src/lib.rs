@@ -22,6 +22,9 @@ pub mod camera;
 /// High level graphics
 pub mod pmfx;
 
+/// Geometry primitives
+pub mod primitives;
+
 /// Use bitmask for flags
 #[macro_use]
 extern crate bitflags;
