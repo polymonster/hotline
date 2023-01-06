@@ -68,7 +68,7 @@ vs_output vs_mesh(vs_input_mesh input)
 	float4 pos = float4(input.position.xyz, 1.0);
     
     (world_matrix);
-    pos = mul(world_matrix, pos);
+    pos = mul(pos, world_matrix);
 
     output.position = mul(pos, projection_matrix);
     output.colour = float4(input.normal.xyz, 1.0);
@@ -93,7 +93,10 @@ pmfx: {
         imdraw_mesh: {
             vs: vs_mesh,
             ps: ps_main,
-            push_constants: ["view_push_constants"]
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
             topology: "TriangleList"
         }
     }

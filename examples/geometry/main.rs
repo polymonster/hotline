@@ -7,6 +7,12 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
+#[cfg(target_os = "windows")]
+use os::win32 as os_platform;
+use gfx::d3d12 as gfx_platform;
+
+use primitives;
+
 use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
@@ -17,26 +23,15 @@ use maths_rs::Mat4f;
 
 use bevy_ecs::prelude::*;
 
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-use gfx::d3d12 as gfx_platform;
+//
+// Components
+//
 
 #[derive(Component)]
-struct Position {
-    pos: Vec3f 
-}
-
-#[derive(Component, Resource)]
-struct Mesh {
-    vb: gfx_platform::Buffer,
-    ib: gfx_platform::Buffer,
-    num_indices: u32
-}
+struct Position(Vec3f);
 
 #[derive(Component)]
-struct Velocity {
-    vel: Vec3f 
-}
+struct Velocity(Vec3f);
 
 #[derive(Component)]
 struct WorldMatrix(Mat4f);
@@ -50,7 +45,23 @@ struct ViewProjectionMatrix(Mat4f);
 #[derive(Component)]
 struct Camera;
 
-#[derive(Resource)]
+#[derive(Component)]
+struct MeshComponent(primitives::Mesh<gfx_platform::Device>);
+
+//
+// Stages
+//
+
+#[derive(StageLabel)]
+pub struct StageUpdate;
+
+#[derive(StageLabel)]
+pub struct StageRender;
+
+//
+// Resources
+//
+
 struct Context {
     app: os_platform::App,
     device: gfx_platform::Device,
@@ -72,9 +83,9 @@ type SwapChainRes = HotlineResource::<gfx_platform::SwapChain>;
 type DeviceRes = HotlineResource::<gfx_platform::Device>;
 type AppRes = HotlineResource::<os_platform::App>;
 type MainWindowRes = HotlineResource::<os_platform::Window>;
-type CmdBufRes = HotlineResource::<gfx_platform::CmdBuf>;
 type ImGuiRes = HotlineResource::<imgui::ImGui::<gfx_platform::Device, os_platform::App>>;
-type MeshRes = HotlineResource::<Mesh>;
+
+type CmdBufRes = HotlineResource::<gfx_platform::CmdBuf>;
 
 fn create_hotline_context() -> Result<Context, hotline_rs::Error> {
     let num_buffers = 2;
@@ -138,7 +149,7 @@ fn create_hotline_context() -> Result<Context, hotline_rs::Error> {
 
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
     for (mut position, velocity) in &mut query {
-        position.pos += velocity.vel;
+        position.0 += velocity.0;
     }
 }
 
@@ -185,7 +196,7 @@ fn update_cameras(
             let mat_rot = mat_rot_y * mat_rot_x;
 
             // move relative to facing directions
-            position.pos += mat_rot * cam_move_delta;
+            position.0 += mat_rot * cam_move_delta;
         }
 
         // generate proj matrix
@@ -199,7 +210,7 @@ fn update_cameras(
         let mat_rot = mat_rot_y * mat_rot_x;
 
         // build view / proj matrix
-        let translate = Mat4f::from_translation(position.pos);
+        let translate = Mat4f::from_translation(position.0);
         let view = translate * mat_rot;
         let view = view.inverse();
        
@@ -208,7 +219,7 @@ fn update_cameras(
     }
 }
 
-fn render_2d(
+fn _render_2d(
     main_window: ResMut<MainWindowRes>,
     mut swap_chain: ResMut<SwapChainRes>, 
     mut device: ResMut<DeviceRes>,
@@ -297,14 +308,21 @@ fn render_grid(
     }
 }
 
-fn render_cube(
+#[derive(Default)]
+struct MyConfig {
+    magic: usize,
+}
+
+fn render_cubes(
     mut swap_chain: ResMut<SwapChainRes>, 
     mut cmd_buf: ResMut<CmdBufRes>,
     main_window: ResMut<MainWindowRes>,
-    cube_mesh: ResMut<MeshRes>,
     pmfx: ResMut<PmfxRes>,
-    mut query: Query<&ViewProjectionMatrix>,
-    mut query2: Query<&WorldMatrix> ) {
+    magic: Local<MyConfig>,
+    view_proj_query: Query<&ViewProjectionMatrix>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)> ) {
+
+    println!("magic {}", magic.magic);
 
     // unpack
     let cmd_buf = &mut cmd_buf.res;
@@ -322,239 +340,19 @@ fn render_cube(
     cmd_buf.set_scissor_rect(&scissor);
     cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_mesh").unwrap());
 
-    for view_proj in &mut query {
+    for view_proj in &view_proj_query {
         cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-        for world_matrix in & mut query2 {
+        for (world_matrix, mesh) in &mesh_draw_query {
             // draw
             cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-            cmd_buf.set_index_buffer(&cube_mesh.res.ib);
-            cmd_buf.set_vertex_buffer(&cube_mesh.res.vb, 0);
-            cmd_buf.draw_indexed_instanced(cube_mesh.res.num_indices, 1, 0, 0, 0);
+            cmd_buf.set_index_buffer(&mesh.0.ib);
+            cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
         }
     }
 
     // end
     cmd_buf.end_render_pass();
-}
-
-struct Vertex {
-    position: Vec3f,
-    texcoord: Vec2f,
-    normal: Vec3f,
-    tangent: Vec3f,
-    bitangent: Vec3f,
-}
-
-// create a cube mesh index 
-fn create_cube_mesh(dev: &mut gfx_platform::Device) -> Mesh {
-    // cube veritces
-    let vertices: Vec<Vertex> = vec![
-        // front face
-        Vertex {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, -1.0,  1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // back face
-        Vertex {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // right face
-        Vertex {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // left face
-        Vertex {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // top face
-        Vertex {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // bottom face
-        Vertex {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-    ];
-
-    let indices: Vec<u16> = vec![
-        0,  2,  1,  2,  0,  3,   // front face
-        4,  6,  5,  6,  4,  7,   // back face
-        8,  10, 9,  10, 8,  11,  // right face
-        12, 14, 13, 14, 12, 15,  // left face
-        16, 18, 17, 18, 16, 19,  // top face
-        20, 22, 21, 22, 20, 23   // bottom face
-    ];
-
-    Mesh {
-        vb: dev.create_buffer(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
-                cpu_access: gfx::CpuAccessFlags::NONE,
-                num_elements: 24,
-                format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<Vertex>() 
-            }, 
-            data![vertices.as_slice()]
-        ).unwrap(),
-        ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
-            cpu_access: gfx::CpuAccessFlags::NONE,
-            num_elements: 36,
-            format: gfx::Format::R16u,
-            stride: std::mem::size_of::<u16>()
-            },
-            data![indices.as_slice()]
-        ).unwrap(),
-        num_indices: 36
-    } 
 }
 
 fn render_imgui(
@@ -569,14 +367,7 @@ fn render_imgui(
         cmd_buf.res.end_render_pass();
 }
 
-#[derive(StageLabel)]
-pub struct StageUpdate;
 
-#[derive(StageLabel)]
-pub struct StageRender;
-
-#[derive(StageLabel)]
-pub struct StageRender2D;
 
 fn main() -> Result<(), hotline_rs::Error> {    
 
@@ -621,20 +412,26 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut world = World::new();
 
+    let cube_mesh = primitives::create_cube_mesh(&mut ctx.device);
+
     world.spawn((
-        Position { pos: Vec3f::zero() },
-        Velocity { vel: Vec3f::one() },
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh},
         WorldMatrix { 0: Mat4f::from_translation(Vec3f::zero()) }
     ));
 
+    let cube_mesh = primitives::create_cube_mesh(&mut ctx.device);
+
     world.spawn((
-        Position { pos: Vec3f::zero() },
-        Velocity { vel: Vec3f::one() },
-        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_z() * 2.0) }
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh},
+        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_z() * 2.5) }
     ));
     
     world.spawn((
-        Position { pos: Vec3f::new(0.0, 100.0, 0.0) },
+        Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
         Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
         ViewProjectionMatrix { 0: Mat4f::identity()},
         Camera,
@@ -644,7 +441,46 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut call_render_2d = false;
     let mut call_render_3d = true;
 
-    let mut cube_mesh = create_cube_mesh(&mut ctx.device);
+    let mut schedule = Schedule::default();
+
+    schedule.add_stage(StageUpdate, SystemStage::parallel()
+        .with_system(update_cameras)
+        .with_system(movement)
+    );
+
+    /*
+    // create a "constructor" closure, which can initialize
+    // our data and move it into a closure that bevy can run as a system
+    let constructor = || {
+        // create the `MyConfig`
+        let config = MyConfig {
+            magic: 420,
+        };
+
+        // this is the actual system that bevy will run
+        move |mut commands: Commands| {
+            // we can use `config` here, the value from above will be "moved in"
+            // we can also use our system params: `commands`, `res`
+            render_cubes(cmd, &config);
+        }
+    };
+    */
+
+    schedule.add_stage(StageRender, SystemStage::single_threaded()
+        .with_system_set(
+            SystemSet::new().label("render_debug_3d")
+            .with_system(render_grid)
+        )
+        .with_system_set(
+            SystemSet::new().label("render_main")
+            .with_system(render_cubes).after("render_debug_3d")
+        )
+        .with_system_set(
+            SystemSet::new().label("render_imgui")
+            .with_system(render_imgui).after("render_main")
+        )
+    );
+
 
     while ctx.app.run() {
 
@@ -683,34 +519,6 @@ fn main() -> Result<(), hotline_rs::Error> {
         world.insert_resource(ImDrawRes {res: ctx.imdraw});
         world.insert_resource(PmfxRes {res: ctx.pmfx});
         world.insert_resource(ImGuiRes {res: imgui});
-        world.insert_resource(MeshRes {res: cube_mesh});
-
-        let mut schedule = Schedule::default();
-        schedule.add_stage(StageUpdate, SystemStage::parallel()
-            .with_system(update_cameras)
-            .with_system(movement)
-        );
-
-        schedule.add_stage(StageRender, SystemStage::single_threaded()
-            .with_system_set(
-                SystemSet::new().label("render_debug_3d")
-                .with_system(render_grid)
-            )
-            .with_system_set(
-                SystemSet::new().label("render_main")
-                .with_system(render_cube).after("render_debug_3d")
-            )
-            /*
-            .with_system_set(
-                SystemSet::new().label("render_debug_2d")
-                .with_system(render_2d).after("render_main")
-            )
-            */
-            .with_system_set(
-                SystemSet::new().label("render_imgui")
-                .with_system(render_imgui).after("render_main")
-            )
-        );
 
         // run systems
         schedule.run(&mut world);
@@ -724,7 +532,6 @@ fn main() -> Result<(), hotline_rs::Error> {
         ctx.pmfx = world.remove_resource::<PmfxRes>().unwrap().res;
         ctx.swap_chain = world.remove_resource::<SwapChainRes>().unwrap().res;
         imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
-        cube_mesh = world.remove_resource::<MeshRes>().unwrap().res;
 
         // transition to present
         ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
@@ -733,6 +540,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::Present,
         });
+        
         // execute cmdbuffers and swap
         ctx.cmd_buf.close(&ctx.swap_chain).unwrap();
         ctx.device.execute(&ctx.cmd_buf);

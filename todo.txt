@@ -1,9 +1,21 @@
 // TODO:
 
-// - draw boxes
-// - depth buffer
-// - depth test
+// - move hotline context
 
+// - move 'add' code into startup system - not possible
+// - minimise resource handling code
+// - copy or clone buffers?
+
+// - update matrices
+// - update aabb's
+// - culling
+
+// - Depth Stencil
+// -- depth buffer
+// -- render targets from pmfx
+// -- depth test
+
+// - blit main buffers to backbuffer
 
 // - path utilities
 // - wait frames before properly dropping gpu resources
@@ -18,11 +30,11 @@
 // - MRT
 // - MSAA
 // - Blend
-// - Depth Stencil
 // - Raster
 // - Texture Formats
 
 // DONE:
+// x render cube -> render cubes
 // x focus checks for imgui input hovers etc
 // x debug rendering 3d
 // x camera
