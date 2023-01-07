@@ -1,19 +1,23 @@
 // TODO:
 
-// - move hotline context
 
-// - move 'add' code into startup system - not possible
-// - minimise resource handling code
+// - pmfx mesh and view
+// - render targets from pmfx
+// - render passes
+// - depth Stencil state from pmfx
+// -- depth buffer
+// -- depth test
+
+// imgui into hotline context?
+// - minimise resource handling code? macros?
+
+// - move 'add' code into startup system - not possible? other ways of creating startup systems?
+
 // - copy or clone buffers?
 
 // - update matrices
 // - update aabb's
 // - culling
-
-// - Depth Stencil
-// -- depth buffer
-// -- render targets from pmfx
-// -- depth test
 
 // - blit main buffers to backbuffer
 
@@ -34,6 +38,7 @@
 // - Texture Formats
 
 // DONE:
+// x move hotline context and make generic
 // x render cube -> render cubes
 // x focus checks for imgui input hovers etc
 // x debug rendering 3d
