@@ -1,14 +1,9 @@
 use crate::gfx;
+use crate::pmfx;
 
 use maths_rs::vec::*;
 use maths_rs::Vec2f;
 use maths_rs::Vec3f;
-
-pub struct Mesh<D: gfx::Device> {
-    pub vb: D::Buffer,
-    pub ib: D::Buffer,
-    pub num_indices: u32
-}
 
 pub struct Vertex {
     pub position: Vec3f,
@@ -19,7 +14,7 @@ pub struct Vertex {
 }
 
 // create a cube mesh index 
-pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> Mesh<D> {
+pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     // cube veritces
     let vertices: Vec<Vertex> = vec![
         // front face
@@ -207,7 +202,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> Mesh<D> {
         20, 22, 21, 22, 20, 23   // bottom face
     ];
 
-    Mesh {
+    pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
                 usage: gfx::BufferUsage::Vertex,
                 cpu_access: gfx::CpuAccessFlags::NONE,

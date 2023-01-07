@@ -46,7 +46,7 @@ struct ViewProjectionMatrix(Mat4f);
 struct Camera;
 
 #[derive(Component)]
-struct MeshComponent(primitives::Mesh<gfx_platform::Device>);
+struct MeshComponent(pmfx::Mesh<gfx_platform::Device>);
 
 //
 // Stages
@@ -62,16 +62,6 @@ pub struct StageRender;
 // Resources
 //
 
-struct Context {
-    app: os_platform::App,
-    device: gfx_platform::Device,
-    main_window: os_platform::Window,
-    swap_chain: gfx_platform::SwapChain,
-    pmfx: pmfx::Pmfx<gfx_platform::Device>,
-    cmd_buf: gfx_platform::CmdBuf,
-    imdraw: imdraw::ImDraw<gfx_platform::Device>
-}
-
 #[derive(Resource)]
 struct HotlineResource<T> {
     res: T
@@ -86,66 +76,6 @@ type MainWindowRes = HotlineResource::<os_platform::Window>;
 type ImGuiRes = HotlineResource::<imgui::ImGui::<gfx_platform::Device, os_platform::App>>;
 
 type CmdBufRes = HotlineResource::<gfx_platform::CmdBuf>;
-
-fn create_hotline_context() -> Result<Context, hotline_rs::Error> {
-    let num_buffers = 2;
-
-    let mut app = os_platform::App::create(os::AppInfo {
-        name: String::from("hotline"),
-        window: false,
-        num_buffers: num_buffers,
-        dpi_aware: true,
-    });
-
-    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
-        adapter_name: None,
-        shader_heap_size: 100,
-        render_target_heap_size: 100,
-        depth_stencil_heap_size: 100,
-    });
-
-    let window = app.create_window(os::WindowInfo {
-        title: String::from("hotline"),
-        rect: os::Rect {
-            x: 100,
-            y: 100,
-            width: 1280,
-            height: 720,
-        },
-        style: os::WindowStyleFlags::NONE,
-        parent_handle: None,
-    });
-
-    let swap_chain_info = gfx::SwapChainInfo {
-        num_buffers: num_buffers as u32,
-        format: gfx::Format::RGBA8n,
-        clear_colour: Some(gfx::ClearColour {
-            r: 0.45,
-            g: 0.55,
-            b: 0.60,
-            a: 1.00,
-        }),
-    };
-
-    let swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
-    let cmd_buf = device.create_cmd_buf(num_buffers);
-
-    let imdraw_info = imdraw::ImDrawInfo {
-        initial_buffer_size_2d: 1024,
-        initial_buffer_size_3d: 1024
-    };
-    let imdraw : imdraw::ImDraw<gfx_platform::Device> = imdraw::ImDraw::create(&imdraw_info).unwrap();
-
-    Ok(Context {
-        app,
-        device,
-        main_window: window,
-        swap_chain,
-        cmd_buf,
-        pmfx: pmfx::Pmfx::create(),
-        imdraw
-    })
-}
 
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
     for (mut position, velocity) in &mut query {
@@ -375,7 +305,9 @@ fn main() -> Result<(), hotline_rs::Error> {
     // create context
     //
 
-    let mut ctx = create_hotline_context()?;
+    let mut ctx : Context<gfx_platform::Device, os_platform::App> = Context::create(HotlineInfo {
+        ..Default::default()
+    })?;
 
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
@@ -466,6 +398,77 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     */
 
+        // TEMP 
+
+    // render target
+    let rt_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
+        initial_state: gfx::ResourceState::ShaderResource,
+    };
+    let render_target = ctx.device.create_texture(&rt_info, data![]).unwrap();
+
+    // depth stencil target
+    let ds_info = gfx::TextureInfo {
+        format: gfx::Format::D24nS8u,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::DEPTH_STENCIL,
+        initial_state: gfx::ResourceState::DepthStencil,
+    };
+    let depth_stencil = ctx.device.create_texture::<u8>(&ds_info, None).unwrap();
+
+    // pass for render target with depth stencil
+    let mut render_target_pass = ctx.device
+        .create_render_pass(&gfx::RenderPassInfo {
+            render_targets: vec![&render_target],
+            rt_clear: Some(gfx::ClearColour {
+                r: 1.0,
+                g: 0.0,
+                b: 1.0,
+                a: 1.0,
+            }),
+            depth_stencil: Some(&depth_stencil),
+            ds_clear: Some(gfx::ClearDepthStencil {
+                depth: Some(1.0),
+                stencil: None,
+            }),
+            resolve: false,
+            discard: false,
+        })
+        .unwrap();
+
+    let mut view = pmfx::View::<gfx_platform::Device> {
+        pass: render_target_pass,
+        viewport: gfx::Viewport {
+            x: 0.0,
+            y: 0.0,
+            width: 512.0,
+            height: 512.0,
+            min_depth: 0.0,
+            max_depth: 1.0
+        },
+        scissor_rect: gfx::ScissorRect {
+            left: 0,
+            top: 0,
+            right: 512,
+            bottom: 512
+        },
+        cmd_buf: ctx.device.create_cmd_buf(2)
+    };
+
     schedule.add_stage(StageRender, SystemStage::single_threaded()
         .with_system_set(
             SystemSet::new().label("render_debug_3d")
@@ -492,16 +495,38 @@ fn main() -> Result<(), hotline_rs::Error> {
         if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
             imgui.checkbox("Render 3D", &mut call_render_3d);
             imgui.checkbox("Render 2D", &mut call_render_2d);
+            imgui.image(&render_target, 512.0, 512.0)
         }
         imgui.end();
 
         ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
+        
+        // temp
+        view.cmd_buf.reset(&ctx.swap_chain);
+        view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(&render_target),
+            buffer: None,
+            state_before: gfx::ResourceState::ShaderResource,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+
+        view.cmd_buf.begin_render_pass(&mut view.pass);
+        view.cmd_buf.end_render_pass();
+
+        view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(&render_target),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::ShaderResource,
+        });
+        
+        view.cmd_buf.close(&ctx.swap_chain).unwrap();
+        ctx.device.execute(&view.cmd_buf);
+        
+        
+        
         ctx.cmd_buf.reset(&ctx.swap_chain);
 
-        // clear the swap chain
-        ctx.cmd_buf.begin_render_pass(ctx.swap_chain.get_backbuffer_pass_mut());
-        ctx.cmd_buf.end_render_pass();
-       
         // transition to RT
         ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(ctx.swap_chain.get_backbuffer_texture()),
@@ -510,6 +535,10 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
+        // clear the swap chain
+        ctx.cmd_buf.begin_render_pass(ctx.swap_chain.get_backbuffer_pass_mut());
+        ctx.cmd_buf.end_render_pass();
+       
         // move hotline resource into world
         world.insert_resource(AppRes {res: ctx.app});
         world.insert_resource(MainWindowRes {res: ctx.main_window});

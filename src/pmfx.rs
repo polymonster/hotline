@@ -8,6 +8,19 @@ use std::fs;
 
 type PipelinePermutations = HashMap<String, PmfxPipeline>;
 
+pub struct View<D: gfx::Device> {
+    pub pass: D::RenderPass,
+    pub viewport: gfx::Viewport,
+    pub scissor_rect: gfx::ScissorRect,
+    pub cmd_buf: D::CmdBuf
+}
+
+pub struct Mesh<D: gfx::Device> {
+    pub vb: D::Buffer,
+    pub ib: D::Buffer,
+    pub num_indices: u32
+}
+
 pub struct Pmfx<D: gfx::Device> {
     pmfx: HashMap<String, PipelinePermutations>,
     pmfx_folders: HashMap<String, String>,
