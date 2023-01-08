@@ -7,7 +7,7 @@ pub mod d3d12;
 
 type Error = super::Error;
 
-/// macro to pass data![expression] or data![] (None) to a create function, so you don't have to deduce a 'T'
+/// macro to pass data!expression or data! (None) to a create function, so you don't have to deduce a 'T'
 #[macro_export]
 macro_rules! data {
     () => {
