@@ -1,19 +1,17 @@
 // TODO:
 
-
-// - pmfx mesh and view
+// - get docs passing
 // - render targets from pmfx
 // - render passes
 // - depth Stencil state from pmfx
 // -- depth buffer
 // -- depth test
+// - copy or clone buffers?
 
 // imgui into hotline context?
 // - minimise resource handling code? macros?
 
 // - move 'add' code into startup system - not possible? other ways of creating startup systems?
-
-// - copy or clone buffers?
 
 // - update matrices
 // - update aabb's
@@ -25,7 +23,6 @@
 // - wait frames before properly dropping gpu resources
 // - window utilities
 // - - rember window and console positions
-// - automate cargo publish
 
 // - GPU Timer Query
 // - Draw Instanced
@@ -38,6 +35,8 @@
 // - Texture Formats
 
 // DONE:
+// x automate cargo publish
+// x pmfx mesh and view
 // x move hotline context and make generic
 // x render cube -> render cubes
 // x focus checks for imgui input hovers etc
