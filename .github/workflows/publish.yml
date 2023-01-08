@@ -24,8 +24,7 @@ jobs:
       run: |
         export REFS_VERSION=${{ github.ref }}
         export VERSION=$(echo $REFS_VERSION| cut -d'/' -f 3)
-        echo $VERSION
-        sed -i -E "s/[0-9]+.[0-9]+.[0-9]+/$VERSION/g" Cargo.toml
+        sed -i -E "1,/[0-9]+.[0-9]+.[0-9]+/ s/[0-9]+.[0-9]+.[0-9]+/$VERSION/g" Cargo.toml
         git config user.name github-actions
         git config user.email github-actions@github.com
         git add .
