@@ -298,6 +298,58 @@ fn render_imgui(
 }
 
 
+fn render_world_view(
+    swap_chain: ResMut<SwapChainRes>,
+    device: ResMut<DeviceRes>,
+    pmfx: ResMut<PmfxRes>,
+    view_proj_query: Query<&ViewProjectionMatrix>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>,
+    view: &mut pmfx::View<gfx_platform::Device>,
+    render_target: &gfx_platform::Texture) {
+    
+    // unpack
+    let pmfx = &pmfx.res;
+
+    // reset and transition
+    view.cmd_buf.reset(&swap_chain.res);
+    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        texture: Some(&render_target),
+        buffer: None,
+        state_before: gfx::ResourceState::ShaderResource,
+        state_after: gfx::ResourceState::RenderTarget,
+    });
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&mut view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+    view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_mesh").unwrap());
+
+    for view_proj in &view_proj_query {
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        for (world_matrix, mesh) in &mesh_draw_query {
+            // draw
+            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+            view.cmd_buf.set_index_buffer(&mesh.0.ib);
+            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        }
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+
+    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        texture: Some(&render_target),
+        buffer: None,
+        state_before: gfx::ResourceState::RenderTarget,
+        state_after: gfx::ResourceState::ShaderResource,
+    });
+    
+    view.cmd_buf.close(&swap_chain.res).unwrap();
+    
+    device.res.execute(&view.cmd_buf);
+}
 
 fn main() -> Result<(), hotline_rs::Error> {    
 
@@ -380,26 +432,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         .with_system(movement)
     );
 
-    /*
-    // create a "constructor" closure, which can initialize
-    // our data and move it into a closure that bevy can run as a system
-    let constructor = || {
-        // create the `MyConfig`
-        let config = MyConfig {
-            magic: 420,
-        };
-
-        // this is the actual system that bevy will run
-        move |mut commands: Commands| {
-            // we can use `config` here, the value from above will be "moved in"
-            // we can also use our system params: `commands`, `res`
-            render_cubes(cmd, &config);
-        }
-    };
-    */
-
-        // TEMP 
-
+    // TEMP 
     // render target
     let rt_info = gfx::TextureInfo {
         format: gfx::Format::RGBA8n,
@@ -431,7 +464,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let depth_stencil = ctx.device.create_texture::<u8>(&ds_info, None).unwrap();
 
     // pass for render target with depth stencil
-    let mut render_target_pass = ctx.device
+    let render_target_pass = ctx.device
         .create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![&render_target],
             rt_clear: Some(gfx::ClearColour {
@@ -469,6 +502,28 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmd_buf: ctx.device.create_cmd_buf(2)
     };
 
+    let render_target_ref = render_target.clone();
+
+    // create a "constructor" closure, which can initialize
+    // our data and move it into a closure that bevy can run as a system
+    let view_constructor = || {
+        move |
+            swap_chain: ResMut<SwapChainRes>, 
+            device: ResMut<DeviceRes>,
+            pmfx: ResMut<PmfxRes>,
+            qvp: Query<&ViewProjectionMatrix>, 
+            qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
+                render_world_view(
+                    swap_chain, 
+                    device,
+                    pmfx,
+                    qvp,
+                    qmesh,
+                    &mut view, 
+                    &render_target_ref);
+        }
+    };
+
     schedule.add_stage(StageRender, SystemStage::single_threaded()
         .with_system_set(
             SystemSet::new().label("render_debug_3d")
@@ -477,6 +532,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         .with_system_set(
             SystemSet::new().label("render_main")
             .with_system(render_cubes).after("render_debug_3d")
+            .with_system(view_constructor()).after("render_debug_3d")
         )
         .with_system_set(
             SystemSet::new().label("render_imgui")
@@ -501,6 +557,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
         
+        /*
         // temp
         view.cmd_buf.reset(&ctx.swap_chain);
         view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
@@ -522,9 +579,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         
         view.cmd_buf.close(&ctx.swap_chain).unwrap();
         ctx.device.execute(&view.cmd_buf);
-        
-        
-        
+        */
+
         ctx.cmd_buf.reset(&ctx.swap_chain);
 
         // transition to RT
