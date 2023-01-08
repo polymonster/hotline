@@ -1,6 +1,6 @@
 [package]
 name = "hotline-rs"
-version = "0.1.5"
+version = "0.1.6"
 edition = "2021"
 authors = ["polymonster <alexandercdixon@gmail.com>"]
 description = "hot-reloading playground for graphics, compute, video decoding and more."
@@ -13,22 +13,22 @@ license-file = "license"
 exclude = ["bin/"]
 
 [dependencies]
-bitflags = "0.1.5"
-stb_image_rust = "0.1.5"
-stb_image_write_rust = "0.1.5"
-font-awesome = "0.1.5"
-maths-rs = "0.1.5"
+bitflags = "0.1.6"
+stb_image_rust = "0.1.6"
+stb_image_write_rust = "0.1.6"
+font-awesome = "0.1.6"
+maths-rs = "0.1.6"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "0.1.5"
-rand = "0.1.5"
-bevy_ecs = "0.1.5"
+serde_json = "0.1.6"
+rand = "0.1.6"
+bevy_ecs = "0.1.6"
 
 [dependencies.imgui-sys]
-version = "0.1.5"
+version = "0.1.6"
 features = ["docking"]
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.1.5"
+version = "0.1.6"
 features = [
     "alloc",
     "implement",
