@@ -1,3 +1,5 @@
+#![cfg(target_os = "windows")]
+
 use windows::{
     core::*,
     Win32::Foundation::*, Win32::Globalization::*, Win32::Graphics::Gdi::ClientToScreen,

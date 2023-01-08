@@ -16,9 +16,6 @@ pub mod imgui;
 /// Immediate mode primitive rendering API
 pub mod imdraw;
 
-/// Camera
-pub mod camera;
-
 /// High level graphics
 pub mod pmfx;
 

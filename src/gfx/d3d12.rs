@@ -1,3 +1,5 @@
+#![cfg(target_os = "windows")]
+
 use crate::os::Window;
 use crate::os::NativeHandle;
 

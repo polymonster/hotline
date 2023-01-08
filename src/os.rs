@@ -1,4 +1,5 @@
 /// Implements this interface for windows win32 platfrom
+#[cfg(target_os = "windows")]
 pub mod win32;
 
 use std::any::Any;

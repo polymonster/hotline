@@ -1,4 +1,7 @@
+#![cfg(target_os = "windows")]
+
 use crate::gfx;
+
 use gfx::d3d12;
 use gfx::Device;
 use gfx::Heap;
