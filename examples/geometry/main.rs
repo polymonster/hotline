@@ -23,6 +23,9 @@ use maths_rs::Mat4f;
 
 use bevy_ecs::prelude::*;
 
+use std::sync::Arc;
+use std::sync::Mutex;
+
 //
 // Components
 //
@@ -238,21 +241,13 @@ fn render_grid(
     }
 }
 
-#[derive(Default)]
-struct MyConfig {
-    magic: usize,
-}
-
 fn render_cubes(
     mut swap_chain: ResMut<SwapChainRes>, 
     mut cmd_buf: ResMut<CmdBufRes>,
     main_window: ResMut<MainWindowRes>,
     pmfx: ResMut<PmfxRes>,
-    magic: Local<MyConfig>,
     view_proj_query: Query<&ViewProjectionMatrix>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)> ) {
-
-    println!("magic {}", magic.magic);
 
     // unpack
     let cmd_buf = &mut cmd_buf.res;
@@ -300,7 +295,6 @@ fn render_imgui(
 
 fn render_world_view(
     swap_chain: ResMut<SwapChainRes>,
-    device: ResMut<DeviceRes>,
     pmfx: ResMut<PmfxRes>,
     view_proj_query: Query<&ViewProjectionMatrix>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>,
@@ -347,8 +341,6 @@ fn render_world_view(
     });
     
     view.cmd_buf.close(&swap_chain.res).unwrap();
-    
-    device.res.execute(&view.cmd_buf);
 }
 
 fn main() -> Result<(), hotline_rs::Error> {    
@@ -483,7 +475,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         })
         .unwrap();
 
-    let mut view = pmfx::View::<gfx_platform::Device> {
+    let view = pmfx::View::<gfx_platform::Device> {
         pass: render_target_pass,
         viewport: gfx::Viewport {
             x: 0.0,
@@ -502,27 +494,30 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmd_buf: ctx.device.create_cmd_buf(2)
     };
 
-    let render_target_ref = render_target.clone();
+    let arc_view = Arc::new(Mutex::new(view));
+    let arc_rt = Arc::new(Mutex::new(render_target));
 
     // create a "constructor" closure, which can initialize
     // our data and move it into a closure that bevy can run as a system
+    let v2 = arc_view.clone();
+    let r2 = arc_rt.clone();
     let view_constructor = || {
         move |
-            swap_chain: ResMut<SwapChainRes>, 
-            device: ResMut<DeviceRes>,
+            swap_chain: ResMut<SwapChainRes>,
             pmfx: ResMut<PmfxRes>,
-            qvp: Query<&ViewProjectionMatrix>, 
+            qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 render_world_view(
                     swap_chain, 
-                    device,
                     pmfx,
                     qvp,
                     qmesh,
-                    &mut view, 
-                    &render_target_ref);
+                    &mut v2.lock().unwrap(), 
+                    &r2.lock().unwrap());
         }
     };
+    
+    // end temp
 
     schedule.add_stage(StageRender, SystemStage::single_threaded()
         .with_system_set(
@@ -551,35 +546,12 @@ fn main() -> Result<(), hotline_rs::Error> {
         if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
             imgui.checkbox("Render 3D", &mut call_render_3d);
             imgui.checkbox("Render 2D", &mut call_render_2d);
-            imgui.image(&render_target, 512.0, 512.0)
+            imgui.image(&arc_rt.lock().unwrap(), 512.0, 512.0)
         }
         imgui.end();
 
         ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
         
-        /*
-        // temp
-        view.cmd_buf.reset(&ctx.swap_chain);
-        view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::ShaderResource,
-            state_after: gfx::ResourceState::RenderTarget,
-        });
-
-        view.cmd_buf.begin_render_pass(&mut view.pass);
-        view.cmd_buf.end_render_pass();
-
-        view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
-            state_after: gfx::ResourceState::ShaderResource,
-        });
-        
-        view.cmd_buf.close(&ctx.swap_chain).unwrap();
-        ctx.device.execute(&view.cmd_buf);
-        */
 
         ctx.cmd_buf.reset(&ctx.swap_chain);
 
@@ -628,7 +600,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         
         // execute cmdbuffers and swap
         ctx.cmd_buf.close(&ctx.swap_chain).unwrap();
+    
+        ctx.device.execute(&arc_view.lock().unwrap().cmd_buf);
         ctx.device.execute(&ctx.cmd_buf);
+
         ctx.swap_chain.swap(&ctx.device);
     }
 

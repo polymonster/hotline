@@ -3,6 +3,7 @@ use crate::gfx;
 use crate::os;
 
 /// Implements this interface for Windows Media Foundation with Direct3D12
+#[cfg(target_os = "windows")]
 pub mod wmf;
 
 /// Errors passed back from av backends
