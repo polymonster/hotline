@@ -1,23 +1,22 @@
 // TODO:
 
-// - get docs passing
+// - streamline install / deployment (pmbuild, pmfx etc)
+
 // - render targets from pmfx
 // - render passes
 // - depth Stencil state from pmfx
 // -- depth buffer
 // -- depth test
 // - copy or clone buffers?
+// - blit main buffers to backbuffer
 
 // imgui into hotline context?
 // - minimise resource handling code? macros?
 
 // - move 'add' code into startup system - not possible? other ways of creating startup systems?
-
 // - update matrices
 // - update aabb's
 // - culling
-
-// - blit main buffers to backbuffer
 
 // - path utilities
 // - wait frames before properly dropping gpu resources
@@ -35,6 +34,7 @@
 // - Texture Formats
 
 // DONE:
+// x get docs passing
 // x automate cargo publish
 // x pmfx mesh and view
 // x move hotline context and make generic

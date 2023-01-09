@@ -371,7 +371,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             glyph_ranges: None
         }],
     };
-    let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
+    let mut imgui = imgui::ImGui::create(&mut imgui_info)?;
 
     //
     // create pipelines
@@ -393,16 +393,14 @@ fn main() -> Result<(), hotline_rs::Error> {
     world.spawn((
         Position { 0: Vec3f::zero() },
         Velocity { 0: Vec3f::one() },
-        MeshComponent {0: cube_mesh},
+        MeshComponent {0: cube_mesh.clone()},
         WorldMatrix { 0: Mat4f::from_translation(Vec3f::zero()) }
     ));
-
-    let cube_mesh = primitives::create_cube_mesh(&mut ctx.device);
 
     world.spawn((
         Position { 0: Vec3f::zero() },
         Velocity { 0: Vec3f::one() },
-        MeshComponent {0: cube_mesh},
+        MeshComponent {0: cube_mesh.clone()},
         WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_z() * 2.5) }
     ));
     
@@ -414,8 +412,6 @@ fn main() -> Result<(), hotline_rs::Error> {
     ));
 
     let mut imgui_open = true;
-    let mut call_render_2d = false;
-    let mut call_render_3d = true;
 
     let mut schedule = Schedule::default();
 
@@ -535,33 +531,25 @@ fn main() -> Result<(), hotline_rs::Error> {
         )
     );
 
-
     while ctx.app.run() {
 
         // update window and swap chain for the new frame
         ctx.main_window.update(&mut ctx.app);
-
-        // hotline update
-        imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
-        if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
-            imgui.checkbox("Render 3D", &mut call_render_3d);
-            imgui.checkbox("Render 2D", &mut call_render_2d);
-            imgui.image(&arc_rt.lock().unwrap(), 512.0, 512.0)
-        }
-        imgui.end();
-
         ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
-        
-
         ctx.cmd_buf.reset(&ctx.swap_chain);
-
-        // transition to RT
         ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(ctx.swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
         });
+
+        // hotline update
+        imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
+        if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
+            imgui.image(&arc_rt.lock().unwrap(), 512.0, 512.0)
+        }
+        imgui.end();
 
         // clear the swap chain
         ctx.cmd_buf.begin_render_pass(ctx.swap_chain.get_backbuffer_pass_mut());
@@ -606,6 +594,12 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         ctx.swap_chain.swap(&ctx.device);
     }
+
+    ctx.swap_chain.wait_for_last_frame();
+
+    // we must reset the command buffers to drop references to live objects
+    ctx.cmd_buf.reset(&ctx.swap_chain);
+    arc_view.lock().unwrap().cmd_buf.reset(&ctx.swap_chain);
 
     // exited with code 0
     Ok(())
