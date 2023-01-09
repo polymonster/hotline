@@ -139,7 +139,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         });
     
         let swap_chain_info = gfx::SwapChainInfo {
-            num_buffers: info.num_buffers as u32,
+            num_buffers: info.num_buffers,
             format: gfx::Format::RGBA8n,
             clear_colour: info.clear_colour
         };

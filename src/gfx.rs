@@ -583,6 +583,7 @@ pub enum TextureType {
 
 bitflags! {
     /// Textures can be used in one or more of the following ways
+    #[derive(Serialize, Deserialize)]
     pub struct TextureUsage: u32 {
         /// Texture will be only used for data storage and not used on any GPU pipeline stages
         const NONE = 0;
