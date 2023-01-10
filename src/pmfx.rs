@@ -12,15 +12,13 @@ use std::sync::Mutex;
 
 type PipelinePermutations = HashMap<String, Pipeline>;
 
-type ViewRef<D> = Arc<Mutex<View<D>>>;
-
-
 pub struct View<D: gfx::Device> {
     pub pass: D::RenderPass,
     pub viewport: gfx::Viewport,
     pub scissor_rect: gfx::ScissorRect,
     pub cmd_buf: D::CmdBuf
 }
+pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
 #[derive(Clone)]
 pub struct Mesh<D: gfx::Device> {
