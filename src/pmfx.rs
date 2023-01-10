@@ -7,7 +7,13 @@ use std::path::Path;
 use crate::gfx;
 use std::fs;
 
+use std::sync::Arc;
+use std::sync::Mutex;
+
 type PipelinePermutations = HashMap<String, Pipeline>;
+
+type ViewRef<D> = Arc<Mutex<View<D>>>;
+
 
 pub struct View<D: gfx::Device> {
     pub pass: D::RenderPass,
@@ -29,7 +35,9 @@ pub struct Pmfx<D: gfx::Device> {
     render_pipelines: HashMap<String, D::RenderPipeline>,
     compute_pipelines: HashMap<String, D::ComputePipeline>,
     shaders: HashMap<String, D::Shader>,
-    textures: HashMap<String, D::Texture>
+    textures: HashMap<String, D::Texture>,
+    tracked_textures: Vec<String>,
+    views: HashMap<String, Arc<Mutex<View<D>>>>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -37,6 +45,7 @@ struct File {
     pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>,
     textures: HashMap<String, TextureInfo>,
+    views: HashMap<String, ViewInfo>,
 }
 
 impl File {
@@ -45,6 +54,7 @@ impl File {
             pipelines: HashMap::new(),
             depth_stencil_states: HashMap::new(),
             textures: HashMap::new(),
+            views: HashMap::new()
         }
     }
 }
@@ -89,6 +99,13 @@ struct Pipeline {
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
     topology: Option<gfx::Topology>
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ViewInfo {
+    render_target: Vec<String>,
+    depth_stencil: Vec<String>,
+    viewport: Vec<f32>,
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -201,11 +218,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
             shaders: HashMap::new(),
-            textures: HashMap::new()
+            textures: HashMap::new(),
+            tracked_textures: Vec::new(),
+            views: HashMap::new(),
         }
     }
 
-    /// load a pmfx friom a folder, where the folder contains a pmfx info.json and shader source in separate files
+    /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files
     /// within the directory
     pub fn load(&mut self, filepath: &str) -> Result<(), super::Error> {        
         // get the name for indexing by pmfx name/folder
@@ -220,6 +239,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         //  deserialise pmfx pipelines from file
         let info_filepath = folder.join(format!("{}.json", pmfx_name));
         let pmfx_data = fs::read(info_filepath)?;
+
+        // TODO: this should merge in
         self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
 
         // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
@@ -253,6 +274,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Returns a shader reference for use when building pso
     pub fn get_shader<'stack>(&'stack self, file: &Option<String>) -> Option<&'stack D::Shader> {
         if let Some(file) = file {
             if self.shaders.contains_key(file) {
@@ -267,18 +289,113 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Creates a texture if it has not already been created from information specified in .pmfx file
     pub fn create_texture(&mut self, device: &mut D, texture_name: &str) -> Result<(), super::Error> {
         if !self.textures.contains_key(texture_name) && self.pmfx.textures.contains_key(texture_name) {
+            // create texture from info specified in .pmfx file
             println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
             let tex = device.create_texture::<u8>(&to_gfx_texture_info(&self.pmfx.textures[texture_name]), None)?;
             self.textures.insert(texture_name.to_string(), tex);
+            // track textures which rely on ratio sizes
+            if self.pmfx.textures[texture_name].ratio.is_some() {
+                println!("hotline_rs::pmfx:: tracking texture: {}", texture_name);
+                self.tracked_textures.push(texture_name.to_string())
+            }
         }
         Ok(())
     }
 
+    /// Returns a texture reference if the texture exists or none otherwise
     pub fn get_texture<'stack>(&'stack self, texture_name: &str) -> Option<&'stack D::Texture> {
         if self.textures.contains_key(texture_name) {
             Some(&self.textures[texture_name])
+        }
+        else {
+            None
+        }
+    }
+
+    /// Create a view from information specified in pmfx file
+    pub fn create_view(&mut self, device: &mut D, view_name: &str) -> Result<(), super::Error> {
+        // create textures
+        if !self.views.contains_key(view_name) && self.pmfx.views.contains_key(view_name) {
+            // create pass from targets
+            let pmfx_view = self.pmfx.views[view_name].clone();
+
+            // create textures for targets
+            let mut render_targets = Vec::new();
+            for name in &pmfx_view.render_target {
+                self.create_texture(device, name)?;
+            }
+
+            // create textures for depth stencils
+            for name in &pmfx_view.depth_stencil {
+                self.create_texture(device, name)?;
+            }
+
+            // array of targets by name
+            for name in &pmfx_view.render_target {
+                render_targets.push(self.get_texture(name).unwrap());
+            }
+
+            // get depth stencil by name
+            let depth_stencil = if pmfx_view.depth_stencil.len() > 0 {
+                let name = &pmfx_view.depth_stencil[0];
+                Some(self.get_texture(name).unwrap())
+            }
+            else {
+                None
+            };
+
+            // pass for render targets with depth stencil
+            let render_target_pass = device
+            .create_render_pass(&gfx::RenderPassInfo {
+                render_targets: render_targets,
+                rt_clear: Some(gfx::ClearColour {
+                    r: 1.0,
+                    g: 0.0,
+                    b: 1.0,
+                    a: 1.0,
+                }),
+                depth_stencil: depth_stencil,
+                ds_clear: Some(gfx::ClearDepthStencil {
+                    depth: Some(1.0),
+                    stencil: None,
+                }),
+                resolve: false,
+                discard: false,
+            })
+            .unwrap();
+
+            let view = View::<D> {
+                pass: render_target_pass,
+                viewport: gfx::Viewport {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 1280.0,
+                    height: 720.0,
+                    min_depth: 0.0,
+                    max_depth: 1.0
+                },
+                scissor_rect: gfx::ScissorRect {
+                    left: 0,
+                    top: 0,
+                    right: 1280,
+                    bottom: 720
+                },
+                cmd_buf: device.create_cmd_buf(2)
+            };
+
+            self.views.insert(view_name.to_string(), Arc::new(Mutex::new(view)));
+        }
+
+        Ok(())
+    }
+
+    /// Return a reference to a view if the view exists or none otherwise
+    pub fn get_view(&self, view_name: &str) -> Option<ViewRef<D>> {
+        if self.views.contains_key(view_name) {
+            Some(self.views[view_name].clone())
         }
         else {
             None

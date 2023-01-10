@@ -768,7 +768,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn reset(&mut self, swap_chain: &D::SwapChain);
     fn close(&mut self, swap_chain: &D::SwapChain) -> Result<(), Error>;
     fn get_backbuffer_index(&self) -> u32;
-    fn begin_render_pass(&self, render_pass: &mut D::RenderPass);
+    fn begin_render_pass(&self, render_pass: &D::RenderPass);
     fn end_render_pass(&self);
     fn begin_event(&mut self, colour: u32, name: &str);
     fn end_event(&mut self);
