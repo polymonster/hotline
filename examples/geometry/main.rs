@@ -298,16 +298,17 @@ fn render_world_view(
     pmfx: ResMut<PmfxRes>,
     view_proj_query: Query<&ViewProjectionMatrix>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>,
-    view: &mut pmfx::View<gfx_platform::Device>,
-    render_target: &gfx_platform::Texture) {
+    view: &mut pmfx::View<gfx_platform::Device>) {
     
     // unpack
     let pmfx = &pmfx.res;
 
+    let rt = pmfx.get_texture("main_colour").unwrap();
+
     // reset and transition
     view.cmd_buf.reset(&swap_chain.res);
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(&render_target),
+        texture: Some(rt),
         buffer: None,
         state_before: gfx::ResourceState::ShaderResource,
         state_after: gfx::ResourceState::RenderTarget,
@@ -334,7 +335,7 @@ fn render_world_view(
     view.cmd_buf.end_render_pass();
 
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(&render_target),
+        texture: Some(rt),
         buffer: None,
         state_before: gfx::ResourceState::RenderTarget,
         state_after: gfx::ResourceState::ShaderResource,
@@ -374,14 +375,18 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut imgui = imgui::ImGui::create(&mut imgui_info)?;
 
     //
-    // create pipelines
+    // create pmfx
     //
 
     ctx.pmfx.load(asset_path.join("data/shaders/imdraw").to_str().unwrap())?;
+    
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
 
+    ctx.pmfx.create_texture(&mut ctx.device, "main_colour")?;
+    ctx.pmfx.create_texture(&mut ctx.device, "main_depth")?;
+    
     //
     // main loop
     //
@@ -420,48 +425,17 @@ fn main() -> Result<(), hotline_rs::Error> {
         .with_system(movement)
     );
 
-    // TEMP 
-    // render target
-    let rt_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_levels: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    let render_target = ctx.device.create_texture(&rt_info, data![]).unwrap();
-
-    // depth stencil target
-    let ds_info = gfx::TextureInfo {
-        format: gfx::Format::D24nS8u,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_levels: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::DEPTH_STENCIL,
-        initial_state: gfx::ResourceState::DepthStencil,
-    };
-    let depth_stencil = ctx.device.create_texture::<u8>(&ds_info, None).unwrap();
-
     // pass for render target with depth stencil
     let render_target_pass = ctx.device
         .create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![&render_target],
+            render_targets: vec![ctx.pmfx.get_texture("main_colour").unwrap()],
             rt_clear: Some(gfx::ClearColour {
                 r: 1.0,
                 g: 0.0,
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(&depth_stencil),
+            depth_stencil: Some(ctx.pmfx.get_texture("main_depth").unwrap()),
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
@@ -476,27 +450,25 @@ fn main() -> Result<(), hotline_rs::Error> {
         viewport: gfx::Viewport {
             x: 0.0,
             y: 0.0,
-            width: 512.0,
-            height: 512.0,
+            width: 1280.0,
+            height: 720.0,
             min_depth: 0.0,
             max_depth: 1.0
         },
         scissor_rect: gfx::ScissorRect {
             left: 0,
             top: 0,
-            right: 512,
-            bottom: 512
+            right: 1280,
+            bottom: 720
         },
         cmd_buf: ctx.device.create_cmd_buf(2)
     };
 
     let arc_view = Arc::new(Mutex::new(view));
-    let arc_rt = Arc::new(Mutex::new(render_target));
 
     // create a "constructor" closure, which can initialize
     // our data and move it into a closure that bevy can run as a system
     let v2 = arc_view.clone();
-    let r2 = arc_rt.clone();
     let view_constructor = || {
         move |
             swap_chain: ResMut<SwapChainRes>,
@@ -508,8 +480,8 @@ fn main() -> Result<(), hotline_rs::Error> {
                     pmfx,
                     qvp,
                     qmesh,
-                    &mut v2.lock().unwrap(), 
-                    &r2.lock().unwrap());
+                    &mut v2.lock().unwrap()
+                );
         }
     };
     
@@ -547,7 +519,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         // hotline update
         imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
         if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
-            imgui.image(&arc_rt.lock().unwrap(), 512.0, 512.0)
+            imgui.image(ctx.pmfx.get_texture("main_colour").unwrap(), 1280.0, 720.0)
         }
         imgui.end();
 

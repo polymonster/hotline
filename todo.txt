@@ -2,12 +2,16 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - render targets from pmfx
+// - texures from file pmfx
+// - ratio tracking pmfx
+// - views from pmfx
 // - render passes
+
 // - depth Stencil state from pmfx
 // -- depth buffer
 // -- depth test
 // - copy or clone buffers?
+
 // - blit main buffers to backbuffer
 
 // imgui into hotline context?
@@ -34,6 +38,7 @@
 // - Texture Formats
 
 // DONE:
+// x render targets from pmfx
 // x get docs passing
 // x automate cargo publish
 // x pmfx mesh and view
