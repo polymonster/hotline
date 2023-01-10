@@ -26,11 +26,9 @@ pmfx: {
     }
     textures: {
         main_colour: {
-            size: {
-                ratio: {
-                    window: "main_window",
-                    scale: 1.0
-                }
+            ratio: {
+                window: "main_window",
+                scale: 1.0
             }
             format: "RGBA8n"
             usage: ["ShaderResource", "RenderTarget"]

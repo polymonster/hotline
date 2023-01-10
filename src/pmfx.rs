@@ -1,6 +1,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+// use std::hash::Hash;
 use std::path::Path;
 
 use crate::gfx;
@@ -28,6 +29,7 @@ pub struct Pmfx<D: gfx::Device> {
     render_pipelines: HashMap<String, D::RenderPipeline>,
     compute_pipelines: HashMap<String, D::ComputePipeline>,
     shaders: HashMap<String, D::Shader>,
+    textures: HashMap<String, D::Texture>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -121,17 +123,17 @@ fn info_from_state<T: Default + Copy>(name: &Option<String>, map: &HashMap<Strin
 }
 
 /// translate pmfx::TextureInfo to gfx::TextureInfo as pmfx::TextureInfo is slightly better equipped for user enty
-fn _to_gfx_texture_info(pmfx: TextureInfo) -> gfx::TextureInfo {
+fn to_gfx_texture_info(pmfx_texture: &TextureInfo) -> gfx::TextureInfo {
     // size from ratio
-    let (width, height) = if let Some(_) = pmfx.ratio {
+    let (width, height) = if let Some(_) = pmfx_texture.ratio {
         (1280, 720)
     }
     else {
-        (pmfx.width, pmfx.height)
+        (pmfx_texture.width, pmfx_texture.height)
     };
 
     // infer texture type from dimensions
-    let tex_type = if pmfx.depth > 1 {
+    let tex_type = if pmfx_texture.depth > 1 {
         gfx::TextureType::Texture3D
     }
     else if height > 1 {
@@ -142,13 +144,13 @@ fn _to_gfx_texture_info(pmfx: TextureInfo) -> gfx::TextureInfo {
     };
 
     // derive initial state from usage
-    let initial_state = if pmfx.usage.contains(&TextureUsage::ShaderResource) {
+    let initial_state = if pmfx_texture.usage.contains(&TextureUsage::ShaderResource) {
         gfx::ResourceState::ShaderResource
     }
-    else if pmfx.usage.contains(&TextureUsage::DepthStencil) {
+    else if pmfx_texture.usage.contains(&TextureUsage::DepthStencil) {
         gfx::ResourceState::DepthStencil
     }
-    else if pmfx.usage.contains(&TextureUsage::RenderTarget) {
+    else if pmfx_texture.usage.contains(&TextureUsage::RenderTarget) {
         gfx::ResourceState::RenderTarget
     }
     else {
@@ -157,7 +159,7 @@ fn _to_gfx_texture_info(pmfx: TextureInfo) -> gfx::TextureInfo {
 
     // texture type bitflags from vec of enum
     let mut usage = gfx::TextureUsage::NONE;
-    for pmfx_usage in pmfx.usage {
+    for pmfx_usage in &pmfx_texture.usage {
         match pmfx_usage {
             TextureUsage::ShaderResource => {
                 usage |= gfx::TextureUsage::SHADER_RESOURCE
@@ -183,11 +185,11 @@ fn _to_gfx_texture_info(pmfx: TextureInfo) -> gfx::TextureInfo {
         tex_type,
         initial_state,
         usage,
-        depth: pmfx.depth,
-        mip_levels: pmfx.mip_levels,
-        array_levels: pmfx.array_levels,
-        samples: pmfx.samples,
-        format: pmfx.format,
+        depth: pmfx_texture.depth,
+        mip_levels: pmfx_texture.mip_levels,
+        array_levels: pmfx_texture.array_levels,
+        samples: pmfx_texture.samples,
+        format: pmfx_texture.format,
     }
 }
 
@@ -198,7 +200,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
-            shaders: HashMap::new()
+            shaders: HashMap::new(),
+            textures: HashMap::new()
         }
     }
 
@@ -216,8 +219,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         //  deserialise pmfx pipelines from file
         let info_filepath = folder.join(format!("{}.json", pmfx_name));
-        let pmfx_data = fs::read(info_filepath).unwrap();
-
+        let pmfx_data = fs::read(info_filepath)?;
         self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
 
         // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
@@ -259,6 +261,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
             else {
                 None
             }
+        }
+        else {
+            None
+        }
+    }
+
+    pub fn create_texture(&mut self, device: &mut D, texture_name: &str) -> Result<(), super::Error> {
+        if !self.textures.contains_key(texture_name) && self.pmfx.textures.contains_key(texture_name) {
+            println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
+            let tex = device.create_texture::<u8>(&to_gfx_texture_info(&self.pmfx.textures[texture_name]), None)?;
+            self.textures.insert(texture_name.to_string(), tex);
+        }
+        Ok(())
+    }
+
+    pub fn get_texture<'stack>(&'stack self, texture_name: &str) -> Option<&'stack D::Texture> {
+        if self.textures.contains_key(texture_name) {
+            Some(&self.textures[texture_name])
         }
         else {
             None
