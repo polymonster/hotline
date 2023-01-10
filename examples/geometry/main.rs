@@ -23,9 +23,6 @@ use maths_rs::Mat4f;
 
 use bevy_ecs::prelude::*;
 
-use std::sync::Arc;
-use std::sync::Mutex;
-
 //
 // Components
 //
@@ -295,15 +292,17 @@ fn render_imgui(
 
 fn render_world_view(
     swap_chain: ResMut<SwapChainRes>,
-    pmfx: ResMut<PmfxRes>,
+    pmfx: Res<PmfxRes>,
     view_proj_query: Query<&ViewProjectionMatrix>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>,
-    view: &mut pmfx::View<gfx_platform::Device>) {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
     
     // unpack
     let pmfx = &pmfx.res;
 
     let rt = pmfx.get_texture("main_colour").unwrap();
+
+    let arc_view = pmfx.get_view("main_view").unwrap();
+    let mut view = arc_view.lock().unwrap();
 
     // reset and transition
     view.cmd_buf.reset(&swap_chain.res);
@@ -315,7 +314,7 @@ fn render_world_view(
     });
 
     // setup pass
-    view.cmd_buf.begin_render_pass(&mut view.pass);
+    view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
     view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_mesh").unwrap());
@@ -379,14 +378,15 @@ fn main() -> Result<(), hotline_rs::Error> {
     //
 
     ctx.pmfx.load(asset_path.join("data/shaders/imdraw").to_str().unwrap())?;
-    
+
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
 
-    ctx.pmfx.create_texture(&mut ctx.device, "main_colour")?;
-    ctx.pmfx.create_texture(&mut ctx.device, "main_depth")?;
-    
+    ctx.pmfx.create_view(&mut ctx.device, "main_view")?;
+
+    let arc_view = ctx.pmfx.get_view("main_view").unwrap();    
+
     //
     // main loop
     //
@@ -425,62 +425,19 @@ fn main() -> Result<(), hotline_rs::Error> {
         .with_system(movement)
     );
 
-    // pass for render target with depth stencil
-    let render_target_pass = ctx.device
-        .create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![ctx.pmfx.get_texture("main_colour").unwrap()],
-            rt_clear: Some(gfx::ClearColour {
-                r: 1.0,
-                g: 0.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil: Some(ctx.pmfx.get_texture("main_depth").unwrap()),
-            ds_clear: Some(gfx::ClearDepthStencil {
-                depth: Some(1.0),
-                stencil: None,
-            }),
-            resolve: false,
-            discard: false,
-        })
-        .unwrap();
-
-    let view = pmfx::View::<gfx_platform::Device> {
-        pass: render_target_pass,
-        viewport: gfx::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: 1280.0,
-            height: 720.0,
-            min_depth: 0.0,
-            max_depth: 1.0
-        },
-        scissor_rect: gfx::ScissorRect {
-            left: 0,
-            top: 0,
-            right: 1280,
-            bottom: 720
-        },
-        cmd_buf: ctx.device.create_cmd_buf(2)
-    };
-
-    let arc_view = Arc::new(Mutex::new(view));
-
     // create a "constructor" closure, which can initialize
     // our data and move it into a closure that bevy can run as a system
-    let v2 = arc_view.clone();
     let view_constructor = || {
         move |
             swap_chain: ResMut<SwapChainRes>,
-            pmfx: ResMut<PmfxRes>,
+            pmfx: Res<PmfxRes>,
             qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 render_world_view(
                     swap_chain, 
                     pmfx,
                     qvp,
-                    qmesh,
-                    &mut v2.lock().unwrap()
+                    qmesh
                 );
         }
     };
@@ -560,8 +517,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         
         // execute cmdbuffers and swap
         ctx.cmd_buf.close(&ctx.swap_chain).unwrap();
-    
         ctx.device.execute(&arc_view.lock().unwrap().cmd_buf);
+
         ctx.device.execute(&ctx.cmd_buf);
 
         ctx.swap_chain.swap(&ctx.device);

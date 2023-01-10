@@ -2229,11 +2229,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.bb_index as u32
     }
 
-    fn begin_render_pass(&self, render_pass: &mut RenderPass) {
+    fn begin_render_pass(&self, render_pass: &RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.BeginRenderPass(
-                render_pass.rt.as_mut_slice(),
+                render_pass.rt.as_slice(),
                 if let Some(ds) = &render_pass.ds {
                     ds
                 } else {

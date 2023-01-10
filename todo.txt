@@ -7,6 +7,8 @@
 // - views from pmfx
 // - render passes
 
+// - remove swap chain dependencies
+
 // - depth Stencil state from pmfx
 // -- depth buffer
 // -- depth test
