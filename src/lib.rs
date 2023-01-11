@@ -152,6 +152,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             initial_buffer_size_3d: 1024
         };
         let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
+
+        let pmfx = pmfx::Pmfx::create(&mut device);
     
         Ok(Context {
             app,
@@ -159,7 +161,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             main_window: window,
             swap_chain,
             cmd_buf,
-            pmfx: pmfx::Pmfx::create(),
+            pmfx,
             imdraw
         })
     }

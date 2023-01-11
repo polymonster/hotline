@@ -2,19 +2,16 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
+// - remove swap chain dependencies
+// - blit main buffers to backbuffer
+// - depth stencil as texture
+// - depth stencil state from pmfx
+// -- depth test
 // - texures from file pmfx
 // - ratio tracking pmfx
-// - views from pmfx
-// - render passes
+// - clear from pmfx
 
-// - remove swap chain dependencies
-
-// - depth Stencil state from pmfx
-// -- depth buffer
-// -- depth test
 // - copy or clone buffers?
-
-// - blit main buffers to backbuffer
 
 // imgui into hotline context?
 // - minimise resource handling code? macros?
@@ -37,9 +34,12 @@
 // - MSAA
 // - Blend
 // - Raster
-// - Texture Formats
+// - Texture Formats (BC)
 
 // DONE:
+// x depth buffer pmfx
+// x views from pmfx
+// x render passes
 // x render targets from pmfx
 // x get docs passing
 // x automate cargo publish
@@ -51,9 +51,9 @@
 // x camera
 // x Automate docs update
 // x pmfx Descriptor Layout
-// - x bindings
-// - x push constants
-// - x samplers
+// x x bindings
+// x x push constants
+// x x samplers
 // x pmfx pipelines
 // x add dxc and support for sm_6_0
 // x Math lib

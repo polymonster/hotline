@@ -177,7 +177,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::Present,
         });
 
-        cmd.close(&swap_chain)?;
+        cmd.close()?;
 
         // execute command buffer
         device.execute(&cmd);

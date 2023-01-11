@@ -1267,7 +1267,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         state_after: gfx::ResourceState::Present,
     });
 
-    cmd.close(swap).unwrap();
+    cmd.close().unwrap();
 
     ud.device.execute(cmd);
 }
