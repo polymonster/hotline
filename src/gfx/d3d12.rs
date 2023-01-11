@@ -2210,8 +2210,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
-    fn close(&mut self, swap_chain: &SwapChain) -> result::Result<(), super::Error> {
-        let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
+    fn close(&mut self) -> result::Result<(), super::Error> {
+        let bb = self.bb_index;
         unsafe {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
         }

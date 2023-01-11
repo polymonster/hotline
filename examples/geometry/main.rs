@@ -291,7 +291,6 @@ fn render_imgui(
 
 
 fn render_world_view(
-    swap_chain: ResMut<SwapChainRes>,
     pmfx: Res<PmfxRes>,
     view_proj_query: Query<&ViewProjectionMatrix>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
@@ -305,7 +304,6 @@ fn render_world_view(
     let mut view = arc_view.lock().unwrap();
 
     // reset and transition
-    view.cmd_buf.reset(&swap_chain.res);
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
         texture: Some(rt),
         buffer: None,
@@ -340,7 +338,7 @@ fn render_world_view(
         state_after: gfx::ResourceState::ShaderResource,
     });
     
-    view.cmd_buf.close(&swap_chain.res).unwrap();
+    view.cmd_buf.close().unwrap();
 }
 
 fn main() -> Result<(), hotline_rs::Error> {    
@@ -429,12 +427,10 @@ fn main() -> Result<(), hotline_rs::Error> {
     // our data and move it into a closure that bevy can run as a system
     let view_constructor = || {
         move |
-            swap_chain: ResMut<SwapChainRes>,
             pmfx: Res<PmfxRes>,
             qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 render_world_view(
-                    swap_chain, 
                     pmfx,
                     qvp,
                     qmesh
@@ -465,14 +461,9 @@ fn main() -> Result<(), hotline_rs::Error> {
         // update window and swap chain for the new frame
         ctx.main_window.update(&mut ctx.app);
         ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
-        ctx.cmd_buf.reset(&ctx.swap_chain);
-        ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(ctx.swap_chain.get_backbuffer_texture()),
-            buffer: None,
-            state_before: gfx::ResourceState::Present,
-            state_after: gfx::ResourceState::RenderTarget,
-        });
-
+        
+        ctx.pmfx.new_frame(&ctx.swap_chain, &mut ctx.cmd_buf);
+        
         // hotline update
         imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
         if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
@@ -480,19 +471,17 @@ fn main() -> Result<(), hotline_rs::Error> {
         }
         imgui.end();
 
-        // clear the swap chain
-        ctx.cmd_buf.begin_render_pass(ctx.swap_chain.get_backbuffer_pass_mut());
-        ctx.cmd_buf.end_render_pass();
-       
         // move hotline resource into world
         world.insert_resource(AppRes {res: ctx.app});
         world.insert_resource(MainWindowRes {res: ctx.main_window});
         world.insert_resource(DeviceRes {res: ctx.device});
-        world.insert_resource(CmdBufRes {res: ctx.cmd_buf});
-        world.insert_resource(SwapChainRes {res: ctx.swap_chain});
         world.insert_resource(ImDrawRes {res: ctx.imdraw});
         world.insert_resource(PmfxRes {res: ctx.pmfx});
         world.insert_resource(ImGuiRes {res: imgui});
+
+        // to remove
+        world.insert_resource(CmdBufRes {res: ctx.cmd_buf}); //
+        world.insert_resource(SwapChainRes {res: ctx.swap_chain}); //
 
         // run systems
         schedule.run(&mut world);
@@ -507,21 +496,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         ctx.swap_chain = world.remove_resource::<SwapChainRes>().unwrap().res;
         imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
 
-        // transition to present
-        ctx.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(ctx.swap_chain.get_backbuffer_texture()),
-            buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
-            state_after: gfx::ResourceState::Present,
-        });
-        
-        // execute cmdbuffers and swap
-        ctx.cmd_buf.close(&ctx.swap_chain).unwrap();
-        ctx.device.execute(&arc_view.lock().unwrap().cmd_buf);
-
-        ctx.device.execute(&ctx.cmd_buf);
-
-        ctx.swap_chain.swap(&ctx.device);
+        // present to back buffer
+        ctx.pmfx.present(&mut ctx.device, &mut ctx.cmd_buf, &mut ctx.swap_chain);
     }
 
     ctx.swap_chain.wait_for_last_frame();

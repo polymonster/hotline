@@ -146,7 +146,7 @@ fn swap_chain_buffer() -> Result<(), hotline_rs::Error> {
         cmd.begin_render_pass(&mut pass);
         cmd.end_render_pass();
 
-        cmd.close(&swap_chain)?;
+        cmd.close()?;
 
         dev.execute(&cmd);
         swap_chain.swap(&dev);
@@ -331,7 +331,7 @@ fn draw_triangle() -> Result<(), hotline_rs::Error> {
         cmd.set_vertex_buffer(&vertex_buffer, 0);
         cmd.draw_instanced(3, 1, 0, 0);
         cmd.end_render_pass();
-        cmd.close(&swap_chain)?;
+        cmd.close()?;
 
         // execute command buffer
         device.execute(&cmd);

@@ -766,7 +766,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn reset(&mut self, swap_chain: &D::SwapChain);
-    fn close(&mut self, swap_chain: &D::SwapChain) -> Result<(), Error>;
+    fn close(&mut self) -> Result<(), Error>;
     fn get_backbuffer_index(&self) -> u32;
     fn begin_render_pass(&self, render_pass: &D::RenderPass);
     fn end_render_pass(&self);

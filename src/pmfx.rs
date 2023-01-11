@@ -1,17 +1,22 @@
 
+use crate::gfx;
+use crate::primitives;
+
+use gfx::CmdBuf;
+use gfx::SwapChain;
+
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-// use std::hash::Hash;
 use std::path::Path;
 
-use crate::gfx;
-use std::fs;
+// TODO: should use hashes?
+// use std::hash::Hash;
 
+use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-type PipelinePermutations = HashMap<String, Pipeline>;
-
+/// Everything you need to render a world view
 pub struct View<D: gfx::Device> {
     pub pass: D::RenderPass,
     pub viewport: gfx::Viewport,
@@ -20,6 +25,7 @@ pub struct View<D: gfx::Device> {
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
+/// Compact mesh representation
 #[derive(Clone)]
 pub struct Mesh<D: gfx::Device> {
     pub vb: D::Buffer,
@@ -27,6 +33,7 @@ pub struct Mesh<D: gfx::Device> {
     pub num_indices: u32
 }
 
+/// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     pmfx: File,
     pmfx_folders: HashMap<String, String>,
@@ -36,6 +43,7 @@ pub struct Pmfx<D: gfx::Device> {
     textures: HashMap<String, D::Texture>,
     tracked_textures: Vec<String>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
+    // unit_quad_mesh: Mesh<D>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -98,6 +106,7 @@ struct Pipeline {
     raster_state: Option<String>,
     topology: Option<gfx::Topology>
 }
+type PipelinePermutations = HashMap<String, Pipeline>;
 
 #[derive(Serialize, Deserialize, Clone)]
 struct ViewInfo {
@@ -209,7 +218,8 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo) -> gfx::TextureInfo {
 }
 
 impl<D> Pmfx<D> where D: gfx::Device {
-    pub fn create() -> Self {
+    /// Create a new empty pmfx instance
+    pub fn create(_device: &mut D) -> Self {
         Pmfx {
             pmfx: File::new(),
             pmfx_folders: HashMap::new(),
@@ -219,6 +229,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             textures: HashMap::new(),
             tracked_textures: Vec::new(),
             views: HashMap::new(),
+            // unit_quad_mesh: primitives::create_unit_quad_mesh(device)
         }
     }
 
@@ -477,6 +488,59 @@ impl<D> Pmfx<D> where D: gfx::Device {
         else {
             None
         }
+    }
+
+    /// Start a new frame and syncronise command buffers to the designated swap chain
+    pub fn new_frame(
+        &mut self, swap_chain: &D::SwapChain,
+        cmd_buf: &mut D::CmdBuf) {
+
+        // reset view command buffers
+        for (_, view) in &self.views {
+            let view = view.clone();
+            view.lock().unwrap().cmd_buf.reset(swap_chain);
+        }
+
+        // reset main command buffer + transition 
+        cmd_buf.reset(&swap_chain);
+        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture()),
+            buffer: None,
+            state_before: gfx::ResourceState::Present,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+    }
+
+    pub fn present(
+        &mut self,
+        device: &mut D, 
+        cmd_buf: &mut D::CmdBuf, 
+        swap_chain: &mut D::SwapChain) {
+
+        // clear the swap chain
+        cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
+        cmd_buf.end_render_pass();
+
+        // transition to present
+        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(swap_chain.get_backbuffer_texture()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::Present,
+        });
+        
+        // execute cmdbuffers and swap
+        cmd_buf.close().unwrap();
+
+        // execute views. this can become more strictly ordered later
+        for (_, view) in &self.views {
+            let view = view.clone();
+            device.execute(&view.lock().unwrap().cmd_buf);
+        }
+
+        // execute the main window command buffer + swap
+        device.execute(&cmd_buf);
+        swap_chain.swap(&device);
     }
 }
 
