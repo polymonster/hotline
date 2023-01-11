@@ -43,10 +43,18 @@ pmfx: {
             render_target: [
                 "main_colour"
             ]
+            clear_colour: [0.0, 1.0, 1.0, 1.0]
             depth_stencil: [
                 "main_depth"
             ]
+            clear_depth: 1.0
             viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+        }
+        main_view_no_clear(main_view): {
+            clear_colour: null
+            clear_depth: null
+            test_array: [null, null]
+            test_str: "null"
         }
     }
 }

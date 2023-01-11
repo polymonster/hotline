@@ -3,13 +3,14 @@
 // - streamline install / deployment (pmbuild, pmfx etc)
 
 // - remove swap chain dependencies
+// - reduce cmd buf dependency
+
 // - blit main buffers to backbuffer
 // - depth stencil as texture
 // - depth stencil state from pmfx
 // -- depth test
 // - texures from file pmfx
 // - ratio tracking pmfx
-// - clear from pmfx
 
 // - copy or clone buffers?
 
@@ -37,6 +38,7 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x clear from pmfx
 // x depth buffer pmfx
 // x views from pmfx
 // x render passes

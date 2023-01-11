@@ -2068,6 +2068,7 @@ impl super::SwapChain<Device> for SwapChain {
         if (size.x != self.width || size.y != self.height) && size.x > 0 && size.y > 0 {
             unsafe {
                 self.wait_for_frame(self.bb_index);
+                
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
 
                 // clean up rtv handles
