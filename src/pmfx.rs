@@ -1,5 +1,6 @@
 
 use crate::gfx;
+use crate::os;
 use crate::primitives;
 
 use gfx::CmdBuf;
@@ -44,6 +45,7 @@ pub struct Pmfx<D: gfx::Device> {
     tracked_textures: Vec<String>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
     // unit_quad_mesh: Mesh<D>
+    cmd_buf: D::CmdBuf
 }
 
 #[derive(Serialize, Deserialize)]
@@ -113,6 +115,10 @@ struct ViewInfo {
     render_target: Vec<String>,
     depth_stencil: Vec<String>,
     viewport: Vec<f32>,
+    scissor: Vec<f32>,
+    clear_colour: Option<Vec<f32>>,
+    clear_depth: Option<f32>,
+    clear_stencil: Option<u8>
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -217,9 +223,64 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo) -> gfx::TextureInfo {
     }
 }
 
+fn to_gfx_clear_colour(clear_colour: Option<Vec<f32>>) -> Option<gfx::ClearColour> {
+    if let Some(col) = clear_colour {
+        match col.len() {
+            len if len >= 4 => {
+                Some( gfx::ClearColour {
+                    r: col[0],
+                    g: col[1],
+                    b: col[2],
+                    a: col[3],
+                })
+            }
+            3 => {
+                Some( gfx::ClearColour {
+                    r: col[0],
+                    g: col[1],
+                    b: col[2],
+                    a: 1.0
+                })
+            }
+            2 => {
+                Some( gfx::ClearColour {
+                    r: col[0],
+                    g: col[1],
+                    b: 0.0,
+                    a: 1.0
+                })
+            }
+            1 => {
+                Some( gfx::ClearColour {
+                    r: col[0],
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0
+                })
+            }
+            _ => None
+        }
+    }
+    else {
+        None
+    }
+}
+
+fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8>) -> Option<gfx::ClearDepthStencil> {
+    if clear_depth.is_some() || clear_stencil.is_some() {
+        Some( gfx::ClearDepthStencil {
+            depth: clear_depth,
+            stencil: clear_stencil
+        })
+    }
+    else {
+        None
+    }
+}
+
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
-    pub fn create(_device: &mut D) -> Self {
+    pub fn create(device: &mut D, num_buffers: u32) -> Self {
         Pmfx {
             pmfx: File::new(),
             pmfx_folders: HashMap::new(),
@@ -229,7 +290,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             textures: HashMap::new(),
             tracked_textures: Vec::new(),
             views: HashMap::new(),
-            // unit_quad_mesh: primitives::create_unit_quad_mesh(device)
+            cmd_buf: device.create_cmd_buf(num_buffers)
         }
     }
 
@@ -360,17 +421,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let render_target_pass = device
             .create_render_pass(&gfx::RenderPassInfo {
                 render_targets: render_targets,
-                rt_clear: Some(gfx::ClearColour {
-                    r: 1.0,
-                    g: 0.0,
-                    b: 1.0,
-                    a: 1.0,
-                }),
+                rt_clear: to_gfx_clear_colour(pmfx_view.clear_colour),
                 depth_stencil: depth_stencil,
-                ds_clear: Some(gfx::ClearDepthStencil {
-                    depth: Some(1.0),
-                    stencil: None,
-                }),
+                ds_clear: to_gfx_clear_depth_stencil(pmfx_view.clear_depth, pmfx_view.clear_stencil),
                 resolve: false,
                 discard: false,
             })
@@ -491,10 +544,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
-    pub fn new_frame(
-        &mut self, swap_chain: &D::SwapChain,
-        cmd_buf: &mut D::CmdBuf) {
-
+    pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
         // reset view command buffers
         for (_, view) in &self.views {
             let view = view.clone();
@@ -502,8 +552,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
 
         // reset main command buffer + transition 
-        cmd_buf.reset(&swap_chain);
-        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        self.cmd_buf.reset(&swap_chain);
+        self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
@@ -514,8 +564,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn present(
         &mut self,
         device: &mut D, 
-        cmd_buf: &mut D::CmdBuf, 
         swap_chain: &mut D::SwapChain) {
+
+        let cmd_buf = &mut self.cmd_buf;
 
         // clear the swap chain
         cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
@@ -541,6 +592,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // execute the main window command buffer + swap
         device.execute(&cmd_buf);
         swap_chain.swap(&device);
+    }
+
+    pub fn get_cmd_buf<'stack>(&'stack mut self) -> &'stack mut D::CmdBuf {
+        & mut self.cmd_buf
     }
 }
 

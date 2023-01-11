@@ -145,7 +145,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         };
     
         let swap_chain = device.create_swap_chain::<A>(&swap_chain_info, &window)?;
-        let cmd_buf = device.create_cmd_buf(info.num_buffers );
+        let cmd_buf = device.create_cmd_buf(info.num_buffers);
     
         let imdraw_info = imdraw::ImDrawInfo {
             initial_buffer_size_2d: 1024,
@@ -153,7 +153,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         };
         let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
-        let pmfx = pmfx::Pmfx::create(&mut device);
+        let pmfx = pmfx::Pmfx::create(&mut device, info.num_buffers);
     
         Ok(Context {
             app,

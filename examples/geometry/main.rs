@@ -186,26 +186,28 @@ fn _render_2d(
 }
 
 fn render_grid(
-    main_window: ResMut<MainWindowRes>,
-    mut swap_chain: ResMut<SwapChainRes>, 
     mut device: ResMut<DeviceRes>,
-    mut cmd_buf: ResMut<CmdBufRes>,
     mut imdraw: ResMut<ImDrawRes>,
-    pmfx: ResMut<PmfxRes>,
+    pmfx: Res<PmfxRes>,
     mut query: Query<&ViewProjectionMatrix> ) {
+
+    let arc_view = pmfx.res.get_view("main_view").unwrap();
+    let mut view = arc_view.lock().unwrap();
+    let bb = view.cmd_buf.get_backbuffer_index();
+
+    // reset and transition
+    let rt = pmfx.res.get_texture("main_colour").unwrap();
+    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        texture: Some(rt),
+        buffer: None,
+        state_before: gfx::ResourceState::ShaderResource,
+        state_after: gfx::ResourceState::RenderTarget,
+    });
 
     for view_proj in &mut query {
         // render grid
-        let cmd_buf = &mut cmd_buf.res;
-        let swap_chain = &mut swap_chain.res;
-        let main_window = &main_window.res;
         let imdraw = &mut imdraw.res;
         let pmfx = &pmfx.res;
-
-        let draw_bb = swap_chain.get_backbuffer_index() as usize;
-        let window_rect = main_window.get_viewport_rect();
-        let viewport = gfx::Viewport::from(window_rect);
-        let scissor = gfx::ScissorRect::from(window_rect);
 
         let scale = 1000.0;
         let divisions = 10.0;
@@ -223,58 +225,21 @@ fn render_grid(
         imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(-1000.0, 0.0, 0.0), Vec4f::cyan());
         imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, -1000.0, 0.0), Vec4f::magenta());
 
-        imdraw.submit(&mut device.res, draw_bb).unwrap();
+        imdraw.submit(&mut device.res, bb as usize).unwrap();
 
-        cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_no_clear_mut());
-        cmd_buf.set_viewport(&viewport);
-        cmd_buf.set_scissor_rect(&scissor);
+        view.cmd_buf.begin_render_pass(&view.pass);
+        view.cmd_buf.set_viewport(&view.viewport);
+        view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-        cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_3d").unwrap());
-        cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_3d").unwrap());
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
 
-        imdraw.draw_3d(cmd_buf, draw_bb);
+        imdraw.draw_3d(&mut view.cmd_buf, bb as usize);
 
-        cmd_buf.end_render_pass();
-    }
-}
-
-fn render_cubes(
-    mut swap_chain: ResMut<SwapChainRes>, 
-    mut cmd_buf: ResMut<CmdBufRes>,
-    main_window: ResMut<MainWindowRes>,
-    pmfx: ResMut<PmfxRes>,
-    view_proj_query: Query<&ViewProjectionMatrix>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)> ) {
-
-    // unpack
-    let cmd_buf = &mut cmd_buf.res;
-    let swap_chain = &mut swap_chain.res;
-    let main_window = &main_window.res;
-    let pmfx = &pmfx.res;
-
-    let window_rect = main_window.get_viewport_rect();
-    let viewport = gfx::Viewport::from(window_rect);
-    let scissor = gfx::ScissorRect::from(window_rect);
-
-    // setup pass
-    cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_no_clear_mut());
-    cmd_buf.set_viewport(&viewport);
-    cmd_buf.set_scissor_rect(&scissor);
-    cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_mesh").unwrap());
-
-    for view_proj in &view_proj_query {
-        cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-        for (world_matrix, mesh) in &mesh_draw_query {
-            // draw
-            cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-            cmd_buf.set_index_buffer(&mesh.0.ib);
-            cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-            cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-        }
+        view.cmd_buf.end_render_pass();
     }
 
-    // end
-    cmd_buf.end_render_pass();
+    view.cmd_buf.close().unwrap();
 }
 
 fn render_imgui(
@@ -300,16 +265,18 @@ fn render_world_view(
 
     let rt = pmfx.get_texture("main_colour").unwrap();
 
-    let arc_view = pmfx.get_view("main_view").unwrap();
+    let arc_view = pmfx.get_view("main_view_no_clear").unwrap();
     let mut view = arc_view.lock().unwrap();
 
     // reset and transition
+    /*
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
         texture: Some(rt),
         buffer: None,
         state_before: gfx::ResourceState::ShaderResource,
         state_after: gfx::ResourceState::RenderTarget,
     });
+    */
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
@@ -382,6 +349,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
 
     ctx.pmfx.create_view(&mut ctx.device, "main_view")?;
+    ctx.pmfx.create_view(&mut ctx.device, "main_view_no_clear")?;
 
     let arc_view = ctx.pmfx.get_view("main_view").unwrap();    
 
@@ -437,17 +405,31 @@ fn main() -> Result<(), hotline_rs::Error> {
                 );
         }
     };
+
+    let grid_constructor = || {
+        move |
+            device: ResMut<DeviceRes>,
+            imdraw: ResMut<ImDrawRes>,
+            pmfx: Res<PmfxRes>,
+            qvp: Query<&ViewProjectionMatrix>| {
+                render_grid(
+                    device,
+                    imdraw,
+                    pmfx,
+                    qvp,
+                );
+        }
+    };
     
     // end temp
 
     schedule.add_stage(StageRender, SystemStage::single_threaded()
         .with_system_set(
             SystemSet::new().label("render_debug_3d")
-            .with_system(render_grid)
+            .with_system(grid_constructor())
         )
         .with_system_set(
             SystemSet::new().label("render_main")
-            .with_system(render_cubes).after("render_debug_3d")
             .with_system(view_constructor()).after("render_debug_3d")
         )
         .with_system_set(
@@ -460,9 +442,9 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // update window and swap chain for the new frame
         ctx.main_window.update(&mut ctx.app);
-        ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, &mut ctx.cmd_buf);
-        
-        ctx.pmfx.new_frame(&ctx.swap_chain, &mut ctx.cmd_buf);
+
+        ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, ctx.pmfx.get_cmd_buf());
+        ctx.pmfx.new_frame(&ctx.swap_chain);
         
         // hotline update
         imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
@@ -497,7 +479,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
 
         // present to back buffer
-        ctx.pmfx.present(&mut ctx.device, &mut ctx.cmd_buf, &mut ctx.swap_chain);
+
+        ctx.pmfx.present(&mut ctx.device, &mut ctx.swap_chain);
     }
 
     ctx.swap_chain.wait_for_last_frame();
