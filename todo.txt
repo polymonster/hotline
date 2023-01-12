@@ -2,19 +2,14 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - remove swap chain dependencies
-// - reduce cmd buf dependency
-
 // - blit main buffers to backbuffer
+// - view sets
 // - depth stencil as texture
 // - depth stencil state from pmfx
 // -- depth test
 // - texures from file pmfx
 // - ratio tracking pmfx
-
 // - copy or clone buffers?
-
-// imgui into hotline context?
 // - minimise resource handling code? macros?
 
 // - move 'add' code into startup system - not possible? other ways of creating startup systems?
@@ -22,7 +17,6 @@
 // - update aabb's
 // - culling
 
-// - path utilities
 // - wait frames before properly dropping gpu resources
 // - window utilities
 // - - rember window and console positions
@@ -38,6 +32,10 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x path utilities
+// x imgui into hotline context
+// x remove swap chain dependencies
+// x reduce cmd buf dependency
 // x clear from pmfx
 // x depth buffer pmfx
 // x views from pmfx

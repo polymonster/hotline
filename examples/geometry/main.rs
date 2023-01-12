@@ -1,7 +1,6 @@
 use hotline_rs::*;
 
 use gfx::CmdBuf;
-use gfx::Device;
 use gfx::SwapChain;
 
 use os::App;
@@ -13,7 +12,6 @@ use gfx::d3d12 as gfx_platform;
 
 use primitives;
 
-use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
 use maths_rs::num::*;
@@ -69,13 +67,11 @@ struct HotlineResource<T> {
 
 type ImDrawRes = HotlineResource::<imdraw::ImDraw<gfx_platform::Device>>;
 type PmfxRes = HotlineResource::<pmfx::Pmfx<gfx_platform::Device>>;
-type SwapChainRes = HotlineResource::<gfx_platform::SwapChain>;
 type DeviceRes = HotlineResource::<gfx_platform::Device>;
 type AppRes = HotlineResource::<os_platform::App>;
 type MainWindowRes = HotlineResource::<os_platform::Window>;
 type ImGuiRes = HotlineResource::<imgui::ImGui::<gfx_platform::Device, os_platform::App>>;
 
-type CmdBufRes = HotlineResource::<gfx_platform::CmdBuf>;
 
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
     for (mut position, velocity) in &mut query {
@@ -149,42 +145,6 @@ fn update_cameras(
     }
 }
 
-fn _render_2d(
-    main_window: ResMut<MainWindowRes>,
-    mut swap_chain: ResMut<SwapChainRes>, 
-    mut device: ResMut<DeviceRes>,
-    mut cmd_buf: ResMut<CmdBufRes>,
-    mut imdraw: ResMut<ImDrawRes>,
-    pmfx: ResMut<PmfxRes>) {
-    // render grid
-    let cmd_buf = &mut cmd_buf.res;
-    let swap_chain = &mut swap_chain.res;
-    let main_window = &main_window.res;
-    let imdraw = &mut imdraw.res;
-    let pmfx = &pmfx.res;
-
-    let draw_bb = swap_chain.get_backbuffer_index() as usize;
-    let window_rect = main_window.get_viewport_rect();
-    let viewport = gfx::Viewport::from(window_rect);
-    let scissor = gfx::ScissorRect::from(window_rect);
-
-    cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_no_clear_mut());
-    cmd_buf.set_viewport(&viewport);
-    cmd_buf.set_scissor_rect(&scissor);
-
-    let ortho = Mat4f::create_ortho_matrix(0.0, window_rect.width as f32, window_rect.height as f32, 0.0, 0.0, 1.0);
-    imdraw.add_line_2d(Vec2f::new(600.0, 100.0), Vec2f::new(600.0, 500.0), Vec4f::new(1.0, 0.0, 1.0, 1.0));
-    imdraw.add_tri_2d(Vec2f::new(100.0, 100.0), Vec2f::new(100.0, 400.0), Vec2f::new(400.0, 400.0), Vec4f::new(0.0, 1.0, 1.0, 1.0));
-    imdraw.add_rect_2d(Vec2f::new(800.0, 100.0), Vec2f::new(200.0, 400.0), Vec4f::new(1.0, 0.5, 0.0, 1.0));
-
-    cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline("imdraw_2d").unwrap());
-    cmd_buf.push_constants(0, 16, 0, &ortho);
-    imdraw.submit(&mut device.res, draw_bb).unwrap();
-    imdraw.draw_2d(cmd_buf, draw_bb);
-
-    cmd_buf.end_render_pass();
-}
-
 fn render_grid(
     mut device: ResMut<DeviceRes>,
     mut imdraw: ResMut<ImDrawRes>,
@@ -239,21 +199,14 @@ fn render_grid(
         view.cmd_buf.end_render_pass();
     }
 
-    view.cmd_buf.close().unwrap();
+    let rt = pmfx.res.get_texture("main_colour").unwrap();
+    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        texture: Some(rt),
+        buffer: None,
+        state_before: gfx::ResourceState::RenderTarget,
+        state_after: gfx::ResourceState::ShaderResource,
+    });
 }
-
-fn render_imgui(
-    mut app: ResMut<AppRes>,
-    mut swap_chain: ResMut<SwapChainRes>,
-    mut main_window: ResMut<MainWindowRes>,
-    mut device: ResMut<DeviceRes>,
-    mut cmd_buf: ResMut<CmdBufRes>,
-    mut imgui: ResMut<ImGuiRes>) {
-        cmd_buf.res.begin_render_pass(swap_chain.res.get_backbuffer_pass_no_clear_mut());
-        imgui.res.render(&mut app.res, &mut main_window.res, &mut device.res, &mut cmd_buf.res);
-        cmd_buf.res.end_render_pass();
-}
-
 
 fn render_world_view(
     pmfx: Res<PmfxRes>,
@@ -263,20 +216,16 @@ fn render_world_view(
     // unpack
     let pmfx = &pmfx.res;
 
-    let rt = pmfx.get_texture("main_colour").unwrap();
-
     let arc_view = pmfx.get_view("main_view_no_clear").unwrap();
     let mut view = arc_view.lock().unwrap();
 
-    // reset and transition
-    /*
+    let rt = pmfx.get_texture("main_colour").unwrap();
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
         texture: Some(rt),
         buffer: None,
         state_before: gfx::ResourceState::ShaderResource,
         state_after: gfx::ResourceState::RenderTarget,
     });
-    */
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
@@ -298,14 +247,13 @@ fn render_world_view(
     // end / transition / execute
     view.cmd_buf.end_render_pass();
 
+    let rt = pmfx.get_texture("main_colour").unwrap();
     view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
         texture: Some(rt),
         buffer: None,
         state_before: gfx::ResourceState::RenderTarget,
         state_after: gfx::ResourceState::ShaderResource,
     });
-    
-    view.cmd_buf.close().unwrap();
 }
 
 fn main() -> Result<(), hotline_rs::Error> {    
@@ -318,40 +266,19 @@ fn main() -> Result<(), hotline_rs::Error> {
         ..Default::default()
     })?;
 
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
-
-    let font_path = asset_path
-        .join("..\\..\\..\\examples\\imgui_demo\\Roboto-Medium.ttf")
-        .to_str()
-        .unwrap()
-        .to_string();
-
-    let mut imgui_info = imgui::ImGuiInfo::<gfx_platform::Device, os_platform::App> {
-        device: &mut ctx.device,
-        swap_chain: &mut ctx.swap_chain,
-        main_window: &ctx.main_window,
-        fonts: vec![imgui::FontInfo {
-            filepath: font_path,
-            glyph_ranges: None
-        }],
-    };
-    let mut imgui = imgui::ImGui::create(&mut imgui_info)?;
-
     //
     // create pmfx
     //
 
-    ctx.pmfx.load(asset_path.join("data/shaders/imdraw").to_str().unwrap())?;
+    ctx.pmfx.load(&hotline_rs::get_asset_path("data/shaders/imdraw").as_str())?;
 
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_pipeline(&ctx.device, "imdraw_blit", ctx.swap_chain.get_backbuffer_pass())?;
 
     ctx.pmfx.create_view(&mut ctx.device, "main_view")?;
     ctx.pmfx.create_view(&mut ctx.device, "main_view_no_clear")?;
-
-    let arc_view = ctx.pmfx.get_view("main_view").unwrap();    
 
     //
     // main loop
@@ -381,8 +308,6 @@ fn main() -> Result<(), hotline_rs::Error> {
         ViewProjectionMatrix { 0: Mat4f::identity()},
         Camera,
     ));
-
-    let mut imgui_open = true;
 
     let mut schedule = Schedule::default();
 
@@ -432,26 +357,11 @@ fn main() -> Result<(), hotline_rs::Error> {
             SystemSet::new().label("render_main")
             .with_system(view_constructor()).after("render_debug_3d")
         )
-        .with_system_set(
-            SystemSet::new().label("render_imgui")
-            .with_system(render_imgui).after("render_main")
-        )
     );
 
     while ctx.app.run() {
 
-        // update window and swap chain for the new frame
-        ctx.main_window.update(&mut ctx.app);
-
-        ctx.swap_chain.update::<os_platform::App>(&mut ctx.device, &ctx.main_window, ctx.pmfx.get_cmd_buf());
-        ctx.pmfx.new_frame(&ctx.swap_chain);
-        
-        // hotline update
-        imgui.new_frame(&mut ctx.app, &mut ctx.main_window, &mut ctx.device);
-        if imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
-            imgui.image(ctx.pmfx.get_texture("main_colour").unwrap(), 1280.0, 720.0)
-        }
-        imgui.end();
+        ctx.new_frame();
 
         // move hotline resource into world
         world.insert_resource(AppRes {res: ctx.app});
@@ -459,11 +369,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         world.insert_resource(DeviceRes {res: ctx.device});
         world.insert_resource(ImDrawRes {res: ctx.imdraw});
         world.insert_resource(PmfxRes {res: ctx.pmfx});
-        world.insert_resource(ImGuiRes {res: imgui});
-
-        // to remove
-        world.insert_resource(CmdBufRes {res: ctx.cmd_buf}); //
-        world.insert_resource(SwapChainRes {res: ctx.swap_chain}); //
+        world.insert_resource(ImGuiRes {res: ctx.imgui});
 
         // run systems
         schedule.run(&mut world);
@@ -472,22 +378,15 @@ fn main() -> Result<(), hotline_rs::Error> {
         ctx.app = world.remove_resource::<AppRes>().unwrap().res;
         ctx.main_window = world.remove_resource::<MainWindowRes>().unwrap().res;
         ctx.device = world.remove_resource::<DeviceRes>().unwrap().res;
-        ctx.cmd_buf = world.remove_resource::<CmdBufRes>().unwrap().res;
         ctx.imdraw = world.remove_resource::<ImDrawRes>().unwrap().res;
         ctx.pmfx = world.remove_resource::<PmfxRes>().unwrap().res;
-        ctx.swap_chain = world.remove_resource::<SwapChainRes>().unwrap().res;
-        imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
+        ctx.imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
 
         // present to back buffer
-
-        ctx.pmfx.present(&mut ctx.device, &mut ctx.swap_chain);
+        ctx.present();
     }
 
-    ctx.swap_chain.wait_for_last_frame();
-
-    // we must reset the command buffers to drop references to live objects
-    ctx.cmd_buf.reset(&ctx.swap_chain);
-    arc_view.lock().unwrap().cmd_buf.reset(&ctx.swap_chain);
+    ctx.wait_for_last_frame();
 
     // exited with code 0
     Ok(())

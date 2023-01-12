@@ -758,7 +758,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;
 }
-
+    
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
 /// command list for each buffer in the associated swap chain.
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
