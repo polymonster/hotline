@@ -2,13 +2,13 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - blit main buffers to backbuffer
+
 // - view sets
+// - ratio tracking pmfx
+
 // - depth stencil as texture
 // - depth stencil state from pmfx
-// -- depth test
 // - texures from file pmfx
-// - ratio tracking pmfx
 // - copy or clone buffers?
 // - minimise resource handling code? macros?
 
@@ -32,6 +32,7 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x blit main buffers to backbuffer
 // x path utilities
 // x imgui into hotline context
 // x remove swap chain dependencies
