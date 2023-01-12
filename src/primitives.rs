@@ -24,19 +24,19 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     let vertices: Vec<Vertex2D> = vec![
         Vertex2D {
             position: vec2f(-1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 1.0),
         },
         Vertex2D {
             position: vec2f(1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
-        },
-        Vertex2D {
-            position: vec2f(1.0, 1.0),
             texcoord: vec2f(1.0, 1.0),
         },
         Vertex2D {
+            position: vec2f(1.0, 1.0),
+            texcoord: vec2f(1.0, 0.0),
+        },
+        Vertex2D {
             position: vec2f(-1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
         }
     ];
 
@@ -50,7 +50,7 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
                 cpu_access: gfx::CpuAccessFlags::NONE,
                 num_elements: 4,
                 format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<Vertex3D>() 
+                stride: std::mem::size_of::<Vertex2D>() 
             }, 
             Some(vertices.as_slice())
         ).unwrap(),

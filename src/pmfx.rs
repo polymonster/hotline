@@ -1,10 +1,8 @@
 
 use crate::gfx;
-use crate::os;
 use crate::primitives;
 
 use gfx::CmdBuf;
-use gfx::SwapChain;
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -45,7 +43,6 @@ pub struct Pmfx<D: gfx::Device> {
     tracked_textures: Vec<String>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
     // unit_quad_mesh: Mesh<D>
-    cmd_buf: D::CmdBuf
 }
 
 #[derive(Serialize, Deserialize)]
@@ -280,7 +277,7 @@ fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8
 
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
-    pub fn create(device: &mut D, num_buffers: u32) -> Self {
+    pub fn create() -> Self {        
         Pmfx {
             pmfx: File::new(),
             pmfx_folders: HashMap::new(),
@@ -289,8 +286,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             shaders: HashMap::new(),
             textures: HashMap::new(),
             tracked_textures: Vec::new(),
-            views: HashMap::new(),
-            cmd_buf: device.create_cmd_buf(num_buffers)
+            views: HashMap::new()
         }
     }
 
@@ -545,57 +541,28 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
-        // reset view command buffers
+        self.reset(swap_chain)
+    }
+
+    /// Reset all command buffers
+    pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for (_, view) in &self.views {
             let view = view.clone();
             view.lock().unwrap().cmd_buf.reset(swap_chain);
         }
-
-        // reset main command buffer + transition 
-        self.cmd_buf.reset(&swap_chain);
-        self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture()),
-            buffer: None,
-            state_before: gfx::ResourceState::Present,
-            state_after: gfx::ResourceState::RenderTarget,
-        });
     }
 
-    pub fn present(
+    /// Execute command buffers in order
+    pub fn execute(
         &mut self,
-        device: &mut D, 
-        swap_chain: &mut D::SwapChain) {
-
-        let cmd_buf = &mut self.cmd_buf;
-
-        // clear the swap chain
-        cmd_buf.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
-        cmd_buf.end_render_pass();
-
-        // transition to present
-        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(swap_chain.get_backbuffer_texture()),
-            buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
-            state_after: gfx::ResourceState::Present,
-        });
-        
-        // execute cmdbuffers and swap
-        cmd_buf.close().unwrap();
-
+        device: &mut D) {
         // execute views. this can become more strictly ordered later
         for (_, view) in &self.views {
             let view = view.clone();
-            device.execute(&view.lock().unwrap().cmd_buf);
+            let view = &mut view.lock().unwrap();
+            view.cmd_buf.close().unwrap();
+            device.execute(&view.cmd_buf);
         }
-
-        // execute the main window command buffer + swap
-        device.execute(&cmd_buf);
-        swap_chain.swap(&device);
-    }
-
-    pub fn get_cmd_buf<'stack>(&'stack mut self) -> &'stack mut D::CmdBuf {
-        & mut self.cmd_buf
     }
 }
 

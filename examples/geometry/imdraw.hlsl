@@ -13,6 +13,16 @@ struct vs_output {
     float4 colour: TEXCOORD;
 };
 
+struct vs_input_2d_texcoord {
+    float2 position : POSITION;
+    float2 texcoord: TEXCOORD;
+};
+
+struct vs_output_texcoord {
+    float4 position: SV_POSITION0;
+    float2 texcoord: TEXCOORD;
+};
+
 struct ps_output {
     float4 colour : SV_Target;
 };
@@ -73,5 +83,21 @@ vs_output vs_mesh(vs_input_mesh input)
     output.position = mul(pos, projection_matrix);
     output.colour = float4(input.normal.xyz, 1.0);
     
+    return output;
+}
+
+
+Texture2D<float4> blit_texture : register(t0);
+
+vs_output_texcoord vs_blit(vs_input_2d_texcoord input) {
+    vs_output_texcoord output;
+    output.position = float4(input.position.xy, 0.0, 1.0);
+    output.texcoord = input.texcoord;
+    return output;
+}
+
+ps_output ps_blit(vs_output_texcoord input) {
+    ps_output output;
+    output.colour = blit_texture.Load(int3(input.texcoord.x * 1280.0, input.texcoord.y * 720.0, 0));
     return output;
 }

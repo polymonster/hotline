@@ -1,8 +1,12 @@
 /// Operating system module.
 pub mod os;
+use os::Window;
 
 /// Graphics and compute module.
 pub mod gfx;
+use gfx::SwapChain;
+use gfx::CmdBuf;
+use gfx::Texture;
 
 /// Hardware accelerated audio and video decoding
 pub mod av;
@@ -112,11 +116,15 @@ pub struct Context<D: gfx::Device, A: os::App> {
     pub swap_chain: D::SwapChain,
     pub pmfx: pmfx::Pmfx<D>,
     pub cmd_buf: D::CmdBuf,
-    pub imdraw: imdraw::ImDraw<D>
+    pub imdraw: imdraw::ImDraw<D>,
+    pub imgui: imgui::ImGui<D, A>,
+    pub unit_quad_mesh: pmfx::Mesh<D>
 }
 
 impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
+    /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, Error> {
+        // app
         let mut app = A::create(os::AppInfo {
             name: info.name.to_string(),
             num_buffers: info.num_buffers,
@@ -124,6 +132,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             window: false,
         });
     
+        // device
         let mut device = D::create(&gfx::DeviceInfo {
             adapter_name: info.adapter_name,
             shader_heap_size: info.shader_heap_size,
@@ -131,46 +140,149 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             depth_stencil_heap_size: info.depth_stencil_heap_size,
         });
     
-        let window = app.create_window(os::WindowInfo {
+        // main window
+        let main_window = app.create_window(os::WindowInfo {
             title: info.name.to_string(),
             rect: info.window_rect,
             style: os::WindowStyleFlags::NONE,
             parent_handle: None,
         });
     
+        // swap chain
         let swap_chain_info = gfx::SwapChainInfo {
             num_buffers: info.num_buffers,
             format: gfx::Format::RGBA8n,
             clear_colour: info.clear_colour
         };
-    
-        let swap_chain = device.create_swap_chain::<A>(&swap_chain_info, &window)?;
-        let cmd_buf = device.create_cmd_buf(info.num_buffers);
-    
+        let mut swap_chain = device.create_swap_chain::<A>(&swap_chain_info, &main_window)?;
+
+        // imdraw
         let imdraw_info = imdraw::ImDrawInfo {
             initial_buffer_size_2d: 1024,
             initial_buffer_size_3d: 1024
         };
         let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
-        let pmfx = pmfx::Pmfx::create(&mut device, info.num_buffers);
+        // imgui    
+        let mut imgui_info = imgui::ImGuiInfo::<D, A> {
+            device: &mut device,
+            swap_chain: &mut swap_chain,
+            main_window: &main_window,
+            fonts: vec![imgui::FontInfo {
+                filepath: get_asset_path("../../../examples/imgui_demo/Roboto-Medium.ttf"),
+                glyph_ranges: None
+            }],
+        };
+        let imgui = imgui::ImGui::create(&mut imgui_info)?;
+
+        // pmfx
+        let pmfx = pmfx::Pmfx::create();
+
+        // blit pmfx
+        let unit_quad_mesh = primitives::create_unit_quad_mesh(&mut device);
+
+        // default cmd buf
+        let cmd_buf = device.create_cmd_buf(info.num_buffers);
     
         Ok(Context {
             app,
             device,
-            main_window: window,
+            main_window,
             swap_chain,
             cmd_buf,
             pmfx,
-            imdraw
+            imdraw,
+            imgui,
+            unit_quad_mesh
         })
     }
 
+    /// Start a new frame syncronised to the swap chain
     pub fn new_frame(&mut self) {
+        // hotline update
+        // update window and swap chain for the new frame
+        self.main_window.update(&mut self.app);
+        self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
+        
+        self.pmfx.new_frame(&self.swap_chain);
 
+        // transition to render target
+        self.cmd_buf.reset(&self.swap_chain);
+        self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(self.swap_chain.get_backbuffer_texture()),
+            buffer: None,
+            state_before: gfx::ResourceState::Present,
+            state_after: gfx::ResourceState::RenderTarget,
+        });
+
+        // clear window
+        self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
+        self.cmd_buf.end_render_pass();
+        
+        // start imgui new frame
+        let mut imgui_open = true;
+        self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
+        if self.imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
+            self.imgui.image(self.pmfx.get_texture("main_colour").unwrap(), 1280.0, 720.0)
+        }
     }
 
-    pub fn swap_buffers(&mut self) {
+    /// Render and display a pmfx target to the main window, draw imgui and swap buffers
+    pub fn present(&mut self) {
+        // execute pmfx command buffers first
+        self.pmfx.execute(&mut self.device);
 
+        self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
+
+        // get serv index of the pmfx target to blit to the window
+        let srv = self.pmfx.get_texture("main_colour").unwrap().get_srv_index().unwrap();
+       
+        // blit to main window
+        let vp_rect = self.main_window.get_viewport_rect();
+        self.cmd_buf.begin_event(0xff0000ff, "Blit Pmfx");
+        self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
+        self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
+        self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline("imdraw_blit").unwrap());
+        self.cmd_buf.set_render_heap(0, self.device.get_shader_heap(), srv);
+        self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
+        self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
+        self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+        self.cmd_buf.end_event();
+
+        // render imgui
+        self.cmd_buf.begin_event(0xff0000ff, "ImGui");
+        self.imgui.end();
+        self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
+        self.cmd_buf.end_event();
+
+        self.cmd_buf.end_render_pass();
+        
+        // transition to present
+        self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(self.swap_chain.get_backbuffer_texture()),
+            buffer: None,
+            state_before: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::Present,
+        });
+
+        self.cmd_buf.close().unwrap();
+
+        // execute the main window command buffer + swap
+        self.device.execute(&self.cmd_buf);
+        self.swap_chain.swap(&self.device);
     }
+
+    /// Wait for the last submitted frame to complete rendering to ensure safe shutdown once all in-flight resources
+    /// are no longer needed
+    pub fn wait_for_last_frame(&mut self) {
+        self.swap_chain.wait_for_last_frame();
+        self.cmd_buf.reset(&self.swap_chain);
+        self.pmfx.reset(&self.swap_chain);
+    }
+}
+
+pub fn get_asset_path(asset: &str) -> String {
+    let exe_path = std::env::current_exe().ok().unwrap();
+    let asset_path = exe_path.parent().unwrap();
+    String::from(asset_path.join(asset).to_str().unwrap())
 }

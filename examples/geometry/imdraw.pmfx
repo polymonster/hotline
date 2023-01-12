@@ -23,6 +23,14 @@ pmfx: {
             ],
             topology: "TriangleList"
         }
+        imdraw_blit: {
+            vs: vs_blit
+            ps: ps_blit
+            push_constants: [
+                "blit_push_constents"
+            ],
+            topology: "TriangleList"
+        }
     }
     textures: {
         main_colour: {
