@@ -132,7 +132,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev);
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
 
     let pmfx_bindless = asset_path.join("data/shaders/bindless");
     pmfx.load(pmfx_bindless.to_str().unwrap())?;
