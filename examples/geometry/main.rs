@@ -130,7 +130,7 @@ fn update_cameras(
         // generate proj matrix
         let window_rect = main_window.res.get_viewport_rect();
         let aspect = window_rect.width as f32 / window_rect.height as f32;
-        let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 100000.0);
+        let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.001, 10000.0);
 
         // construct rotation matrix
         let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rotation.0.x));
@@ -241,6 +241,12 @@ fn render_world_view(
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
         for (world_matrix, mesh) in &mesh_draw_query {
             // draw
+
+            let mm = world_matrix.0 * vec4f(1.0, 1.0, 1.0, 1.0);
+            let pm = view_proj.0 * mm;
+            println!("depth = {}", pm.z / pm.w);
+
+
             view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
             view.cmd_buf.set_index_buffer(&mesh.0.ib);
             view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -328,7 +334,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 render_world_view(
                     pmfx,
-                    view.clone(),
+                    view.to_string(),
                     qvp,
                     qmesh
                 );
@@ -359,7 +365,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         )
         .with_system_set(
             SystemSet::new().label("render_main")
-            .with_system(view_constructor("render_world_view".to_string())).after("render_debug_3d")
+            .with_system(view_constructor("render_world_view".to_string()))
         )
     );
 
