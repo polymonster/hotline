@@ -1,6 +1,13 @@
 #include "imdraw.hlsl"
 
 pmfx: {
+    depth_stencil_states: {
+        depth_test_less: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Less"
+        }
+    }
     pipelines: {
         imdraw_2d: {
             vs: vs_2d
@@ -20,7 +27,8 @@ pmfx: {
             push_constants: [
                 "view_push_constants"
                 "draw_push_constants"
-            ],
+            ]
+            depth_stencil_state: depth_test_less
             topology: "TriangleList"
         }
         imdraw_blit: {
@@ -28,7 +36,7 @@ pmfx: {
             ps: ps_blit
             push_constants: [
                 "blit_push_constents"
-            ],
+            ]
             topology: "TriangleList"
         }
     }
@@ -77,7 +85,6 @@ pmfx: {
             }
             {
                 view: "render_world_view"
-                // TODO: resources to derrive transitions
             }
         ]
     }

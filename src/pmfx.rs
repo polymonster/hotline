@@ -572,15 +572,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn execute(
         &mut self,
         device: &mut D) {
-        // execute views. this can become more strictly ordered later
-        /*/
-        for (_, view) in &self.views {
-            let view = view.clone();
-            let view = &mut view.lock().unwrap();
-            view.cmd_buf.close().unwrap();
-            device.execute(&view.cmd_buf);
-        }
-        */
 
         for node in &self.pmfx.graphs["forward"] {
             let view = self.views[&node.view].clone();
