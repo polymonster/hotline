@@ -61,8 +61,24 @@ pmfx: {
         main_view_no_clear(main_view): {
             clear_colour: null
             clear_depth: null
-            test_array: [null, null]
-            test_str: "null"
         }
+        render_grid(main_view): {
+            // TODO: function
+        }
+        render_world_view(main_view_no_clear): {
+            // TODO: function
+        }
+    }
+    graphs: {
+        forward: [
+            {
+                view: "render_grid"
+                // TODO: resources to derrive transitions
+            }
+            {
+                view: "render_world_view"
+                // TODO: resources to derrive transitions
+            }
+        ]
     }
 }

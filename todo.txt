@@ -2,12 +2,18 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - view sets
+// - graphs
+// - auto barriers
 // - ratio tracking pmfx
 
 // - depth stencil as texture
 // - depth stencil state from pmfx
 // - texures from file pmfx
+// - Blend
+// - Raster
+
+// - hot-reload shaders, pipelines, views
+
 // - copy or clone buffers?
 // - minimise resource handling code? macros?
 
@@ -26,9 +32,13 @@
 // - Stencil Ref
 // - MRT
 // - MSAA
-// - Blend
-// - Raster
 // - Texture Formats (BC)
+
+// TESTS:
+// - imgui
+// - pmfx
+// - play video
+// - primitives
 
 // DONE:
 // x blit main buffers to backbuffer

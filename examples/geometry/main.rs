@@ -21,6 +21,8 @@ use maths_rs::Mat4f;
 
 use bevy_ecs::prelude::*;
 
+//use std::collections::HashMap;
+
 //
 // Components
 //
@@ -149,9 +151,10 @@ fn render_grid(
     mut device: ResMut<DeviceRes>,
     mut imdraw: ResMut<ImDrawRes>,
     pmfx: Res<PmfxRes>,
+    view_name: String,
     mut query: Query<&ViewProjectionMatrix> ) {
 
-    let arc_view = pmfx.res.get_view("main_view").unwrap();
+    let arc_view = pmfx.res.get_view(&view_name).unwrap();
     let mut view = arc_view.lock().unwrap();
     let bb = view.cmd_buf.get_backbuffer_index();
 
@@ -210,13 +213,14 @@ fn render_grid(
 
 fn render_world_view(
     pmfx: Res<PmfxRes>,
+    view_name: String,
     view_proj_query: Query<&ViewProjectionMatrix>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
     
     // unpack
     let pmfx = &pmfx.res;
 
-    let arc_view = pmfx.get_view("main_view_no_clear").unwrap();
+    let arc_view = pmfx.get_view(&view_name).unwrap();
     let mut view = arc_view.lock().unwrap();
 
     let rt = pmfx.get_texture("main_colour").unwrap();
@@ -277,8 +281,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_blit", ctx.swap_chain.get_backbuffer_pass())?;
 
-    ctx.pmfx.create_view(&mut ctx.device, "main_view")?;
-    ctx.pmfx.create_view(&mut ctx.device, "main_view_no_clear")?;
+    ctx.pmfx.create_graph(& mut ctx.device, "forward")?;
 
     //
     // main loop
@@ -318,13 +321,14 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // create a "constructor" closure, which can initialize
     // our data and move it into a closure that bevy can run as a system
-    let view_constructor = || {
+    let view_constructor = |view: String| {
         move |
             pmfx: Res<PmfxRes>,
             qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 render_world_view(
                     pmfx,
+                    view.clone(),
                     qvp,
                     qmesh
                 );
@@ -341,11 +345,11 @@ fn main() -> Result<(), hotline_rs::Error> {
                     device,
                     imdraw,
                     pmfx,
+                    "render_grid".to_string(),
                     qvp,
                 );
         }
     };
-    
     // end temp
 
     schedule.add_stage(StageRender, SystemStage::single_threaded()
@@ -355,7 +359,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         )
         .with_system_set(
             SystemSet::new().label("render_main")
-            .with_system(view_constructor()).after("render_debug_3d")
+            .with_system(view_constructor("render_world_view".to_string())).after("render_debug_3d")
         )
     );
 

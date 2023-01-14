@@ -1,7 +1,5 @@
 
 use crate::gfx;
-use crate::primitives;
-
 use gfx::CmdBuf;
 
 use serde::{Deserialize, Serialize};
@@ -42,15 +40,16 @@ pub struct Pmfx<D: gfx::Device> {
     textures: HashMap<String, D::Texture>,
     tracked_textures: Vec<String>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
-    // unit_quad_mesh: Mesh<D>
 }
 
+/// Serialisation layout for contents inside .pmfx file
 #[derive(Serialize, Deserialize)]
 struct File {
     pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
+    graphs: HashMap<String, Vec<ViewInstanceInfo>>
 }
 
 impl File {
@@ -59,7 +58,8 @@ impl File {
             pipelines: HashMap::new(),
             depth_stencil_states: HashMap::new(),
             textures: HashMap::new(),
-            views: HashMap::new()
+            views: HashMap::new(),
+            graphs: HashMap::new()
         }
     }
 }
@@ -116,6 +116,11 @@ struct ViewInfo {
     clear_colour: Option<Vec<f32>>,
     clear_depth: Option<f32>,
     clear_stencil: Option<u8>
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct ViewInstanceInfo {
+    view: String
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -460,6 +465,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    pub fn create_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+        if self.pmfx.graphs.contains_key(graph_name) {
+            let pmfx_graph = self.pmfx.graphs[graph_name].clone();
+            for node in pmfx_graph {
+                // create view for each node
+                self.create_view(device, &node.view)?;
+            }
+        }
+        Ok(())
+    }
+
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
     pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {        
         // grab the pmfx pipeline info
@@ -557,8 +573,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
         &mut self,
         device: &mut D) {
         // execute views. this can become more strictly ordered later
+        /*/
         for (_, view) in &self.views {
             let view = view.clone();
+            let view = &mut view.lock().unwrap();
+            view.cmd_buf.close().unwrap();
+            device.execute(&view.cmd_buf);
+        }
+        */
+
+        for node in &self.pmfx.graphs["forward"] {
+            let view = self.views[&node.view].clone();
             let view = &mut view.lock().unwrap();
             view.cmd_buf.close().unwrap();
             device.execute(&view.cmd_buf);
