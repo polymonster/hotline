@@ -13,8 +13,7 @@
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
-            "console": "externalTerminal",
-            "preLaunchTask": "cargo_build"
+            "console": "externalTerminal"
         },
         {
             "name": "triangle (Debug)",
