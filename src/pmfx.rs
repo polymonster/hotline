@@ -1,5 +1,6 @@
 
 use crate::gfx;
+use crate::gfx::ResourceState;
 use gfx::CmdBuf;
 
 use serde::{Deserialize, Serialize};
@@ -72,15 +73,6 @@ struct TextureSizeRatio {
     scale: f32
 }
 
-#[derive(Serialize, Deserialize, PartialEq)]
-enum TextureUsage {
-    ShaderResource,
-    RenderTarget,
-    DepthStencil,
-    UnorderedAccess,
-    VideoDecodeTarget
-}
-
 #[derive(Serialize, Deserialize)]
 struct TextureInfo {
     ratio: Option<TextureSizeRatio>,
@@ -92,7 +84,7 @@ struct TextureInfo {
     array_levels: u32,
     samples: u32,
     format: gfx::Format,
-    usage: Vec<TextureUsage>
+    usage: Vec<ResourceState>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -178,38 +170,36 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo) -> gfx::TextureInfo {
     };
 
     // derive initial state from usage
-    let initial_state = if pmfx_texture.usage.contains(&TextureUsage::ShaderResource) {
-        gfx::ResourceState::ShaderResource
+    let initial_state = if pmfx_texture.usage.contains(&ResourceState::ShaderResource) {
+        ResourceState::ShaderResource
     }
-    else if pmfx_texture.usage.contains(&TextureUsage::DepthStencil) {
-        gfx::ResourceState::DepthStencil
+    else if pmfx_texture.usage.contains(&ResourceState::DepthStencil) {
+        ResourceState::DepthStencil
     }
-    else if pmfx_texture.usage.contains(&TextureUsage::RenderTarget) {
-        gfx::ResourceState::RenderTarget
+    else if pmfx_texture.usage.contains(&ResourceState::RenderTarget) {
+        ResourceState::RenderTarget
     }
     else {
-        gfx::ResourceState::ShaderResource
+        ResourceState::ShaderResource
     };
 
     // texture type bitflags from vec of enum
     let mut usage = gfx::TextureUsage::NONE;
     for pmfx_usage in &pmfx_texture.usage {
         match pmfx_usage {
-            TextureUsage::ShaderResource => {
+            ResourceState::ShaderResource => {
                 usage |= gfx::TextureUsage::SHADER_RESOURCE
             }
-            TextureUsage::UnorderedAccess => {
+            ResourceState::UnorderedAccess => {
                 usage |= gfx::TextureUsage::UNORDERED_ACCESS
             }
-            TextureUsage::RenderTarget => {
+            ResourceState::RenderTarget => {
                 usage |= gfx::TextureUsage::RENDER_TARGET
             }
-            TextureUsage::DepthStencil => {
+            ResourceState::DepthStencil => {
                 usage |= gfx::TextureUsage::DEPTH_STENCIL
             }
-            TextureUsage::VideoDecodeTarget => {
-                usage |= gfx::TextureUsage::VIDEO_DECODE_TARGET
-            }
+            _ => {}
         }
     }
 
@@ -482,6 +472,39 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Ok(())
     }
 
+    fn create_texture_transition_barrier(
+        &mut self,
+        device: &mut D,
+        texture_barriers: &mut HashMap<String, ResourceState>, 
+        view_name: &str, 
+        texture_name: &str, 
+        target_state: ResourceState) -> Result<(), super::Error> {
+        if texture_barriers.contains_key(texture_name) {
+            let state = texture_barriers[texture_name];
+            if state != target_state {
+                // add barrier placeholder in the execute order
+                let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
+                self.execute_graph.push(barrier_name.to_string());
+
+                // create a command buffer
+                let mut cmd_buf = device.create_cmd_buf(1);
+                cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                    texture: Some(self.get_texture(&texture_name).unwrap()),
+                    buffer: None,
+                    state_before: state,
+                    state_after: target_state,
+                });
+                cmd_buf.close()?;
+                self.barriers.insert(barrier_name.to_string(), cmd_buf);
+    
+                // update track state
+                texture_barriers.remove(texture_name);
+                texture_barriers.insert(texture_name.to_string(), target_state);
+            }
+        }
+        Ok(())
+    }
+
     /// Create a render graph wih automatic resource barrier generation from info specified insie .pmfx file
     pub fn create_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
 
@@ -491,10 +514,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // gather up all render targets and check which ones want to be both written to and also uses as shader resources
         let mut barriers = HashMap::new();
         for (name, texture) in &self.pmfx.textures {
-            if texture.usage.contains(&TextureUsage::ShaderResource) {
-                if texture.usage.contains(&TextureUsage::RenderTarget) || 
-                    texture.usage.contains(&TextureUsage::DepthStencil) {
-                        barriers.insert(name.to_string(), TextureUsage::ShaderResource);
+            if texture.usage.contains(&ResourceState::ShaderResource) {
+                if texture.usage.contains(&ResourceState::RenderTarget) || 
+                    texture.usage.contains(&ResourceState::DepthStencil) {
+                        barriers.insert(name.to_string(), ResourceState::ShaderResource);
                 }
             }
         }
@@ -507,32 +530,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 let pmfx_view = self.pmfx.views[&node.view].clone();
 
                 // if we need to write to a target we must make sure it is transitioned into render target state
-                for rt in pmfx_view.render_target {
-                    if barriers.contains_key(&rt) {
-                        if barriers[&rt] != TextureUsage::RenderTarget {
-                            // add barrier placeholder in the execute order
-                            let barrier_name = format!("barrier_{}", &rt);
-                            self.execute_graph.push(barrier_name.to_string());
+                for rt_name in pmfx_view.render_target {
+                    self.create_texture_transition_barrier(
+                        device, &mut barriers, &node.view, &rt_name, ResourceState::RenderTarget)?;
 
-                            // create a command buffer
-                            let mut cmd_buf = device.create_cmd_buf(1);
-                            cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-                                texture: Some(self.get_texture(&rt).unwrap()),
-                                buffer: None,
-                                state_before: gfx::ResourceState::ShaderResource,
-                                state_after: gfx::ResourceState::RenderTarget,
-                            });
-                            cmd_buf.close()?;
-                            self.barriers.insert(barrier_name.to_string(), cmd_buf);
-
-                            // update track state
-                            barriers.remove(&rt);
-                            barriers.insert(rt.to_string(), TextureUsage::RenderTarget);
-                        }
-                    }
                 }
 
-                // TODO: depth stencil barriers
+                // same for depth stencils
+                for ds_name in pmfx_view.depth_stencil {
+                    self.create_texture_transition_barrier(
+                        device, &mut barriers, &node.view, &ds_name, ResourceState::DepthStencil)?;
+
+                }
 
                 // if we want to read from we can put this in pmfx
                 // TODO: barriers to transition to ShaderResource
@@ -543,23 +552,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
 
         // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
-        for (name, state) in barriers {
-            if state != TextureUsage::ShaderResource {
-                let barrier_name = format!("barrier_eof_{}", &name);
-                self.execute_graph.push(barrier_name.to_string());
+        let mut srvs = Vec::new();
+        for name in barriers.keys() {
+            srvs.push(name.to_string());
+        }
 
-                // create a command buffer
-                let mut cmd_buf = device.create_cmd_buf(2);
-                cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-                    texture: Some(self.get_texture(&name).unwrap()),
-                    buffer: None,
-                    state_before: gfx::ResourceState::RenderTarget,
-                    state_after: gfx::ResourceState::ShaderResource,
-                });
-                cmd_buf.close()?;
-
-                self.barriers.insert(barrier_name.to_string(), cmd_buf);
-            }
+        for name in srvs {
+            self.create_texture_transition_barrier(
+                device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
         }
 
         Ok(())
@@ -654,9 +654,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
         for view in self.views.values() {
             let view = view.clone();
             view.lock().unwrap().cmd_buf.reset(swap_chain);
-        }
-        for barrier in self.barriers.values_mut() {
-            // barrier.reset(swap_chain);
         }
     }
 

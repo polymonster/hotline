@@ -223,11 +223,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         self.cmd_buf.end_render_pass();
         
         // start imgui new frame
-        let mut imgui_open = true;
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
-        if self.imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
-            self.imgui.image(self.pmfx.get_texture("main_colour").unwrap(), 1280.0, 720.0)
-        }
     }
 
     /// Render and display a pmfx target to the main window, draw imgui and swap buffers

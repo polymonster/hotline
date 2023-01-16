@@ -292,10 +292,17 @@ fn main() -> Result<(), hotline_rs::Error> {
 
 
     let mut run_startup = true;
+    let mut imgui_open = true;
 
     while ctx.app.run() {
 
         ctx.new_frame();
+
+        // imgui
+        if ctx.imgui.begin("hello world", &mut imgui_open, imgui::WindowFlags::NONE) {
+            ctx.imgui.image(ctx.pmfx.get_texture("main_colour").unwrap(), 640.0, 360.0);
+            ctx.imgui.image(ctx.pmfx.get_texture("main_depth").unwrap(), 640.0, 360.0);
+        }
 
         // move hotline resource into world
         world.insert_resource(DeviceRes {0: ctx.device});
