@@ -116,6 +116,7 @@ pub struct Device {
     shader_heap: Heap,
     rtv_heap: Heap,
     dsv_heap: Heap,
+    cleanup_textures: Vec<(u32, Texture)>
 }
 
 unsafe impl Send for Device {}
@@ -1113,6 +1114,7 @@ impl super::Device for Device {
                 shader_heap,
                 rtv_heap,
                 dsv_heap,
+                cleanup_textures: Vec::new()
             }
         }
     }
@@ -1818,6 +1820,10 @@ impl super::Device for Device {
         }
     }
 
+    fn destroy_texture(&mut self, texture: Self::Texture) {
+        self.cleanup_textures.push((0, texture));
+    }
+
     fn create_render_pass(
         &self,
         info: &super::RenderPassInfo<Device>,
@@ -2019,6 +2025,39 @@ impl super::Device for Device {
             debug_device.ReportLiveDeviceObjects(D3D12_RLDO_DETAIL)?;
         }
         Ok(())
+    }
+
+    fn clean_up_resources(&mut self, swap_chain: &SwapChain) {
+        use crate::gfx::Heap;
+        let num_bb = swap_chain.num_bb;
+        let mut todo = true;
+        let mut cur = 0;
+        while todo {
+            todo = false;
+            for i in cur..self.cleanup_textures.len() {
+                // increment frames waited
+                self.cleanup_textures[i].0 += 1;
+                if self.cleanup_textures[i].0 > num_bb {
+                    // if we have waited longer than the swap chain length we can cleanup
+                    let (_, tex) = self.cleanup_textures.remove(i);
+                    if let Some(srv) = tex.srv_index {
+                        self.shader_heap.deallocate(srv);
+                    }
+                    if let Some(uav) = tex.uav_index {
+                        self.shader_heap.deallocate(uav);
+                    }
+                    if let Some(rtv) = &tex.rtv {
+                        self.rtv_heap.deallocate_internal(rtv);
+                    }
+                    if let Some(dsv) = &tex.dsv {
+                        self.dsv_heap.deallocate_internal(dsv)
+                    }
+                    cur = i;
+                    todo = true;
+                    break;
+                }
+            }
+        }
     }
 
     fn get_shader_heap(&self) -> &Self::Heap {

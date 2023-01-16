@@ -733,6 +733,10 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
+    /// device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
+    fn destroy_texture(&mut self, texture: Self::Texture);
+    /// check if resources are finished on the gpu and de-allocate from shader heaps
+    fn clean_up_resources(&mut self, swap_chain: &Self::SwapChain);
     fn execute(&self, cmd: &Self::CmdBuf);
     fn report_live_objects(&self) -> Result<(), Error>;
     fn get_shader_heap(&self) -> &Self::Heap;
@@ -740,6 +744,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn get_adapter_info(&self) -> &AdapterInfo;
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;
+    
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.

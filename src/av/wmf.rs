@@ -4,8 +4,6 @@ use crate::gfx;
 
 use gfx::d3d12;
 use gfx::Device;
-use gfx::Heap;
-use gfx::Texture;
 
 use crate::os;
 use os::win32;
@@ -138,6 +136,14 @@ impl VideoPlayer {
             Ok(())
         }
     }
+
+    fn cleanup_textures(&mut self, device: &mut d3d12::Device) {
+        // remove elements from the cleanup_textures array
+        while self.cleanup_textures.len() > 0 {
+            let tex = self.cleanup_textures.remove(0);
+            device.destroy_texture(tex);
+        }
+    }
 }
 
 impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
@@ -218,30 +224,25 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
     }
 
     fn shutdown(&mut self, device: &mut d3d12::Device) {
-        // cleanup - cleanup
-        for tex in &self.cleanup_textures {
-            if let Some(srv) = tex.get_srv_index() {
-                device.get_shader_heap_mut().deallocate(srv);
-            }
+        // clean up any old lingering textures
+        self.cleanup_textures(device);
+        // take ownership of the player texture
+        let mut none_tex = None;
+        std::mem::swap(&mut none_tex, &mut self.texture);
+        if let Some(tex) = none_tex {
+            device.destroy_texture(tex);
         }
-        self.cleanup_textures.clear();
-        // cleanup last
-        if let Some(tex) = &self.texture {
-            if let Some(srv) = tex.get_srv_index() {
-                device.get_shader_heap_mut().deallocate(srv);
-            }
-        }
-        self.texture = None;
     }
 
     fn set_source(&mut self, filepath: String) -> result::Result<(), super::Error> {
         unsafe {
-            // reset state
-            (*self.notify).can_play = false;
-            if let Some(tex) = &self.texture {
-                self.cleanup_textures.push(tex.clone());
+            // set texture to none and push the old tex for cleanup
+            let mut none_tex = None;
+            std::mem::swap(&mut none_tex, &mut self.texture);
+            if let Some(tex) = none_tex {
+                self.cleanup_textures.push(tex);
             }
-            self.texture = None;
+
             let wp = win32::string_to_wide(filepath);
             let bstr = SysAllocString(PCWSTR(wp.as_ptr() as _));
             self.media_engine_ex.SetSource(bstr)?;
@@ -273,14 +274,8 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 return Ok(());
             }
 
-            // release memory from cleanup textures
-            for tex in &self.cleanup_textures {
-                if let Some(srv) = tex.get_srv_index() {
-                    device.get_shader_heap_mut().deallocate(srv);
-                }
-            }
-
-            self.cleanup_textures.clear();
+            // clean up old textures that have now been dropped, requires a device
+            self.cleanup_textures(device);
 
             // create texture
             if self.texture.is_none() && self.is_loaded() {

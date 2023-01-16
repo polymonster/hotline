@@ -171,6 +171,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         ci = (ci + 1) % 4;
     }
 
+    player.shutdown(&mut dev);
     swap_chain.wait_for_last_frame();
 
     // must wait for the final frame to be completed
