@@ -5,19 +5,15 @@
 // - graphs
 // - auto barriers
 // - ratio tracking pmfx
-
 // - depth stencil as texture
-// - depth stencil state from pmfx
 // - texures from file pmfx
+// - minimise resource handling code? macros?
+
 // - Blend
 // - Raster
 
-// - hot-reload shaders, pipelines, views
+// - hot-reload shaders, pipelines, views, code
 
-// - copy or clone buffers?
-// - minimise resource handling code? macros?
-
-// - move 'add' code into startup system - not possible? other ways of creating startup systems?
 // - update matrices
 // - update aabb's
 // - culling
@@ -41,6 +37,12 @@
 // - primitives
 
 // DONE:
+// x move 'add' code into startup system - not possible? other ways of creating startup systems?
+// x copy or clone buffers? (cloning for now)
+// x setup functions
+// x update funcions
+// x render functions
+// x depth stencil state from pmfx
 // x blit main buffers to backbuffer
 // x path utilities
 // x imgui into hotline context

@@ -1217,7 +1217,7 @@ impl super::Device for Device {
             }
 
             CmdBuf {
-                bb_index: 1,
+                bb_index: 0,
                 command_allocator: command_allocators,
                 command_list: command_lists,
                 pix: self.pix,

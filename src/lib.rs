@@ -23,6 +23,9 @@ pub mod imdraw;
 /// High level graphics
 pub mod pmfx;
 
+/// Base ecs components, systems and resources
+pub mod ecs;
+
 /// Geometry primitives
 pub mod primitives;
 
@@ -286,3 +289,7 @@ pub fn get_asset_path(asset: &str) -> String {
     let asset_path = exe_path.parent().unwrap();
     String::from(asset_path.join(asset).to_str().unwrap())
 }
+
+#[cfg(target_os = "windows")]
+pub use os::win32 as os_platform;
+pub use gfx::d3d12 as gfx_platform;
