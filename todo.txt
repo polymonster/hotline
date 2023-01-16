@@ -2,6 +2,7 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
+// - fix validation warning on resize
 // - wait frames before properly dropping gpu resources
 // - pass view name to blit to pmfx
 
