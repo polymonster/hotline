@@ -40,6 +40,8 @@ pub struct Pmfx<D: gfx::Device> {
     textures: HashMap<String, D::Texture>,
     tracked_textures: Vec<String>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
+    barriers: HashMap<String, D::CmdBuf>,
+    execute_graph: Vec<String>,
 }
 
 /// Serialisation layout for contents inside .pmfx file
@@ -291,7 +293,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             shaders: HashMap::new(),
             textures: HashMap::new(),
             tracked_textures: Vec::new(),
-            views: HashMap::new()
+            views: HashMap::new(),
+            barriers: HashMap::new(),
+            execute_graph: Vec::new()
         }
     }
 
@@ -410,7 +414,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
 
             // get depth stencil by name
-            let depth_stencil = if pmfx_view.depth_stencil.len() > 0 {
+            let depth_stencil = if !pmfx_view.depth_stencil.is_empty() {
                 let name = &pmfx_view.depth_stencil[0];
                 Some(self.get_texture(name).unwrap())
             }
@@ -421,9 +425,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // pass for render targets with depth stencil
             let render_target_pass = device
             .create_render_pass(&gfx::RenderPassInfo {
-                render_targets: render_targets,
+                render_targets,
                 rt_clear: to_gfx_clear_colour(pmfx_view.clear_colour),
-                depth_stencil: depth_stencil,
+                depth_stencil,
                 ds_clear: to_gfx_clear_depth_stencil(pmfx_view.clear_depth, pmfx_view.clear_stencil),
                 resolve: false,
                 discard: false,
@@ -465,7 +469,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    pub fn create_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+    /// Create all views required for a render graph if necessary, skip if a view already exists
+    pub fn create_graph_views(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+        // create views for all of the nodes
         if self.pmfx.graphs.contains_key(graph_name) {
             let pmfx_graph = self.pmfx.graphs[graph_name].clone();
             for node in pmfx_graph {
@@ -473,6 +479,89 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_view(device, &node.view)?;
             }
         }
+        Ok(())
+    }
+
+    /// Create a render graph wih automatic resource barrier generation from info specified insie .pmfx file
+    pub fn create_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+
+        // create views for any nodes in the graph
+        self.create_graph_views(device, graph_name)?;
+
+        // gather up all render targets and check which ones want to be both written to and also uses as shader resources
+        let mut barriers = HashMap::new();
+        for (name, texture) in &self.pmfx.textures {
+            if texture.usage.contains(&TextureUsage::ShaderResource) {
+                if texture.usage.contains(&TextureUsage::RenderTarget) || 
+                    texture.usage.contains(&TextureUsage::DepthStencil) {
+                        barriers.insert(name.to_string(), TextureUsage::ShaderResource);
+                }
+            }
+        }
+        
+        // go through the graph sequentially, as the command lists are executed in order but generated async
+        if self.pmfx.graphs.contains_key(graph_name) {
+            let pmfx_graph = self.pmfx.graphs[graph_name].clone();
+            for node in pmfx_graph {
+                // create transitions by inspecting view info
+                let pmfx_view = self.pmfx.views[&node.view].clone();
+
+                // if we need to write to a target we must make sure it is transitioned into render target state
+                for rt in pmfx_view.render_target {
+                    if barriers.contains_key(&rt) {
+                        if barriers[&rt] != TextureUsage::RenderTarget {
+                            // add barrier placeholder in the execute order
+                            let barrier_name = format!("barrier_{}", &rt);
+                            self.execute_graph.push(barrier_name.to_string());
+
+                            // create a command buffer
+                            let mut cmd_buf = device.create_cmd_buf(1);
+                            cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                                texture: Some(self.get_texture(&rt).unwrap()),
+                                buffer: None,
+                                state_before: gfx::ResourceState::ShaderResource,
+                                state_after: gfx::ResourceState::RenderTarget,
+                            });
+                            cmd_buf.close()?;
+                            self.barriers.insert(barrier_name.to_string(), cmd_buf);
+
+                            // update track state
+                            barriers.remove(&rt);
+                            barriers.insert(rt.to_string(), TextureUsage::RenderTarget);
+                        }
+                    }
+                }
+
+                // TODO: depth stencil barriers
+
+                // if we want to read from we can put this in pmfx
+                // TODO: barriers to transition to ShaderResource
+
+                // push a view on
+                self.execute_graph.push(node.view.to_string());
+            }
+        }
+
+        // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
+        for (name, state) in barriers {
+            if state != TextureUsage::ShaderResource {
+                let barrier_name = format!("barrier_eof_{}", &name);
+                self.execute_graph.push(barrier_name.to_string());
+
+                // create a command buffer
+                let mut cmd_buf = device.create_cmd_buf(2);
+                cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                    texture: Some(self.get_texture(&name).unwrap()),
+                    buffer: None,
+                    state_before: gfx::ResourceState::RenderTarget,
+                    state_after: gfx::ResourceState::ShaderResource,
+                });
+                cmd_buf.close()?;
+
+                self.barriers.insert(barrier_name.to_string(), cmd_buf);
+            }
+        }
+
         Ok(())
     }
 
@@ -562,9 +651,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reset all command buffers
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
-        for (_, view) in &self.views {
+        for view in self.views.values() {
             let view = view.clone();
             view.lock().unwrap().cmd_buf.reset(swap_chain);
+        }
+        for barrier in self.barriers.values_mut() {
+            // barrier.reset(swap_chain);
         }
     }
 
@@ -573,11 +665,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
         &mut self,
         device: &mut D) {
 
-        for node in &self.pmfx.graphs["forward"] {
-            let view = self.views[&node.view].clone();
-            let view = &mut view.lock().unwrap();
-            view.cmd_buf.close().unwrap();
-            device.execute(&view.cmd_buf);
+        for node in &self.execute_graph {
+            println!("execute: {}", node);
+            if self.barriers.contains_key(node) {
+                // transition barriers
+                device.execute(&self.barriers[node]);
+            }
+            else if self.views.contains_key(node) {
+                // dispatch a view
+                let view = self.views[node].clone();
+                let view = &mut view.lock().unwrap();
+                view.cmd_buf.close().unwrap();
+                device.execute(&view.cmd_buf);
+            }
         }
     }
 }

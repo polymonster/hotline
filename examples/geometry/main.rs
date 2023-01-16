@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -5,10 +7,6 @@ use gfx::SwapChain;
 
 use os::App;
 use os::Window;
-
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-use gfx::d3d12 as gfx_platform;
 
 use primitives;
 
@@ -20,60 +18,7 @@ use maths_rs::mat::*;
 use maths_rs::Mat4f;
 
 use bevy_ecs::prelude::*;
-
-//use std::collections::HashMap;
-
-//
-// Components
-//
-
-#[derive(Component)]
-struct Position(Vec3f);
-
-#[derive(Component)]
-struct Velocity(Vec3f);
-
-#[derive(Component)]
-struct WorldMatrix(Mat4f);
-
-#[derive(Component)]
-struct Rotation(Vec3f);
-
-#[derive(Component)]
-struct ViewProjectionMatrix(Mat4f);
-
-#[derive(Component)]
-struct Camera;
-
-#[derive(Component)]
-struct MeshComponent(pmfx::Mesh<gfx_platform::Device>);
-
-//
-// Stages
-//
-
-#[derive(StageLabel)]
-pub struct StageUpdate;
-
-#[derive(StageLabel)]
-pub struct StageRender;
-
-//
-// Resources
-//
-
-#[derive(Resource)]
-struct HotlineResource<T> {
-    res: T
-}
-
-type ImDrawRes = HotlineResource::<imdraw::ImDraw<gfx_platform::Device>>;
-type PmfxRes = HotlineResource::<pmfx::Pmfx<gfx_platform::Device>>;
-type DeviceRes = HotlineResource::<gfx_platform::Device>;
-type AppRes = HotlineResource::<os_platform::App>;
-type MainWindowRes = HotlineResource::<os_platform::Window>;
-type ImGuiRes = HotlineResource::<imgui::ImGui::<gfx_platform::Device, os_platform::App>>;
-
+use ecs::*;
 
 fn movement(mut query: Query<(&mut Position, &Velocity)>) {
     for (mut position, velocity) in &mut query {
@@ -85,10 +30,10 @@ fn update_cameras(
     app: Res<AppRes>, 
     main_window: Res<MainWindowRes>, 
     mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
-    let app = &app.res;
+    let app = &app.0;
     for (mut position, mut rotation, mut view_proj) in &mut query {
 
-        if main_window.res.is_focused() {
+        if main_window.0.is_focused() {
             // get keyboard position movement
             let keys = app.get_keys_down();
             let mut cam_move_delta = Vec3f::zero();
@@ -128,7 +73,7 @@ fn update_cameras(
         }
 
         // generate proj matrix
-        let window_rect = main_window.res.get_viewport_rect();
+        let window_rect = main_window.0.get_viewport_rect();
         let aspect = window_rect.width as f32 / window_rect.height as f32;
         let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.001, 10000.0);
 
@@ -151,26 +96,16 @@ fn render_grid(
     mut device: ResMut<DeviceRes>,
     mut imdraw: ResMut<ImDrawRes>,
     pmfx: Res<PmfxRes>,
-    view_name: String,
     mut query: Query<&ViewProjectionMatrix> ) {
 
-    let arc_view = pmfx.res.get_view(&view_name).unwrap();
+    let arc_view = pmfx.0.get_view("render_grid").unwrap();
     let mut view = arc_view.lock().unwrap();
     let bb = view.cmd_buf.get_backbuffer_index();
 
-    // reset and transition
-    let rt = pmfx.res.get_texture("main_colour").unwrap();
-    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(rt),
-        buffer: None,
-        state_before: gfx::ResourceState::ShaderResource,
-        state_after: gfx::ResourceState::RenderTarget,
-    });
-
     for view_proj in &mut query {
         // render grid
-        let imdraw = &mut imdraw.res;
-        let pmfx = &pmfx.res;
+        let imdraw = &mut imdraw.0;
+        let pmfx = &pmfx.0;
 
         let scale = 1000.0;
         let divisions = 10.0;
@@ -188,7 +123,7 @@ fn render_grid(
         imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(-1000.0, 0.0, 0.0), Vec4f::cyan());
         imdraw.add_line_3d(Vec3f::zero(), Vec3f::new(0.0, -1000.0, 0.0), Vec4f::magenta());
 
-        imdraw.submit(&mut device.res, bb as usize).unwrap();
+        imdraw.submit(&mut device.0, bb as usize).unwrap();
 
         view.cmd_buf.begin_render_pass(&view.pass);
         view.cmd_buf.set_viewport(&view.viewport);
@@ -201,14 +136,6 @@ fn render_grid(
 
         view.cmd_buf.end_render_pass();
     }
-
-    let rt = pmfx.res.get_texture("main_colour").unwrap();
-    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(rt),
-        buffer: None,
-        state_before: gfx::ResourceState::RenderTarget,
-        state_after: gfx::ResourceState::ShaderResource,
-    });
 }
 
 fn render_world_view(
@@ -218,18 +145,10 @@ fn render_world_view(
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
     
     // unpack
-    let pmfx = &pmfx.res;
+    let pmfx = &pmfx.0;
 
     let arc_view = pmfx.get_view(&view_name).unwrap();
-    let mut view = arc_view.lock().unwrap();
-
-    let rt = pmfx.get_texture("main_colour").unwrap();
-    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(rt),
-        buffer: None,
-        state_before: gfx::ResourceState::ShaderResource,
-        state_after: gfx::ResourceState::RenderTarget,
-    });
+    let view = arc_view.lock().unwrap();
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
@@ -256,14 +175,32 @@ fn render_world_view(
 
     // end / transition / execute
     view.cmd_buf.end_render_pass();
+}
 
-    let rt = pmfx.get_texture("main_colour").unwrap();
-    view.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-        texture: Some(rt),
-        buffer: None,
-        state_before: gfx::ResourceState::RenderTarget,
-        state_after: gfx::ResourceState::ShaderResource,
-    });
+fn setup_test(
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
+    let cube_mesh = primitives::create_cube_mesh(&mut device.0);
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh.clone()},
+        WorldMatrix { 0: Mat4f::from_translation(Vec3f::zero()) }
+    ));
+
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh.clone()},
+        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_z() * 2.5) }
+    ));
+    
+    commands.spawn((
+        Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
+        Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
+        ViewProjectionMatrix { 0: Mat4f::identity()},
+        Camera,
+    ));
 }
 
 fn main() -> Result<(), hotline_rs::Error> {    
@@ -281,49 +218,51 @@ fn main() -> Result<(), hotline_rs::Error> {
     //
 
     ctx.pmfx.load(&hotline_rs::get_asset_path("data/shaders/imdraw").as_str())?;
+    ctx.pmfx.create_graph(& mut ctx.device, "forward")?;
 
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_2d", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_3d", ctx.swap_chain.get_backbuffer_pass())?;
-    ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_pipeline(&ctx.device, "imdraw_blit", ctx.swap_chain.get_backbuffer_pass())?;
 
-    ctx.pmfx.create_graph(& mut ctx.device, "forward")?;
+    // create pass with depth
+    {
+        let view = ctx.pmfx.get_view("render_world_view").unwrap().clone();
+        let view = view.lock().unwrap();
+        ctx.pmfx.create_pipeline(&ctx.device, "imdraw_mesh", &view.pass)?;
+    }
 
     //
-    // main loop
+    // build schedules
     //
+
+    let mut fn_map = HashMap::new();
+    fn_map.insert("update_cameras", update_cameras.into_descriptor());
+    fn_map.insert("movement", movement.into_descriptor());
+    fn_map.insert("setup_test", setup_test.into_descriptor());
+
+    let starup_funcs = vec!["setup_test"];
+    let update_funcs = vec!["update_cameras", "movement"];
+    let render_funcs = vec!["render_grid", "render_world_view"];
 
     let mut world = World::new();
-
-    let cube_mesh = primitives::create_cube_mesh(&mut ctx.device);
-
-    world.spawn((
-        Position { 0: Vec3f::zero() },
-        Velocity { 0: Vec3f::one() },
-        MeshComponent {0: cube_mesh.clone()},
-        WorldMatrix { 0: Mat4f::from_translation(Vec3f::zero()) }
-    ));
-
-    world.spawn((
-        Position { 0: Vec3f::zero() },
-        Velocity { 0: Vec3f::one() },
-        MeshComponent {0: cube_mesh.clone()},
-        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_z() * 2.5) }
-    ));
-    
-    world.spawn((
-        Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
-        Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
-        ViewProjectionMatrix { 0: Mat4f::identity()},
-        Camera,
-    ));
-
+    let mut startup_schedule = Schedule::default();
     let mut schedule = Schedule::default();
 
-    schedule.add_stage(StageUpdate, SystemStage::parallel()
-        .with_system(update_cameras)
-        .with_system(movement)
-    );
+    // add startup funcs by name
+    let mut startup_stage = SystemStage::parallel();
+    for func_name in starup_funcs {
+        startup_stage = startup_stage.with_system(fn_map.remove(func_name).unwrap());
+    }
+    
+    startup_schedule.add_stage(StageStartup, startup_stage);
+
+    // add update funcs by name
+    let mut update_stage = SystemStage::parallel();
+    for func_name in update_funcs {
+        update_stage = update_stage.with_system(fn_map.remove(func_name).unwrap());
+    }
+
+    schedule.add_stage(StageUpdate, update_stage);
 
     // create a "constructor" closure, which can initialize
     // our data and move it into a closure that bevy can run as a system
@@ -341,56 +280,47 @@ fn main() -> Result<(), hotline_rs::Error> {
         }
     };
 
-    let grid_constructor = || {
-        move |
-            device: ResMut<DeviceRes>,
-            imdraw: ResMut<ImDrawRes>,
-            pmfx: Res<PmfxRes>,
-            qvp: Query<&ViewProjectionMatrix>| {
-                render_grid(
-                    device,
-                    imdraw,
-                    pmfx,
-                    "render_grid".to_string(),
-                    qvp,
-                );
-        }
-    };
-    // end temp
+    fn_map.insert("render_world_view", view_constructor("render_world_view".to_string()).into_descriptor());
+    fn_map.insert("render_grid", render_grid.into_descriptor());
 
-    schedule.add_stage(StageRender, SystemStage::single_threaded()
-        .with_system_set(
-            SystemSet::new().label("render_debug_3d")
-            .with_system(grid_constructor())
-        )
-        .with_system_set(
-            SystemSet::new().label("render_main")
-            .with_system(view_constructor("render_world_view".to_string()))
-        )
-    );
+    let mut render_stage = SystemStage::parallel();
+    for func_name in render_funcs {
+        render_stage = render_stage.with_system(fn_map.remove(func_name).unwrap());
+    }
+
+    schedule.add_stage(StageRender, render_stage);
+
+
+    let mut run_startup = true;
 
     while ctx.app.run() {
 
         ctx.new_frame();
 
         // move hotline resource into world
-        world.insert_resource(AppRes {res: ctx.app});
-        world.insert_resource(MainWindowRes {res: ctx.main_window});
-        world.insert_resource(DeviceRes {res: ctx.device});
-        world.insert_resource(ImDrawRes {res: ctx.imdraw});
-        world.insert_resource(PmfxRes {res: ctx.pmfx});
-        world.insert_resource(ImGuiRes {res: ctx.imgui});
+        world.insert_resource(DeviceRes {0: ctx.device});
+        world.insert_resource(AppRes {0: ctx.app});
+        world.insert_resource(MainWindowRes {0: ctx.main_window});
+        world.insert_resource(PmfxRes {0: ctx.pmfx});
+        world.insert_resource(ImDrawRes {0: ctx.imdraw});
+        world.insert_resource(ImGuiRes {0: ctx.imgui});
+
+        // run startup
+        if run_startup {
+            startup_schedule.run(&mut world);
+            run_startup = false;
+        }
 
         // run systems
         schedule.run(&mut world);
     
         // move resources back out
-        ctx.app = world.remove_resource::<AppRes>().unwrap().res;
-        ctx.main_window = world.remove_resource::<MainWindowRes>().unwrap().res;
-        ctx.device = world.remove_resource::<DeviceRes>().unwrap().res;
-        ctx.imdraw = world.remove_resource::<ImDrawRes>().unwrap().res;
-        ctx.pmfx = world.remove_resource::<PmfxRes>().unwrap().res;
-        ctx.imgui = world.remove_resource::<ImGuiRes>().unwrap().res;
+        ctx.device = world.remove_resource::<DeviceRes>().unwrap().0;
+        ctx.app = world.remove_resource::<AppRes>().unwrap().0;
+        ctx.main_window = world.remove_resource::<MainWindowRes>().unwrap().0;
+        ctx.pmfx = world.remove_resource::<PmfxRes>().unwrap().0;
+        ctx.imdraw = world.remove_resource::<ImDrawRes>().unwrap().0;
+        ctx.imgui = world.remove_resource::<ImGuiRes>().unwrap().0;
 
         // present to back buffer
         ctx.present();
