@@ -270,6 +270,16 @@ const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
     }
 }
 
+const fn to_dxgi_format_srv(format: super::Format) -> DXGI_FORMAT {
+    match format {
+        super::Format::D32fS8X24u => DXGI_FORMAT_D32_FLOAT_S8X24_UINT,
+        super::Format::D32f => DXGI_FORMAT_R32_FLOAT,
+        super::Format::D24nS8u => DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+        super::Format::D16n => DXGI_FORMAT_R16_UNORM,
+        _ => to_dxgi_format(format)
+    }
+}
+
 const fn to_d3d12_compile_flags(flags: &super::ShaderCompileFlags) -> u32 {
     let mut d3d12_flags = 0;
     if flags.contains(super::ShaderCompileFlags::SKIP_OPTIMIZATION) {
@@ -1732,7 +1742,7 @@ impl super::Device for Device {
                 self.device.CreateShaderResourceView(
                     &tex,
                     &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                        Format: dxgi_format,
+                        Format: to_dxgi_format_srv(info.format),
                         ViewDimension: match info.tex_type {
                             super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
                             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,

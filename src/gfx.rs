@@ -642,7 +642,7 @@ pub struct TransitionBarrier<'a, D: Device> {
 }
 
 /// All possible resource states, some for buffers and some for textures
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum ResourceState {
     /// Used for texture only to be written to from fragment shaders
     RenderTarget,

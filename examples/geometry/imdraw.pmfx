@@ -51,7 +51,7 @@ pmfx: {
         }
         main_depth(main_colour): {
             format: "D24nS8u"
-            usage: ["DepthStencil"]
+            usage: ["ShaderResource", "DepthStencil"]
         }
     }
     views: {
@@ -81,10 +81,10 @@ pmfx: {
         forward: [
             {
                 view: "render_grid"
-                // TODO: resources to derrive transitions
             }
             {
                 view: "render_world_view"
+                pileines: ["imdraw_mesh"]
             }
         ]
     }
