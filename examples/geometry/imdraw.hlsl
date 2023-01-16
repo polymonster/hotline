@@ -87,7 +87,7 @@ vs_output vs_mesh(vs_input_mesh input)
 }
 
 
-Texture2D<float4> blit_texture : register(t0);
+Texture2D<float4> blit_texture : register(t1);
 
 vs_output_texcoord vs_blit(vs_input_2d_texcoord input) {
     vs_output_texcoord output;
@@ -96,8 +96,12 @@ vs_output_texcoord vs_blit(vs_input_2d_texcoord input) {
     return output;
 }
 
+cbuffer blit_push_constants : register(b0) {
+    float2 blit_dimension;
+};
+
 ps_output ps_blit(vs_output_texcoord input) {
     ps_output output;
-    output.colour = blit_texture.Load(int3(input.texcoord.x * 1280.0, input.texcoord.y * 720.0, 0));
+    output.colour = blit_texture.Load(int3(input.texcoord.x * blit_dimension.x, input.texcoord.y * blit_dimension.y, 0));
     return output;
 }

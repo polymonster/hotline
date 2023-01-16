@@ -2,25 +2,23 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - graphs
-// - auto barriers
-// - ratio tracking pmfx
-// - depth stencil as texture
+// - wait frames before properly dropping gpu resources
+// - pass view name to blit to pmfx
+
+// - window utilities
+// - - rember window and console positions
+
+// - build schedule from file
 // - texures from file pmfx
 // - minimise resource handling code? macros?
+// - hot-reload shaders, pipelines, views, code
 
 // - Blend
 // - Raster
 
-// - hot-reload shaders, pipelines, views, code
-
 // - update matrices
 // - update aabb's
 // - culling
-
-// - wait frames before properly dropping gpu resources
-// - window utilities
-// - - rember window and console positions
 
 // - GPU Timer Query
 // - Draw Instanced
@@ -37,6 +35,10 @@
 // - primitives
 
 // DONE:
+// x ratio tracking pmfx
+// x basic graphs
+// x auto barriers
+// x depth stencil as texture
 // x move 'add' code into startup system - not possible? other ways of creating startup systems?
 // x copy or clone buffers? (cloning for now)
 // x setup functions

@@ -179,7 +179,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         let imgui = imgui::ImGui::create(&mut imgui_info)?;
 
         // pmfx
-        let pmfx = pmfx::Pmfx::create();
+        let mut pmfx = pmfx::Pmfx::<D>::create();
+        pmfx.update_window::<A>(&mut device, &main_window, "main_window");
 
         // blit pmfx
         let unit_quad_mesh = primitives::create_unit_quad_mesh(&mut device);
@@ -206,8 +207,10 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // update window and swap chain for the new frame
         self.main_window.update(&mut self.app);
         self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
-        
+        self.pmfx.update_window::<A>(&mut self.device, &self.main_window, "main_window");
+
         self.pmfx.new_frame(&self.swap_chain);
+        
 
         // transition to render target
         self.cmd_buf.reset(&self.swap_chain);
@@ -242,7 +245,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
         self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
         self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline("imdraw_blit").unwrap());
-        self.cmd_buf.set_render_heap(0, self.device.get_shader_heap(), srv);
+        self.cmd_buf.push_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
+        self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
         self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
         self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
         self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
