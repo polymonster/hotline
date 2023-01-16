@@ -273,6 +273,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // execute the main window command buffer + swap
         self.device.execute(&self.cmd_buf);
         self.swap_chain.swap(&self.device);
+        self.device.clean_up_resources(&self.swap_chain);
     }
 
     /// Wait for the last submitted frame to complete rendering to ensure safe shutdown once all in-flight resources

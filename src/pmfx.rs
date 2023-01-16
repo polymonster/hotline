@@ -710,26 +710,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn update_window<A: os::App>(&mut self, device: &mut D, window: &A::Window, name: &str) {
         let size = window.get_size();
         let size = (size.x as f32, size.y as f32);
-        let mut rebuild_views = Vec::new();
-        let mut recreate_textures = Vec::new();
+        let mut rebuild_views = HashSet::new();
+        let mut recreate_textures = HashSet::new();
         if self.window_sizes.contains_key(name) {
             if self.window_sizes[name] != size {
                 // update tracked textures
                 for (texture_name, texture) in &self.textures {
                     if let Some(ratio) = &texture.ratio {
                         if ratio.window == name {
-                            print!("texture needs update: {}", ratio.window);
                             if self.view_texture_refs.contains_key(texture_name) {
                                 for view_name in &self.view_texture_refs[texture_name] {
                                     self.views.remove(view_name);
-                                    rebuild_views.push(view_name.to_string());
-                                    recreate_textures.push(texture_name.to_string());
+                                    rebuild_views.insert(view_name.to_string());
+                                    recreate_textures.insert(texture_name.to_string());
                                 }
                             }
                         }
                     }
                 }
-
                 // update the size
                 self.window_sizes.remove(name);
             }
@@ -739,7 +737,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         // recreate textures for the new sizes
         for texture_name in recreate_textures {
-            self.textures.remove(&texture_name);
+            // remove the old and destroy
+            let tex = self.textures.remove(&texture_name).unwrap();
+            device.destroy_texture(tex.texture);
+
+            // create with new dimensions from 'window_sizes'
             self.create_texture(device, &texture_name).unwrap();
         }
 
@@ -763,7 +765,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         device: &mut D) {
 
         for node in &self.execute_graph {
-            println!("execute: {}", node);
+            // println!("execute: {}", node);
             if self.barriers.contains_key(node) {
                 // transition barriers
                 device.execute(&self.barriers[node]);
