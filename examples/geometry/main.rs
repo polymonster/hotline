@@ -160,12 +160,6 @@ fn render_world_view(
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
         for (world_matrix, mesh) in &mesh_draw_query {
             // draw
-
-            let mm = world_matrix.0 * vec4f(1.0, 1.0, 1.0, 1.0);
-            let pm = view_proj.0 * mm;
-            println!("depth = {}", pm.z / pm.w);
-
-
             view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
             view.cmd_buf.set_index_buffer(&mesh.0.ib);
             view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);

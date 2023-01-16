@@ -1,11 +1,16 @@
 
+use crate::os;
 use crate::gfx;
 use crate::gfx::ResourceState;
+use crate::os::Window;
 use gfx::CmdBuf;
 
 use serde::{Deserialize, Serialize};
+
 use std::collections::HashMap;
-use std::path::Path;
+use std::collections::HashSet;
+
+
 
 // TODO: should use hashes?
 // use std::hash::Hash;
@@ -13,6 +18,7 @@ use std::path::Path;
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::path::Path;
 
 /// Everything you need to render a world view
 pub struct View<D: gfx::Device> {
@@ -31,18 +37,26 @@ pub struct Mesh<D: gfx::Device> {
     pub num_indices: u32
 }
 
+struct TrackedTexture<D: gfx::Device>  {
+    texture: D::Texture,
+    ratio: Option<TextureSizeRatio>,
+    size: (u64, u64)
+}
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     pmfx: File,
-    pmfx_folders: HashMap<String, String>,
+    pmfx_folders: HashMap<String, String>, 
+    window_sizes: HashMap<String, (f32, f32)>,
     render_pipelines: HashMap<String, D::RenderPipeline>,
     compute_pipelines: HashMap<String, D::ComputePipeline>,
     shaders: HashMap<String, D::Shader>,
-    textures: HashMap<String, D::Texture>,
-    tracked_textures: Vec<String>,
+    textures: HashMap<String, TrackedTexture<D>>,
     views: HashMap<String, Arc<Mutex<View<D>>>>,
     barriers: HashMap<String, D::CmdBuf>,
     execute_graph: Vec<String>,
+    view_texture_refs: HashMap<String, HashSet<String>>
+
 }
 
 /// Serialisation layout for contents inside .pmfx file
@@ -67,7 +81,7 @@ impl File {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 struct TextureSizeRatio {
     window: String,
     scale: f32
@@ -149,14 +163,9 @@ fn info_from_state<T: Default + Copy>(name: &Option<String>, map: &HashMap<Strin
 }
 
 /// translate pmfx::TextureInfo to gfx::TextureInfo as pmfx::TextureInfo is slightly better equipped for user enty
-fn to_gfx_texture_info(pmfx_texture: &TextureInfo) -> gfx::TextureInfo {
+fn to_gfx_texture_info(pmfx_texture: &TextureInfo, ratio_size: (u64, u64)) -> gfx::TextureInfo {
     // size from ratio
-    let (width, height) = if let Some(_) = pmfx_texture.ratio {
-        (1280, 720)
-    }
-    else {
-        (pmfx_texture.width, pmfx_texture.height)
-    };
+    let (width, height) = ratio_size;
 
     // infer texture type from dimensions
     let tex_type = if pmfx_texture.depth > 1 {
@@ -282,10 +291,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
             compute_pipelines: HashMap::new(),
             shaders: HashMap::new(),
             textures: HashMap::new(),
-            tracked_textures: Vec::new(),
             views: HashMap::new(),
             barriers: HashMap::new(),
-            execute_graph: Vec::new()
+            execute_graph: Vec::new(),
+            view_texture_refs: HashMap::new(),
+            window_sizes: HashMap::new()
         }
     }
 
@@ -354,18 +364,38 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// expands width and height for a texture account for ratio scaling linked to windows, pass the info.width / height
+    /// of we have no ratio specified
+    fn get_texture_size_from_ratio(&self, pmfx_texture: &TextureInfo) -> Result<(u64, u64), super::Error> {
+        if let Some(ratio) = &pmfx_texture.ratio {
+            if self.window_sizes.contains_key(&ratio.window) {
+                let size = self.window_sizes[&ratio.window];
+                Ok(((size.0 * ratio.scale) as u64, (size.1 * ratio.scale) as u64))
+            }
+            else {
+                Err(super::Error {
+                    msg: format!("hotline_rs::pmfx:: could not find window for ratio: {}", ratio.window),
+                })
+            }
+        }
+        else {
+            Ok((pmfx_texture.width, pmfx_texture.height))
+        }
+    }
+
     /// Creates a texture if it has not already been created from information specified in .pmfx file
     pub fn create_texture(&mut self, device: &mut D, texture_name: &str) -> Result<(), super::Error> {
         if !self.textures.contains_key(texture_name) && self.pmfx.textures.contains_key(texture_name) {
             // create texture from info specified in .pmfx file
             println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
-            let tex = device.create_texture::<u8>(&to_gfx_texture_info(&self.pmfx.textures[texture_name]), None)?;
-            self.textures.insert(texture_name.to_string(), tex);
-            // track textures which rely on ratio sizes
-            if self.pmfx.textures[texture_name].ratio.is_some() {
-                println!("hotline_rs::pmfx:: tracking texture: {}", texture_name);
-                self.tracked_textures.push(texture_name.to_string())
-            }
+            let pmfx_tex = &self.pmfx.textures[texture_name];
+            let size = self.get_texture_size_from_ratio(pmfx_tex)?;
+            let tex = device.create_texture::<u8>(&to_gfx_texture_info(pmfx_tex, size), None)?;
+            self.textures.insert(texture_name.to_string(), TrackedTexture {
+                texture: tex,
+                ratio: self.pmfx.textures[texture_name].ratio.clone(),
+                size
+            });
         }
         Ok(())
     }
@@ -373,7 +403,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Returns a texture reference if the texture exists or none otherwise
     pub fn get_texture<'stack>(&'stack self, texture_name: &str) -> Option<&'stack D::Texture> {
         if self.textures.contains_key(texture_name) {
-            Some(&self.textures[texture_name])
+            Some(&self.textures[texture_name].texture)
+        }
+        else {
+            None
+        }
+    }
+
+    /// Returns the tuple (width, height) of a texture
+    pub fn get_texture_2d_size(&self, texture_name: &str) -> Option<(u64, u64)> {
+        if self.textures.contains_key(texture_name) {
+            Some(self.textures[texture_name].size)
         }
         else {
             None
@@ -391,21 +431,37 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let mut render_targets = Vec::new();
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
+
+                // TODO: tidy
+                if !self.view_texture_refs.contains_key(name) {
+                    self.view_texture_refs.insert(name.to_string(), HashSet::new());
+                }
+                self.view_texture_refs.get_mut(name).unwrap().insert(view_name.to_string());
             }
 
             // create textures for depth stencils
             for name in &pmfx_view.depth_stencil {
                 self.create_texture(device, name)?;
+
+                // TODO: tidy
+                if !self.view_texture_refs.contains_key(name) {
+                    self.view_texture_refs.insert(name.to_string(), HashSet::new());
+                }
+                self.view_texture_refs.get_mut(name).unwrap().insert(view_name.to_string());
             }
+
+            let mut size = (0, 0);
 
             // array of targets by name
             for name in &pmfx_view.render_target {
                 render_targets.push(self.get_texture(name).unwrap());
+                size = self.get_texture_2d_size(name).unwrap();
             }
 
             // get depth stencil by name
             let depth_stencil = if !pmfx_view.depth_stencil.is_empty() {
                 let name = &pmfx_view.depth_stencil[0];
+                size = self.get_texture_2d_size(name).unwrap();
                 Some(self.get_texture(name).unwrap())
             }
             else {
@@ -429,16 +485,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 viewport: gfx::Viewport {
                     x: 0.0,
                     y: 0.0,
-                    width: 1280.0,
-                    height: 720.0,
+                    width: size.0 as f32,
+                    height: size.1 as f32,
                     min_depth: 0.0,
                     max_depth: 1.0
                 },
                 scissor_rect: gfx::ScissorRect {
                     left: 0,
                     top: 0,
-                    right: 1280,
-                    bottom: 720
+                    right: size.0 as i32,
+                    bottom: size.1 as i32
                 },
                 cmd_buf: device.create_cmd_buf(2)
             };
@@ -646,7 +702,51 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
-        self.reset(swap_chain)
+        self.reset(swap_chain);
+    }
+
+    /// Update render targets or views associated with a window, this will resize textures and rebuild views
+    /// which need to be modified if a window size changes
+    pub fn update_window<A: os::App>(&mut self, device: &mut D, window: &A::Window, name: &str) {
+        let size = window.get_size();
+        let size = (size.x as f32, size.y as f32);
+        let mut rebuild_views = Vec::new();
+        let mut recreate_textures = Vec::new();
+        if self.window_sizes.contains_key(name) {
+            if self.window_sizes[name] != size {
+                // update tracked textures
+                for (texture_name, texture) in &self.textures {
+                    if let Some(ratio) = &texture.ratio {
+                        if ratio.window == name {
+                            print!("texture needs update: {}", ratio.window);
+                            if self.view_texture_refs.contains_key(texture_name) {
+                                for view_name in &self.view_texture_refs[texture_name] {
+                                    self.views.remove(view_name);
+                                    rebuild_views.push(view_name.to_string());
+                                    recreate_textures.push(texture_name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // update the size
+                self.window_sizes.remove(name);
+            }
+        }
+        // insert window to track
+        self.window_sizes.insert(name.to_string(), size);
+
+        // recreate textures for the new sizes
+        for texture_name in recreate_textures {
+            self.textures.remove(&texture_name);
+            self.create_texture(device, &texture_name).unwrap();
+        }
+
+        // recreate views with updated data
+        for view in &rebuild_views {
+            self.create_view(device, view).unwrap();
+        }
     }
 
     /// Reset all command buffers

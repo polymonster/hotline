@@ -35,7 +35,7 @@ pmfx: {
             vs: vs_blit
             ps: ps_blit
             push_constants: [
-                "blit_push_constents"
+                "blit_push_constants"
             ]
             topology: "TriangleList"
         }

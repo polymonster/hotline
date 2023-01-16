@@ -173,6 +173,7 @@ pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
     command_list: Vec<ID3D12GraphicsCommandList>,
+    needs_reset: Vec<bool>,
     pix: Option<WinPixEventRuntime>,
     in_flight_barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>>,
     event_stack_count: u32
@@ -1206,6 +1207,7 @@ impl super::Device for Device {
             let mut command_allocators: Vec<ID3D12CommandAllocator> = Vec::new();
             let mut command_lists: Vec<ID3D12GraphicsCommandList> = Vec::new();
             let mut barriers: Vec<Vec<D3D12_RESOURCE_BARRIER>> = Vec::new();
+            let mut needs_reset = Vec::new();
 
             for _ in 0..num_buffers as usize {
                 // create command allocator
@@ -1224,6 +1226,7 @@ impl super::Device for Device {
                 command_lists.push(command_list);
 
                 barriers.push(Vec::new());
+                needs_reset.push(false);
             }
 
             CmdBuf {
@@ -1232,7 +1235,8 @@ impl super::Device for Device {
                 command_list: command_lists,
                 pix: self.pix,
                 in_flight_barriers: barriers,
-                event_stack_count: 0
+                event_stack_count: 0,
+                needs_reset
             }
         }
     }
@@ -2208,7 +2212,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         let prev_bb = self.bb_index;
         let bb = unsafe { swap_chain.swap_chain.GetCurrentBackBufferIndex() as usize };
         self.bb_index = bb;
-        if swap_chain.frame_fence_value[bb] != 0 {
+        if swap_chain.frame_fence_value[bb] != 0 && self.needs_reset[bb] {
             unsafe {
                 self.command_allocator[bb]
                     .Reset()
@@ -2225,6 +2229,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         let bb = self.bb_index;
         unsafe {
             self.command_list[bb].Close().expect("hotline: d3d12 failed to close command list.");
+            self.needs_reset[bb] = true;
         }
         if self.event_stack_count != 0 {
             Err(super::Error {
