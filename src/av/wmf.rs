@@ -243,6 +243,11 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                 self.cleanup_textures.push(tex);
             }
 
+            // reset state
+            (*self.notify).can_play = false;
+            (*self.notify).ended = false;
+            (*self.notify).playing = false;
+
             let wp = win32::string_to_wide(filepath);
             let bstr = SysAllocString(PCWSTR(wp.as_ptr() as _));
             self.media_engine_ex.SetSource(bstr)?;
@@ -302,37 +307,39 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             }
 
             // update
-            let pts = self.media_engine_ex.OnVideoStreamTick();
-            if pts.is_ok() {
-                if let Some(tex) = &self.texture {
-                    let sh = d3d12::get_texture_shared_handle(tex);
-                    if let Some(handle) = sh {
-                        let dev1 : ID3D11Device1 = self.device.cast()?;
-                        let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle)?;
-
-                        let mf_rect = MFVideoNormalizedRect {
-                            left: 0.0,
-                            top: 0.0,
-                            right: 1.0,
-                            bottom: 1.0
-                        };
-
-                        let rect = RECT {
-                            left: 0,
-                            top: 0,
-                            right: self.width as i32,
-                            bottom: self.height as i32
-                        };
-
-                        let bg = MFARGB {
-                            rgbBlue: 0,
-                            rgbGreen: 0,
-                            rgbRed: 0,
-                            rgbAlpha: 0
-                        };
-
-                        self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg)?;
-                    } 
+            if self.is_loaded() {
+                let pts = self.media_engine_ex.OnVideoStreamTick();
+                if pts.is_ok() {
+                    if let Some(tex) = &self.texture {
+                        let sh = d3d12::get_texture_shared_handle(tex);
+                        if let Some(handle) = sh {
+                            let dev1 : ID3D11Device1 = self.device.cast()?;
+                            let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle)?;
+    
+                            let mf_rect = MFVideoNormalizedRect {
+                                left: 0.0,
+                                top: 0.0,
+                                right: 1.0,
+                                bottom: 1.0
+                            };
+    
+                            let rect = RECT {
+                                left: 0,
+                                top: 0,
+                                right: self.width as i32,
+                                bottom: self.height as i32
+                            };
+    
+                            let bg = MFARGB {
+                                rgbBlue: 0,
+                                rgbGreen: 0,
+                                rgbRed: 0,
+                                rgbAlpha: 0
+                            };
+    
+                            self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg)?;
+                        } 
+                    }
                 }
             }
 

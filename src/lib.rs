@@ -207,8 +207,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // update window and swap chain for the new frame
         self.main_window.update(&mut self.app);
         self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
-        self.pmfx.update_window::<A>(&mut self.device, &self.main_window, "main_window");
 
+        self.pmfx.update_window::<A>(&mut self.device, &self.main_window, "main_window");
         self.pmfx.new_frame(&self.swap_chain);
         
 
@@ -229,15 +229,15 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
     }
 
-    /// Render and display a pmfx target to the main window, draw imgui and swap buffers
-    pub fn present(&mut self) {
+    /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
+    pub fn present(&mut self, blit_view_name: &str) {
         // execute pmfx command buffers first
         self.pmfx.execute(&mut self.device);
 
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
 
         // get serv index of the pmfx target to blit to the window
-        let srv = self.pmfx.get_texture("main_colour").unwrap().get_srv_index().unwrap();
+        let srv = self.pmfx.get_texture(blit_view_name).unwrap().get_srv_index().unwrap();
        
         // blit to main window
         let vp_rect = self.main_window.get_viewport_rect();

@@ -2,10 +2,6 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - fix validation warning on resize
-// - wait frames before properly dropping gpu resources
-// - pass view name to blit to pmfx
-
 // - window utilities
 // - - rember window and console positions
 
@@ -36,6 +32,11 @@
 // - primitives
 
 // DONE:
+// x hot-reload lib
+// x fix validation warning on resize
+// x handle dropped resources on rebuild
+// x pass view name to blit to pmfx
+// x wait frames before properly dropping gpu resources (textures)
 // x ratio tracking pmfx
 // x basic graphs
 // x auto barriers
