@@ -31,7 +31,7 @@ pub fn setup_test(
     ));
 
     let cube_mesh = primitives::create_cube_mesh(&mut device.0);
-    let dim = 500;
+    let dim = 1;
     let dim2 = dim / 2;
 
     for y in 0..dim {    
@@ -45,7 +45,7 @@ pub fn setup_test(
                         x as f32 * 2.5 - dim2 as f32 * 2.5, 
                         0.0, 
                         y as f32 * 2.5 - 2.5 * dim as f32)) * 
-                        Mat4::from_scale(vec3f(1.0, f32::abs(f32::sin((x + y) as f32 / 10.0 as f32)) * 10.0, 1.0)) }
+                        Mat4::from_scale(vec3f(1.0, f32::abs(f32::sin((x + y) as f32 / 20.0 as f32)) * 20.0, 1.0)) }
             ));
         }
     }
@@ -129,7 +129,7 @@ fn update_cameras(
         // generate proj matrix
         let window_rect = main_window.0.get_viewport_rect();
         let aspect = window_rect.width as f32 / window_rect.height as f32;
-        let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.001, 10000.0);
+        let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 10000.0);
 
         // construct rotation matrix
         let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rotation.0.x));

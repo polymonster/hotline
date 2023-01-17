@@ -501,6 +501,7 @@ impl super::App for App {
         unsafe {
             let ws = to_win32_dw_style(&info.style);
             let wsex = to_win32_dw_ex_style(&info.style);
+            
             let rect = adjust_window_rect(&info.rect, ws, wsex);
 
             let parent_hwnd = if info.parent_handle.is_some() {
@@ -889,6 +890,30 @@ impl super::Window<App> for Window {
                 y: 0,
                 width: rect.right - rect.left,
                 height: rect.bottom - rect.top,
+            }
+        }
+    }
+
+    fn get_window_rect(&self) -> super::Rect<i32> {
+        unsafe {
+            let mut rect = RECT::default();
+            GetWindowRect(self.hwnd, &mut rect);
+
+            // this is adjusted to compensate for AdjustWindowRectEx on create
+            let mut adj = RECT::default();
+            AdjustWindowRectEx(&mut adj, self.ws, BOOL::from(false), self.wsex);
+            let adj_rect = RECT {
+                left: rect.left - adj.left,
+                right: rect.right - adj.right,
+                top: rect.top - adj.top,
+                bottom: rect.bottom - adj.bottom,
+            };
+
+            super::Rect::<i32> {
+                x: adj_rect.left,
+                y: adj_rect.top,
+                width: adj_rect.right - adj_rect.left,
+                height: adj_rect.bottom - adj_rect.top,
             }
         }
     }

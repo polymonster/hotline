@@ -2,8 +2,7 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - window utilities
-// - - rember window and console positions
+// - window utility remember maximised flags
 
 // - build schedule from file
 // - texures from file pmfx
@@ -32,6 +31,7 @@
 // - primitives
 
 // DONE:
+// x window utilities remember position
 // x hot-reload lib
 // x fix validation warning on resize
 // x handle dropped resources on rebuild
