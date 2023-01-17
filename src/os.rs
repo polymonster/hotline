@@ -3,6 +3,7 @@
 pub mod win32;
 
 use std::any::Any;
+use serde::{Deserialize, Serialize};
 
 type Error = super::Error;
 
@@ -80,7 +81,7 @@ pub struct MonitorInfo {
 }
 
 /// Describes a rectangle starting at the top left corner specified by x,y with the size of width and height
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Rect<T> {
     /// Top left position x
     pub x: T,
@@ -238,6 +239,8 @@ pub trait Window<A: App>: 'static + Send + Sync + Any + Sized + Clone {
     fn get_viewport_rect(&self) -> Rect<i32>;
     /// Returns the screen position for the top-left corner of the window
     fn get_size(&self) -> Size<i32>;
+    /// Returns the screen rect of the window screen pos x, y , size x, y.
+    fn get_window_rect(&self) -> Rect<i32>;
     /// Return mouse position in relative coordinates from the top left corner of the window
     fn get_mouse_client_pos(&self, mouse_pos: Point<i32>) -> Point<i32>;
     /// Return the dpi scale for the current monitor the window is on

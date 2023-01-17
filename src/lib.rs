@@ -33,6 +33,8 @@ pub mod primitives;
 #[macro_use]
 extern crate bitflags;
 
+use serde::{Deserialize, Serialize};
+
 /// Generic errors for modules to define their own
 pub struct Error {
     pub msg: String,
@@ -121,12 +123,32 @@ pub struct Context<D: gfx::Device, A: os::App> {
     pub cmd_buf: D::CmdBuf,
     pub imdraw: imdraw::ImDraw<D>,
     pub imgui: imgui::ImGui<D, A>,
-    pub unit_quad_mesh: pmfx::Mesh<D>
+    pub unit_quad_mesh: pmfx::Mesh<D>,
+    pub user_config: UserConfig
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct UserConfig {
+    // pos xy, size xy
+    pub main_window_rect: os::Rect<i32>
 }
 
 impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
     /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, Error> {
+        
+        // read user config or get defaults
+        let user_config_path = get_asset_path("user_config.json");
+        let user_config = if std::path::Path::new(&user_config_path).exists() {
+            let user_data = std::fs::read(user_config_path)?;
+            serde_json::from_slice(&user_data).unwrap()
+        }
+        else {
+            UserConfig {
+                main_window_rect: info.window_rect
+            }
+        };
+        
         // app
         let mut app = A::create(os::AppInfo {
             name: info.name.to_string(),
@@ -146,7 +168,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // main window
         let main_window = app.create_window(os::WindowInfo {
             title: info.name.to_string(),
-            rect: info.window_rect,
+            rect: user_config.main_window_rect,
             style: os::WindowStyleFlags::NONE,
             parent_handle: None,
         });
@@ -197,7 +219,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             pmfx,
             imdraw,
             imgui,
-            unit_quad_mesh
+            unit_quad_mesh,
+            user_config
         })
     }
 
@@ -207,13 +230,48 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // update window and swap chain for the new frame
         self.main_window.update(&mut self.app);
         self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
-
         self.pmfx.update_window::<A>(&mut self.device, &self.main_window, "main_window");
-        self.pmfx.new_frame(&self.swap_chain);
-        
 
-        // transition to render target
+        // reset main command buffer
         self.cmd_buf.reset(&self.swap_chain);
+
+        // start imgui new frame
+        self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
+
+        // start new pmfx frame
+        self.pmfx.new_frame(&self.swap_chain);
+
+        // user config changes
+        self.update_user_config_cache();
+    }
+
+    /// internal function to manage tracking user config values and changes, writes to disk if change are detected
+    fn update_user_config_cache(&mut self) {
+        // track any changes and write once
+        let mut invalidated = false;
+        
+        // main window pos / size
+        if self.user_config.main_window_rect != self.main_window.get_window_rect() {
+            self.user_config.main_window_rect = self.main_window.get_window_rect();
+            invalidated = true;
+        }
+
+        // write to file
+        if invalidated {
+            let user_config_file_text = serde_json::to_string(&self.user_config).unwrap();
+            let user_config_path = get_asset_path("user_config.json");
+
+            std::fs::File::create(&user_config_path).unwrap();
+            std::fs::write(&user_config_path, user_config_file_text).unwrap();
+        }
+    }
+
+    /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
+    pub fn present(&mut self, blit_view_name: &str) {
+        // execute pmfx command buffers first
+        self.pmfx.execute(&mut self.device);
+
+        // main pass
         self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(self.swap_chain.get_backbuffer_texture()),
             buffer: None,
@@ -224,16 +282,8 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // clear window
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
         self.cmd_buf.end_render_pass();
-        
-        // start imgui new frame
-        self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
-    }
 
-    /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
-    pub fn present(&mut self, blit_view_name: &str) {
-        // execute pmfx command buffers first
-        self.pmfx.execute(&mut self.device);
-
+        // blit
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
 
         // get serv index of the pmfx target to blit to the window
@@ -254,7 +304,6 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
 
         // render imgui
         self.cmd_buf.begin_event(0xff0000ff, "ImGui");
-        self.imgui.end();
         self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
         self.cmd_buf.end_event();
 
@@ -285,10 +334,17 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
     }
 }
 
+/// return an absolute path for a resource given the relative resource name from the /data dir
 pub fn get_asset_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap();
     String::from(asset_path.join(asset).to_str().unwrap())
+}
+
+/// return an absolute path for a resource given the relative path from the /executable dir
+pub fn get_exe_path(asset: &str) -> String {
+    let exe_path = std::env::current_exe().ok().unwrap();
+    String::from(exe_path.join(asset).to_str().unwrap())
 }
 
 #[cfg(target_os = "windows")]
