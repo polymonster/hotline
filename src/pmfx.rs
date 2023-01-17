@@ -567,6 +567,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // create views for any nodes in the graph
         self.create_graph_views(device, graph_name)?;
 
+        // currently we just have 1 single execute graph and barrier set
+        self.barriers.clear();
+        self.execute_graph.clear();
+
         // gather up all render targets and check which ones want to be both written to and also uses as shader resources
         let mut barriers = HashMap::new();
         for (name, texture) in &self.pmfx.textures {
@@ -578,7 +582,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
         }
         
-        // go through the graph sequentially, as the command lists are executed in order but generated async
+        // go through the graph sequentially, as the command lists are executed in order but generated 
         if self.pmfx.graphs.contains_key(graph_name) {
             let pmfx_graph = self.pmfx.graphs[graph_name].clone();
             for node in pmfx_graph {
@@ -748,6 +752,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // recreate views with updated data
         for view in &rebuild_views {
             self.create_view(device, view).unwrap();
+        }
+
+        if !rebuild_views.is_empty() {
+            self.create_graph(device, "forward").unwrap();
         }
     }
 
