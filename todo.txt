@@ -2,12 +2,18 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
-// - window utility remember maximised flags
+// - persistent entities
+// - host app
+// - hotline dynamic lib
+// - consolidate sync code
+
+// - timer stats
+// - thread stats
 
 // - build schedule from file
 // - texures from file pmfx
-// - minimise resource handling code? macros?
-// - hot-reload shaders, pipelines, views, code
+// - minimise resource handling code? macros?... bastard!
+// - hot-reload shaders, pipelines, views
 
 // - Blend
 // - Raster
@@ -31,6 +37,7 @@
 // - primitives
 
 // DONE:
+// - window utility remember maximised flags
 // x window utilities remember position
 // x hot-reload lib
 // x fix validation warning on resize
