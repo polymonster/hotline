@@ -1,11 +1,11 @@
-use hotline_rs::*;
-use ecs::*;
-use primitives;
 
-use gfx::CmdBuf;
+use hotline_rs::ecs::*;
+use hotline_rs::primitives;
 
-use os::App;
-use os::Window;
+use hotline_rs::gfx::CmdBuf;
+
+use hotline_rs::os::App;
+use hotline_rs::os::Window;
 
 use maths_rs::Vec3f;
 use maths_rs::Vec4f;
@@ -31,11 +31,16 @@ pub fn setup_test(
     ));
 
     let cube_mesh = primitives::create_cube_mesh(&mut device.0);
-    let dim = 1;
+    let dim = 50;
     let dim2 = dim / 2;
 
     for y in 0..dim {    
         for x in 0..dim {    
+            let wave_x = f32::abs(f32::sin((x as f32) / 20.0 as f32)) * 20.0;
+            let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
+
+            let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
+
             commands.spawn((
                 Position { 0: Vec3f::zero() },
                 Velocity { 0: Vec3f::one() },
@@ -45,10 +50,49 @@ pub fn setup_test(
                         x as f32 * 2.5 - dim2 as f32 * 2.5, 
                         0.0, 
                         y as f32 * 2.5 - 2.5 * dim as f32)) * 
-                        Mat4::from_scale(vec3f(1.0, f32::abs(f32::sin((x + y) as f32 / 20.0 as f32)) * 20.0, 1.0)) }
+                        Mat4::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0)) }
             ));
         }
     }
+}
+
+pub fn setup_test2(
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
+
+    commands.spawn((
+        Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
+        Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
+        ViewProjectionMatrix { 0: Mat4f::identity()},
+        Camera,
+    ));
+
+
+    let cube_mesh = primitives::create_cube_mesh(&mut device.0);
+    let dim = 10;
+    let dim2 = dim / 2;
+
+    for y in 0..dim {    
+        for x in 0..dim {    
+            let wave_x = f32::abs(f32::sin((x as f32) / 40.0 as f32)) * 90.0;
+            let wave_y = f32::abs(f32::sin((y as f32) / 100.0 as f32)) * 10.0;
+
+            let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
+
+            commands.spawn((
+                Position { 0: Vec3f::zero() },
+                Velocity { 0: Vec3f::one() },
+                MeshComponent {0: cube_mesh.clone()},
+                WorldMatrix { 0: Mat4f::from_translation(
+                    vec3f(
+                        x as f32 * 2.5 - dim2 as f32 * 2.5, 
+                        80.0, 
+                        y as f32 * 2.5 - 2.5 * dim as f32)) * 
+                        Mat4::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0)) }
+            ));
+        }
+    }
+
 }
 
 #[no_mangle]
@@ -75,7 +119,7 @@ pub fn mat_movement2(mut query: Query<&mut WorldMatrix>) {
 #[no_mangle]
 pub fn mat_movement3(mut query: Query<&mut WorldMatrix>) {
     for mut mat in &mut query {
-        mat.0 = mat.0 * Mat4f::from_translation(vec3f(1.0, 0.01, 0.01));
+        mat.0 = mat.0 * Mat4f::from_translation(vec3f(1.0, 0.1, 0.01));
     }
 }
 
@@ -111,7 +155,7 @@ fn update_cameras(
             }
 
             // get mouse rotation
-            if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
+            if app.get_mouse_buttons()[hotline_rs::os::MouseButton::Left as usize] {
                 let mouse_delta = app.get_mouse_pos_delta();
                 rotation.0.x -= mouse_delta.y as f32;
                 rotation.0.y -= mouse_delta.x as f32;
@@ -233,9 +277,10 @@ pub fn build_schedule(startup_schedule: &mut Schedule, schedule: &mut Schedule) 
     fn_map.insert("update_cameras", update_cameras.into_descriptor());
     fn_map.insert("mat_movement", mat_movement2.into_descriptor());
     fn_map.insert("setup_test", setup_test.into_descriptor());
+    fn_map.insert("setup_test2", setup_test2.into_descriptor());
 
-    let starup_funcs = vec!["setup_test"];
-    let update_funcs = vec!["update_cameras", "mat_movement"];
+    let starup_funcs = vec!["setup_test", "setup_test2"];
+    let update_funcs = vec!["update_cameras"];
     let render_funcs = vec!["render_grid", "render_world_view"];
 
     // add startup funcs by name

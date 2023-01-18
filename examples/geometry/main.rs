@@ -5,11 +5,10 @@ use os::App;
 
 use bevy_ecs::prelude::*;
 
-use std::thread;
-use std::sync::Arc;
-use std::sync::Mutex;
-
 use core::time::Duration;
+
+use maths_rs::Vec3f;
+use maths_rs::Mat4f;
 
 // The value of `dylib = "..."` should be the library containing the hot-reloadable functions
 // It should normally be the crate name of your sub-crate.
@@ -20,11 +19,19 @@ mod hot_lib {
 
     hot_functions_from_file!("lib/src/lib.rs");
 
-    #[lib_updated]
-    pub fn was_updated() -> bool {}
-
     #[lib_change_subscription]
     pub fn subscribe() -> hot_lib_reloader::LibReloadObserver {}
+}
+
+use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
+
+#[derive(PartialEq)]
+enum ReloadState {
+    None,
+    Requested,
+    Confirmed,
 }
 
 fn main() -> Result<(), hotline_rs::Error> {    
@@ -61,13 +68,60 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut run_startup = true;
     let mut imgui_open = true;
+    
+    let mut world = World::new();
+    let mut schedule = Schedule::default();
 
     let reloader = hot_lib::subscribe();
-    let mut world = World::new();
-    let mut schedules : Vec<Schedule> = Vec::new();
-    let mut startup_schedules : Vec<Schedule> = Vec::new();
+    let a_lock = Arc::new(Mutex::new(ReloadState::None));
+
+    let a_lock_thread = a_lock.clone();
+    thread::spawn(move || {
+        loop {
+            // wait for a reload
+            let tok = reloader.wait_for_about_to_reload();
+            
+            // request enter reload state
+            let mut a = a_lock_thread.lock().unwrap();
+            println!("hotline_rs::reload:: requested");
+            *a = ReloadState::Requested;
+            drop(a);
+            
+            // wait till main thread signals we are safe
+            loop {
+                let mut a = a_lock_thread.lock().unwrap();
+                if *a == ReloadState::Confirmed {
+                    *a = ReloadState::None;
+                    drop(a);
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(16));
+            }
+
+            // unloack
+            drop(tok);
+        }
+    });
 
     while ctx.app.run() {
+        // sync
+        let mut lock = a_lock.lock().unwrap();
+        if *lock != ReloadState::None {
+            // drop everything while its safe.. might want to wait for the GPU
+            schedule = Schedule::default();
+            world = World::new();
+
+            // signal it is safe to proceed and reload the new code
+            *lock = ReloadState::Confirmed;
+            drop(lock);
+            println!("hotline_rs::reload:: confirmed");
+            
+            // wait for reload to complete
+            hot_lib::subscribe().wait_for_reload();
+            run_startup = true;
+            lock = a_lock.lock().unwrap();
+        }
+
         ctx.new_frame();
 
         // imgui
@@ -82,35 +136,36 @@ fn main() -> Result<(), hotline_rs::Error> {
             ctx.imgui.end();
         }
 
-        // move hotline resource into world
+        // move hotline resource into 
         world.insert_resource(DeviceRes {0: ctx.device});
         world.insert_resource(AppRes {0: ctx.app});
         world.insert_resource(MainWindowRes {0: ctx.main_window});
         world.insert_resource(PmfxRes {0: ctx.pmfx});
         world.insert_resource(ImDrawRes {0: ctx.imdraw});
         world.insert_resource(ImGuiRes {0: ctx.imgui});
-        
+
         // run startup
         if run_startup {
-            println!("hotline_rs::hot_reload:: startup");
-            world.clear_entities();
+            println!("hotline_rs::reload:: startup");
+
+            world.spawn((
+                Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
+                Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
+                ViewProjectionMatrix { 0: Mat4f::identity()},
+                Camera,
+            ));
 
             // build schedules
             let mut startup_schedule = Schedule::default();
-            let mut update_schedule = Schedule::default();
-            hot_lib::build_schedule(&mut startup_schedule, &mut update_schedule);
-            
-            // track schedules
-            startup_schedules.push(startup_schedule);
-            schedules.push(update_schedule);
+            hot_lib::build_schedule(&mut startup_schedule, &mut schedule);
 
-            startup_schedules.last_mut().unwrap().run(&mut world);
+            startup_schedule.run(&mut world);
             run_startup = false;
         }
 
         // run systems
-        schedules.last_mut().unwrap().run(&mut world);
-    
+        schedule.run(&mut world);
+
         // move resources back out
         ctx.device = world.remove_resource::<DeviceRes>().unwrap().0;
         ctx.app = world.remove_resource::<AppRes>().unwrap().0;
@@ -121,16 +176,8 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // present to back buffer
         ctx.present("main_colour");
-
-        if reloader.wait_for_about_to_reload_timeout(Duration::from_micros(100)).is_some() {
-            println!("hotline_rs::hot_reload:: reloading");
-            reloader.wait_for_reload();
-            run_startup = true;
-        }
+        drop(lock);
     }
-
-    schedules.clear();
-    startup_schedules.clear();
 
     ctx.wait_for_last_frame();
 
