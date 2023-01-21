@@ -78,3 +78,8 @@ crate-type = ["bin"]
 [[example]]
 name = "triangle"
 crate-type = ["bin"]
+
+[[bin]]
+name = "host"
+path = "host/main.rs"
+

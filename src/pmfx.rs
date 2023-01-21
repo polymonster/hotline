@@ -1,4 +1,5 @@
 
+use crate::gfx::RenderPass;
 use crate::os;
 use crate::gfx;
 use crate::gfx::ResourceState;
@@ -17,40 +18,64 @@ use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::path::Path;
+use std::time::SystemTime;
 
-/// Everything you need to render a world view
+/// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
+    /// A pre-built render pass: multiple colour targets and depth possible
     pub pass: D::RenderPass,
+    /// Pre-calculated viewport based on the output dimensions of the render target adjusted for user data from .pmfx
     pub viewport: gfx::Viewport,
+    /// Pre-calculated viewport based on the output dimensions of the render target adjusted for user data from .pmfx
     pub scissor_rect: gfx::ScissorRect,
+    /// A command buffer ready to be used to buffer draw / render commands
     pub cmd_buf: D::CmdBuf
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
-/// Compact mesh representation
+/// Compact mesh representation referincing and index buffer, vertex buffer and num index count
 #[derive(Clone)]
 pub struct Mesh<D: gfx::Device> {
+    /// Vertex buffer
     pub vb: D::Buffer,
+    // Index Buffer
     pub ib: D::Buffer,
+    /// Number of indices to draw from the index buffer
     pub num_indices: u32
 }
 
+/// Additional info to wrap with a texture for tracking changes from windwow sizes or other associated bounds
 struct TrackedTexture<D: gfx::Device>  {
+    /// The texture itself
     texture: D::Texture,
+    /// Optional ratio, which will contain window name and scale info if present
     ratio: Option<TextureSizeRatio>,
+    /// Tuple of (width, height) to track the current size of the texture and compare for updates
     size: (u64, u64)
 }
 
+/// Hash type for quick checks of changed resources from pmfx
+type PmfxHash = u64;
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
+    /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
     pmfx: File,
+    /// Filepath to the data which the pmfx File was deserialised from
+    pmfx_filepath: std::path::PathBuf,
+    /// Modified time of the .pmfx file this instance is associated with
+    pmfx_modified_time: SystemTime,
+    /// Folder paths for 
     pmfx_folders: HashMap<String, String>, 
+    /// Updated by calling 'update_window' this will cause any tracked textures to check for resizes and rebuild textures if necessary
     window_sizes: HashMap<String, (f32, f32)>,
-    render_pipelines: HashMap<String, D::RenderPipeline>,
-    compute_pipelines: HashMap<String, D::ComputePipeline>,
-    shaders: HashMap<String, D::Shader>,
+    /// Nested structure of: format (u64) > pipelines (name) > permutation (mask) which is tuple (build_hash, pipeline)
+    render_pipelines: HashMap<PmfxHash, HashMap<String, HashMap<u32, (PmfxHash, D::RenderPipeline)>>>,
+    compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
+    /// 
+    shaders: HashMap<String, (PmfxHash, D::Shader)>,
     textures: HashMap<String, TrackedTexture<D>>,
-    views: HashMap<String, Arc<Mutex<View<D>>>>,
+    views: HashMap<String, (PmfxHash, Arc<Mutex<View<D>>>)>,
     barriers: HashMap<String, D::CmdBuf>,
     execute_graph: Vec<String>,
     view_texture_refs: HashMap<String, HashSet<String>>
@@ -60,31 +85,41 @@ pub struct Pmfx<D: gfx::Device> {
 /// Serialisation layout for contents inside .pmfx file
 #[derive(Serialize, Deserialize)]
 struct File {
+    shaders: HashMap<String, PmfxHash>,
     pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
-    graphs: HashMap<String, Vec<ViewInstanceInfo>>
+    render_graphs: HashMap<String, Vec<ViewInstanceInfo>>,
+    update_graphs: HashMap<String, UpdateInstanceInfo>
 }
 
+/// pmfx File serialisation, 
 impl File {
+    /// creates a new empty pmfx
     fn new() -> Self {
         File {
+            shaders: HashMap::new(),
             pipelines: HashMap::new(),
             depth_stencil_states: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
-            graphs: HashMap::new()
+            render_graphs: HashMap::new(),
+            update_graphs: HashMap::new(),
         }
     }
 }
 
+/// Data to associate a Texture with a Window so when a window resizes we updat the texture dimensions to window size * scale
 #[derive(Serialize, Deserialize, Clone)]
 struct TextureSizeRatio {
+    /// Window name to track size changes from
     window: String,
+    /// Multiply the window dimensions * scale to get the final size of the texture
     scale: f32
 }
 
+/// Pmfx texture serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize)]
 struct TextureInfo {
     ratio: Option<TextureSizeRatio>,
@@ -99,7 +134,8 @@ struct TextureInfo {
     usage: Vec<ResourceState>
 }
 
-#[derive(Serialize, Deserialize)]
+/// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
+#[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
@@ -109,7 +145,8 @@ struct Pipeline {
     blend_state: Option<String>,
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
-    topology: Option<gfx::Topology>
+    topology: Option<gfx::Topology>,
+    hash: PmfxHash
 }
 type PipelinePermutations = HashMap<String, Pipeline>;
 
@@ -121,12 +158,21 @@ struct ViewInfo {
     scissor: Vec<f32>,
     clear_colour: Option<Vec<f32>>,
     clear_depth: Option<f32>,
-    clear_stencil: Option<u8>
+    clear_stencil: Option<u8>,
+    hash: PmfxHash
 }
 
 #[derive(Serialize, Deserialize, Clone)]
 struct ViewInstanceInfo {
-    view: String
+    view: String,
+    pipelines: Option<Vec<String>>,
+    function: String
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+struct UpdateInstanceInfo {
+    setup: Vec<String>,
+    update: Vec<String>
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -284,6 +330,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn create() -> Self {        
         Pmfx {
             pmfx: File::new(),
+            pmfx_filepath: std::path::PathBuf::new(),
+            pmfx_modified_time: SystemTime::now(),
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
@@ -311,10 +359,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         //  deserialise pmfx pipelines from file
         let info_filepath = folder.join(format!("{}.json", pmfx_name));
-        let pmfx_data = fs::read(info_filepath)?;
+        let pmfx_data = fs::read(&info_filepath)?;
 
         // TODO: this should merge in
         self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
+        self.pmfx_filepath = info_filepath.to_path_buf();
+        self.pmfx_modified_time = fs::metadata(&info_filepath).unwrap().modified().unwrap();
 
         // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
         for name in self.pmfx.pipelines.keys() {
@@ -324,14 +374,15 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Ok(())
     }
 
-    fn create_shader<'stack>(shaders: &'stack mut HashMap<String, D::Shader>, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
+    fn create_shader(&mut self, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
         if let Some(file) = file {
-            if !shaders.contains_key(file) {
+            if !self.shaders.contains_key(file) {
                 println!("hotline_rs::pmfx:: compiling shader: {}", file);
                 let shader = create_shader_from_file(device, folder, Some(file.to_string()));
                 if let Some(shader) = shader.unwrap() {
                     println!("hotline_rs::pmfx:: success: {}", file);
-                    shaders.insert(file.to_string(), shader);
+                    let hash = self.pmfx.shaders.get(file).unwrap();
+                    self.shaders.insert(file.to_string(), (*hash, shader));
                     Ok(())
                 }
                 else {
@@ -351,7 +402,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn get_shader<'stack>(&'stack self, file: &Option<String>) -> Option<&'stack D::Shader> {
         if let Some(file) = file {
             if self.shaders.contains_key(file) {
-                Some(&self.shaders[file])
+                Some(&self.shaders[file].1)
             }
             else {
                 None
@@ -422,6 +473,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn create_view(&mut self, device: &mut D, view_name: &str) -> Result<(), super::Error> {
         // create textures
         if !self.views.contains_key(view_name) && self.pmfx.views.contains_key(view_name) {
+
+            println!("hotline::pmfx:: creating view {}", view_name);
+
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
 
@@ -497,7 +551,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 cmd_buf: device.create_cmd_buf(2)
             };
 
-            self.views.insert(view_name.to_string(), Arc::new(Mutex::new(view)));
+            self.views.insert(view_name.to_string(), (pmfx_view.hash, Arc::new(Mutex::new(view))));
         }
 
         Ok(())
@@ -506,7 +560,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Return a reference to a view if the view exists or none otherwise
     pub fn get_view(&self, view_name: &str) -> Option<ViewRef<D>> {
         if self.views.contains_key(view_name) {
-            Some(self.views[view_name].clone())
+            Some(self.views[view_name].1.clone())
         }
         else {
             None
@@ -514,10 +568,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create all views required for a render graph if necessary, skip if a view already exists
-    pub fn create_graph_views(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+    pub fn create_render_graph_views(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
         // create views for all of the nodes
-        if self.pmfx.graphs.contains_key(graph_name) {
-            let pmfx_graph = self.pmfx.graphs[graph_name].clone();
+        if self.pmfx.render_graphs.contains_key(graph_name) {
+            let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
             for node in pmfx_graph {
                 // create view for each node
                 self.create_view(device, &node.view)?;
@@ -560,44 +614,54 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create a render graph wih automatic resource barrier generation from info specified insie .pmfx file
-    pub fn create_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+    pub fn create_render_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {        
+        // go through the graph sequentially, as the command lists are executed in order but generated 
+        if self.pmfx.render_graphs.contains_key(graph_name) {
 
-        // create views for any nodes in the graph
-        self.create_graph_views(device, graph_name)?;
+            // create views for any nodes in the graph
+            self.create_render_graph_views(device, graph_name)?;
 
-        // currently we just have 1 single execute graph and barrier set
-        self.barriers.clear();
-        self.execute_graph.clear();
+            // currently we just have 1 single execute graph and barrier set
+            self.barriers.clear();
+            self.execute_graph.clear();
 
-        // gather up all render targets and check which ones want to be both written to and also uses as shader resources
-        let mut barriers = HashMap::new();
-        for (name, texture) in &self.pmfx.textures {
-            if texture.usage.contains(&ResourceState::ShaderResource) {
-                if texture.usage.contains(&ResourceState::RenderTarget) || 
-                    texture.usage.contains(&ResourceState::DepthStencil) {
-                        barriers.insert(name.to_string(), ResourceState::ShaderResource);
+            // gather up all render targets and check which ones want to be both written to and also uses as shader resources
+            let mut barriers = HashMap::new();
+            for (name, texture) in &self.pmfx.textures {
+                if texture.usage.contains(&ResourceState::ShaderResource) {
+                    if texture.usage.contains(&ResourceState::RenderTarget) || 
+                        texture.usage.contains(&ResourceState::DepthStencil) {
+                            barriers.insert(name.to_string(), ResourceState::ShaderResource);
+                    }
                 }
             }
-        }
-        
-        // go through the graph sequentially, as the command lists are executed in order but generated 
-        if self.pmfx.graphs.contains_key(graph_name) {
-            let pmfx_graph = self.pmfx.graphs[graph_name].clone();
-            for node in pmfx_graph {
+
+            let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
+            for instance in pmfx_graph {
                 // create transitions by inspecting view info
-                let pmfx_view = self.pmfx.views[&node.view].clone();
+                let pmfx_view = self.pmfx.views[&instance.view].clone();
 
                 // if we need to write to a target we must make sure it is transitioned into render target state
                 for rt_name in pmfx_view.render_target {
                     self.create_texture_transition_barrier(
-                        device, &mut barriers, &node.view, &rt_name, ResourceState::RenderTarget)?;
+                        device, &mut barriers, &instance.view, &rt_name, ResourceState::RenderTarget)?;
 
                 }
 
                 // same for depth stencils
                 for ds_name in pmfx_view.depth_stencil {
                     self.create_texture_transition_barrier(
-                        device, &mut barriers, &node.view, &ds_name, ResourceState::DepthStencil)?;
+                        device, &mut barriers, &instance.view, &ds_name, ResourceState::DepthStencil)?;
+
+                }
+
+                // create pipelines requested for this view instance with the pass format
+                if let Some(view_pipelines) = &instance.pipelines {
+                    for pipeline in view_pipelines {
+                        let view = self.get_view(&instance.view).clone().unwrap();
+                        let view = view.lock().unwrap();
+                        self.create_pipeline(device, pipeline, &view.pass)?;
+                    }
 
                 }
 
@@ -605,73 +669,97 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // TODO: barriers to transition to ShaderResource
 
                 // push a view on
-                self.execute_graph.push(node.view.to_string());
+                self.execute_graph.push(instance.view.to_string());
             }
-        }
 
-        // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
-        let mut srvs = Vec::new();
-        for name in barriers.keys() {
-            srvs.push(name.to_string());
-        }
+            // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
+            let mut srvs = Vec::new();
+            for name in barriers.keys() {
+                srvs.push(name.to_string());
+            }
 
-        for name in srvs {
-            self.create_texture_transition_barrier(
-                device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
-        }
+            for name in srvs {
+                self.create_texture_transition_barrier(
+                    device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
+            }
 
-        Ok(())
+            Ok(())
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find render graph: {}", graph_name),
+            })
+        }
     }
 
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
-    pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {        
-        // grab the pmfx pipeline info
+    pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
         if self.pmfx.pipelines.contains_key(pipeline_name) {
-            let pipeline = &self.pmfx.pipelines[pipeline_name]["0"];
-            let shaders = &mut self.shaders;
 
-            // TODO: shader array
+            // first create shaders if necessary
             let folder = self.pmfx_folders[pipeline_name].to_string();
-            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.vs)?;
-            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.ps)?;
-            Self::create_shader(shaders, device, Path::new(&folder), &pipeline.cs)?;
-
-            // TODO: infer compute or graphics pipeline from pmfx
-            let cs = self.get_shader(&pipeline.cs);
-            if let Some(cs) = cs {
-                let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
-                    cs,
-                    descriptor_layout: pipeline.descriptor_layout.clone(),
-                })?;
-                println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
-                self.compute_pipelines.insert(pipeline_name.to_string(), pso);
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
+                self.create_shader(device, Path::new(&folder), &pipeline.vs)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.cs)?;
             }
-            else {
-                let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
-                let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-                    vs: self.get_shader(&pipeline.vs),
-                    fs: self.get_shader(&pipeline.ps),
-                    input_layout: vertex_layout.to_vec(),
-                    descriptor_layout: pipeline.descriptor_layout.clone(),
-                    raster_info: gfx::RasterInfo::default(),
-                    depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
-                    blend_info: gfx::BlendInfo {
-                        alpha_to_coverage_enabled: false,
-                        independent_blend_enabled: false,
-                        render_target: vec![gfx::RenderTargetBlendInfo::default()],
-                    },
-                    topology: 
-                        if let Some(topology) = pipeline.topology {
-                            topology
-                        }
-                        else {
-                            gfx::Topology::TriangleList
+            
+            // create entry for this format if it does not exist
+            let fmt = pass.get_format_hash();
+            if !self.render_pipelines.contains_key(&fmt) {
+                self.render_pipelines.insert(fmt, HashMap::new());
+            }
+            let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
+            
+            // create entry for this pipeline permutation set if it does not exist
+            if !format_pipeline.contains_key(pipeline_name) {
+                format_pipeline.insert(pipeline_name.to_string(), HashMap::new());
+            }
+
+            // we create a pipeline per-permutation
+            for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                // TODO: infer compute or graphics pipeline from pmfx
+                let cs = self.get_shader(&pipeline.cs);
+                if let Some(cs) = cs {
+                    let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
+                        cs,
+                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                    })?;
+                    println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
+                    self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
+                }
+                else {
+                    let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
+                    let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
+                        vs: self.get_shader(&pipeline.vs),
+                        fs: self.get_shader(&pipeline.ps),
+                        input_layout: vertex_layout.to_vec(),
+                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                        raster_info: gfx::RasterInfo::default(),
+                        depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
+                        blend_info: gfx::BlendInfo {
+                            alpha_to_coverage_enabled: false,
+                            independent_blend_enabled: false,
+                            render_target: vec![gfx::RenderTargetBlendInfo::default()],
                         },
-                    patch_index: 0,
-                    pass,
-                })?;
-                println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
-                self.render_pipelines.insert(pipeline_name.to_string(), pso);
+                        topology: 
+                            if let Some(topology) = pipeline.topology {
+                                topology
+                            }
+                            else {
+                                gfx::Topology::TriangleList
+                            },
+                        patch_index: 0,
+                        pass,
+                    })?;
+                    
+                    println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
+                    let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
+                    let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
+
+                    let mask = permutation.parse().unwrap();
+                    permutations.insert(mask, (pipeline.hash, pso));
+                }
             }
             Ok(())
         }
@@ -682,10 +770,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Fetch a prebuilt RenderPipeline
-    pub fn get_render_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Option<&'stack D::RenderPipeline> {
-        if self.render_pipelines.contains_key(pipeline_name) {
-            Some(&self.render_pipelines[pipeline_name])
+    /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
+    pub fn get_render_pipeline_for_format<'stack>(&'stack self, pipeline_name: &str, format_hash: u64) -> Option<&'stack D::RenderPipeline> {
+        self.get_render_pipeline_permutation_for_format(pipeline_name, 0, format_hash)
+    }
+
+    /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
+    pub fn get_render_pipeline_permutation_for_format<'stack>(&'stack self, pipeline_name: &str, permutation: u32, format_hash: u64) -> Option<&'stack D::RenderPipeline> {
+        if let Some(formats) = &self.render_pipelines.get(&format_hash) {
+            if formats.contains_key(pipeline_name) {
+                Some(&formats[pipeline_name][&permutation].1)
+            }
+            else {
+                None
+            }
         }
         else {
             None
@@ -695,7 +793,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Fetch a prebuilt ComputePipeline
     pub fn get_compute_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Option<&'stack D::ComputePipeline> {
         if self.compute_pipelines.contains_key(pipeline_name) {
-            Some(&self.compute_pipelines[pipeline_name])
+            Some(&self.compute_pipelines[pipeline_name].1)
         }
         else {
             None
@@ -705,6 +803,83 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
         self.reset(swap_chain);
+    }
+
+    /// Reload all active resources based on hashes
+    pub fn reload(&mut self, device: &mut D) {        
+        let mtime = fs::metadata(&self.pmfx_filepath).unwrap().modified().unwrap();
+        if mtime > self.pmfx_modified_time {
+            println!("hotline::pmfx:: reload available");
+            let pmfx_data = fs::read(&self.pmfx_filepath).expect("hotline::pmfx:: failed to read file");
+            self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
+
+            // find views that need reloading
+            let mut reload_views = Vec::new();
+            for (name, view) in &self.views {
+                if self.pmfx.views.contains_key(name) {
+                    if self.pmfx.views.get(name).unwrap().hash != view.0 {
+                        reload_views.push(name.to_string());
+                    }
+                }
+            }
+
+            // find pipelines that need reloading
+            let mut reload_pipelines = Vec::new();
+            for (hash, formats) in &self.render_pipelines {
+                for (name, permutations) in formats {
+                    for (mask, pipeline) in permutations {
+
+                        let build_hash = self.pmfx.pipelines
+                            .get(name).unwrap()
+                            .get(&mask.to_string()).unwrap()
+                            .hash;
+
+                        if pipeline.0 != build_hash {
+                            reload_pipelines.push((*hash, name.to_string(), *mask));
+                        }
+                    }
+                }
+            }
+
+            // find shaders that need reloading
+            let mut reload_shaders = Vec::new();
+            for (name, shader) in &self.shaders {
+                if self.pmfx.shaders.contains_key(name) {
+                    if *self.pmfx.shaders.get(name).unwrap() != shader.0 {
+                        reload_shaders.push(name.to_string());
+                    }
+                }
+            }
+    
+            // reload views
+            for view in &reload_views {
+                println!("hotline::pmfx:: reloading view: {}", view);
+                self.views.remove(view);
+                self.create_view(device, view).unwrap();
+            }
+
+            // reload shaders
+            for shader in &reload_shaders {
+                println!("hotline::pmfx:: reloading shader: {}", shader);
+                self.shaders.remove(shader);
+            }
+            
+            // reload pipelines tuple = (format_hash, pipeline_name, permutation_mask)
+            for pipeline in &reload_pipelines {
+                println!("hotline::pmfx:: reloading pipeline: {}", pipeline.1);
+                
+                // TODO: here we could only remove affected permutations
+                let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
+                format_pipelines.remove(&pipeline.1);
+
+                let view = self.get_view("render_world_view").unwrap().clone();
+                let view = view.lock().unwrap();
+                
+                self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+            }
+                    
+            self.pmfx_modified_time = fs::metadata(&self.pmfx_filepath).unwrap().modified().unwrap();
+        }
     }
 
     /// Update render targets or views associated with a window, this will resize textures and rebuild views
@@ -752,8 +927,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.create_view(device, view).unwrap();
         }
 
+        // TODO: store active graph
         if !rebuild_views.is_empty() {
-            self.create_graph(device, "forward").unwrap();
+            self.create_render_graph(device, "forward").unwrap();
         }
     }
 
@@ -761,7 +937,38 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for view in self.views.values() {
             let view = view.clone();
-            view.lock().unwrap().cmd_buf.reset(swap_chain);
+            view.1.lock().unwrap().cmd_buf.reset(swap_chain);
+        }
+    }
+
+    pub fn get_setup_function_names(&self, update_graph: &str) -> Vec<String> {
+        if self.pmfx.update_graphs.contains_key(update_graph) {
+            self.pmfx.update_graphs[update_graph].setup.to_vec()
+        }
+        else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_update_function_names(&self, update_graph: &str) -> Vec<String> {
+        if self.pmfx.update_graphs.contains_key(update_graph) {
+            self.pmfx.update_graphs[update_graph].update.to_vec()
+        }
+        else {
+            Vec::new()
+        }
+    }
+
+    pub fn get_render_function_names(&self, render_graph: &str) -> Vec<String> {
+        if self.pmfx.render_graphs.contains_key(render_graph) {
+            let mut render_functions = Vec::new();
+            for instance in &self.pmfx.render_graphs[render_graph] {
+                render_functions.push(instance.function.to_string());
+            }
+            render_functions
+        }
+        else {
+            Vec::new()
         }
     }
 
@@ -779,7 +986,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             else if self.views.contains_key(node) {
                 // dispatch a view
                 let view = self.views[node].clone();
-                let view = &mut view.lock().unwrap();
+                let view = &mut view.1.lock().unwrap();
                 view.cmd_buf.close().unwrap();
                 device.execute(&view.cmd_buf);
             }

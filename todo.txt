@@ -2,15 +2,32 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
+// - minimise code move ino structure
+// - reload sync
+// - build schedule
+// - resources > world
+// -
+
+// - build schedule from file
+// - quick dev ui tidy up
+// - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
-// - host app
-// - hotline dynamic lib
+// - pmfx mltiple files
+// - core pmfx shaders etc
+// - pipeline permutations
+// - view_texture_refs
+// - error handling
+// - watching rebuilding
+// - msaa + texture format changing
+
+// - systems with time
+
+// - hotline dynamic lib (build times)
 // - consolidate sync code
 
 // - timer stats
 // - thread stats
 
-// - build schedule from file
 // - texures from file pmfx
 // - minimise resource handling code? macros?... bastard!
 // - hot-reload shaders, pipelines, views
@@ -37,6 +54,9 @@
 // - primitives
 
 // DONE:
+// x core functions
+// x pipeline for pass format
+// x host app
 // - window utility remember maximised flags
 // x window utilities remember position
 // x hot-reload lib
