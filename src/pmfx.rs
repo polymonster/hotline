@@ -1,24 +1,25 @@
 
-use crate::gfx::RenderPass;
+
 use crate::os;
+use crate::os::Window;
+
 use crate::gfx;
 use crate::gfx::ResourceState;
-use crate::os::Window;
-use gfx::CmdBuf;
+use crate::gfx::RenderPass;
+use crate::gfx::CmdBuf;
 
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
 use std::collections::HashSet;
-
-// TODO: should use hashes?
-// use std::hash::Hash;
-
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
+
+/// Hash type for quick checks of changed resources from pmfx
+type PmfxHash = u64;
 
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
@@ -54,9 +55,6 @@ struct TrackedTexture<D: gfx::Device>  {
     size: (u64, u64)
 }
 
-/// Hash type for quick checks of changed resources from pmfx
-type PmfxHash = u64;
-
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
@@ -71,15 +69,20 @@ pub struct Pmfx<D: gfx::Device> {
     window_sizes: HashMap<String, (f32, f32)>,
     /// Nested structure of: format (u64) > pipelines (name) > permutation (mask) which is tuple (build_hash, pipeline)
     render_pipelines: HashMap<PmfxHash, HashMap<String, HashMap<u32, (PmfxHash, D::RenderPipeline)>>>,
+    /// Compute Pipelines grouped by name then as a tuple (build_hash, pipeline)
     compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
-    /// 
+    /// Shaders stored along with their build hash for quick checks if reload is necessary
     shaders: HashMap<String, (PmfxHash, D::Shader)>,
+    /// Texture map of tracked texture info
     textures: HashMap<String, TrackedTexture<D>>,
+    /// Built views that are used in view function dispatches
     views: HashMap<String, (PmfxHash, Arc<Mutex<View<D>>>)>,
+    /// Auto-generated barriers to insert between view passes to ensure correct resource states
     barriers: HashMap<String, D::CmdBuf>,
-    execute_graph: Vec<String>,
+    /// Vector of view names to execute in designated order
+    render_graph_execute_order: Vec<String>,
+    /// Tracking texture references of views
     view_texture_refs: HashMap<String, HashSet<String>>
-
 }
 
 /// Serialisation layout for contents inside .pmfx file
@@ -339,7 +342,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             textures: HashMap::new(),
             views: HashMap::new(),
             barriers: HashMap::new(),
-            execute_graph: Vec::new(),
+            render_graph_execute_order: Vec::new(),
             view_texture_refs: HashMap::new(),
             window_sizes: HashMap::new()
         }
@@ -592,7 +595,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             if state != target_state {
                 // add barrier placeholder in the execute order
                 let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
-                self.execute_graph.push(barrier_name.to_string());
+                self.render_graph_execute_order.push(barrier_name.to_string());
 
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
@@ -623,7 +626,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // currently we just have 1 single execute graph and barrier set
             self.barriers.clear();
-            self.execute_graph.clear();
+            self.render_graph_execute_order.clear();
 
             // gather up all render targets and check which ones want to be both written to and also uses as shader resources
             let mut barriers = HashMap::new();
@@ -669,7 +672,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // TODO: barriers to transition to ShaderResource
 
                 // push a view on
-                self.execute_graph.push(instance.view.to_string());
+                self.render_graph_execute_order.push(instance.view.to_string());
             }
 
             // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
@@ -977,7 +980,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         &mut self,
         device: &mut D) {
 
-        for node in &self.execute_graph {
+        for node in &self.render_graph_execute_order {
             // println!("execute: {}", node);
             if self.barriers.contains_key(node) {
                 // transition barriers
