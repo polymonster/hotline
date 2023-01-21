@@ -33,10 +33,14 @@ With the host running you can use cargo watch to watch for changes on the dynami
 cargo watch -w lib -x 'build -p lib'
 ```
 
+Any changes made to the source code in [lib\src\lib.rs](https://github.com/polymonster/hotline/blob/master/lib/src/lib.rs) will be automatically reloaded into the running application. 
+
 If you make changes to the shader in the repository it currently requires manually re-triggering a data build:
 ```text
 .\build win32
 ```
+
+Currently changes in [imdraw.pmfx](https://github.com/polymonster/hotline/blob/master/examples/geometry/imdraw.pmfx) and [imdraw.hlsl](https://github.com/polymonster/hotline/blob/master/examples/geometry/imdraw.hlsl) will be automatically updated into the host if they are modified.
 
 ## Design Goals
 - An easy to use cross platform graphics/compute/os api for rapid development.
