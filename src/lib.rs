@@ -1,5 +1,6 @@
 /// Operating system module.
 pub mod os;
+use gfx::RenderPass;
 use os::Window;
 
 /// Graphics and compute module.
@@ -194,7 +195,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             swap_chain: &mut swap_chain,
             main_window: &main_window,
             fonts: vec![imgui::FontInfo {
-                filepath: get_asset_path("../../../examples/imgui_demo/Roboto-Medium.ttf"),
+                filepath: get_asset_path("../../examples/imgui_demo/Roboto-Medium.ttf"),
                 glyph_ranges: None
             }],
         };
@@ -239,6 +240,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
 
         // start new pmfx frame
+        self.pmfx.reload(&mut self.device);
         self.pmfx.new_frame(&self.swap_chain);
 
         // user config changes
@@ -288,13 +290,14 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
 
         // get serv index of the pmfx target to blit to the window
         let srv = self.pmfx.get_texture(blit_view_name).unwrap().get_srv_index().unwrap();
+        let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
        
         // blit to main window
         let vp_rect = self.main_window.get_viewport_rect();
         self.cmd_buf.begin_event(0xff0000ff, "Blit Pmfx");
         self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
         self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
-        self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline("imdraw_blit").unwrap());
+        self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
         self.cmd_buf.push_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
         self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
         self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
@@ -344,6 +347,7 @@ pub fn get_asset_path(asset: &str) -> String {
 /// return an absolute path for a resource given the relative path from the /executable dir
 pub fn get_exe_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
+    println!("{}", String::from(exe_path.join(asset).to_str().unwrap()));
     String::from(exe_path.join(asset).to_str().unwrap())
 }
 

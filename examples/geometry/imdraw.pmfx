@@ -59,7 +59,7 @@ pmfx: {
             render_target: [
                 "main_colour"
             ]
-            clear_colour: [0.0, 1.0, 1.0, 1.0]
+            clear_colour: [1.0, 0.5, 0.0, 1.0]
             depth_stencil: [
                 "main_depth"
             ]
@@ -77,14 +77,27 @@ pmfx: {
             // TODO: function
         }
     }
-    graphs: {
+    update_graphs: {
+        core: {
+            setup: [
+                "setup_test"
+            ]
+            update: [
+                "update_cameras"
+            ]
+        }
+    }
+    render_graphs: {
         forward: [
             {
                 view: "render_grid"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
             }
             {
                 view: "render_world_view"
-                pileines: ["imdraw_mesh"]
+                pipelines: ["imdraw_mesh"]
+                function: "render_world_view"
             }
         ]
     }

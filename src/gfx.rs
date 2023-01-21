@@ -1,6 +1,7 @@
 use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
+use std::hash::{Hash};
 
 /// Implemets this interface with a Direct3D12 backend.
 #[cfg(target_os = "windows")]
@@ -8,7 +9,7 @@ pub mod d3d12;
 
 type Error = super::Error;
 
-/// macro to pass data!expression or data! (None) to a create function, so you don't have to deduce a 'T'
+/// macro to pass data!\[expression\] or data!\[\] (None) to a create function, so you don't have to deduce a 'T'
 #[macro_export]
 macro_rules! data {
     () => {
@@ -57,7 +58,7 @@ pub struct ScissorRect {
 /// u = unsigned integer,
 /// i = signed integer,
 /// f = float
-#[derive(Copy, Clone, Serialize, Deserialize)]
+#[derive(Copy, Clone, Serialize, Deserialize, Hash)]
 pub enum Format {
     Unknown,
     R16n,
@@ -618,13 +619,13 @@ pub struct ClearDepthStencil {
 }
 
 /// Information to create a render pass
-pub struct RenderPassInfo<'a, D: Device> {
+pub struct RenderPassInfo<'stack, D: Device> {
     /// Array of textures which have been created with render target flags
-    pub render_targets: Vec<&'a D::Texture>,
+    pub render_targets: Vec<&'stack D::Texture>,
     /// Colour to clear render target when the pass starts, use None to preserve previous contents
     pub rt_clear: Option<ClearColour>,
     /// A texture which was created with depth stencil flags
-    pub depth_stencil: Option<&'a D::Texture>,
+    pub depth_stencil: Option<&'stack D::Texture>,
     /// Depth value (in view) to clear depth stencil, use None to preserve previous contents
     pub ds_clear: Option<ClearDepthStencil>,
     /// Choose to resolve multi-sample AA targets,
@@ -634,9 +635,9 @@ pub struct RenderPassInfo<'a, D: Device> {
 }
 
 /// Transitions are required to be performed to switch resources from reading to writing or into different formats
-pub struct TransitionBarrier<'a, D: Device> {
-    pub texture: Option<&'a D::Texture>,
-    pub buffer: Option<&'a D::Buffer>,
+pub struct TransitionBarrier<'stack, D: Device> {
+    pub texture: Option<&'stack D::Texture>,
+    pub buffer: Option<&'stack D::Buffer>,
     pub state_before: ResourceState,
     pub state_after: ResourceState,
 }
@@ -687,8 +688,11 @@ pub struct UnmapInfo {
 pub trait Shader<D: Device>: Send + Sync {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait RenderPipeline<D: Device>: Send + Sync  {}
+
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
-pub trait RenderPass<D: Device>: Send + Sync  {}
+pub trait RenderPass<D: Device>: Send + Sync  {
+    fn get_format_hash(&self) -> u64;
+}
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
 

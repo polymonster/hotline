@@ -12,6 +12,8 @@ use std::ffi::CStr;
 use std::ffi::CString;
 use std::result;
 use std::str;
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
@@ -214,6 +216,7 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
+
 #[derive(Clone)]
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
@@ -221,6 +224,7 @@ pub struct RenderPass {
     ds: Option<D3D12_RENDER_PASS_DEPTH_STENCIL_DESC>,
     ds_format: DXGI_FORMAT,
     sample_count: u32,
+    format_hash: u64 
 }
 
 #[derive(Clone)]
@@ -771,7 +775,13 @@ fn validate_data_size<T: Sized>(
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
-impl super::RenderPass<Device> for RenderPass {}
+
+
+impl super::RenderPass<Device> for RenderPass {
+    fn get_format_hash(&self) -> u64 {
+        self.format_hash
+    }
+}
 
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
@@ -1979,12 +1989,21 @@ impl super::Device for Device {
             });
         }
 
+        // hash together the rt, ds and sample count to get a unique hash for format combo
+        let mut fmthash = DefaultHasher::new();
+        sample_count.unwrap().hash(&mut fmthash);
+        (ds_format.0 as u32).hash(&mut fmthash);
+        for rt in &formats {
+            (rt.0 as u32).hash(&mut fmthash);
+        }
+        
         Ok(RenderPass {
             rt,
             ds,
             ds_format,
             rt_formats: formats,
             sample_count: sample_count.unwrap(),
+            format_hash: fmthash.finish()
         })
     }
 

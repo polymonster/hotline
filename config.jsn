@@ -31,7 +31,7 @@
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
                 "-i examples/"
-                "-o target/debug/examples/data/shaders"
+                "-o target/debug/data/shaders"
                 "-t target/temp/shaders"
                 "-source"
             ]
