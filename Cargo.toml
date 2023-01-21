@@ -64,10 +64,6 @@ name = "hello_world"
 crate-type = ["bin"]
 
 [[example]]
-name = "geometry"
-crate-type = ["bin"]
-
-[[example]]
 name = "imgui_demo"
 crate-type = ["bin"]
 

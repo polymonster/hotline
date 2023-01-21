@@ -1,5 +1,6 @@
 use hotline_rs::*;
 
+use hotline_rs::gfx::RenderPass;
 use os::App;
 use os::Window;
 
@@ -139,7 +140,8 @@ fn main() -> Result<(), hotline_rs::Error> {
     pmfx.create_pipeline(&dev, "compute_rw", swap_chain.get_backbuffer_pass())?;
     pmfx.create_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
     
-    let pso_pmfx = pmfx.get_render_pipeline("bindless").unwrap();
+    let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
+    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt).unwrap();
     let pso_compute = pmfx.get_compute_pipeline("compute_rw").unwrap();
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
