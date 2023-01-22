@@ -4,41 +4,35 @@
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 
-Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render specification can be edited and hot reloaded through `pmfx` files.
+Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render pipelines and shaders can be edited and hot reloaded through `pmfx` files.
 
 ## Building
 
-This is currently work-in-progress and will become smoother over time with the manual steps removed. But for the time being if you are intersted here is how to build:
+Currently Windows with Direct3D12 is the only suppported platform, there are plans for macOS, Metal, Linux Vulkan and more over time.
 
-A data build is first required through my build system `pmbuild`, there is an exectuable for `pmbuild` and shader compiler `pmfx-shader` included in this repository with a batch file run this command to rebuild data:
-```text
-.\build win32
-```
+First build the live `lib` and then build the `host` executable and data (data will be built automatically when using `cargo build`). Then run the `host`:
 
-You can build the host and the lib:
 ```text
-cargo build
 cargo build -p lib
-```
-
-And finally run the host:
-```text
+cargo build
 cargo run host
 ```
 
-With the host running you can use cargo watch to watch for changes on the dynamic `lib`:
+Once the `host` is running, any changes made to the source code in [lib.rs](https://github.com/polymonster/hotline/blob/master/lib/src/lib.rs) or the [pipelines](https://github.com/polymonster/hotline/blob/master/src/shaders) will be automatically reloaded into the running application. 
+
+### Examples
+
+There are a few standalong examples of how to use the lowr level components of hotline (`gfx, app, av`). You can build and run these as follows:
+
 ```text
-cargo watch -w lib -x 'build -p lib'
+cargo build --examples
+cargo run --example triangle
 ```
 
-Any changes made to the source code in [lib\src\lib.rs](https://github.com/polymonster/hotline/blob/master/lib/src/lib.rs) will be automatically reloaded into the running application. 
+### VScode
 
-If you make changes to the shader in the repository it currently requires manually re-triggering a data build:
-```text
-.\build win32
-```
+There are include `tasks` and `launch` files for vscode including aunc configurations for the host and the examples.
 
-Currently changes in [imdraw.pmfx](https://github.com/polymonster/hotline/blob/master/examples/geometry/imdraw.pmfx) and [imdraw.hlsl](https://github.com/polymonster/hotline/blob/master/examples/geometry/imdraw.hlsl) will be automatically updated into the host if they are modified.
 
 ## Design Goals
 - An easy to use cross platform graphics/compute/os api for rapid development.
