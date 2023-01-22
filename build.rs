@@ -12,6 +12,10 @@ fn build_data() {
     }
 }
 
+#[cfg(not(target_os = "windows"))]
+fn build_data() {
+}
+
 fn main() {
     build_data()
 }
