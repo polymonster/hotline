@@ -64,8 +64,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
 
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
-    let asset_path = asset_path.join("../..");
+    let asset_path = exe_path.parent().unwrap().join("../..");
 
     // cmd buffer
     let mut cmdbuffer = dev.create_cmd_buf(2);

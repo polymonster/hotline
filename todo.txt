@@ -1,6 +1,6 @@
 // TODO:
 
-// - streamline install / deployment (pmbuild, pmfx etc)
+// - download data
 
 // client
 // - minimise code move ino structure
@@ -56,6 +56,7 @@
 // - bindless
 
 // DONE:
+// x streamline install / deployment (pmbuild, pmfx etc)
 // x build schedule from file
 // x core functions
 // x pipeline for pass format
