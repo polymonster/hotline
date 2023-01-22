@@ -47,9 +47,13 @@ pub struct Viewport {
 /// Structure to specify scissor rect coordinates on a `CmdBuf`.
 #[derive(Copy, Clone)]
 pub struct ScissorRect {
+    // Left x coordinate
     pub left: i32,
+    // Top y coordinate
     pub top: i32,
+    /// Right x coordinate
     pub right: i32,
+    /// Bottom y coordinate
     pub bottom: i32,
 }
 
@@ -110,9 +114,13 @@ pub struct DeviceInfo {
 pub struct AdapterInfo {
     /// The chosen adapter a device was created with
     pub name: String,
+    /// Description of the device
     pub description: String,
+    /// Dedicated video memory in bytes
     pub dedicated_video_memory: usize,
+    /// Dedicated system memory in bytes
     pub dedicated_system_memory: usize,
+    /// Shared system memory in bytes
     pub shared_system_memory: usize,
     /// List of available adapter descriptons
     pub available: Vec<String>,
@@ -120,7 +128,9 @@ pub struct AdapterInfo {
 
 /// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required
 pub struct HeapInfo {
+    /// ie: Shader, RenderTarget, DepthStencil, Sampler
     pub heap_type: HeapType,
+    /// Totatl size of the heap in number of resources
     pub num_descriptors: usize,
 }
 
