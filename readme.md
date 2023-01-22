@@ -4,9 +4,7 @@
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 
-Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application for rapid and fun graphics dev. Currently it provides abstractions for Win32 and Direct3D12 with more platforms planned for future. You can describe render pipelines and states inside `.pmfx` to make light work of graphics setup.
-
-Hotline provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render specification can be eited and hit reloaded through `pmfx` files.
+Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render specification can be edited and hot reloaded through `pmfx` files.
 
 ## Building
 
