@@ -58,16 +58,16 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
+    let asset_path = exe_path.parent().unwrap().join("../..");
 
     let roboto = asset_path
-        .join("..\\..\\..\\examples\\imgui_demo\\Roboto-Medium.ttf")
+        .join("data/fonts/roboto_medium.ttf")
         .to_str()
         .unwrap()
         .to_string();
 
     let font_awesome = asset_path
-        .join("..\\..\\..\\examples\\imgui_demo\\FontAwesome.ttf")
+        .join("data/fonts/font_awesome.ttf")
         .to_str()
         .unwrap()
         .to_string(); 

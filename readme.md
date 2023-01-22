@@ -35,7 +35,7 @@ Once the `host` is running, any changes made to the source code in [lib.rs](http
 
 ### Examples
 
-There are a few standalong examples of how to use the lowr level components of hotline (`gfx, app, av`). You can build and run these as follows:
+There are a few standalone examples of how to use the lower level components of hotline (`gfx, app, av`). You can build and run these as follows:
 
 ```text
 cargo build --examples
@@ -44,7 +44,7 @@ cargo run --example triangle
 
 ### VScode
 
-There are include `tasks` and `launch` files for vscode including configurations for the host and the examples.
+There are included `tasks` and `launch` files for vscode including configurations for the host and the examples.
 
 
 ## Design Goals
