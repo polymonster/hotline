@@ -1,0 +1,104 @@
+#include "imdraw.hlsl"
+
+pmfx: {
+    depth_stencil_states: {
+        depth_test_less: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Less"
+        }
+    }
+    pipelines: {
+        imdraw_2d: {
+            vs: vs_2d
+            ps: ps_main
+            push_constants: ["view_push_constants"]
+            topology: "LineList"
+        }
+        imdraw_3d: {
+            vs: vs_3d
+            ps: ps_main
+            push_constants: ["view_push_constants"]
+            topology: "LineList"
+        }
+        imdraw_mesh: {
+            vs: vs_mesh
+            ps: ps_main
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            topology: "TriangleList"
+        }
+        imdraw_blit: {
+            vs: vs_blit
+            ps: ps_blit
+            push_constants: [
+                "blit_push_constants"
+            ]
+            topology: "TriangleList"
+        }
+    }
+    textures: {
+        main_colour: {
+            ratio: {
+                window: "main_window",
+                scale: 1.0
+            }
+            format: "RGBA8n"
+            usage: ["ShaderResource", "RenderTarget"]
+        }
+        main_depth(main_colour): {
+            format: "D24nS8u"
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+    }
+    views: {
+        main_view: {
+            render_target: [
+                "main_colour"
+            ]
+            clear_colour: [1.0, 0.5, 1.0, 1.0]
+            depth_stencil: [
+                "main_depth"
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+        }
+        main_view_no_clear(main_view): {
+            clear_colour: null
+            clear_depth: null
+        }
+        render_grid(main_view): {
+            // TODO: function
+        }
+        render_world_view(main_view_no_clear): {
+            // TODO: function
+        }
+    }
+    update_graphs: {
+        core: {
+            setup: [
+                "setup_test"
+            ]
+            update: [
+                "update_cameras"
+            ]
+        }
+    }
+    render_graphs: {
+        forward: [
+            {
+                view: "render_grid"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
+            }
+            {
+                view: "render_world_view"
+                pipelines: ["imdraw_mesh"]
+                function: "render_world_view"
+            }
+        ]
+    }
+}

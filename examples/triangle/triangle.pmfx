@@ -33,3 +33,12 @@ ps_output ps_main( vs_output input )
 
     return output;
 }
+
+pmfx: {
+    pipelines: {
+        default: {
+            vs: vs_main,
+            ps: ps_main
+        }
+    }
+}

@@ -139,7 +139,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
     pub fn create(info: HotlineInfo) -> Result<Self, Error> {
         
         // read user config or get defaults
-        let user_config_path = get_asset_path("user_config.json");
+        let user_config_path = get_data_path("user_config.json");
         let user_config = if std::path::Path::new(&user_config_path).exists() {
             let user_data = std::fs::read(user_config_path)?;
             serde_json::from_slice(&user_data).unwrap()
@@ -195,7 +195,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
             swap_chain: &mut swap_chain,
             main_window: &main_window,
             fonts: vec![imgui::FontInfo {
-                filepath: get_asset_path("../../examples/imgui_demo/Roboto-Medium.ttf"),
+                filepath: get_data_path("data/fonts/roboto_medium.ttf"),
                 glyph_ranges: None
             }],
         };
@@ -261,7 +261,7 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
         // write to file
         if invalidated {
             let user_config_file_text = serde_json::to_string(&self.user_config).unwrap();
-            let user_config_path = get_asset_path("user_config.json");
+            let user_config_path = get_data_path("user_config.json");
 
             std::fs::File::create(&user_config_path).unwrap();
             std::fs::write(&user_config_path, user_config_file_text).unwrap();
@@ -338,9 +338,9 @@ impl<D, A> Context<D, A> where D: gfx::Device, A: os::App {
 }
 
 /// return an absolute path for a resource given the relative resource name from the /data dir
-pub fn get_asset_path(asset: &str) -> String {
+pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
+    let asset_path = exe_path.parent().unwrap().join("..");
     String::from(asset_path.join(asset).to_str().unwrap())
 }
 

@@ -86,10 +86,10 @@ fn main() -> Result<(), hotline_rs::Error> {
     let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap();
+    let asset_path = exe_path.parent().unwrap().join("../..");
 
-    let vsc_filepath = asset_path.join("data\\shaders\\triangle\\default.vsc");
-    let psc_filepath = asset_path.join("data\\shaders\\triangle\\default.psc");
+    let vsc_filepath = asset_path.join("data/shaders/triangle/vs_main.vsc");
+    let psc_filepath = asset_path.join("data/shaders/triangle/ps_main.psc");
 
     let vsc_data = fs::read(vsc_filepath)?;
     let psc_data = fs::read(psc_filepath)?;
