@@ -1,3 +1,6 @@
+// currently windows only because here we need a concrete gfx and os implementation
+#![cfg(target_os = "windows")]
+
 use crate::os::App;
 use crate::os::Window;
 
