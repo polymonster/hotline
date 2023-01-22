@@ -353,4 +353,6 @@ pub fn get_exe_path(asset: &str) -> String {
 
 #[cfg(target_os = "windows")]
 pub use os::win32 as os_platform;
+
+#[cfg(target_os = "windows")]
 pub use gfx::d3d12 as gfx_platform;

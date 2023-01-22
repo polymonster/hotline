@@ -30,11 +30,6 @@ jobs:
         git add .
         git commit -m "-  bump Cargo.toml version to $VERSION for publish"
         git push origin HEAD:master
-  windows-package:
-    needs: version
-    runs-on: windows-latest
-    steps:
-    - uses: actions/checkout@v3
     - name: publish
       run: |
         cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
