@@ -61,7 +61,8 @@ features = [
 
 [features]
 build_data = []
-default = ["build_data"]
+host = []
+default = ["build_data", "host"]
 
 [[example]]
 name = "bindless"
@@ -82,4 +83,5 @@ crate-type = ["bin"]
 [[bin]]
 name = "host"
 path = "host/main.rs"
+required-features = ["host"]
 
