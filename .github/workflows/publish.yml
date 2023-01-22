@@ -6,7 +6,7 @@ on:
 env:
   CARGO_TERM_COLOR: always
 jobs:
-  build:
+  version:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v3
@@ -30,6 +30,14 @@ jobs:
         git add .
         git commit -m "-  bump Cargo.toml version to $VERSION for publish"
         git push origin HEAD:master
+    - name: publish
+      run: |
+        cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        cargo publish --no-default-features
+  windows-package:
+    runs-on: windows-latest
+    steps:
+    - uses: actions/checkout@v3
     - name: publish
       run: |
         cargo login ${{ secrets.CARGO_REGISTRY_TOKEN }}

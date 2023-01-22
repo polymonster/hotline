@@ -44,7 +44,7 @@ cargo run --example triangle
 
 ### VScode
 
-There are include `tasks` and `launch` files for vscode including aunc configurations for the host and the examples.
+There are include `tasks` and `launch` files for vscode including configurations for the host and the examples.
 
 
 ## Design Goals
@@ -65,13 +65,13 @@ There are include `tasks` and `launch` files for vscode including aunc configura
 - Debug / Primitve Rendering API
 - High level graphics api (render graphs, data driven, Uber shaders)
 - Multi-threading support (async command buffer generation and job dispatches)
+- Samples and Demos
+- ~~Hot reloading~~
 - ~~API (gfx::, os::) / Backend (d3d12::, win32::)~~
 - ~~API (av::) / Windows Media Foundation (HW Video / Audio Decoding)~~
 - ~~Imgui support w/ Viewports~~
 
 #### Future Plans
-- Hot reloading
-- Samples and Demos
 - Linux
 - Vulkan
 - macOS
