@@ -11,6 +11,8 @@ use core::time::Duration;
 use maths_rs::Vec3f;
 use maths_rs::Mat4f;
 
+use std::process::Command;
+
 // The value of `dylib = "..."` should be the library containing the hot-reloadable functions
 // It should normally be the crate name of your sub-crate.
 #[hot_lib_reloader::hot_module(dylib = "lib")]
@@ -81,7 +83,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     // create pmfx
     //
 
-    ctx.pmfx.load(&hotline_rs::get_asset_path("data/shaders/imdraw").as_str())?;
+    ctx.pmfx.load(&hotline_rs::get_data_path("data/shaders/imdraw").as_str())?;
     ctx.pmfx.create_render_graph(& mut ctx.device, "forward")?;
     ctx.pmfx.create_pipeline(&mut ctx.device, "imdraw_blit", &ctx.swap_chain.get_backbuffer_pass())?;
 
@@ -99,6 +101,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let reloader = hot_lib::subscribe();
     let a_lock = Arc::new(Mutex::new(ReloadState::None));
 
+    // listen for lib reloads
     let a_lock_thread = a_lock.clone();
     thread::spawn(move || {
         loop {
@@ -127,7 +130,66 @@ fn main() -> Result<(), hotline_rs::Error> {
         }
     });
 
+    // listen for edits
+    thread::spawn(move || {
+        let lib_path = hotline_rs::get_data_path("../lib/src/lib.rs");
+        let mut lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+
+        let pmfx_path = hotline_rs::get_data_path("../src/shaders/imdraw.pmfx");
+        let pmfx_modified_tome = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
+
+        loop {
+            // check code changes
+            let cur_lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+            if cur_lib_modified_time > lib_modified_time {
+                println!("hotline_rs::hot_lib:: code changes detected");
+                // kick off a buils
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .arg("-p")
+                    .arg("lib")
+                    .output()
+                    .expect("hotline::hot_lib:: hot lib failed to build!");
+
+                if output.stdout.len() > 0 {
+                    println!("{}", String::from_utf8(output.stdout).unwrap());
+                }
+
+                if output.stderr.len() > 0 {
+                    println!("{}", String::from_utf8(output.stderr).unwrap());
+                }
+
+                lib_modified_time = cur_lib_modified_time;
+            }
+
+            // check shader changes
+            let cur_pmfx_modified_time = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
+            if cur_pmfx_modified_time > pmfx_modified_tome {
+                println!("hotline_rs::hot_lib:: pmfx changes detected");
+                // kick off a buils
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .output()
+                    .expect("hotline::hot_lib:: pmfx failed to build!");
+
+                if output.stdout.len() > 0 {
+                    println!("{}", String::from_utf8(output.stdout).unwrap());
+                }
+
+                if output.stderr.len() > 0 {
+                    println!("{}", String::from_utf8(output.stderr).unwrap());
+                }
+
+                lib_modified_time = cur_lib_modified_time;
+            }
+
+            // yield
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    });
+
     while ctx.app.run() {
+
         // sync
         let mut reload_lock = a_lock.lock().unwrap();
         if *reload_lock != ReloadState::None {

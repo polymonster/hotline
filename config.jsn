@@ -1,7 +1,7 @@
 {
     tools<windows>: {
-        // pmfx: "bin/win32/pmfx/build_pmfx.exe"
-        pmfx: "../pmfx-shader/pmfx.py"
+        pmfx: "bin/win32/pmfx/pmfx.exe"
+        pmfx_dev: "../pmfx-shader/pmfx.py"
     }
 
     tools_help: {
@@ -18,11 +18,30 @@
 		}
 	}
 
-    win32: {
+    base: {
+        jsn_vars: {
+            data_dir: "target/data"
+            temp_dir: "target/temp"
+        }
+
+        copy_base: {
+            type: copy
+            files: [
+                // copy fonts to data dir
+                ["src/fonts", "${data_dir}/fonts"]
+            ]
+        }
+    }
+
+    win32(base): {
         copy: {
             files: [
+                // copies the win pix event run time for inserting pix events
+                // multiple build output locations may need a copy
                 ["bin/win32/WinPixEventRuntime.dll", "target/debug/WinPixEventRuntime.dll"]
                 ["bin/win32/WinPixEventRuntime.dll", "target/release/WinPixEventRuntime.dll"]
+                ["bin/win32/WinPixEventRuntime.dll", "target/debug/examples/WinPixEventRuntime.dll"]
+                ["bin/win32/WinPixEventRuntime.dll", "target/release/examples/WinPixEventRuntime.dll"]
             ]
         }
 
@@ -30,11 +49,14 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i examples/"
-                "-o target/debug/data/shaders"
-                "-t target/temp/shaders"
+                "-i src/shaders/"
+                "-o ${data_dir}/shaders"
+                "-t ${temp_dir}/shaders"
                 "-source"
             ]
+        }
+
+        pmfx_dev(pmfx): {
         }
     }
 }

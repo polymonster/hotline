@@ -16,17 +16,6 @@
             "console": "externalTerminal"
         },
         {
-            "name": "geometry (Debug)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/target/debug/examples/geometry.exe",
-            "args": [],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "console": "externalTerminal"
-        },
-        {
             "name": "triangle (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
@@ -38,10 +27,10 @@
             "console": "externalTerminal"
         },
         {
-            "name": "hello_world (Debug)",
+            "name": "bindless (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/examples/hello_world.exe",
+            "program": "${workspaceFolder}/target/debug/examples/bindless.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

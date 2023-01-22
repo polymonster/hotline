@@ -2,13 +2,13 @@
 
 // - streamline install / deployment (pmbuild, pmfx etc)
 
+// client
 // - minimise code move ino structure
 // - reload sync
 // - build schedule
 // - resources > world
-// -
 
-// - build schedule from file
+
 // - quick dev ui tidy up
 // - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
@@ -35,6 +35,7 @@
 // - Blend
 // - Raster
 
+// core updates
 // - update matrices
 // - update aabb's
 // - culling
@@ -52,8 +53,10 @@
 // - pmfx
 // - play video
 // - primitives
+// - bindless
 
 // DONE:
+// x build schedule from file
 // x core functions
 // x pipeline for pass format
 // x host app
