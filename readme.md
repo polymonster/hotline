@@ -1,7 +1,6 @@
 # Hotline
 [![tests](https://github.com/polymonster/hotline/actions/workflows/tests.yaml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/tests.yaml)
 [![samples](https://github.com/polymonster/hotline/actions/workflows/samples.yaml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/samples.yaml)
-[![publish](https://github.com/polymonster/hotline/actions/workflows/publish.yaml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/publish.yaml)
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 
