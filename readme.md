@@ -6,9 +6,21 @@
 
 Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render pipelines and shaders can be edited and hot reloaded through `pmfx` files.
 
-## Building
+## Prequisites
 
 Currently Windows with Direct3D12 is the only suppported platform, there are plans for macOS, Metal, Linux Vulkan and more over time.
+
+[pmbuild](https://github.com/polymonster/pmbuild) and [pmfx-shader](https://github.com/polymonster/pmfx-shader) are required for building data and shaders, they are bundled with the repository.
+
+If you are using hotline from [crates.io](https://crates.io/crates/hotline-rs) then the executables are not bundeled because this exceeds the 10mb package size limit. You can clone this repository to get the executables (stick them into `hotline_rs/bin/win32`) or download the pmbuild release [manualy](https://github.com/polymonster/pmbuild/releases) and then boostrap the rest of the process:
+
+```
+./build.cmd update
+```
+
+The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure `pmbuild` build jobs and tools, if you wanted to manually configure the setup.
+
+## Building
 
 First build the live `lib` and then build the `host` executable and data (data will be built automatically when using `cargo build`). Then run the `host`:
 
