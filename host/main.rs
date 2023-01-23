@@ -1,3 +1,4 @@
+use hot_lib_reloader::LibReloadObserver;
 use hotline_rs::*;
 use ecs::*;
 use gfx::SwapChain;
@@ -12,6 +13,7 @@ use maths_rs::Vec3f;
 use maths_rs::Mat4f;
 
 use std::process::Command;
+use std::collections::HashMap;
 
 // The value of `dylib = "..."` should be the library containing the hot-reloadable functions
 // It should normally be the crate name of your sub-crate.
@@ -49,23 +51,190 @@ enum ReloadState {
 }
 
 pub trait UserInterface<D: gfx::Device, A: os::App> {
-    fn show_ui(&self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool;
+    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool;
 }
 
 impl<D, A> UserInterface<D, A> for pmfx::Pmfx<D> where D: gfx::Device, A: os::App {
-    fn show_ui(&self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
+    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
+
+
             if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
-                imgui.image(self.get_texture("main_colour").unwrap(), 640.0, 360.0);
-                imgui.image(self.get_texture("main_depth").unwrap(), 640.0, 360.0);
+                //imgui.image(self.get_texture("main_colour").unwrap(), 640.0, 360.0);
+                //imgui.image(self.get_texture("main_depth").unwrap(), 640.0, 360.0);
+
+                let options = self.get_update_graph_names();
+                for option in options {
+                    if imgui.button(&option) {
+                        self.active_update_graph = option;
+                    }
+                }
             }
+
             imgui.end();
             imgui_open
         }
         else {
             false
         }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash)]
+enum ReloadCategory {
+    Code,
+    Pmfx
+}
+
+#[derive(PartialEq)]
+enum ReloadResult {
+    Continue,
+    Reload
+}
+
+struct ReloaderInfo {
+    files: Vec<(ReloadCategory, Duration, String)>,
+}
+
+struct Reloader {
+    /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
+    /// and timestamps for quick checking at run time.
+    files: HashMap<ReloadCategory, Vec<(Duration, String)>>,
+    lock: Arc<Mutex<ReloadState>>
+}
+
+impl Reloader {
+    fn create(info: ReloaderInfo) -> Reloader {
+        let mut files = HashMap::new();
+        files.insert(ReloadCategory::Code, Vec::new());
+        files.insert(ReloadCategory::Pmfx, Vec::new());
+        for file in info.files {
+            //files[file.0].push((file.1, file.2.to_string()));
+        }
+        Reloader {
+            files,
+            lock: Arc::new(Mutex::new(ReloadState::None))
+        }
+    }
+
+    fn lib_reload_sync_thread(&self) {
+        let lock = self.lock.clone();
+        let observer = hot_lib::subscribe();
+        thread::spawn(move || {
+            loop {
+                // wait for a reload
+                let tok = observer.wait_for_about_to_reload();
+                
+                // request enter reload state
+                let mut a = lock.lock().unwrap();
+                println!("hotline_rs::reload:: requested");
+                *a = ReloadState::Requested;
+                drop(a);
+                
+                // wait till main thread signals we are safe
+                loop {
+                    let mut a = lock.lock().unwrap();
+                    if *a == ReloadState::Confirmed {
+                        *a = ReloadState::None;
+                        drop(a);
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(16));
+                }
+
+                // unloack
+                drop(tok);
+            }
+        });
+    }
+
+    fn file_watcher_thread() {
+        let lib_path = hotline_rs::get_data_path("../lib/src/lib.rs");
+        let mut lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+    
+        let pmfx_path = hotline_rs::get_data_path("../src/shaders/imdraw.pmfx");
+        let pmfx_modified_tome = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
+    
+        loop {
+            // check code changes
+            let cur_lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+            if cur_lib_modified_time > lib_modified_time {
+                println!("hotline_rs::hot_lib:: code changes detected");
+                // kick off a build
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .arg("-p")
+                    .arg("lib")
+                    .output()
+                    .expect("hotline::hot_lib:: hot lib failed to build!");
+    
+                if output.stdout.len() > 0 {
+                    println!("{}", String::from_utf8(output.stdout).unwrap());
+                }
+    
+                if output.stderr.len() > 0 {
+                    println!("{}", String::from_utf8(output.stderr).unwrap());
+                }
+    
+                lib_modified_time = cur_lib_modified_time;
+            }
+    
+            // check shader changes
+            let cur_pmfx_modified_time = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
+            if cur_pmfx_modified_time > pmfx_modified_tome {
+                println!("hotline_rs::hot_lib:: pmfx changes detected");
+                // kick off a buils
+                let output = Command::new("cargo")
+                    .arg("build")
+                    .output()
+                    .expect("hotline::hot_lib:: pmfx failed to build!");
+    
+                if output.stdout.len() > 0 {
+                    println!("{}", String::from_utf8(output.stdout).unwrap());
+                }
+    
+                if output.stderr.len() > 0 {
+                    println!("{}", String::from_utf8(output.stderr).unwrap());
+                }
+    
+                lib_modified_time = cur_lib_modified_time;
+            }
+    
+            // yield
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    }
+
+    /// Start watching for and invoking reload changes, this will spawn threads to watch files
+    pub fn start(&self) {
+        thread::spawn(Self::file_watcher_thread);
+        self.lib_reload_sync_thread();
+    }
+
+    pub fn check_for_reload(&self) -> ReloadResult {
+        let lock = self.lock.lock().unwrap();
+        if *lock != ReloadState::None {
+            ReloadResult::Reload
+        }
+        else {
+            ReloadResult::Continue
+        }
+    }
+
+    pub fn complete_reload(&self) {
+        let mut lock = self.lock.lock().unwrap();
+        // signal it is safe to proceed and reload the new code
+        *lock = ReloadState::Confirmed;
+        drop(lock);
+        println!("hotline_rs::reload:: confirmed");
+        
+        // wait for reload to complete
+        hot_lib::subscribe().wait_for_reload();
+    }
+
+    pub fn lock(&self) -> Arc<Mutex<ReloadState>> {
+        self.lock.clone()
     }
 }
 
@@ -84,6 +253,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     //
 
     ctx.pmfx.load(&hotline_rs::get_data_path("data/shaders/imdraw").as_str())?;
+    
     ctx.pmfx.create_render_graph(& mut ctx.device, "forward")?;
     ctx.pmfx.create_pipeline(&mut ctx.device, "imdraw_blit", &ctx.swap_chain.get_backbuffer_pass())?;
 
@@ -92,121 +262,46 @@ fn main() -> Result<(), hotline_rs::Error> {
     //
 
     let mut run_startup = true;
-    let mut imgui_open = false;
+    let mut imgui_open = true;
     
     let mut world = World::new();
     let mut schedule = Schedule::default();
     let mut startup_schedule = Schedule::default();
 
-    let reloader = hot_lib::subscribe();
-    let a_lock = Arc::new(Mutex::new(ReloadState::None));
+    let mut current_update_graph = ctx.pmfx.active_update_graph.to_string();
 
-    // listen for lib reloads
-    let a_lock_thread = a_lock.clone();
-    thread::spawn(move || {
-        loop {
-            // wait for a reload
-            let tok = reloader.wait_for_about_to_reload();
-            
-            // request enter reload state
-            let mut a = a_lock_thread.lock().unwrap();
-            println!("hotline_rs::reload:: requested");
-            *a = ReloadState::Requested;
-            drop(a);
-            
-            // wait till main thread signals we are safe
-            loop {
-                let mut a = a_lock_thread.lock().unwrap();
-                if *a == ReloadState::Confirmed {
-                    *a = ReloadState::None;
-                    drop(a);
-                    break;
-                }
-                std::thread::sleep(Duration::from_millis(16));
-            }
-
-            // unloack
-            drop(tok);
-        }
+    let reloader = Reloader::create(ReloaderInfo{
+        files: vec![]
     });
 
-    // listen for edits
-    thread::spawn(move || {
-        let lib_path = hotline_rs::get_data_path("../lib/src/lib.rs");
-        let mut lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
-
-        let pmfx_path = hotline_rs::get_data_path("../src/shaders/imdraw.pmfx");
-        let pmfx_modified_tome = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
-
-        loop {
-            // check code changes
-            let cur_lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
-            if cur_lib_modified_time > lib_modified_time {
-                println!("hotline_rs::hot_lib:: code changes detected");
-                // kick off a buils
-                let output = Command::new("cargo")
-                    .arg("build")
-                    .arg("-p")
-                    .arg("lib")
-                    .output()
-                    .expect("hotline::hot_lib:: hot lib failed to build!");
-
-                if output.stdout.len() > 0 {
-                    println!("{}", String::from_utf8(output.stdout).unwrap());
-                }
-
-                if output.stderr.len() > 0 {
-                    println!("{}", String::from_utf8(output.stderr).unwrap());
-                }
-
-                lib_modified_time = cur_lib_modified_time;
-            }
-
-            // check shader changes
-            let cur_pmfx_modified_time = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
-            if cur_pmfx_modified_time > pmfx_modified_tome {
-                println!("hotline_rs::hot_lib:: pmfx changes detected");
-                // kick off a buils
-                let output = Command::new("cargo")
-                    .arg("build")
-                    .output()
-                    .expect("hotline::hot_lib:: pmfx failed to build!");
-
-                if output.stdout.len() > 0 {
-                    println!("{}", String::from_utf8(output.stdout).unwrap());
-                }
-
-                if output.stderr.len() > 0 {
-                    println!("{}", String::from_utf8(output.stderr).unwrap());
-                }
-
-                lib_modified_time = cur_lib_modified_time;
-            }
-
-            // yield
-            std::thread::sleep(Duration::from_millis(16));
-        }
-    });
+    reloader.start();
 
     while ctx.app.run() {
 
         // sync
-        let mut reload_lock = a_lock.lock().unwrap();
-        if *reload_lock != ReloadState::None {
+        if reloader.check_for_reload() == ReloadResult::Reload {
             // drop everything while its safe.. might want to wait for the GPU
             startup_schedule = Schedule::default();
             schedule = Schedule::default();
             world = World::new();
 
-            // signal it is safe to proceed and reload the new code
-            *reload_lock = ReloadState::Confirmed;
-            drop(reload_lock);
-            println!("hotline_rs::reload:: confirmed");
-            
-            // wait for reload to complete
-            hot_lib::subscribe().wait_for_reload();
+            // safe to continue
+            reloader.complete_reload();
+
+            // run startup again
             run_startup = true;
-            reload_lock = a_lock.lock().unwrap();
+        }
+        let reload_lock = reloader.lock();
+        let reload_lock = reload_lock.lock().unwrap();
+
+        // check for changes
+        let graph = ctx.pmfx.active_update_graph.to_string();
+        if current_update_graph != graph {
+            startup_schedule = Schedule::default();
+            schedule = Schedule::default();
+            world = World::new();
+            current_update_graph = graph;
+            run_startup = true;
         }
 
         ctx.new_frame();
@@ -227,7 +322,8 @@ fn main() -> Result<(), hotline_rs::Error> {
             schedule.add_stage(StageRender, render_stage);
 
             // add startup funcs by name
-            let setup_funcs = ctx.pmfx.get_setup_function_names("core");
+            let graph = &ctx.pmfx.active_update_graph;
+            let setup_funcs = ctx.pmfx.get_setup_function_names(graph);
             let mut startup_stage = SystemStage::parallel();
             for func_name in &setup_funcs {
                 if let Some(func) = get_system_function(func_name) {
@@ -237,7 +333,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             startup_schedule.add_stage(StageStartup, startup_stage);
 
             // add update funcs by name
-            let update_funcs = ctx.pmfx.get_update_function_names("core");
+            let update_funcs = ctx.pmfx.get_update_function_names(graph);
             let mut update_stage = SystemStage::parallel();
             for func_name in &update_funcs {
                 if let Some(func) = get_system_function(func_name) {

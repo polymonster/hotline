@@ -82,7 +82,11 @@ pub struct Pmfx<D: gfx::Device> {
     /// Vector of view names to execute in designated order
     render_graph_execute_order: Vec<String>,
     /// Tracking texture references of views
-    view_texture_refs: HashMap<String, HashSet<String>>
+    view_texture_refs: HashMap<String, HashSet<String>>,
+    /// Tracks the currently active update graph name
+    pub active_update_graph: String,
+    /// Tracks the currently active render graph name
+    pub active_render_graph: String
 }
 
 /// Serialisation layout for contents inside .pmfx file
@@ -344,7 +348,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             barriers: HashMap::new(),
             render_graph_execute_order: Vec::new(),
             view_texture_refs: HashMap::new(),
-            window_sizes: HashMap::new()
+            window_sizes: HashMap::new(),
+            active_update_graph: "core".to_string(),
+            active_render_graph: String::new(),
         }
     }
 
@@ -942,6 +948,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let view = view.clone();
             view.1.lock().unwrap().cmd_buf.reset(swap_chain);
         }
+    }
+
+    pub fn get_update_graph_names(&self) -> Vec<String> {
+        let mut names = Vec::new();
+        for key in self.pmfx.update_graphs.keys() {
+            names.push(key.to_string());
+        }
+        names
     }
 
     pub fn get_setup_function_names(&self, update_graph: &str) -> Vec<String> {
