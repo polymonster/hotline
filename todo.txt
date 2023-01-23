@@ -7,13 +7,12 @@
 // - reload sync
 // - build schedule
 // - resources > world
-
+// - specify pmfx
 
 // - quick dev ui tidy up
 // - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
 // - pmfx mltiple files
-// - core pmfx shaders etc
 // - pipeline permutations
 // - view_texture_refs
 // - error handling
@@ -56,6 +55,7 @@
 // - bindless
 
 // DONE:
+// x core pmfx shaders etc
 // x streamline install / deployment (pmbuild, pmfx etc)
 // x build schedule from file
 // x core functions

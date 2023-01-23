@@ -947,7 +947,12 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     pub fn button(&self, label: &str) -> bool {
         unsafe {
             let null_label = CString::new(label).unwrap();
-            igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0})
+            if igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0}) {
+                true
+            }
+            else {
+                false
+            }
         }
     }
 

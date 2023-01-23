@@ -13,7 +13,29 @@ use bevy_ecs::schedule::SystemDescriptor;
 use hotline_rs::system_func;
 
 #[no_mangle]
-pub fn setup_test(
+pub fn setup_single(
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
+
+    let cube_mesh = primitives::create_cube_mesh(&mut device.0);
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh.clone()},
+        WorldMatrix { 0: Mat4f::identity()}
+    ));
+
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: cube_mesh.clone()},
+        WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 5.0, 0.0))}
+    ));
+}
+
+
+#[no_mangle]
+pub fn setup_multiple(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
 
@@ -25,7 +47,7 @@ pub fn setup_test(
     ));
 
     let cube_mesh = primitives::create_cube_mesh(&mut device.0);
-    let dim = 50;
+    let dim = 100;
     let dim2 = dim / 2;
 
     for y in 0..dim {    
@@ -68,7 +90,8 @@ pub fn mat_movement(mut query: Query<&mut WorldMatrix>) {
 pub fn get_system_function_lib(name: &str) -> Option<SystemDescriptor> {    
     match name {
         "mat_movement" => system_func![mat_movement],
-        "setup_test" => system_func![setup_test],
+        "setup_single" => system_func![setup_single],
+        "setup_multiple" => system_func![setup_multiple],
         _ => None
     }
 }

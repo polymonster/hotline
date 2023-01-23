@@ -80,10 +80,19 @@ pmfx: {
     update_graphs: {
         core: {
             setup: [
-                "setup_test"
             ]
             update: [
                 "update_cameras"
+            ]
+        }
+        single(core): {
+            setup: [
+                "setup_single"
+            ]
+        }
+        multiple(core): {
+            setup: [
+                "setup_multiple"
             ]
         }
     }
