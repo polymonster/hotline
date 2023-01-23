@@ -1,33 +1,33 @@
-/// Operating system module.
+/// Operating system module (Windows, Application, Input).
 pub mod os;
 use gfx::RenderPass;
 use os::Window;
 
-/// Graphics and compute module.
+/// Graphics and compute abstraction module.
 pub mod gfx;
 use gfx::SwapChain;
 use gfx::CmdBuf;
 use gfx::Texture;
 
-/// Hardware accelerated audio and video decoding
+/// Hardware accelerated audio and video decoding.
 pub mod av;
 
 /// Image reading/writing module support for (png, jpg, bmp, tiff, dds)
 pub mod image;
 
-/// Imgui rendering and platform implementation using imgui_sys
+/// Imgui rendering and platform implementation.
 pub mod imgui;
 
-/// Immediate mode primitive rendering API
+/// Immediate mode primitive rendering API.
 pub mod imdraw;
 
-/// High level graphics
+/// High level graphics (data driven render pipelines, shaders, views).
 pub mod pmfx;
 
-/// Base ecs components, systems and resources
+/// Base ecs components, systems and resources.
 pub mod ecs;
 
-/// Geometry primitives
+/// Primitive geometry meshes (quad, cube, sphere, etc).
 pub mod primitives;
 
 /// Use bitmask for flags
@@ -48,7 +48,7 @@ impl std::fmt::Debug for Error {
     }
 }
 
-// conversion for windows-rs win32 errors
+// Conversion for windows-rs win32 errors
 #[cfg(target_os = "windows")]
 impl From<windows::core::Error> for Error {
     fn from(err: windows::core::Error) -> Error {
@@ -67,7 +67,7 @@ impl From<std::io::Error> for Error {
     }
 }
 
-/// information to create a hotline context which will create an app, window, device
+/// Information to create a hotline context which will create an app, window, device
 pub struct HotlineInfo {
     /// name for the app and window title
     pub name: String,
@@ -115,6 +115,7 @@ impl Default for HotlineInfo {
     }
 }
 
+/// Hotline client context 
 pub struct Context<D: gfx::Device, A: os::App> {
     pub app: A,
     pub device: D,
