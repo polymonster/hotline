@@ -9,7 +9,7 @@ pub mod d3d12;
 
 type Error = super::Error;
 
-/// macro to pass data!\[expression\] or data!\[\] (None) to a create function, so you don't have to deduce a 'T'
+/// Macro to pass data!\[expression\] or data!\[\] (None) to a create function, so you don't have to deduce a 'T'.
 #[macro_export]
 macro_rules! data {
     () => {
@@ -20,7 +20,7 @@ macro_rules! data {
     }
 }
 
-/// 3-Dimensional struct for compute shader thread count / thread group size
+/// 3-Dimensional struct for compute shader thread count / thread group size.
 pub struct Size3 {
     pub x: u32,
     pub y: u32,
@@ -47,13 +47,13 @@ pub struct Viewport {
 /// Structure to specify scissor rect coordinates on a `CmdBuf`.
 #[derive(Copy, Clone)]
 pub struct ScissorRect {
-    // Left x coordinate
+    // Left x coordinate.
     pub left: i32,
-    // Top y coordinate
+    // Top y coordinate.
     pub top: i32,
-    /// Right x coordinate
+    /// Right x coordinate.
     pub right: i32,
-    /// Bottom y coordinate
+    /// Bottom y coordinate.
     pub bottom: i32,
 }
 
@@ -95,61 +95,61 @@ pub enum Format {
 }
 
 /// Information to create a device, it contains default heaps for resource views
-/// resources will be automatically allocated into these heaps, you can supply custom heaps if necessary
+/// resources will be automatically allocated into these heaps, you can supply custom heaps if necessary.
 #[derive(Default)]
 pub struct DeviceInfo {
     /// optional adapter to choose a specific adapter in the scenario of a multi-adapter system
-    /// if None is supplied the first non-software emulation adapter would be selected
+    /// if None is supplied the first non-software emulation adapter would be selected.
     pub adapter_name: Option<String>,
-    /// space for shader resource views, constant buffers and unordered access views
+    /// space for shader resource views, constant buffers and unordered access views.
     pub shader_heap_size: usize,
-    /// space for colour render targets
+    /// space for colour render targets.
     pub render_target_heap_size: usize,
-    /// space for depth stencil targets
+    /// space for depth stencil targets.
     pub depth_stencil_heap_size: usize,
 }
 
+/// Information returned from `Device::get_adapter_info`.
 #[derive(Clone)]
-/// Information returned from `Device::get_adapter_info`
 pub struct AdapterInfo {
-    /// The chosen adapter a device was created with
+    /// The chosen adapter a device was created with.
     pub name: String,
-    /// Description of the device
+    /// Description of the device.
     pub description: String,
-    /// Dedicated video memory in bytes
+    /// Dedicated video memory in bytes.
     pub dedicated_video_memory: usize,
-    /// Dedicated system memory in bytes
+    /// Dedicated system memory in bytes.
     pub dedicated_system_memory: usize,
-    /// Shared system memory in bytes
+    /// Shared system memory in bytes.
     pub shared_system_memory: usize,
-    /// List of available adapter descriptons
+    /// List of available adapter descriptons.
     pub available: Vec<String>,
 }
 
-/// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required
+/// Information to create a desciptor heap... `Device` will contain default heaps, but you can create your own if required.
 pub struct HeapInfo {
-    /// ie: Shader, RenderTarget, DepthStencil, Sampler
+    /// ie: Shader, RenderTarget, DepthStencil, Sampler.
     pub heap_type: HeapType,
-    /// Totatl size of the heap in number of resources
+    /// Totatl size of the heap in number of resources.
     pub num_descriptors: usize,
 }
 
-/// Options for heap types
+/// Options for heap types.
 #[derive(Copy, Clone, PartialEq, Eq)]
 pub enum HeapType {
-    /// For shader resource view, constant buffer or unordered access
+    /// For shader resource view, constant buffer or unordered access.
     Shader,
     RenderTarget,
     DepthStencil,
     Sampler,
 }
 
-/// Information to pass to `Device::create_swap_chain`
+/// Information to pass to `Device::create_swap_chain`.
 pub struct SwapChainInfo {
     pub num_buffers: u32,
-    /// must be BGRA8n, RGBA8n or RGBA16f
+    /// Must be BGRA8n, RGBA8n or RGBA16f.
     pub format: Format,
-    /// colour for clearing the window when using the backbuffer pass, use None to not clear
+    /// Colour for clearing the window when using the backbuffer pass, use None to not clear.
     pub clear_colour: Option<ClearColour>,
 }
 
@@ -158,13 +158,13 @@ pub struct SwapChainInfo {
 pub struct BufferInfo {
     /// Indicates how the buffer will be used on the GPU.
     pub usage: BufferUsage,
-    /// Used to indicate if we want to read or write from the CPU, use NONE if possible for best performance
+    /// Used to indicate if we want to read or write from the CPU, use NONE if possible for best performance.
     pub cpu_access: CpuAccessFlags,
-    /// Data format of the buffer
+    /// Data format of the buffer.
     pub format: Format,
     /// The stride of a vertex or structure in bytes.
     pub stride: usize,
-    /// The number of array elements
+    /// The number of array elements.
     pub num_elements: usize,
 }
 
@@ -205,17 +205,17 @@ pub enum ShaderType {
 }
 
 bitflags! {
-    /// Shader compilation flags
+    /// Shader compilation flags.
     pub struct ShaderCompileFlags: u32 {
-        /// No flags, default compilation
+        /// No flags, default compilation.
         const NONE = 0b00000000;
         /// Generates shader with debug info
         const DEBUG = 0b00000001;
-        /// Skips optimization for easier debuggability, deterministic results and faster compilation
+        /// Skips optimization for easier debuggability, deterministic results and faster compilation.
         const SKIP_OPTIMIZATION = 0b00000010;
     }
 
-    /// Render target write mask flags
+    /// Render target write mask flags.
     pub struct WriteMask : u8 {
         const RED = 1<<0;
         const GREEN = 1<<1;
@@ -224,14 +224,13 @@ bitflags! {
         const ALL = (1<<4)-1;
     }
 
-    /// CPU Access flags for buffers or textures
+    /// CPU Access flags for buffers or textures.
     pub struct CpuAccessFlags: u8 {
         const NONE = 1<<0;
         const READ = 1<<1;
         const WRITE = 1<<2;
     }
 }
-
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
 #[derive(Default, Clone, Serialize, Deserialize)]
@@ -244,28 +243,28 @@ pub struct DescriptorLayout {
 /// Describes a range of resources for access on the GPU.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DescriptorBinding {
-    /// The shader stage the resources will be accessible to
+    /// The shader stage the resources will be accessible to.
     pub visibility: ShaderVisibility,
-    /// Register index to bind to (supplied in shader)
+    /// Register index to bind to (supplied in shader).
     pub shader_register: u32,
-    /// Register space to bind to (supplied in shader)
+    /// Register space to bind to (supplied in shader).
     pub register_space: u32,
-    /// Type of resources in this descriptor binding
+    /// Type of resources in this descriptor binding.
     pub binding_type: DescriptorType,
-    /// Number of descriptors in this table, use `None` for unbounded
+    /// Number of descriptors in this table, use `None` for unbounded.
     pub num_descriptors: Option<u32>,
 }
 
 /// Describes the type of descriptor binding to create.
 #[derive(Clone, Serialize, Deserialize)]
 pub enum DescriptorType {
-    /// Used for textures or structured buffers
+    /// Used for textures or structured buffers.
     ShaderResource,
-    /// Used for cbuffers
+    /// Used for cbuffers.
     ConstantBuffer,
-    /// Used for read-write textures
+    /// Used for read-write textures.
     UnorderedAccess,
-    /// Used for texture samplers
+    /// Used for texture samplers.
     Sampler,
 }
 
@@ -281,28 +280,35 @@ pub enum ShaderVisibility {
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PushConstantInfo {
-    /// The shader stage the constants will be accessible to
+    /// The shader stage the constants will be accessible to.
     pub visibility: ShaderVisibility,
-    /// Register index to bind to (supplied in shader)
+    /// Register index to bind to (supplied in shader).
     pub shader_register: u32,
-    /// Register space to bind to (supplied in shader)
+    /// Register space to bind to (supplied in shader).
     pub register_space: u32,
-    /// Number of 32-bit values to push
+    /// Number of 32-bit values to push.
     pub num_values: u32,
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
 pub type InputLayout = Vec<InputElementInfo>;
 
-/// Describe a single element of an `InputLayoutInfo`
+/// Describe a single element of an `InputLayoutInfo`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct InputElementInfo {
+    /// Element semantic ie. POSITION, TEXCOORD, COLOR etc.
     pub semantic: String,
+    /// Index of the semantic ie. TEXCOORD0, TEXCOORD1 etc.
     pub index: u32,
+    /// Format of the element size and width.
     pub format: Format,
+    /// The vertex buffer slot this buffer will be bound to.
     pub input_slot: u32,
+    /// Aligned byte offset of this element from the start of the struct.
     pub aligned_byte_offset: u32,
+    /// Vertex or Instance stride.
     pub input_slot_class: InputSlotClass,
+    /// Rate at which to step vertices.
     pub step_rate: u32,
 }
 
@@ -313,6 +319,7 @@ pub enum InputSlotClass {
     PerInstance,
 }
 
+/// Individual sampler state binding for use in static samplers in a DescriptorLayout.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct SamplerBinding {
     /// The shader stage the sampler will be accessible to
