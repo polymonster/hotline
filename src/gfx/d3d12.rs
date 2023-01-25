@@ -2128,7 +2128,12 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn wait_for_last_frame(&mut self) {
-        self.wait_for_frame(self.bb_index);
+        unsafe {
+            self.fence
+                .SetEventOnCompletion(self.fence_last_signalled_value, self.fence_event)
+                .expect("hotline_rs::gfx::d3d12: failed to set on completion event!");
+            WaitForMultipleObjects(&[self.fence_event], true, INFINITE);
+        }
     }
 
     fn get_num_buffers(&self) -> u32 {

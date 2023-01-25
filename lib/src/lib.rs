@@ -29,7 +29,7 @@ pub fn setup_single(
         Position { 0: Vec3f::zero() },
         Velocity { 0: Vec3f::one() },
         MeshComponent {0: cube_mesh.clone()},
-        WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 5.0, 0.0))}
+        WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
     ));
 }
 
@@ -47,7 +47,7 @@ pub fn setup_multiple(
     ));
 
     let cube_mesh = primitives::create_cube_mesh(&mut device.0);
-    let dim = 100;
+    let dim = 500;
     let dim2 = dim / 2;
 
     for y in 0..dim {    
@@ -87,10 +87,35 @@ pub fn mat_movement(mut query: Query<&mut WorldMatrix>) {
 }
 
 #[no_mangle]
-pub fn get_system_function_lib(name: &str) -> Option<SystemDescriptor> {    
+pub fn get_demo_names() -> Vec<String> {
+    vec![
+        "single".to_string(),
+        "multiple".to_string()
+    ]
+}
+
+#[no_mangle]
+pub fn get_demo_info(name: &str) -> Option<client::DemoInfo> {   
     match name {
+        "single" => Some(client::DemoInfo {
+            setup_systems: vec!["setup_single".to_string()],
+            update_systems: vec!["mat_movement".to_string()],
+            render_graph: "forward".to_string()
+        }),
+        "multiple" => Some(client::DemoInfo {
+            setup_systems: vec!["setup_single".to_string()],
+            update_systems: vec!["mat_movement".to_string()],
+            render_graph: "forward".to_string()
+        }),
+        _ => None
+    }
+}
+
+#[no_mangle]
+pub fn get_system_function_lib(name: String) -> Option<SystemDescriptor> {    
+    match name.as_str() {
         "mat_movement" => system_func![mat_movement],
-        "setup_single" => system_func![setup_single],
+        "setup_single" => system_func![setup_multiple],
         "setup_multiple" => system_func![setup_multiple],
         _ => None
     }
