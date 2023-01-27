@@ -34,6 +34,13 @@ pub fn setup_single(
         ecs::MeshComponent {0: cube_mesh.clone()},
         ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
     ));
+
+    commands.spawn((
+        ecs::Position { 0: Vec3f::zero() },
+        ecs::Velocity { 0: Vec3f::one() },
+        ecs::MeshComponent {0: cube_mesh.clone()},
+        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
+    ));
 }
 
 
@@ -120,7 +127,7 @@ pub fn get_demo_info(name: &str) -> Option<client::DemoInfo> {
 pub fn get_system_function_lib(name: String) -> Option<bevy_ecs::schedule::SystemDescriptor> {    
     match name.as_str() {
         "mat_movement" => system_func![mat_movement],
-        "setup_single" => system_func![setup_multiple],
+        "setup_single" => system_func![setup_single],
         "setup_multiple" => system_func![setup_multiple],
         _ => None
     }
