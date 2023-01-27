@@ -1011,3 +1011,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 }
 
+use crate::imgui;
+impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::App {
+    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
+        if open {
+            let mut imgui_open = open;
+
+            if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
+                imgui.image(self.get_texture("main_colour").unwrap(), 640.0, 360.0);
+                imgui.image(self.get_texture("main_depth").unwrap(), 640.0, 360.0);
+            }
+
+            imgui.end();
+            imgui_open
+        }
+        else {
+            false
+        }
+    }
+}

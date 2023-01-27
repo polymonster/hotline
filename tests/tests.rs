@@ -1,3 +1,6 @@
+// currently windows only because here we need a concrete gfx and os implementation
+#![cfg(target_os = "windows")]
+
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -9,6 +12,8 @@ use os::Window;
 
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
+
+#[cfg(target_os = "windows")]
 use gfx::d3d12 as gfx_platform;
 
 #[repr(C)]

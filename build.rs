@@ -1,7 +1,6 @@
-use std::process::Command;
-
 #[cfg(target_os = "windows")]
 fn build_data() {
+    use std::process::Command;
     if std::env::var("CARGO_FEATURE_BUILD_DATA").is_ok() {
         let output = Command::new("bin/win32/pmbuild.exe")
         .arg("win32")
