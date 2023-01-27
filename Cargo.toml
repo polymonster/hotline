@@ -81,7 +81,7 @@ crate-type = ["bin"]
 name = "triangle"
 crate-type = ["bin"]
 
-[[bin]]
+[[target.'cfg(windows)'.bin]]
 name = "host"
 path = "host/main.rs"
 required-features = ["host"]

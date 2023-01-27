@@ -1,3 +1,6 @@
+// currently windows only because here we need a concrete gfx and os implementation
+#![cfg(target_os = "windows")]
+
 use hotline_rs::*;
 use hotline_rs::client::*;
 
@@ -38,38 +41,6 @@ enum ReloadCategory {
 enum ReloadResult {
     Continue,
     Reload
-}
-
-/// Trait for hooking into imgui ui calls
-pub trait UserInterface<D: gfx::Device, A: os::App> {
-    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool;
-}
-
-impl<D, A> UserInterface<D, A> for pmfx::Pmfx<D> where D: gfx::Device, A: os::App {
-    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
-        if open {
-            let mut imgui_open = open;
-
-
-            if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
-                //imgui.image(self.get_texture("main_colour").unwrap(), 640.0, 360.0);
-                //imgui.image(self.get_texture("main_depth").unwrap(), 640.0, 360.0);
-
-                let options = self.get_update_graph_names();
-                for option in options {
-                    if imgui.button(&option) {
-                        self.active_update_graph = option;
-                    }
-                }
-            }
-
-            imgui.end();
-            imgui_open
-        }
-        else {
-            false
-        }
-    }
 }
 
 struct ReloaderInfo {
@@ -141,7 +112,7 @@ impl Reloader {
                 let cur_pmfx_modified_time = std::fs::metadata(&pmfx_path).unwrap().modified().unwrap();
                 if cur_pmfx_modified_time > pmfx_modified_tome {
                     println!("hotline_rs::hot_lib:: pmfx changes detected");
-                    // kick off a buils
+                    // kick off a build
                     let output = Command::new("cargo")
                         .arg("build")
                         .output()
@@ -366,6 +337,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         files: vec![]
     });
 
+    // TODO: functions from config
     runner.setup(
         vec![
             "setup_single".to_string(),

@@ -66,6 +66,11 @@ struct UserData<'a, D: Device, A: App> {
     pipeline: &'a D::RenderPipeline
 }
 
+/// Trait for hooking into imgui ui calls into other modules
+pub trait UserInterface<D: gfx::Device, A: os::App> {
+    fn show_ui(&mut self, imgui: &ImGui<D, A>, open: bool) -> bool;
+}
+
 bitflags! {
     pub struct WindowFlags : i32 {
         const NONE = 0;

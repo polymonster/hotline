@@ -3,17 +3,13 @@
 // - download data
 
 // client
-// - minimise code move ino structure
-// - reload sync
-// - build schedule
-// - resources > world
 // - specify pmfx
+// - update systems, setup systems
 
 // - quick dev ui tidy up
 // - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
 // - pmfx mltiple files
-// - pipeline permutations
 // - view_texture_refs
 // - error handling
 // - watching rebuilding
@@ -55,6 +51,10 @@
 // - bindless
 
 // DONE:
+// x pipeline permutations
+// x reload sync
+// x build schedule
+// x resources > world
 // x core pmfx shaders etc
 // x streamline install / deployment (pmbuild, pmfx etc)
 // x build schedule from file

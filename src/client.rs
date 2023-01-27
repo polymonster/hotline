@@ -14,6 +14,13 @@ use os::Window;
 
 use serde::{Deserialize, Serialize};
 
+use std::time::Duration;
+use std::process::Command;
+use std::thread;
+use std::sync::Arc;
+use std::sync::Mutex;
+use libloading::Symbol;
+
 /// Information to create a hotline context which will create an app, window, device
 pub struct HotlineInfo {
     /// name for the app and window title
@@ -68,6 +75,8 @@ pub struct DemoInfo {
     pub render_graph: String
 }
 
+pub struct ReloadablePlugin<D: gfx::Device, A: os::App>(Reloader, Box<dyn Plugin<D, A>>);
+
 /// Hotline client 
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
@@ -80,6 +89,7 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
+    pub plugins: Vec<ReloadablePlugin<D, A>>
 }
 
 #[derive(Serialize, Deserialize)]
@@ -179,7 +189,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             imdraw,
             imgui,
             unit_quad_mesh,
-            user_config
+            user_config,
+            plugins: Vec::new()
         })
     }
 
@@ -291,6 +302,67 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.cmd_buf.reset(&self.swap_chain);
         self.pmfx.reset(&self.swap_chain);
     }
+
+    pub fn add_plugin(&mut self, plugin: Box<dyn Plugin<D, A>>) {
+        let rp = ReloadablePlugin(Reloader::create(), plugin);
+        rp.0.start();
+        self.plugins.push(rp);
+    }
+
+    pub fn run2(mut self) {
+        while self.app.run() {
+
+            // move plugins
+            let mut plugins = Vec::new();
+            while self.plugins.len() > 0 {
+                plugins.push(self.plugins.remove(0));
+            }
+
+            // check for reloads + wait for gpu if we need to reload.
+            let mut reload = false;
+            for plugin in &mut plugins {
+                if plugin.0.check_for_reload() == ReloadResult::Reload {
+                    self.swap_chain.wait_for_last_frame();
+                    reload = true;
+                    break;
+                }
+            }
+
+            // reload all plugins
+            if reload {
+                for plugin in &mut plugins {
+                    self = plugin.1.reload(self);
+                    plugin.0.complete_reload();
+                }
+            }
+
+            self.new_frame();
+
+            // run setup, first time and when we reload
+            if reload {
+                for plugin in &mut plugins {
+                    self = plugin.1.setup(self);
+                }
+            }
+
+            // update plugins
+            for plugin in &mut plugins {
+                self = plugin.1.update(self);
+            }
+
+            self.plugins = plugins;
+            self.present("main_colour");
+        }
+
+        self.wait_for_last_frame();
+    }
+}
+
+pub trait Plugin<D: gfx::Device, A: os::App> {
+    fn create() -> Self where Self: Sized;
+    fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
 /// Trait to allow custom runners
@@ -303,4 +375,107 @@ pub trait Runner<D: gfx::Device, A: os::App> {
         render_systems: Vec<String>);
     fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
     fn reload(&mut self, );
+}
+
+struct Reloader {
+    /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
+    /// and timestamps for quick checking at run time.
+    files: Vec<(std::time::Duration, String)>,
+    lock: Arc<Mutex<ReloadState>>,
+    lib: hot_lib_reloader::LibReloader
+}
+
+#[derive(PartialEq)]
+enum ReloadState {
+    None,
+    Requested,
+    Confirmed,
+}
+
+#[derive(PartialEq)]
+enum ReloadResult {
+    Continue,
+    Reload
+}
+
+impl Reloader {
+    fn create() -> Reloader {
+        Reloader {
+            files: Vec::new(),
+            lock: Arc::new(Mutex::new(ReloadState::None)),
+            lib: hot_lib_reloader::LibReloader::new("".to_string(), "".to_string(), None).unwrap()
+        }
+    }
+
+    fn file_watcher_thread(&self) {
+        let lib_path = super::get_data_path("../lib/src/lib.rs");
+        let mut lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+        let lock = self.lock.clone();
+        thread::spawn(move || {
+            loop {
+                // check code changes
+                let cur_lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
+                if cur_lib_modified_time > lib_modified_time {
+                    println!("hotline_rs::hot_lib:: code changes detected");
+                    // kick off a build
+                    let output = Command::new("cargo")
+                        .arg("build")
+                        .arg("-p")
+                        .arg("lib")
+                        .arg("--release")
+                        .output()
+                        .expect("hotline::hot_lib:: hot lib failed to build!");
+        
+                    if output.stdout.len() > 0 {
+                        println!("{}", String::from_utf8(output.stdout).unwrap());
+                    }
+        
+                    if output.stderr.len() > 0 {
+                        println!("{}", String::from_utf8(output.stderr).unwrap());
+                    }
+
+                    let mut a = lock.lock().unwrap();
+                    println!("hotline_rs::reload:: requested");
+                    *a = ReloadState::Requested;
+                    drop(a);
+        
+                    lib_modified_time = cur_lib_modified_time;
+                }
+        
+                // yield
+                std::thread::sleep(Duration::from_millis(16));
+            }
+        });
+    }
+
+    /// Start watching for and invoking reload changes, this will spawn threads to watch files
+    pub fn start(&self) {
+        self.file_watcher_thread();
+    }
+
+    pub fn check_for_reload(&self) -> ReloadResult {
+        let lock = self.lock.lock().unwrap();
+        if *lock == ReloadState::Requested {
+            ReloadResult::Reload
+        }
+        else {
+            ReloadResult::Continue
+        }
+    }
+
+    pub fn complete_reload(&mut self) {
+        // wait for lib to reload
+        loop {
+            if self.lib.update().unwrap() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(16));
+        }
+
+        let mut lock = self.lock.lock().unwrap();
+        // signal it is safe to proceed and reload the new code
+        *lock = ReloadState::Confirmed;
+        drop(lock);
+        println!("hotline_rs::reload:: confirmed");
+    }
 }
