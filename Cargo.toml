@@ -86,5 +86,5 @@ name = "host"
 path = "host/main.rs"
 required-features = ["host"]
 
-[target.x86_64-pc-windows-msvc] 
-rustflags = ["-Zshare-generics=off"]
+[profile.dev]
+opt-level = 1

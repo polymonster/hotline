@@ -24,23 +24,22 @@ struct BevyRunner {
 }
 
 impl BevyRunner {
-    fn get_system_function(&self, name: &str) -> Option<SystemDescriptor> {
+    fn get_system_function(&self, name: &str, client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
         let func = ecs::get_system_function(name);
         if func.is_some() {
             func
         }
         else {
-            for lib in &self.libs {
-                unsafe {
-                    let get_function : Symbol<unsafe extern fn(String) -> Option<SystemDescriptor>> 
-                        = lib.get_symbol("get_system_function_lib".as_bytes()).unwrap();
-                    let f = get_function(name.to_string());
-                    if f.is_some() {
-                        return f;
-                    }
+            let sym = client.get_symbol::<unsafe extern fn(String) -> Option<SystemDescriptor>>("get_system_function_lib");
+            unsafe {
+                let f = sym.unwrap()(name.to_string());
+                if f.is_some() {
+                    f
+                }
+                else {
+                    None
                 }
             }
-            None
         }
     }
 }
@@ -75,7 +74,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyRunner {
         // render functions
         let mut render_stage = SystemStage::parallel();
         for func_name in &render_systems {
-            if let Some(func) = self.get_system_function(func_name) {
+            if let Some(func) = self.get_system_function(func_name, &client) {
                 render_stage = render_stage.with_system(func);
             }
         }
@@ -84,7 +83,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyRunner {
         // add startup funcs by name
         let mut setup_stage = SystemStage::parallel();
         for func_name in &setup_systems {
-            if let Some(func) = self.get_system_function(func_name) {
+            if let Some(func) = self.get_system_function(func_name, &client) {
                 setup_stage = setup_stage.with_system(func);
             }
         }
@@ -93,7 +92,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyRunner {
         // add update funcs by name
         let mut update_stage = SystemStage::parallel();
         for func_name in &update_systems {
-            if let Some(func) = self.get_system_function(func_name) {
+            if let Some(func) = self.get_system_function(func_name, &client) {
                 update_stage = update_stage.with_system(func);
             }
         }
@@ -179,7 +178,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ctx.add_plugin(Box::new(BevyRunner::create()));
     
     // run
-    ctx.run2();
+    ctx.run();
 
     // exited with code 0
     Ok(())

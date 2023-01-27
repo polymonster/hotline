@@ -89,7 +89,9 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
-    pub plugins: Vec<ReloadablePlugin<D, A>>,
+    pub plugins: Vec<Box<dyn Plugin<D, A>>>,
+    
+    reloaders: Vec<Reloader>,
     run_setup: bool
 }
 
@@ -192,6 +194,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             unit_quad_mesh,
             user_config,
             plugins: Vec::new(),
+            reloaders: Vec::new(),
             run_setup: false
         })
     }
@@ -306,13 +309,26 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     }
 
     pub fn add_plugin(&mut self, plugin: Box<dyn Plugin<D, A>>) {
-        let rp = ReloadablePlugin(Reloader::create(), plugin);
-        rp.0.start();
-        self.plugins.push(rp);
+        let rp = Reloader::create();
+        rp.start();
+        self.reloaders.push(rp);
+        self.plugins.push(plugin);
         self.run_setup = true;
     }
 
-    pub fn run2(mut self) {
+    pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
+        for reloader in &self.reloaders {
+            unsafe {
+                let get_function = reloader.lib.get_symbol::<T>(name.as_bytes());
+                if get_function.is_ok() {
+                    return Some(get_function.unwrap());
+                }
+            }
+        }
+        None
+    }
+
+    pub fn run(mut self) {
         while self.app.run() {
 
             // move plugins
@@ -323,19 +339,23 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             // check for reloads + wait for gpu if we need to reload.
             let mut reload = false;
-            for plugin in &mut plugins {
-                if plugin.0.check_for_reload() == ReloadResult::Reload {
+            for reloader in &mut self.reloaders {
+                if reloader.check_for_reload() == ReloadResult::Reload {
                     self.swap_chain.wait_for_last_frame();
                     reload = true;
                     break;
                 }
             }
 
-            // reload all plugins
+            // perform reloads
             if reload {
+                // reload all plugins
                 for plugin in &mut plugins {
-                    self = plugin.1.reload(self);
-                    plugin.0.complete_reload();
+                    self = plugin.reload(self);
+                }
+                // complete all reloaders
+                for reloader in &mut self.reloaders {
+                    reloader.complete_reload();
                 }
             }
 
@@ -344,14 +364,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             // run setup, first time and when we reload
             if reload || self.run_setup {
                 for plugin in &mut plugins {
-                    self = plugin.1.setup(self);
+                    self = plugin.setup(self);
                 }
                 self.run_setup = false;
             }
 
             // update plugins
             for plugin in &mut plugins {
-                self = plugin.1.update(self);
+                self = plugin.update(self);
             }
 
             self.plugins = plugins;
@@ -374,7 +394,7 @@ struct Reloader {
     /// and timestamps for quick checking at run time.
     files: Vec<(std::time::Duration, String)>,
     lock: Arc<Mutex<ReloadState>>,
-    //lib: hot_lib_reloader::LibReloader
+    lib: hot_lib_reloader::LibReloader
 }
 
 #[derive(PartialEq)]
@@ -395,7 +415,7 @@ impl Reloader {
         Reloader {
             files: Vec::new(),
             lock: Arc::new(Mutex::new(ReloadState::None)),
-            //lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap()
+            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap()
         }
     }
 
@@ -414,7 +434,6 @@ impl Reloader {
                         .arg("build")
                         .arg("-p")
                         .arg("lib")
-                        .arg("--release")
                         .output()
                         .expect("hotline::hot_lib:: hot lib failed to build!");
         
@@ -456,15 +475,14 @@ impl Reloader {
     }
 
     fn complete_reload(&mut self) {
+        println!("hotline_rs::reload:: completing");
         // wait for lib to reload
-        /*
         loop {
             if self.lib.update().unwrap() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(16));
         }
-        */
 
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
