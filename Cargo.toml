@@ -81,7 +81,10 @@ crate-type = ["bin"]
 name = "triangle"
 crate-type = ["bin"]
 
-[[target.'cfg(windows)'.bin]]
+[[bin]]
 name = "host"
 path = "host/main.rs"
 required-features = ["host"]
+
+[target.x86_64-pc-windows-msvc] 
+rustflags = ["-Zshare-generics=off"]

@@ -89,7 +89,8 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
-    pub plugins: Vec<ReloadablePlugin<D, A>>
+    pub plugins: Vec<ReloadablePlugin<D, A>>,
+    run_setup: bool
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,7 +191,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             imgui,
             unit_quad_mesh,
             user_config,
-            plugins: Vec::new()
+            plugins: Vec::new(),
+            run_setup: false
         })
     }
 
@@ -307,6 +309,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let rp = ReloadablePlugin(Reloader::create(), plugin);
         rp.0.start();
         self.plugins.push(rp);
+        self.run_setup = true;
     }
 
     pub fn run2(mut self) {
@@ -339,10 +342,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.new_frame();
 
             // run setup, first time and when we reload
-            if reload {
+            if reload || self.run_setup {
                 for plugin in &mut plugins {
                     self = plugin.1.setup(self);
                 }
+                self.run_setup = false;
             }
 
             // update plugins
@@ -365,24 +369,12 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
-/// Trait to allow custom runners
-pub trait Runner<D: gfx::Device, A: os::App> {
-    fn create() -> Self;
-    fn setup(
-        &mut self, 
-        setup_systems: Vec<String>, 
-        update_systems: Vec<String>, 
-        render_systems: Vec<String>);
-    fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
-    fn reload(&mut self, );
-}
-
 struct Reloader {
     /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
     /// and timestamps for quick checking at run time.
     files: Vec<(std::time::Duration, String)>,
     lock: Arc<Mutex<ReloadState>>,
-    lib: hot_lib_reloader::LibReloader
+    //lib: hot_lib_reloader::LibReloader
 }
 
 #[derive(PartialEq)]
@@ -403,7 +395,7 @@ impl Reloader {
         Reloader {
             files: Vec::new(),
             lock: Arc::new(Mutex::new(ReloadState::None)),
-            lib: hot_lib_reloader::LibReloader::new("".to_string(), "".to_string(), None).unwrap()
+            //lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap()
         }
     }
 
@@ -449,11 +441,11 @@ impl Reloader {
     }
 
     /// Start watching for and invoking reload changes, this will spawn threads to watch files
-    pub fn start(&self) {
+    fn start(&self) {
         self.file_watcher_thread();
     }
 
-    pub fn check_for_reload(&self) -> ReloadResult {
+    fn check_for_reload(&self) -> ReloadResult {
         let lock = self.lock.lock().unwrap();
         if *lock == ReloadState::Requested {
             ReloadResult::Reload
@@ -463,14 +455,16 @@ impl Reloader {
         }
     }
 
-    pub fn complete_reload(&mut self) {
+    fn complete_reload(&mut self) {
         // wait for lib to reload
+        /*
         loop {
             if self.lib.update().unwrap() {
                 break;
             }
             std::thread::sleep(Duration::from_millis(16));
         }
+        */
 
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code

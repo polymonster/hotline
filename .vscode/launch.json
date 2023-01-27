@@ -8,7 +8,7 @@
             "name": "host (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/release/host.exe",
+            "program": "${workspaceFolder}/target/debug/host.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
