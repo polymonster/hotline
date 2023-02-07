@@ -11,19 +11,16 @@ use bevy_ecs::schedule::SystemDescriptor;
 use maths_rs::Vec3f;
 use maths_rs::Mat4f;
 
-use libloading::Symbol;
-
-struct BevyRunner {
+struct BevyPlugin {
     world: World,
     setup_schedule: Schedule,
     schedule: Schedule,
     run_setup: bool,
-    libs: Vec<hot_lib_reloader::LibReloader>,
     demo_list: Vec<String>,
     demo: String
 }
 
-impl BevyRunner {
+impl BevyPlugin {
     fn get_system_function(&self, name: &str, client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
         let func = ecs::get_system_function(name);
         if func.is_some() {
@@ -44,14 +41,13 @@ impl BevyRunner {
     }
 }
 
-impl Plugin<gfx_platform::Device, os_platform::App> for BevyRunner {
+impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn create() -> Self {
-        BevyRunner {
+        BevyPlugin {
             world: World::new(),
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
             run_setup: false,
-            libs: Vec::new(),
             demo_list: Vec::new(),
             demo: String::new()
         }
@@ -146,7 +142,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyRunner {
     }
 }
 
-impl<D, A> imgui::UserInterface<D, A> for BevyRunner where D: gfx::Device, A: os::App {
+impl<D, A> imgui::UserInterface<D, A> for BevyPlugin where D: gfx::Device, A: os::App {
     fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
@@ -175,7 +171,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     })?;
 
     // add plugins
-    ctx.add_plugin(Box::new(BevyRunner::create()));
+    ctx.add_plugin(Box::new(BevyPlugin::create()));
     
     // run
     ctx.run();
