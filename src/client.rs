@@ -392,7 +392,7 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
 struct Reloader {
     /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
     /// and timestamps for quick checking at run time.
-    files: Vec<(std::time::Duration, String)>,
+    //files: Vec<(std::time::Duration, String)>,
     lock: Arc<Mutex<ReloadState>>,
     lib: hot_lib_reloader::LibReloader
 }
@@ -413,7 +413,7 @@ enum ReloadResult {
 impl Reloader {
     fn create() -> Reloader {
         Reloader {
-            files: Vec::new(),
+            //files: Vec::new(),
             lock: Arc::new(Mutex::new(ReloadState::None)),
             lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap()
         }
