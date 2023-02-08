@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["lib"]
+members = ["lib", "plugins"]
 
 [package]
 name = "hotline-rs"

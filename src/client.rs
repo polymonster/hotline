@@ -87,7 +87,9 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
     pub plugins: Vec<Box<dyn Plugin<D, A>>>,
-    
+
+    new_responders: Vec<LibReloadResponder>,
+
     reloaders: Vec<Reloader>,
     run_setup: bool
 }
@@ -192,6 +194,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             user_config,
             plugins: Vec::new(),
             reloaders: Vec::new(),
+            new_responders: Vec::new(),
             run_setup: false
         })
     }
@@ -315,6 +318,16 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.run_setup = true;
     }
 
+    pub fn add_plugin_lib(&mut self) {
+        let responder = LibReloadResponder {
+            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "plugins".to_string(), None).unwrap(),
+            files: vec![
+                "../plugins/src/lib.rs".to_string()
+            ]
+        };
+        self.new_responders.push(responder);
+    }
+
     pub fn get_responder(&self) -> Option<Arc<Mutex<Box<dyn ReloadResponder>>>> {
         for reloader in &self.reloaders {
             return Some(reloader.get_responder());
@@ -324,6 +337,29 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
     pub fn run(mut self) {
         while self.app.run() {
+
+            // new
+            let mut new_responders = Vec::new();
+            while self.new_responders.len() > 0 {
+                new_responders.push(self.new_responders.remove(0));
+            }
+
+            for responder in &new_responders {
+                unsafe {
+                    let setup = responder.lib.get_symbol::<unsafe extern fn(&mut Self)>("setup".as_bytes());
+                    if setup.is_ok() {
+                        let setup_fn = setup.unwrap();
+                        setup_fn(&mut self);
+                    }
+                    
+                    let update = responder.lib.get_symbol::<unsafe extern fn(&mut Self)>("update".as_bytes());
+                    if update.is_ok() {
+                        let update_fn = update.unwrap();
+                        update_fn(&mut self);
+                    }
+                }
+            }
+            self.new_responders = new_responders;
 
             // move plugins
             let mut plugins = Vec::new();
@@ -450,6 +486,7 @@ impl ReloadResponder for LibReloadResponder {
             .arg("build")
             .arg("-p")
             .arg("lib")
+            .arg("--release")
             .output()
             .expect("hotline::hot_lib:: hot lib failed to build!");
 
@@ -508,15 +545,14 @@ impl Reloader {
 
     /// Once data is cleaned up and it is safe to proceed this functions must be called 
     pub fn complete_reload(&mut self) {
-        println!("hotline_rs::reload:: completing");
-
+        println!("hotline_rs::reloader:: wait for completion");
         self.responder.lock().unwrap().wait_for_completion();
 
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
         *lock = ReloadState::Confirmed;
         drop(lock);
-        println!("hotline_rs::reload:: confirmed");
+        println!("hotline_rs::reloader:: confirmed");
     }
 
     pub fn get_responder(&self) -> Arc<Mutex<Box<dyn ReloadResponder>>> {
@@ -548,18 +584,18 @@ impl Reloader {
                         }
                     }
                     else {
-                        print!("hotline_rs::reloader:: {filepath} not found!")
+                        print!("hotline_rs::reloader: {filepath} not found!")
                     }
                 };
 
                 // check code changes
                 if new_mtime > cur_mtime {
-                    println!("hotline_rs:: changes detected, building");
+                    println!("hotline_rs::reloader: changes detected, building");
 
                     responder.build();
 
                     let mut a = lock.lock().unwrap();
-                    println!("hotline_rs:: reload requested");
+                    println!("hotline_rs::reloader: reload requested");
                     *a = ReloadState::Requested;
                     drop(a);
         
