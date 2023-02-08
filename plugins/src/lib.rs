@@ -50,13 +50,30 @@ impl<D, A> imgui::UserInterface<D, A> for EmptyPlugin where D: gfx::Device, A: o
     }
 }
 
+fn new_plugin() -> *mut EmptyPlugin {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(
+            std::mem::size_of::<EmptyPlugin>(),
+            8,
+        )
+        .unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut EmptyPlugin
+    }
+}
+
+
 #[no_mangle]
-pub fn update(client: &mut client::Client<gfx_platform::Device, os_platform::App>) {
+pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
     println!("update plugin!");
+    unsafe { 
+        let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut EmptyPlugin>(ptr);
+        let plugin = plugin.as_mut().unwrap();
+        plugin.update(client)
+    }
 }
 
 #[no_mangle]
-pub fn setup(client: &mut client::Client<gfx_platform::Device, os_platform::App>) {
-    println!("{}", client.pmfx.active_update_graph);
+pub fn setup(client: &mut client::Client<gfx_platform::Device, os_platform::App>) -> *mut core::ffi::c_void {
     println!("hello plugin!");
+    new_plugin() as *mut core::ffi::c_void
 }

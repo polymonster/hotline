@@ -346,17 +346,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             for responder in &new_responders {
                 unsafe {
-                    let setup = responder.lib.get_symbol::<unsafe extern fn(&mut Self)>("setup".as_bytes());
+                    let setup = responder.lib.get_symbol::<unsafe extern fn(&mut Self) -> *mut core::ffi::c_void >("setup".as_bytes());
                     if setup.is_ok() {
                         let setup_fn = setup.unwrap();
-                        setup_fn(&mut self);
+                        let plug = setup_fn(&mut self);
+
+                        let update = responder.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                        if update.is_ok() {
+                            let update_fn = update.unwrap();
+                            self = update_fn(self, plug);
+                        }
                     }
                     
-                    let update = responder.lib.get_symbol::<unsafe extern fn(&mut Self)>("update".as_bytes());
-                    if update.is_ok() {
-                        let update_fn = update.unwrap();
-                        update_fn(&mut self);
-                    }
+
                 }
             }
             self.new_responders = new_responders;
