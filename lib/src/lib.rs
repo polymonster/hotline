@@ -92,7 +92,7 @@ pub fn movement(mut query:  bevy_ecs::system::Query<(&mut ecs::Position, &ecs::V
 #[no_mangle]
 pub fn mat_movement(mut query:  bevy_ecs::system::Query<&mut ecs::WorldMatrix>) {
     for mut mat in &mut query {
-        mat.0 = mat.0 * Mat4f::from_translation(vec3f(0.0, 0.1, 0.0));
+        mat.0 = mat.0 * Mat4f::from_translation(vec3f(0.0, 0.0, 0.0));
     }
 }
 
@@ -103,25 +103,6 @@ pub fn get_demo_names() -> Vec<String> {
         "multiple".to_string()
     ]
 }
-
-/*
-#[no_mangle]
-pub fn get_demo_info(name: &str) -> Option<client::DemoInfo> {   
-    match name {
-        "single" => Some(client::DemoInfo {
-            setup_systems: vec!["setup_single".to_string()],
-            update_systems: vec!["mat_movement".to_string()],
-            render_graph: "forward".to_string()
-        }),
-        "multiple" => Some(client::DemoInfo {
-            setup_systems: vec!["setup_single".to_string()],
-            update_systems: vec!["mat_movement".to_string()],
-            render_graph: "forward".to_string()
-        }),
-        _ => None
-    }
-}
-*/
 
 #[no_mangle]
 pub fn get_system_function_lib(name: String) -> Option<bevy_ecs::schedule::SystemDescriptor> {    

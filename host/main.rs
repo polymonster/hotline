@@ -27,7 +27,12 @@ impl BevyPlugin {
             func
         }
         else {
-            let sym = client.get_symbol::<unsafe extern fn(String) -> Option<SystemDescriptor>>("get_system_function_lib");
+
+            let responder = client.get_responder().unwrap();
+            let responder = responder.lock().unwrap();
+            let lib = responder.as_any().downcast_ref::<client::LibReloadResponder>().unwrap();
+
+            let sym = lib.get_symbol::<unsafe extern fn(String) -> Option<SystemDescriptor>>("get_system_function_lib");
             unsafe {
                 let f = sym.unwrap()(name.to_string());
                 if f.is_some() {

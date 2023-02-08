@@ -1,5 +1,6 @@
 
 
+use crate::client;
 use crate::os;
 use crate::os::Window;
 
@@ -7,6 +8,9 @@ use crate::gfx;
 use crate::gfx::ResourceState;
 use crate::gfx::RenderPass;
 use crate::gfx::CmdBuf;
+
+use crate::client::Reloader;
+use crate::client::ReloadResponder;
 
 use serde::{Deserialize, Serialize};
 
@@ -17,6 +21,7 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
+use std::any::Any;
 
 /// Hash type for quick checks of changed resources from pmfx
 type PmfxHash = u64;
@@ -83,6 +88,8 @@ pub struct Pmfx<D: gfx::Device> {
     render_graph_execute_order: Vec<String>,
     /// Tracking texture references of views
     view_texture_refs: HashMap<String, HashSet<String>>,
+
+    reloader: Reloader,
     /// Tracks the currently active update graph name
     pub active_update_graph: String,
     /// Tracks the currently active render graph name
@@ -351,6 +358,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             window_sizes: HashMap::new(),
             active_update_graph: "core".to_string(),
             active_render_graph: String::new(),
+            reloader: Reloader::create(Box::new(PmfxReloadResponder::new()))
         }
     }
 
@@ -379,6 +387,15 @@ impl<D> Pmfx<D> where D: gfx::Device {
         for name in self.pmfx.pipelines.keys() {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
         }
+
+        // TODO: minimise
+        let responder = self.reloader.get_responder();
+        let mut responder = responder.lock().unwrap();
+        let responder = responder.as_any_mut().downcast_mut::<PmfxReloadResponder>().unwrap();
+        
+        responder.add_file("../src/shaders/imdraw.hlsl");
+
+        self.reloader.start();
         
         Ok(())
     }
@@ -811,6 +828,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
+        if self.reloader.check_for_reload() == client::ReloadResult::Reload {
+            self.reloader.complete_reload();
+        }
+        
         self.reset(swap_chain);
     }
 
@@ -1028,5 +1049,55 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
         else {
             false
         }
+    }
+}
+
+pub struct PmfxReloadResponder {
+    files: Vec<String>,
+}
+
+impl PmfxReloadResponder {
+    fn new() -> Self {
+        PmfxReloadResponder {
+            files: Vec::new()
+        }
+    }
+    fn add_file(&mut self, filepath: &str) {
+        self.files.push(filepath.to_string());
+    }   
+}
+
+impl ReloadResponder for PmfxReloadResponder {
+    fn get_files(&self) -> &Vec<String> {
+        &self.files
+    }
+
+    fn build(&mut self) {
+        let output = std::process::Command::new("C:\\Users\\alex_\\dev\\hotline\\build.cmd")
+            .current_dir("C:\\Users\\alex_\\dev\\hotline\\")
+            .arg("win32")
+            .arg("-pmfx")
+            .output()
+            .expect("hotline::hot_lib:: hot pmfx failed to compile!");
+
+        if output.stdout.len() > 0 {
+            println!("{}", String::from_utf8(output.stdout).unwrap());
+        }
+
+        if output.stderr.len() > 0 {
+            println!("{}", String::from_utf8(output.stderr).unwrap());
+        }
+    }
+
+    fn wait_for_completion(&mut self) {
+        // stub
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+    
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }

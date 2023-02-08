@@ -5,6 +5,7 @@ use crate::pmfx;
 use crate::imdraw;
 use crate::primitives;
 
+// use bevy_ecs::system::System;
 use gfx::SwapChain;
 use gfx::CmdBuf;
 use gfx::Texture;
@@ -12,6 +13,7 @@ use gfx::RenderPass;
 
 use os::Window;
 
+use libloading::Symbol;
 use serde::{Deserialize, Serialize};
 
 use std::time::Duration;
@@ -19,7 +21,8 @@ use std::process::Command;
 use std::thread;
 use std::sync::Arc;
 use std::sync::Mutex;
-use libloading::Symbol;
+use std::time::SystemTime;
+use std::any::Any;
 
 /// Information to create a hotline context which will create an app, window, device
 pub struct HotlineInfo {
@@ -67,12 +70,6 @@ impl Default for HotlineInfo {
             depth_stencil_heap_size: 64
         }
     }
-}
-
-pub struct DemoInfo {
-    pub setup_systems: Vec<String>,
-    pub update_systems: Vec<String>,
-    pub render_graph: String
 }
 
 pub struct ReloadablePlugin<D: gfx::Device, A: os::App>(Reloader, Box<dyn Plugin<D, A>>);
@@ -309,21 +306,18 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     }
 
     pub fn add_plugin(&mut self, plugin: Box<dyn Plugin<D, A>>) {
-        let rp = Reloader::create();
+        let rp = Reloader::create(
+            Box::new(LibReloadResponder::new())
+        );
         rp.start();
         self.reloaders.push(rp);
         self.plugins.push(plugin);
         self.run_setup = true;
     }
 
-    pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
+    pub fn get_responder(&self) -> Option<Arc<Mutex<Box<dyn ReloadResponder>>>> {
         for reloader in &self.reloaders {
-            unsafe {
-                let get_function = reloader.lib.get_symbol::<T>(name.as_bytes());
-                if get_function.is_ok() {
-                    return Some(get_function.unwrap());
-                }
-            }
+            return Some(reloader.get_responder());
         }
         None
     }
@@ -389,14 +383,15 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
-struct Reloader {
+/// Basic Reloader which can check timestamps on files and then callback functions supplied by the reload responder
+pub struct Reloader {
     /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
     /// and timestamps for quick checking at run time.
-    //files: Vec<(std::time::Duration, String)>,
     lock: Arc<Mutex<ReloadState>>,
-    lib: hot_lib_reloader::LibReloader
+    responder: Arc<Mutex<Box<dyn ReloadResponder>>>
 }
 
+/// Internal private enum to track reload states
 #[derive(PartialEq)]
 enum ReloadState {
     None,
@@ -405,66 +400,103 @@ enum ReloadState {
 }
 
 #[derive(PartialEq)]
-enum ReloadResult {
+pub enum ReloadResult {
     Continue,
     Reload
 }
 
-impl Reloader {
-    fn create() -> Reloader {
-        Reloader {
-            //files: Vec::new(),
-            lock: Arc::new(Mutex::new(ReloadState::None)),
-            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap()
+pub trait ReloadResponder: Send + Sync {
+    fn get_files(&self) -> &Vec<String>;
+    fn build(&mut self);
+    fn wait_for_completion(&mut self);
+    fn as_any(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+pub struct LibReloadResponder {
+    lib: hot_lib_reloader::LibReloader,
+    files: Vec<String>,
+}
+
+impl LibReloadResponder {
+    fn new() -> Self {
+        LibReloadResponder {
+            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap(),
+            files: vec![
+                "../lib/src/lib.rs".to_string()
+            ]
+        }
+    }
+    pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
+        unsafe {
+            let get_function = self.lib.get_symbol::<T>(name.as_bytes());
+            if get_function.is_ok() {
+                return Some(get_function.unwrap());
+            }
+            else {
+                None
+            }
+        }
+    }
+}
+
+impl ReloadResponder for LibReloadResponder {
+    fn get_files(&self) -> &Vec<String> {
+        &self.files
+    }
+
+    fn build(&mut self) {
+        let output = Command::new("cargo")
+            .arg("build")
+            .arg("-p")
+            .arg("lib")
+            .output()
+            .expect("hotline::hot_lib:: hot lib failed to build!");
+
+        if output.stdout.len() > 0 {
+            println!("{}", String::from_utf8(output.stdout).unwrap());
+        }
+
+        if output.stderr.len() > 0 {
+            println!("{}", String::from_utf8(output.stderr).unwrap());
         }
     }
 
-    fn file_watcher_thread(&self) {
-        let lib_path = super::get_data_path("../lib/src/lib.rs");
-        let mut lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
-        let lock = self.lock.clone();
-        thread::spawn(move || {
-            loop {
-                // check code changes
-                let cur_lib_modified_time = std::fs::metadata(&lib_path).unwrap().modified().unwrap();
-                if cur_lib_modified_time > lib_modified_time {
-                    println!("hotline_rs::hot_lib:: code changes detected");
-                    // kick off a build
-                    let output = Command::new("cargo")
-                        .arg("build")
-                        .arg("-p")
-                        .arg("lib")
-                        .output()
-                        .expect("hotline::hot_lib:: hot lib failed to build!");
-        
-                    if output.stdout.len() > 0 {
-                        println!("{}", String::from_utf8(output.stdout).unwrap());
-                    }
-        
-                    if output.stderr.len() > 0 {
-                        println!("{}", String::from_utf8(output.stderr).unwrap());
-                    }
-
-                    let mut a = lock.lock().unwrap();
-                    println!("hotline_rs::reload:: requested");
-                    *a = ReloadState::Requested;
-                    drop(a);
-        
-                    lib_modified_time = cur_lib_modified_time;
-                }
-        
-                // yield
-                std::thread::sleep(Duration::from_millis(16));
+    fn wait_for_completion(&mut self) {
+        // wait for lib to reload
+        loop {
+            if self.lib.update().unwrap() {
+                break;
             }
-        });
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl Reloader {
+    /// Create a new instance of a reload with the designated ReloadResponder
+    pub fn create(responder: Box<dyn ReloadResponder>) -> Self {
+        Self {
+            lock: Arc::new(Mutex::new(ReloadState::None)),
+            responder: Arc::new(Mutex::new(responder))
+        }
     }
 
     /// Start watching for and invoking reload changes, this will spawn threads to watch files
-    fn start(&self) {
+    pub fn start(&self) {
         self.file_watcher_thread();
     }
 
-    fn check_for_reload(&self) -> ReloadResult {
+    /// Call this each frame, if ReloadResult::Reload you must then clean up any data in preperation for a reload
+    pub fn check_for_reload(&self) -> ReloadResult {
         let lock = self.lock.lock().unwrap();
         if *lock == ReloadState::Requested {
             ReloadResult::Reload
@@ -474,20 +506,69 @@ impl Reloader {
         }
     }
 
-    fn complete_reload(&mut self) {
+    /// Once data is cleaned up and it is safe to proceed this functions must be called 
+    pub fn complete_reload(&mut self) {
         println!("hotline_rs::reload:: completing");
-        // wait for lib to reload
-        loop {
-            if self.lib.update().unwrap() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(16));
-        }
+
+        self.responder.lock().unwrap().wait_for_completion();
 
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
         *lock = ReloadState::Confirmed;
         drop(lock);
         println!("hotline_rs::reload:: confirmed");
+    }
+
+    pub fn get_responder(&self) -> Arc<Mutex<Box<dyn ReloadResponder>>> {
+        self.responder.clone()
+    }
+
+    /// Background thread will watch for changed filestamps among the registered files from the responder
+    fn file_watcher_thread(&self) {
+        let mut cur_mtime = SystemTime::now();
+        let lock = self.lock.clone();
+        let responder = self.responder.clone();
+        thread::spawn(move || {
+            loop {
+                // check if files have changed
+                let mut new_mtime = cur_mtime;
+
+                let mut responder = responder.lock().unwrap();
+
+                let files = responder.get_files();
+                for file in files {
+                    let filepath = super::get_data_path(file);
+                    let meta = std::fs::metadata(&filepath);
+
+                    if meta.is_ok() {
+                        let mtime = std::fs::metadata(&filepath).unwrap().modified().unwrap();
+                        if mtime > cur_mtime {
+                            new_mtime = mtime;
+                            break;
+                        }
+                    }
+                    else {
+                        print!("hotline_rs::reloader:: {filepath} not found!")
+                    }
+                };
+
+                // check code changes
+                if new_mtime > cur_mtime {
+                    println!("hotline_rs:: changes detected, building");
+
+                    responder.build();
+
+                    let mut a = lock.lock().unwrap();
+                    println!("hotline_rs:: reload requested");
+                    *a = ReloadState::Requested;
+                    drop(a);
+        
+                    cur_mtime = new_mtime;
+                }
+        
+                // yield
+                std::thread::sleep(Duration::from_millis(16));
+            }
+        });
     }
 }

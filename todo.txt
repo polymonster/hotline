@@ -6,16 +6,20 @@
 // - specify pmfx
 // - update systems, setup systems
 
+// - watching rebuilding
+// - systems with time
 // - quick dev ui tidy up
 // - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
+
+
 // - pmfx mltiple files
 // - view_texture_refs
 // - error handling
-// - watching rebuilding
+
 // - msaa + texture format changing
 
-// - systems with time
+
 
 // - hotline dynamic lib (build times)
 // - consolidate sync code
