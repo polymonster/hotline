@@ -28,6 +28,7 @@ impl BevyPlugin {
         }
         else {
 
+            // TODO: downcast
             let responder = client.get_responder().unwrap();
             let responder = responder.lock().unwrap();
             let lib = responder.as_any().downcast_ref::<client::LibReloadResponder>().unwrap();
@@ -151,7 +152,7 @@ impl<D, A> imgui::UserInterface<D, A> for BevyPlugin where D: gfx::Device, A: os
     fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
-            if imgui.begin("runner", &mut imgui_open, imgui::WindowFlags::NONE) {
+            if imgui.begin("bevy", &mut imgui_open, imgui::WindowFlags::NONE) {
                 for demo in &self.demo_list {
                     if imgui.button(&demo) {
                         self.demo = demo.to_string();
@@ -167,7 +168,6 @@ impl<D, A> imgui::UserInterface<D, A> for BevyPlugin where D: gfx::Device, A: os
     }
 }
 
-
 fn main() -> Result<(), hotline_rs::Error> {    
     
     // create client
@@ -175,8 +175,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         ..Default::default()
     })?;
 
-    // add plugins
     ctx.add_plugin(Box::new(BevyPlugin::create()));
+
+    // add plugins
+    ctx.add_plugin_lib();
     
     // run
     ctx.run();

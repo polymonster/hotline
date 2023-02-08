@@ -388,7 +388,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
         }
 
-        // TODO: minimise
+        // TODO: downcast
         let responder = self.reloader.get_responder();
         let mut responder = responder.lock().unwrap();
         let responder = responder.as_any_mut().downcast_mut::<PmfxReloadResponder>().unwrap();
