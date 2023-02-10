@@ -3,6 +3,7 @@
 
 use hotline_rs::*;
 use hotline_rs::client::*;
+use hotline_rs::plugin::*;
 use ecs::*;
 
 use bevy_ecs::prelude::*;
@@ -50,7 +51,7 @@ pub fn setup_single(
         ecs::Position { 0: Vec3f::zero() },
         ecs::Velocity { 0: Vec3f::one() },
         ecs::MeshComponent {0: cube_mesh.clone()},
-        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
+        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 5.0, 0.0))}
     ));
 }
 
@@ -213,6 +214,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
     fn update(&mut self, mut client: client::Client<gfx_platform::Device, os_platform::App>) ->
         client::Client<gfx_platform::Device, os_platform::App> {
+
         // move hotline resource into world
         self.world.insert_resource(DeviceRes {0: client.device});
         self.world.insert_resource(AppRes {0: client.app});
@@ -248,11 +250,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
     fn reload(&mut self, client: Client<gfx_platform::Device, os_platform::App>) 
         -> Client<gfx_platform::Device, os_platform::App> {
+
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
         self.world = World::new();
         client
+
     }
 }
 

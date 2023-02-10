@@ -1,5 +1,6 @@
 use hotline_rs::*;
 use hotline_rs::client::*;
+use hotline_rs::plugin::*;
 
 pub struct EmptyPlugin;
 
