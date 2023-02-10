@@ -320,11 +320,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.run_setup = true;
     }
 
-    pub fn add_plugin_lib(&mut self) {
+    pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
+        let lib_path = path.to_string() + "/target/" + crate::get_config_name();
+        let src_path = path.to_string() + "/" + name + "/src/lib.rs";
+
         let responder = LibReloadResponder {
-            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "plugins".to_string(), None).unwrap(),
+            lib: hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap(),
             files: vec![
-                "../plugins/src/lib.rs".to_string()
+                src_path
             ],
         };
         unsafe {
@@ -335,6 +338,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 self.new_responders.push((responder, instance));
             }
         }
+
+        self.run_setup = true;
     }
 
     pub fn get_responder(&self) -> Option<Arc<Mutex<Box<dyn ReloadResponder>>>> {
@@ -347,12 +352,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     pub fn run(mut self) {
         while self.app.run() {
 
-            // new
-            let mut new_responders = Vec::new();
-            while self.new_responders.len() > 0 {
-                new_responders.push(self.new_responders.remove(0));
-            }
+            self.new_frame();
 
+            let new_responders = std::mem::take(&mut self.new_responders);
             for responder in &new_responders {
                 unsafe {
                     if self.run_setup {
@@ -370,11 +372,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                     }
                 }
             }
-
-            //
+            self.run_setup = false;
             self.new_responders = new_responders;
 
             // move plugins
+            /*
             let mut plugins = Vec::new();
             while self.plugins.len() > 0 {
                 plugins.push(self.plugins.remove(0));
@@ -418,6 +420,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
 
             self.plugins = plugins;
+            */
+
             self.present("main_colour");
         }
 
@@ -663,7 +667,7 @@ macro_rules! hotline_plugin {
             unsafe { 
                 let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
                 let plugin = plugin.as_mut().unwrap();
-                plugin.update(client)
+                plugin.setup(client)
             }
         }
         

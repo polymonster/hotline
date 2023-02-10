@@ -195,6 +195,8 @@ fn render_grid(
         view.cmd_buf.set_viewport(&view.viewport);
         view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
+        println!("{}", view_proj.0);
+
         view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline_for_format("imdraw_3d", fmt).unwrap());
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
 

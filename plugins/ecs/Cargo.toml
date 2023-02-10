@@ -1,5 +1,5 @@
 [package]
-name = "lib"
+name = "ecs"
 version = "0.1.0"
 edition = "2021"
 
@@ -7,6 +7,6 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
-hotline-rs = { path = ".." }
+hotline-rs = { path = "../.." }
 maths-rs = "0.1.4"
 bevy_ecs = "0.9.1"

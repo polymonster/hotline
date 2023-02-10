@@ -58,8 +58,8 @@ features = [
 
 [features]
 build_data = []
-host = []
-default = ["build_data", "host"]
+client = []
+default = ["build_data", "client"]
 
 [[example]]
 name = "bindless"
@@ -78,9 +78,9 @@ name = "triangle"
 crate-type = ["bin"]
 
 [[bin]]
-name = "host"
-path = "host/main.rs"
-required-features = ["host"]
+name = "client"
+path = "client/main.rs"
+required-features = ["client"]
 
 [profile.dev]
 opt-level = 1
