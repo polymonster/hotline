@@ -178,7 +178,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ctx.add_plugin(Box::new(BevyPlugin::create()));
 
     // add plugins
-    ctx.add_plugin_lib();
+    //ctx.add_plugin_lib();
     
     // run
     ctx.run();

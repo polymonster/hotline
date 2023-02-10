@@ -72,8 +72,6 @@ impl Default for HotlineInfo {
     }
 }
 
-pub struct ReloadablePlugin<D: gfx::Device, A: os::App>(Reloader, Box<dyn Plugin<D, A>>);
-
 /// Hotline client 
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
@@ -86,9 +84,10 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
+
     pub plugins: Vec<Box<dyn Plugin<D, A>>>,
 
-    new_responders: Vec<LibReloadResponder>,
+    new_responders: Vec<(LibReloadResponder, *mut core::ffi::c_void)>,
 
     reloaders: Vec<Reloader>,
     run_setup: bool
@@ -260,22 +259,25 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // blit
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
-
-        // get serv index of the pmfx target to blit to the window
-        let srv = self.pmfx.get_texture(blit_view_name).unwrap().get_srv_index().unwrap();
-        let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
        
         // blit to main window
         let vp_rect = self.main_window.get_viewport_rect();
         self.cmd_buf.begin_event(0xff0000ff, "Blit Pmfx");
         self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
         self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
-        self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
-        self.cmd_buf.push_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
-        self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
-        self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
-        self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
-        self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+        
+        // get srv index of the pmfx target to blit to the window, if the target exists
+        if let Some(tex) = self.pmfx.get_texture(blit_view_name) {
+            let srv = tex.get_srv_index().unwrap();
+            let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
+            self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
+            self.cmd_buf.push_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
+            self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
+            self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
+            self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
+            self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+        }
+
         self.cmd_buf.end_event();
 
         // render imgui
@@ -323,9 +325,16 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "plugins".to_string(), None).unwrap(),
             files: vec![
                 "../plugins/src/lib.rs".to_string()
-            ]
+            ],
         };
-        self.new_responders.push(responder);
+        unsafe {
+            let create = responder.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+            if create.is_ok() {
+                let create_fn = create.unwrap();
+                let instance = create_fn();
+                self.new_responders.push((responder, instance));
+            }
+        }
     }
 
     pub fn get_responder(&self) -> Option<Arc<Mutex<Box<dyn ReloadResponder>>>> {
@@ -346,21 +355,23 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             for responder in &new_responders {
                 unsafe {
-                    let setup = responder.lib.get_symbol::<unsafe extern fn(&mut Self) -> *mut core::ffi::c_void >("setup".as_bytes());
-                    if setup.is_ok() {
-                        let setup_fn = setup.unwrap();
-                        let plug = setup_fn(&mut self);
-
-                        let update = responder.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                        if update.is_ok() {
-                            let update_fn = update.unwrap();
-                            self = update_fn(self, plug);
+                    if self.run_setup {
+                        let setup = responder.0.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                        if setup.is_ok() {
+                            let setup_fn = setup.unwrap();
+                            self = setup_fn(self, responder.1);
                         }
                     }
-                    
 
+                    let update = responder.0.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                    if update.is_ok() {
+                        let update_fn = update.unwrap();
+                        self = update_fn(self, responder.1);
+                    }
                 }
             }
+
+            //
             self.new_responders = new_responders;
 
             // move plugins
@@ -414,13 +425,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     }
 }
 
-pub trait Plugin<D: gfx::Device, A: os::App> {
-    fn create() -> Self where Self: Sized;
-    fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
-    fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
-    fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
-}
-
 /// Basic Reloader which can check timestamps on files and then callback functions supplied by the reload responder
 pub struct Reloader {
     /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
@@ -453,7 +457,7 @@ pub trait ReloadResponder: Send + Sync {
 
 pub struct LibReloadResponder {
     lib: hot_lib_reloader::LibReloader,
-    files: Vec<String>,
+    files: Vec<String>
 }
 
 impl LibReloadResponder {
@@ -462,7 +466,7 @@ impl LibReloadResponder {
             lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap(),
             files: vec![
                 "../lib/src/lib.rs".to_string()
-            ]
+            ],
         }
     }
     pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
@@ -608,5 +612,69 @@ impl Reloader {
                 std::thread::sleep(Duration::from_millis(16));
             }
         });
+    }
+}
+
+pub trait Plugin<D: gfx::Device, A: os::App> {
+    fn create() -> Self where Self: Sized;
+    fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
+}
+
+pub fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(
+            std::mem::size_of::<T>(),
+            8,
+        )
+        .unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut T
+    }
+}
+
+#[macro_export]
+macro_rules! hotline_plugin {
+    ($input:ident) => {
+        #[no_mangle]
+        pub fn create() -> *mut core::ffi::c_void {
+            let ptr = new_plugin::<$input>() as *mut core::ffi::c_void;
+            unsafe {
+                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = plugin.as_mut().unwrap();
+                *plugin = $input::create();
+            }
+            ptr
+        }
+        
+        #[no_mangle]
+        pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+            println!("update plugin!");
+            unsafe { 
+                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = plugin.as_mut().unwrap();
+                plugin.update(client)
+            }
+        }
+        
+        #[no_mangle]
+        pub fn setup(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+            println!("setup plugin!");
+            unsafe { 
+                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = plugin.as_mut().unwrap();
+                plugin.update(client)
+            }
+        }
+        
+        #[no_mangle]
+        pub fn reload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+            println!("reload plugin!");
+            unsafe { 
+                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = plugin.as_mut().unwrap();
+                plugin.reload(client)
+            }
+        }
     }
 }
