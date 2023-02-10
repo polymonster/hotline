@@ -3,16 +3,20 @@
 // - download data
 // - github ref to build tools?
 
-// client
+
+// - consolidate sync code
 // - watching rebuilding
 //  - pmfx
 //  - add files
-// - libs release vs debug
+// - quick dev ui tidy up
+// - select / add plugin lib from file
+// - plugin and reloader modules
+// - reload new plugins
+
 // - specify pmfx
 // - update systems, setup systems
-
 // - systems with time
-// - quick dev ui tidy up
+
 // - respect imgui flags (hovered / accept input) in camera controller
 // - persistent entities
 
@@ -23,7 +27,6 @@
 // - msaa + texture format changing
 
 // - hotline dynamic lib (build times)
-// - consolidate sync code
 
 // - timer stats
 // - thread stats
@@ -56,6 +59,8 @@
 // - bindless
 
 // DONE:
+// x client - rename from host
+// x plugin libs release vs debug
 // x pipeline permutations
 // x reload sync
 // x build schedule

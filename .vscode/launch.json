@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "host (Debug)",
+            "name": "client (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/host.exe",
+            "program": "${workspaceFolder}/target/debug/client.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

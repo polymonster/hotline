@@ -63,6 +63,19 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// Returns the config name for the current configuration, this is useful to local items in target/debug
+#[cfg(debug_assertions)]
+pub fn get_config_name() -> &'static str {
+    "debug"
+}
+
+/// Returns the config name for the current configuration, this is useful to local items in target/release
+#[cfg(not(debug_assertions))]
+pub fn get_config_name() -> &'static str {
+    "release"
+}
+
+
 /// return an absolute path for a resource given the relative resource name from the /data dir
 pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
