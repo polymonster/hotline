@@ -3,8 +3,7 @@
 // - download data
 // - github ref to build tools?
 
-
-// - consolidate sync code
+// - consolidate sync code (responder ref)
 // - watching rebuilding
 //  - pmfx
 //  - add files

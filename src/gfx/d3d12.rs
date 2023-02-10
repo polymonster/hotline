@@ -2127,7 +2127,7 @@ impl super::SwapChain<Device> for SwapChain {
         self.wait_for_frame(self.bb_index);
     }
 
-    fn wait_for_last_frame(&mut self) {
+    fn wait_for_last_frame(&self) {
         unsafe {
             self.fence
                 .SetEventOnCompletion(self.fence_last_signalled_value, self.fence_event)

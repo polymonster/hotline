@@ -5,7 +5,6 @@ use crate::pmfx;
 use crate::imdraw;
 use crate::primitives;
 
-// use bevy_ecs::system::System;
 use gfx::SwapChain;
 use gfx::CmdBuf;
 use gfx::Texture;
@@ -46,6 +45,7 @@ pub struct HotlineInfo {
     pub depth_stencil_heap_size: usize
 }
 
+/// Useful defaults for quick HotlineInfo initialisation
 impl Default for HotlineInfo {
     fn default() -> Self {
         HotlineInfo {
@@ -72,6 +72,10 @@ impl Default for HotlineInfo {
     }
 }
 
+type PluginLibRef = Arc<Mutex<Box<dyn ReloadResponder>>>;
+type PluginInstance = *mut core::ffi::c_void;
+
+
 /// Hotline client 
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
@@ -85,14 +89,11 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
 
-    pub plugins: Vec<Box<dyn Plugin<D, A>>>,
-
-    new_responders: Vec<(LibReloadResponder, *mut core::ffi::c_void)>,
-
-    reloaders: Vec<Reloader>,
+    new_responders: Vec<(PluginLibRef, PluginInstance, Reloader)>,
     run_setup: bool
 }
 
+/// Serialisable user configration settings and saved state
 #[derive(Serialize, Deserialize)]
 pub struct UserConfig {
     // pos xy, size xy
@@ -191,8 +192,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             imgui,
             unit_quad_mesh,
             user_config,
-            plugins: Vec::new(),
-            reloaders: Vec::new(),
             new_responders: Vec::new(),
             run_setup: false
         })
@@ -302,51 +301,44 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.device.clean_up_resources(&self.swap_chain);
     }
 
-    /// Wait for the last submitted frame to complete rendering to ensure safe shutdown once all in-flight resources
-    /// are no longer needed
+    /// Wait for the last submitted frame to complete to ensure safe shutdown once all in-flight resources are no longer needed
     pub fn wait_for_last_frame(&mut self) {
         self.swap_chain.wait_for_last_frame();
         self.cmd_buf.reset(&self.swap_chain);
         self.pmfx.reset(&self.swap_chain);
     }
 
-    pub fn add_plugin(&mut self, plugin: Box<dyn Plugin<D, A>>) {
-        let rp = Reloader::create(
-            Box::new(LibReloadResponder::new())
-        );
-        rp.start();
-        self.reloaders.push(rp);
-        self.plugins.push(plugin);
-        self.run_setup = true;
-    }
-
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let lib_path = path.to_string() + "/target/" + crate::get_config_name();
         let src_path = path.to_string() + "/" + name + "/src/lib.rs";
 
-        let responder = LibReloadResponder {
+        let plugin = PluginLib {
             lib: hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap(),
             files: vec![
                 src_path
             ],
         };
         unsafe {
-            let create = responder.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+            let create = plugin.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
             if create.is_ok() {
+                // create an instance of the plugin
                 let create_fn = create.unwrap();
                 let instance = create_fn();
-                self.new_responders.push((responder, instance));
+
+                // box it up
+                let plugin_box = Box::new(plugin);
+                let plugin_ref : Arc<Mutex<Box<dyn ReloadResponder>>> = Arc::new(Mutex::new(plugin_box));
+                let reloader = Reloader::create(plugin_ref.clone());
+            
+                // start watching for reloads
+                reloader.start();
+
+                // keep hold of everything gor updating
+                self.new_responders.push((plugin_ref.clone(), instance, reloader));
             }
         }
 
         self.run_setup = true;
-    }
-
-    pub fn get_responder(&self) -> Option<Arc<Mutex<Box<dyn ReloadResponder>>>> {
-        for reloader in &self.reloaders {
-            return Some(reloader.get_responder());
-        }
-        None
     }
 
     pub fn run(mut self) {
@@ -354,73 +346,66 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             self.new_frame();
 
-            let new_responders = std::mem::take(&mut self.new_responders);
-            for responder in &new_responders {
-                unsafe {
-                    if self.run_setup {
-                        let setup = responder.0.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
-                        if setup.is_ok() {
-                            let setup_fn = setup.unwrap();
-                            self = setup_fn(self, responder.1);
+            let mut new_responders = std::mem::take(&mut self.new_responders);
+
+            // check for reloads
+            for responder in &mut new_responders {
+                if responder.2.check_for_reload() == ReloadResult::Reload {
+                    self.swap_chain.wait_for_last_frame();
+
+                    let plugin = responder.0.lock().unwrap();
+                    if let Some(plugin) = plugin.as_any().downcast_ref::<PluginLib>() {
+                        unsafe {
+                            let reload = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("reload".as_bytes());
+                            if reload.is_ok() {
+                                let reload_fn = reload.unwrap();
+                                self = reload_fn(self, responder.1);
+                            }
                         }
                     }
+                    drop(plugin);
 
-                    let update = responder.0.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                    if update.is_ok() {
-                        let update_fn = update.unwrap();
-                        self = update_fn(self, responder.1);
+                    responder.2.complete_reload();
+
+                    // create a new instance of the plugin
+                    let plugin = responder.0.lock().unwrap();
+                    if let Some(plugin) = plugin.as_any().downcast_ref::<PluginLib>() {
+                        unsafe {
+                            let create = plugin.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                            if create.is_ok() {
+                                let create_fn = create.unwrap();
+                                responder.1 = create_fn();
+                            }
+                            self.run_setup = true;
+                        }
+                    }
+                    break;
+                }
+            }
+
+            // setup / update
+            for responder in &new_responders {
+                let plugin = responder.0.lock().unwrap();
+                if let Some(plugin) = plugin.as_any().downcast_ref::<PluginLib>() {
+                    unsafe {
+                        if self.run_setup {
+                            let setup = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                            if setup.is_ok() {
+                                let setup_fn = setup.unwrap();
+                                self = setup_fn(self, responder.1);
+                            }
+                        }
+    
+                        let update = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                        if update.is_ok() {
+                            let update_fn = update.unwrap();
+                            self = update_fn(self, responder.1);
+                        }
                     }
                 }
             }
             self.run_setup = false;
             self.new_responders = new_responders;
-
-            // move plugins
-            /*
-            let mut plugins = Vec::new();
-            while self.plugins.len() > 0 {
-                plugins.push(self.plugins.remove(0));
-            }
-
-            // check for reloads + wait for gpu if we need to reload.
-            let mut reload = false;
-            for reloader in &mut self.reloaders {
-                if reloader.check_for_reload() == ReloadResult::Reload {
-                    self.swap_chain.wait_for_last_frame();
-                    reload = true;
-                    break;
-                }
-            }
-
-            // perform reloads
-            if reload {
-                // reload all plugins
-                for plugin in &mut plugins {
-                    self = plugin.reload(self);
-                }
-                // complete all reloaders
-                for reloader in &mut self.reloaders {
-                    reloader.complete_reload();
-                }
-            }
-
-            self.new_frame();
-
-            // run setup, first time and when we reload
-            if reload || self.run_setup {
-                for plugin in &mut plugins {
-                    self = plugin.setup(self);
-                }
-                self.run_setup = false;
-            }
-
-            // update plugins
-            for plugin in &mut plugins {
-                self = plugin.update(self);
-            }
-
-            self.plugins = plugins;
-            */
 
             self.present("main_colour");
         }
@@ -459,20 +444,12 @@ pub trait ReloadResponder: Send + Sync {
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
-pub struct LibReloadResponder {
+pub struct PluginLib {
     lib: hot_lib_reloader::LibReloader,
     files: Vec<String>
 }
 
-impl LibReloadResponder {
-    fn new() -> Self {
-        LibReloadResponder {
-            lib: hot_lib_reloader::LibReloader::new("target/debug/".to_string(), "lib".to_string(), None).unwrap(),
-            files: vec![
-                "../lib/src/lib.rs".to_string()
-            ],
-        }
-    }
+impl PluginLib {
     pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
         unsafe {
             let get_function = self.lib.get_symbol::<T>(name.as_bytes());
@@ -486,17 +463,17 @@ impl LibReloadResponder {
     }
 }
 
-impl ReloadResponder for LibReloadResponder {
+impl ReloadResponder for PluginLib {
     fn get_files(&self) -> &Vec<String> {
         &self.files
     }
 
     fn build(&mut self) {
         let output = Command::new("cargo")
+            .current_dir("C:\\Users\\alex_\\dev\\hotline\\plugins")
             .arg("build")
             .arg("-p")
-            .arg("lib")
-            .arg("--release")
+            .arg("ecs")
             .output()
             .expect("hotline::hot_lib:: hot lib failed to build!");
 
@@ -530,10 +507,10 @@ impl ReloadResponder for LibReloadResponder {
 
 impl Reloader {
     /// Create a new instance of a reload with the designated ReloadResponder
-    pub fn create(responder: Box<dyn ReloadResponder>) -> Self {
+    pub fn create(responder: Arc<Mutex<Box<dyn ReloadResponder>>>) -> Self {
         Self {
             lock: Arc::new(Mutex::new(ReloadState::None)),
-            responder: Arc::new(Mutex::new(responder))
+            responder
         }
     }
 
@@ -565,8 +542,23 @@ impl Reloader {
         println!("hotline_rs::reloader:: confirmed");
     }
 
-    pub fn get_responder(&self) -> Arc<Mutex<Box<dyn ReloadResponder>>> {
-        self.responder.clone()
+    fn file_watcher_thread_check_mtime(responder: &Arc<Mutex<Box<dyn ReloadResponder>>>, cur_mtime: SystemTime) -> SystemTime {
+        let responder = responder.lock().unwrap();
+        let files = responder.get_files();
+        for file in files {
+            let filepath = super::get_data_path(file);
+            let meta = std::fs::metadata(&filepath);
+            if meta.is_ok() {
+                let mtime = std::fs::metadata(&filepath).unwrap().modified().unwrap();
+                if mtime > cur_mtime {
+                    return mtime;
+                }
+            }
+            else {
+                print!("hotline_rs::reloader: {filepath} not found!")
+            }
+        };
+        cur_mtime
     }
 
     /// Background thread will watch for changed filestamps among the registered files from the responder
@@ -576,32 +568,13 @@ impl Reloader {
         let responder = self.responder.clone();
         thread::spawn(move || {
             loop {
-                // check if files have changed
-                let mut new_mtime = cur_mtime;
+                
+                let mtime = Self::file_watcher_thread_check_mtime(&responder, cur_mtime);
 
-                let mut responder = responder.lock().unwrap();
-
-                let files = responder.get_files();
-                for file in files {
-                    let filepath = super::get_data_path(file);
-                    let meta = std::fs::metadata(&filepath);
-
-                    if meta.is_ok() {
-                        let mtime = std::fs::metadata(&filepath).unwrap().modified().unwrap();
-                        if mtime > cur_mtime {
-                            new_mtime = mtime;
-                            break;
-                        }
-                    }
-                    else {
-                        print!("hotline_rs::reloader: {filepath} not found!")
-                    }
-                };
-
-                // check code changes
-                if new_mtime > cur_mtime {
+                if mtime > cur_mtime {
                     println!("hotline_rs::reloader: changes detected, building");
 
+                    let mut responder = responder.lock().unwrap();
                     responder.build();
 
                     let mut a = lock.lock().unwrap();
@@ -609,76 +582,11 @@ impl Reloader {
                     *a = ReloadState::Requested;
                     drop(a);
         
-                    cur_mtime = new_mtime;
+                    cur_mtime = mtime;
                 }
-        
-                // yield
+
                 std::thread::sleep(Duration::from_millis(16));
             }
         });
-    }
-}
-
-pub trait Plugin<D: gfx::Device, A: os::App> {
-    fn create() -> Self where Self: Sized;
-    fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
-    fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
-    fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
-}
-
-pub fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
-    unsafe {
-        let layout = std::alloc::Layout::from_size_align(
-            std::mem::size_of::<T>(),
-            8,
-        )
-        .unwrap();
-        std::alloc::alloc_zeroed(layout) as *mut T
-    }
-}
-
-#[macro_export]
-macro_rules! hotline_plugin {
-    ($input:ident) => {
-        #[no_mangle]
-        pub fn create() -> *mut core::ffi::c_void {
-            let ptr = new_plugin::<$input>() as *mut core::ffi::c_void;
-            unsafe {
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                *plugin = $input::create();
-            }
-            ptr
-        }
-        
-        #[no_mangle]
-        pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            println!("update plugin!");
-            unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                plugin.update(client)
-            }
-        }
-        
-        #[no_mangle]
-        pub fn setup(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            println!("setup plugin!");
-            unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                plugin.setup(client)
-            }
-        }
-        
-        #[no_mangle]
-        pub fn reload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            println!("reload plugin!");
-            unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                plugin.reload(client)
-            }
-        }
     }
 }

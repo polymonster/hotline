@@ -772,7 +772,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
 pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn new_frame(&mut self);
     fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
-    fn wait_for_last_frame(&mut self);
+    fn wait_for_last_frame(&self);
     fn get_num_buffers(&self) -> u32;
     fn get_backbuffer_index(&self) -> u32;
     fn get_backbuffer_texture(&self) -> &D::Texture;
