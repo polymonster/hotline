@@ -23,6 +23,7 @@ use reloader::Reloader;
 
 use serde::{Deserialize, Serialize};
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
 
@@ -344,6 +345,26 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         while self.app.run() {
 
             self.new_frame();
+
+            if self.imgui.begin_main_menu_bar() {
+                if self.imgui.begin_menu("File") {
+                    if self.imgui.menu_item("Open", false, true) {
+                        let file = A::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".toml"]);
+                        if file.is_ok() {
+                            let file = file.unwrap();
+                            if !file.is_empty() {
+                                // add plugin from dll
+                                let plugin_path = PathBuf::from(file[0].to_string());
+                                let plugin_name = plugin_path.parent().unwrap().file_name().unwrap();
+                                let plugin_path = plugin_path.parent().unwrap().parent().unwrap();
+                                self.add_plugin_lib(plugin_name.to_str().unwrap(), plugin_path.to_str().unwrap());
+                            }
+                        }
+                    }
+                    self.imgui.end_menu();
+                }
+                self.imgui.end_main_menu_bar();
+            }
 
             let mut new_responders = std::mem::take(&mut self.new_responders);
 

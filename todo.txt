@@ -2,9 +2,9 @@
 
 // - consolidate sync code (responder ref)... downcast helper?
 //  - add files
-// - quick dev ui tidy up
-// - select / add plugin lib from file
+
 // - persistent camera position
+// - persistent console window position
 // - respect imgui flags (hovered / accept input) in camera controller
 // - download data
 // - github ref to build tools?
@@ -51,6 +51,8 @@
 // - bindless
 
 // DONE:
+// x select / add plugin lib from file
+// x quick dev ui tidy up
 // x hot-reload shaders, pipelines, views
 // x watching rebuilding
 //  x pmfx
