@@ -28,8 +28,11 @@ pub mod primitives;
 /// Live reloader client
 pub mod client;
 
-/// trait and macros to assist the creation of plugins in other dynamically loaded libraries
+/// Trait's and macros to assist the creation of plugins in other dynamically loaded libraries
 pub mod plugin;
+
+/// Module to aid data / code file watching, rebuilding and reloading
+pub mod reloader;
 
 /// Use bitmask for flags
 #[macro_use]

@@ -1,6 +1,18 @@
 use crate::client::*;
 use crate::gfx;
 use crate::os;
+use crate::reloader;
+
+use libloading::Symbol;
+
+use std::any::Any;
+use std::time::Duration;
+use std::process::Command;
+use std::sync::Arc;
+use std::sync::Mutex;
+
+pub type PluginLibRef = Arc<Mutex<Box<dyn reloader::ReloadResponder>>>;
+pub type PluginInstance = *mut core::ffi::c_void;
 
 /// Public trait for defining a plugin in a nother library
 pub trait Plugin<D: gfx::Device, A: os::App> {
@@ -80,5 +92,69 @@ macro_rules! hotline_plugin {
                 plugin.reload(client)
             }
         }
+    }
+}
+
+/// General dll plugin responder, will check for source code changes and run cargo build to re-build the libraru
+pub struct PluginLib {
+    pub lib: hot_lib_reloader::LibReloader,
+    pub files: Vec<String>
+}
+
+/// Supplies an interface to access symbols from inside a dll
+impl PluginLib {
+    pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
+        unsafe {
+            let get_function = self.lib.get_symbol::<T>(name.as_bytes());
+            if get_function.is_ok() {
+                return Some(get_function.unwrap());
+            }
+            else {
+                None
+            }
+        }
+    }
+}
+
+/// Reload responder implementation for `PluginLib` uses cargo build, and hot lib reloader
+impl reloader::ReloadResponder for PluginLib {
+    fn get_files(&self) -> &Vec<String> {
+        &self.files
+    }
+
+    fn build(&mut self) {
+        let output = Command::new("cargo")
+            .current_dir("C:\\Users\\alex_\\dev\\hotline\\plugins")
+            .arg("build")
+            .arg("-p")
+            .arg("ecs")
+            .output()
+            .expect("hotline::hot_lib:: hot lib failed to build!");
+
+        if output.stdout.len() > 0 {
+            println!("{}", String::from_utf8(output.stdout).unwrap());
+        }
+
+        if output.stderr.len() > 0 {
+            println!("{}", String::from_utf8(output.stderr).unwrap());
+        }
+    }
+
+    fn wait_for_completion(&mut self) {
+        // wait for lib to reload
+        loop {
+            if self.lib.update().unwrap() {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(16));
+        }
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
     }
 }
