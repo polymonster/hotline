@@ -205,6 +205,10 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     fn set_cursor(&self, cursor: &Cursor);
     /// Opens a native open file dialog window, exts are provided to filer selections. ie vec![".txt", ".png"]
     fn open_file_dialog(flags: OpenFileDialogFlags, exts: Vec<&str>) -> Result<Vec<String>, Error>;
+    /// Returns the wndow rectangle for the console window associated with the current app
+    fn get_console_window_rect(&self) -> Rect<i32>;
+    /// Sets the console window rect that belongs to this app
+    fn set_console_window_rect(&self, rect: Rect<i32>);
 }
 
 /// An instance of an operating system window

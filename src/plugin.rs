@@ -6,6 +6,7 @@ use crate::reloader;
 use libloading::Symbol;
 
 use std::any::Any;
+use std::process::ExitStatus;
 use std::time::Duration;
 use std::process::Command;
 use std::sync::Arc;
@@ -13,6 +14,21 @@ use std::sync::Mutex;
 
 pub type PluginLibRef = Arc<Mutex<Box<dyn reloader::ReloadResponder>>>;
 pub type PluginInstance = *mut core::ffi::c_void;
+
+#[derive(PartialEq, Eq)]
+pub enum PluginState {
+    None,
+    Reload,
+    Setup
+}
+
+pub struct PluginCollection {
+    pub name: String,
+    pub lib: PluginLibRef,
+    pub instance: PluginInstance,
+    pub reloader: reloader::Reloader,
+    pub state: PluginState
+}
 
 /// Public trait for defining a plugin in a nother library
 pub trait Plugin<D: gfx::Device, A: os::App> {
@@ -97,7 +113,15 @@ macro_rules! hotline_plugin {
 
 /// General dll plugin responder, will check for source code changes and run cargo build to re-build the libraru
 pub struct PluginLib {
+    /// Name of the plugin
+    pub name: String,
+    /// Path to the plugins build director, where you would run `cargo build -p <name>`
+    pub path: String,
+    /// Full path to the build binary dylib or dll
+    pub output_filepath: String,
+    /// Hot reloader library instance, get symbols from here
     pub lib: hot_lib_reloader::LibReloader,
+    /// Array of source code files to track and check for changes
     pub files: Vec<String>
 }
 
@@ -122,12 +146,22 @@ impl reloader::ReloadResponder for PluginLib {
         &self.files
     }
 
-    fn build(&mut self) {
+    fn get_base_mtime(&self) -> std::time::SystemTime {
+        let meta = std::fs::metadata(&self.output_filepath);
+        if meta.is_ok() {
+            std::fs::metadata(&self.output_filepath).unwrap().modified().unwrap()
+        }
+        else {
+            std::time::SystemTime::now()
+        }
+    }
+
+    fn build(&mut self) -> ExitStatus {
         let output = Command::new("cargo")
-            .current_dir("C:\\Users\\alex_\\dev\\hotline\\plugins")
+            .current_dir(format!("{}", self.path))
             .arg("build")
             .arg("-p")
-            .arg("ecs")
+            .arg(format!("{}", self.name))
             .output()
             .expect("hotline::hot_lib:: hot lib failed to build!");
 
@@ -138,6 +172,8 @@ impl reloader::ReloadResponder for PluginLib {
         if output.stderr.len() > 0 {
             println!("{}", String::from_utf8(output.stderr).unwrap());
         }
+
+        output.status
     }
 
     fn wait_for_completion(&mut self) {

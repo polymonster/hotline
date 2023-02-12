@@ -15,8 +15,8 @@ use gfx::RenderPass;
 use os::Window;
 
 use plugin::PluginLib;
-use plugin::PluginLibRef;
-use plugin::PluginInstance;
+use plugin::PluginCollection;
+use plugin::PluginState;
 
 use reloader::ReloadResponder;
 use reloader::Reloader;
@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::collections::HashMap;
 
 /// Information to create a hotline context which will create an app, window, device
 pub struct HotlineInfo {
@@ -89,15 +90,32 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
 
-    new_responders: Vec<(PluginLibRef, PluginInstance, Reloader)>,
-    run_setup: bool
+    plugins: Vec<PluginCollection>,
+}
+
+/// Serialisable camera info
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct CameraInfo {
+    pub pos: (f32, f32, f32),
+    pub rot: (f32, f32, f32),
+    pub aspect: f32,
+    pub fov: f32,
+}
+
+/// Serialisable plugin
+#[derive(Serialize, Deserialize, Clone)]
+pub struct PluginInfo {
+    pub path: String
 }
 
 /// Serialisable user configration settings and saved state
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct UserConfig {
     // pos xy, size xy
-    pub main_window_rect: os::Rect<i32>
+    pub main_window_rect: os::Rect<i32>,
+    pub console_window_rect: Option<os::Rect<i32>>,
+    pub main_camera: Option<CameraInfo>,
+    pub plugins: Option<HashMap<String, PluginInfo>>
 }
 
 impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
@@ -111,7 +129,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
         else {
             UserConfig {
-                main_window_rect: info.window_rect
+                main_window_rect: info.window_rect,
+                console_window_rect: None,
+                main_camera: None,
+                plugins: None
             }
         };
         
@@ -122,6 +143,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             dpi_aware: info.dpi_aware,
             window: false,
         });
+        if let Some(console_rect) = user_config.console_window_rect {
+            app.set_console_window_rect(console_rect);
+        }
     
         // device
         let mut device = D::create(&gfx::DeviceInfo {
@@ -180,8 +204,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // default cmd buf
         let cmd_buf = device.create_cmd_buf(info.num_buffers);
-    
-        Ok(Client {
+
+        // create a client
+        let mut client = Client {
             app,
             device,
             main_window,
@@ -191,10 +216,18 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             imdraw,
             imgui,
             unit_quad_mesh,
-            user_config,
-            new_responders: Vec::new(),
-            run_setup: false
-        })
+            user_config: user_config.clone(),
+            plugins: Vec::new()
+        };
+
+        // automatically load plugins from prev session
+        if let Some(plugin_info) = &user_config.plugins {
+            for (name, info) in plugin_info {
+                client.add_plugin_lib(name, &info.path)
+            }
+        }
+   
+        Ok(client)
     }
 
     /// Start a new frame syncronised to the swap chain
@@ -215,11 +248,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.pmfx.new_frame(&self.swap_chain);
 
         // user config changes
-        self.update_user_config_cache();
+        self.update_user_config_windows();
     }
 
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
-    fn update_user_config_cache(&mut self) {
+    fn save_user_config(&mut self) {
+        let user_config_file_text = serde_json::to_string(&self.user_config).unwrap();
+        let user_config_path = super::get_data_path("user_config.json");
+        std::fs::File::create(&user_config_path).unwrap();
+        std::fs::write(&user_config_path, user_config_file_text).unwrap();
+    }
+    
+    /// internal function to manage tracking user config values and changes, writes to disk if change are detected
+    fn update_user_config_windows(&mut self) {
         // track any changes and write once
         let mut invalidated = false;
         
@@ -229,13 +270,21 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             invalidated = true;
         }
 
+        // console window pos / size
+        if let Some(console_window_rect) = self.user_config.console_window_rect {
+            if console_window_rect != self.app.get_console_window_rect() {
+                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+                invalidated = true;
+            }
+        }
+        else {
+            self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+            invalidated = true;
+        }
+
         // write to file
         if invalidated {
-            let user_config_file_text = serde_json::to_string(&self.user_config).unwrap();
-            let user_config_path = super::get_data_path("user_config.json");
-
-            std::fs::File::create(&user_config_path).unwrap();
-            std::fs::write(&user_config_path, user_config_file_text).unwrap();
+            self.save_user_config();
         }
     }
 
@@ -311,8 +360,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let lib_path = path.to_string() + "/target/" + crate::get_config_name();
         let src_path = path.to_string() + "/" + name + "/src/lib.rs";
-
         let plugin = PluginLib {
+            name: name.to_string(),
+            path: path.to_string(),
+            output_filepath: lib_path.to_string(),
             lib: hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap(),
             files: vec![
                 src_path
@@ -334,11 +385,27 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 reloader.start();
 
                 // keep hold of everything gor updating
-                self.new_responders.push((plugin_ref.clone(), instance, reloader));
+                self.plugins.push( plugin::PluginCollection {
+                    name: name.to_string(),
+                    lib: plugin_ref.clone(), 
+                    instance, 
+                    reloader,
+                    state: PluginState::Setup
+                });
             }
         }
 
-        self.run_setup = true;
+        // Track the plugin for auto re-loading
+        if self.user_config.plugins.is_none() {
+            self.user_config.plugins = Some(HashMap::new());
+        }
+
+        if let Some(plugin_info) = &mut self.user_config.plugins {
+            if plugin_info.contains_key(name) {
+                plugin_info.remove(name);
+            }
+            plugin_info.insert(name.to_string(), PluginInfo { path: path.to_string() });
+        }
     }
 
     pub fn run(mut self) {
@@ -346,6 +413,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             self.new_frame();
 
+            // main menu bar
             if self.imgui.begin_main_menu_bar() {
                 if self.imgui.begin_menu("File") {
                     if self.imgui.menu_item("Open", false, true) {
@@ -363,72 +431,102 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                     }
                     self.imgui.end_menu();
                 }
+                if self.imgui.begin_menu("View") {
+                
+                }
+                if self.imgui.begin_menu("Plugin") {
+
+                    for plugin in &self.plugins {
+                        if self.imgui.menu_item(&plugin.name, false, true) {
+                            if self.imgui.menu_item("Reload", false, true) {
+                            
+                            }
+                        }
+                    }
+
+                    self.imgui.end_menu();
+                }
                 self.imgui.end_main_menu_bar();
             }
 
-            let mut new_responders = std::mem::take(&mut self.new_responders);
+            let mut plugins = std::mem::take(&mut self.plugins);
 
             // check for reloads
-            for responder in &mut new_responders {
-                if responder.2.check_for_reload() == reloader::ReloadResult::Reload {
-                    self.swap_chain.wait_for_last_frame();
-
-                    let plugin = responder.0.lock().unwrap();
-                    if let Some(plugin) = plugin.as_any().downcast_ref::<plugin::PluginLib>() {
-                        unsafe {
-                            let reload = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("reload".as_bytes());
-                            if reload.is_ok() {
-                                let reload_fn = reload.unwrap();
-                                self = reload_fn(self, responder.1);
-                            }
-                        }
-                    }
-                    drop(plugin);
-
-                    responder.2.complete_reload();
-
-                    // create a new instance of the plugin
-                    let plugin = responder.0.lock().unwrap();
-                    if let Some(plugin) = plugin.as_any().downcast_ref::<plugin::PluginLib>() {
-                        unsafe {
-                            let create = plugin.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-                            if create.is_ok() {
-                                let create_fn = create.unwrap();
-                                responder.1 = create_fn();
-                            }
-                            self.run_setup = true;
-                        }
-                    }
-                    break;
+            let mut reload = false;
+            for plugin in &mut plugins {
+                if plugin.reloader.check_for_reload() == reloader::ReloadResult::Reload 
+                    || plugin.state == PluginState::Reload {
+                        self.swap_chain.wait_for_last_frame();
+                        reload = true;
+                        break;
                 }
             }
 
+            // reload all... currently we need to reload all plugins
+            if reload {
+                for plugin in &mut plugins {
+
+                    let lib = plugin.lib.lock().unwrap();
+                    if let Some(lib) = lib.as_any().downcast_ref::<PluginLib>() {
+                        unsafe {
+                            let reload = lib.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("reload".as_bytes());
+                            if reload.is_ok() {
+                                let reload_fn = reload.unwrap();
+                                self = reload_fn(self, plugin.instance);
+                            }
+                        }
+                    }
+                    drop(lib);
+    
+                    // finalise reload (clean up)
+                    plugin.reloader.complete_reload();
+    
+                    // create a new instance of the plugin
+                    let lib = plugin.lib.lock().unwrap();
+                    if let Some(lib) = lib.as_any().downcast_ref::<PluginLib>() {
+                        unsafe {
+                            let create = lib.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                            if create.is_ok() {
+                                let create_fn = create.unwrap();
+                                plugin.instance = create_fn();
+                            }
+                            plugin.state = PluginState::Setup;
+                        }
+                    }
+                }
+            }
+            
             // setup / update
-            for responder in &new_responders {
-                let plugin = responder.0.lock().unwrap();
+            for responder in &mut plugins {
+                let plugin = responder.lib.lock().unwrap();
                 if let Some(plugin) = plugin.as_any().downcast_ref::<plugin::PluginLib>() {
                     unsafe {
-                        if self.run_setup {
+                        if responder.state == PluginState::Setup {
                             let setup = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
                             if setup.is_ok() {
                                 let setup_fn = setup.unwrap();
-                                self = setup_fn(self, responder.1);
+                                self = setup_fn(self, responder.instance);
                             }
                         }
+                        responder.state = PluginState::None;
     
                         let update = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
                         if update.is_ok() {
                             let update_fn = update.unwrap();
-                            self = update_fn(self, responder.1);
+                            self = update_fn(self, responder.instance);
                         }
                     }
                 }
             }
-            self.run_setup = false;
-            self.new_responders = new_responders;
+            
+            //self.run_setup = false;
+            self.plugins = plugins;
 
             self.present("main_colour");
         }
+
+        // save out values for next time
+        self.save_user_config();
 
         self.wait_for_last_frame();
     }

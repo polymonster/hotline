@@ -10,7 +10,8 @@ use windows::{
     Win32::System::LibraryLoader::*, Win32::UI::Controls::*, Win32::UI::HiDpi::*,
     Win32::UI::Input::KeyboardAndMouse::*, Win32::UI::WindowsAndMessaging::*,
     Win32::System::Com::CoCreateInstance, Win32::System::Com::CoInitialize, Win32::System::Com::CLSCTX_ALL,
-    Win32::UI::Shell::*, Win32::UI::Shell::Common::COMDLG_FILTERSPEC
+    Win32::UI::Shell::*, Win32::UI::Shell::Common::COMDLG_FILTERSPEC,
+    Win32::System::Console::GetConsoleWindow
 };
 
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
@@ -698,6 +699,35 @@ impl super::App for App {
             }
 
             Ok(output_results)
+        }
+    }
+
+    fn get_console_window_rect(&self) -> super::Rect<i32> {
+        unsafe {
+            let chwnd = GetConsoleWindow();
+            let mut rect = RECT::default();
+            GetWindowRect(chwnd, &mut rect);
+            super::Rect::<i32> {
+                x: rect.left,
+                y: rect.top,
+                width: rect.right - rect.left,
+                height: rect.bottom - rect.top,
+            }
+        }
+    }
+
+    fn set_console_window_rect(&self, rect: super::Rect<i32>) {
+        unsafe {
+            let chwnd = GetConsoleWindow();
+            SetWindowPos(
+                chwnd,
+                HWND(0),
+                rect.x,
+                rect.y,
+                rect.width,
+                rect.height,
+                SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
+            );
         }
     }
 }

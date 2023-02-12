@@ -51,7 +51,7 @@ pub fn setup_single(
         ecs::Position { 0: Vec3f::zero() },
         ecs::Velocity { 0: Vec3f::one() },
         ecs::MeshComponent {0: cube_mesh.clone()},
-        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 5.0, 0.0))}
+        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
     ));
 }
 
@@ -178,7 +178,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         ];
         let update_systems = vec![
             "mat_movement".to_string(),
-            "update_cameras".to_string()
+            "update_cameras".to_string(),
+            "update_main_camera_config".to_string()
         ];
         let render_systems = client.pmfx.get_render_function_names("forward");
 
@@ -215,6 +216,18 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn update(&mut self, mut client: client::Client<gfx_platform::Device, os_platform::App>) ->
         client::Client<gfx_platform::Device, os_platform::App> {
 
+        let main_camera = if let Some(main_camera) = &client.user_config.main_camera {
+            main_camera.clone()
+        }
+        else {
+            CameraInfo {
+                pos: (0.0, 100.0, 0.0),
+                rot: (-45.0, 0.0, 0.0),
+                aspect: 16.0/9.0,
+                fov: 60.0
+            }
+        };
+
         // move hotline resource into world
         self.world.insert_resource(DeviceRes {0: client.device});
         self.world.insert_resource(AppRes {0: client.app});
@@ -222,15 +235,22 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(PmfxRes {0: client.pmfx});
         self.world.insert_resource(ImDrawRes {0: client.imdraw});
         self.world.insert_resource(ImGuiRes {0: client.imgui});
+        self.world.insert_resource(UserConfigRes {0: client.user_config});
 
-        // run setup if requested, we dio it here so hotline resources are inserted into World
+        // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
+
+            let pos = Position { 0: Vec3f::new(main_camera.pos.0, main_camera.pos.1, main_camera.pos.2) };
+            let rot = Rotation { 0: Vec3f::new(main_camera.rot.0, main_camera.rot.1, main_camera.rot.2) };
+
             self.world.spawn((
-                Position { 0: Vec3f::new(0.0, 100.0, 0.0) },
-                Rotation { 0: Vec3f::new(-45.0, 0.0, 0.0) },
-                ViewProjectionMatrix { 0: Mat4f::identity()},
+                ViewProjectionMatrix(ecs::camera_view_proj_from(&pos, &rot, 16.0/9.0, 60.0)),
+                pos,
+                rot,
                 Camera,
+                MainCamera
             ));
+
             self.setup_schedule.run(&mut self.world);
             self.run_setup = false;
         }
@@ -245,6 +265,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.pmfx = self.world.remove_resource::<PmfxRes>().unwrap().0;
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
         client.imgui = self.world.remove_resource::<ImGuiRes>().unwrap().0;
+        client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
         client
     }
 
@@ -256,7 +277,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.schedule = Schedule::default();
         self.world = World::new();
         client
-
     }
 }
 
