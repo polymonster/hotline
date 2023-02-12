@@ -943,6 +943,48 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         };
     }
 
+    pub fn begin_main_menu_bar(&self) -> bool {
+        unsafe {
+            igBeginMainMenuBar()
+        }
+    }
+
+    pub fn end_main_menu_bar(&self) {
+        unsafe {
+            igEndMainMenuBar()
+        }
+    }
+
+    pub fn begin_menu(&self, label: &str) -> bool {
+        let null_term_label = CString::new(label).unwrap();
+        unsafe {
+            igBeginMenu(null_term_label.as_ptr() as *const i8, true)
+        }
+    }
+
+    pub fn end_menu(&self) {
+        unsafe {
+            igEndMenu()
+        }
+    }
+
+    pub fn menu_item(&self, label: &str, selected: bool, enabled: bool) -> bool {
+        let null_term_label = CString::new(label).unwrap();
+        unsafe {
+            igMenuItemBool(
+                null_term_label.as_ptr() as *const i8, 
+                std::ptr::null(), 
+                selected, 
+                enabled)
+        }
+    }
+
+    pub fn separator(&self) {
+        unsafe {
+            igSeparator()
+        }
+    }
+
     pub fn same_line(&self) {
         unsafe { 
             igSameLine(0.0, 0.0);
