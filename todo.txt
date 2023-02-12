@@ -1,21 +1,17 @@
 // TODO:
 
-// - download data
-// - github ref to build tools?
-
 // - consolidate sync code (responder ref)... downcast helper?
 //  - add files
-
 // - quick dev ui tidy up
 // - select / add plugin lib from file
-
+// - persistent camera position
+// - respect imgui flags (hovered / accept input) in camera controller
+// - download data
+// - github ref to build tools?
 
 // - specify pmfx
 // - update systems, setup systems
 // - systems with time
-
-// - respect imgui flags (hovered / accept input) in camera controller
-// - persistent entities
 
 // - pmfx mltiple files
 // - view_texture_refs
@@ -29,8 +25,7 @@
 // - thread stats
 
 // - texures from file pmfx
-// - minimise resource handling code? macros?... bastard!
-// - hot-reload shaders, pipelines, views
+// - minimise resource handling code? macros?... bastard! ref cell?
 
 // - Blend
 // - Raster
@@ -56,6 +51,7 @@
 // - bindless
 
 // DONE:
+// x hot-reload shaders, pipelines, views
 // x watching rebuilding
 //  x pmfx
 // x plugin and reloader modules
