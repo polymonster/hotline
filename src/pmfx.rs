@@ -1,6 +1,5 @@
 
 
-use crate::client;
 use crate::gfx::SwapChain;
 use crate::os;
 use crate::os::Window;
@@ -10,8 +9,9 @@ use crate::gfx::ResourceState;
 use crate::gfx::RenderPass;
 use crate::gfx::CmdBuf;
 
-use crate::client::Reloader;
-use crate::client::ReloadResponder;
+use crate::reloader::Reloader;
+use crate::reloader::ReloadResponder;
+use crate::reloader::ReloadResult;
 
 use serde::{Deserialize, Serialize};
 
@@ -835,7 +835,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
-        if self.reloader.0.check_for_reload() == client::ReloadResult::Reload {
+        if self.reloader.0.check_for_reload() == ReloadResult::Reload {
             swap_chain.wait_for_last_frame();
             self.reloader.0.complete_reload();
         }
