@@ -1,6 +1,8 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use crate::client;
+use crate::client::CameraInfo;
 use crate::os::App;
 use crate::os::Window;
 
@@ -62,6 +64,9 @@ pub struct ImDrawRes(pub imdraw::ImDraw<gfx_platform::Device>);
 #[derive(Resource)]
 pub struct ImGuiRes(pub imgui::ImGui::<gfx_platform::Device, os_platform::App>);
 
+#[derive(Resource)]
+pub struct UserConfigRes(pub client::UserConfig);
+
 //
 // Components
 //
@@ -85,11 +90,42 @@ pub struct ViewProjectionMatrix(pub Mat4f);
 pub struct Camera;
 
 #[derive(Component)]
+pub struct MainCamera;
+
+#[derive(Component)]
 pub struct MeshComponent(pub pmfx::Mesh<gfx_platform::Device>);
 
 //
 // Core Systems
 //
+
+fn update_main_camera_config(
+    mut config: ResMut<UserConfigRes>, 
+    mut query: Query<(&Position, &Rotation), With<MainCamera>>) {
+    for (position, rotation) in &mut query {
+        config.0.main_camera = Some(CameraInfo{
+            pos: (position.0.x, position.0.y, position.0.z),
+            rot: (rotation.0.x, rotation.0.y, rotation.0.z),
+            fov: 60.0,
+            aspect: 16.0/9.0
+        });
+    }
+}
+
+pub fn camera_view_proj_from(pos: &Position, rot: &Rotation, aspect: f32, fov_degrees: f32) -> Mat4f {
+    // rotational matrix
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.0.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.0.y));
+    let mat_rot = mat_rot_y * mat_rot_x;
+    // generate proj matrix
+    let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
+    // translation matrix
+    let translate = Mat4f::from_translation(pos.0);
+    // build view / proj matrix
+    let view = translate * mat_rot;
+    let view = view.inverse();
+    proj * view
+}
 
 fn update_cameras(
     app: Res<AppRes>, 
@@ -138,8 +174,7 @@ fn update_cameras(
         }
 
         // generate proj matrix
-        let window_rect = main_window.0.get_viewport_rect();
-        let aspect = window_rect.width as f32 / window_rect.height as f32;
+        /*
         let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(60.0), aspect, 0.1, 10000.0);
 
         // construct rotation matrix
@@ -151,9 +186,13 @@ fn update_cameras(
         let translate = Mat4f::from_translation(position.0);
         let view = translate * mat_rot;
         let view = view.inverse();
+        */
+
+        let window_rect = main_window.0.get_viewport_rect();
+        let aspect = window_rect.width as f32 / window_rect.height as f32;
        
         // assign view proj
-        view_proj.0 = proj * view;
+        view_proj.0 = camera_view_proj_from(&position, &rotation, aspect, 60.0);
     }
 }
 
@@ -273,6 +312,8 @@ macro_rules! view_func_closure {
 pub fn get_system_function(name: &str) -> Option<SystemDescriptor> {
     match name {
         "update_cameras" => system_func![update_cameras],
+        "update_main_camera_config" => system_func![update_main_camera_config],
+
         "render_grid" => system_func![render_grid],
         "render_world_view" => view_func![render_world_view, "render_world_view"],
         _ => None

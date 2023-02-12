@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::process::ExitStatus;
 use std::time::SystemTime;
 use std::time::Duration;
 use std::sync::Arc;
@@ -31,7 +32,8 @@ pub enum ReloadResult {
 /// Trait to be implemented for custom reloader responses
 pub trait ReloadResponder: Send + Sync {
     fn get_files(&self) -> &Vec<String>;
-    fn build(&mut self);
+    fn get_base_mtime(&self) -> SystemTime;
+    fn build(&mut self) -> ExitStatus;
     fn wait_for_completion(&mut self);
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
@@ -95,28 +97,33 @@ impl Reloader {
 
     /// Background thread will watch for changed filestamps among the registered files from the responder
     fn file_watcher_thread(&self) {
-        let mut cur_mtime = SystemTime::now();
         let lock = self.lock.clone();
+        let mut cur_mtime = SystemTime::now();
+        let mut first_time_check = true;
         let responder = self.responder.clone();
         thread::spawn(move || {
             loop {
-                
-                let mtime = Self::file_watcher_thread_check_mtime(&responder, cur_mtime);
-
-                if mtime > cur_mtime {
-                    println!("hotline_rs::reloader: changes detected, building");
-
-                    let mut responder = responder.lock().unwrap();
-                    responder.build();
-
-                    let mut a = lock.lock().unwrap();
-                    println!("hotline_rs::reloader: reload requested");
-                    *a = ReloadState::Requested;
-                    drop(a);
-        
-                    cur_mtime = mtime;
+                // check base mtime of the output lib, it might be old / stale when we run with a fresh client
+                if first_time_check {
+                    cur_mtime = responder.lock().unwrap().get_base_mtime();
+                    first_time_check = false;
                 }
 
+                let mtime = Self::file_watcher_thread_check_mtime(&responder, cur_mtime);
+                if mtime > cur_mtime {
+                    println!("hotline_rs::reloader: changes detected, building");
+                    let mut responder = responder.lock().unwrap();
+                    if responder.build().success() {
+                        let mut a = lock.lock().unwrap();
+                        println!("hotline_rs::reloader: reload requested");
+                        *a = ReloadState::Requested;
+                        drop(a);
+                    }
+                    else {
+                        println!("hotline_rs::reloader: build failed");
+                    }
+                    cur_mtime = mtime;
+                }
                 std::thread::sleep(Duration::from_millis(16));
             }
         });

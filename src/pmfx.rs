@@ -396,10 +396,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
 
         // TODO: downcast
+        // TODO: files from pmfx
         let mut responder = self.reloader.1.lock().unwrap();
         let responder = responder.as_any_mut().downcast_mut::<PmfxReloadResponder>();
         if let Some(responder) = responder {
             responder.add_file("../src/shaders/imdraw.hlsl");
+            responder.add_file("../src/shaders/imdraw.pmfx");
         }
         
         self.reloader.0.start();
@@ -1080,7 +1082,11 @@ impl ReloadResponder for PmfxReloadResponder {
         &self.files
     }
 
-    fn build(&mut self) {
+    fn get_base_mtime(&self) -> SystemTime {
+        SystemTime::now()
+    }
+
+    fn build(&mut self) -> std::process::ExitStatus {
         let output = std::process::Command::new("C:\\Users\\alex_\\dev\\hotline\\build.cmd")
             .current_dir("C:\\Users\\alex_\\dev\\hotline\\")
             .arg("win32")
@@ -1095,6 +1101,8 @@ impl ReloadResponder for PmfxReloadResponder {
         if output.stderr.len() > 0 {
             println!("{}", String::from_utf8(output.stderr).unwrap());
         }
+
+        output.status
     }
 
     fn wait_for_completion(&mut self) {

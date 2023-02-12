@@ -3,8 +3,11 @@
 // - consolidate sync code (responder ref)... downcast helper?
 //  - add files
 
-// - persistent camera position
-// - persistent console window position
+// - file wtaches from pmfx -w
+// - ui call hooks into plugin
+
+// - enumerate plugins
+
 // - respect imgui flags (hovered / accept input) in camera controller
 // - download data
 // - github ref to build tools?
@@ -27,9 +30,6 @@
 // - texures from file pmfx
 // - minimise resource handling code? macros?... bastard! ref cell?
 
-// - Blend
-// - Raster
-
 // core updates
 // - update matrices
 // - update aabb's
@@ -42,6 +42,8 @@
 // - MRT
 // - MSAA
 // - Texture Formats (BC)
+// - Blend
+// - Raster
 
 // TESTS:
 // - imgui
@@ -51,11 +53,17 @@
 // - bindless
 
 // DONE:
+// x persistent plugins
+// x different lib build commands
+// x build lib on load
+// x handle compile failures
+// x plugin collecion into plugin module
+// x persistent console window position
 // x select / add plugin lib from file
 // x quick dev ui tidy up
 // x hot-reload shaders, pipelines, views
 // x watching rebuilding
-//  x pmfx
+// x -- pmfx
 // x plugin and reloader modules
 // x reload new plugins
 // x client - rename from host

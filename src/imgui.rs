@@ -509,7 +509,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 }
             };
         
-            igStyleColorsLight(std::ptr::null_mut());
+            //igStyleColorsLight(std::ptr::null_mut());
+            igStyleColorsDark(std::ptr::null_mut());
 
             let mut style = &mut *igGetStyle();
             style.WindowRounding = 0.0;
