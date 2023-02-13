@@ -37,7 +37,7 @@ pub fn setup_single2(
         ecs::Position { 0: Vec3f::zero() },
         ecs::Velocity { 0: Vec3f::one() },
         ecs::MeshComponent {0: cube_mesh.clone()},
-        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 10.0, 10.0))}
+        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 10.0, 0.0))}
     ));
 }
 

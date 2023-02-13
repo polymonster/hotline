@@ -131,7 +131,7 @@ impl BevyPlugin {
             }
             else {
                 client
-                    .call_lib_function_with_string::<SystemDescriptor>("get_system_function_empty2", name)
+                    .call_lib_function_with_string::<SystemDescriptor>("get_system_function_${lib_name}", name)
             }
         }
     }

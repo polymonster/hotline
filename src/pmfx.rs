@@ -9,9 +9,9 @@ use crate::gfx::ResourceState;
 use crate::gfx::RenderPass;
 use crate::gfx::CmdBuf;
 
+use crate::reloader::ReloadState;
 use crate::reloader::Reloader;
 use crate::reloader::ReloadResponder;
-use crate::reloader::ReloadResult;
 
 use serde::{Deserialize, Serialize};
 
@@ -837,7 +837,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
-        if self.reloader.0.check_for_reload() == ReloadResult::Reload {
+        if self.reloader.0.check_for_reload() == ReloadState::Available {
             swap_chain.wait_for_last_frame();
             self.reloader.0.complete_reload();
         }

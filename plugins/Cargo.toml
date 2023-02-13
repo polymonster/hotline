@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["empty", "ecs", "empty2"]
+members = ["empty", "ecs", "ecs_basic"]
 
 [profile.dev]
 opt-level = 1
