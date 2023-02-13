@@ -22,7 +22,6 @@ use std::sync::Arc;
 use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
-use std::any::Any;
 
 /// Hash type for quick checks of changed resources from pmfx
 type PmfxHash = u64;
@@ -89,12 +88,8 @@ pub struct Pmfx<D: gfx::Device> {
     render_graph_execute_order: Vec<String>,
     /// Tracking texture references of views
     view_texture_refs: HashMap<String, HashSet<String>>,
-
-    // TODO:
-    reloader: (Reloader, Arc<Mutex<Box<dyn ReloadResponder>>>),
-
-    /// Tracks the currently active update graph name
-    pub active_update_graph: String,
+    /// Watches for filestamp changes and will trigger callbacks in the `PmfxReloadResponder`
+    reloader: Reloader,
     /// Tracks the currently active render graph name
     pub active_render_graph: String
 }
@@ -345,10 +340,6 @@ fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
     pub fn create() -> Self {        
-        let responder = PmfxReloadResponder::new();
-        let responder_ref : Arc<Mutex<Box<dyn ReloadResponder>>> = Arc::new(Mutex::new(Box::new(responder)));
-        let reloader = Reloader::create(responder_ref.clone());
-
         Pmfx {
             pmfx: File::new(),
             pmfx_filepath: std::path::PathBuf::new(),
@@ -363,9 +354,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             render_graph_execute_order: Vec::new(),
             view_texture_refs: HashMap::new(),
             window_sizes: HashMap::new(),
-            active_update_graph: "core".to_string(),
             active_render_graph: String::new(),
-            reloader: (reloader, responder_ref) 
+            reloader: Reloader::create(Box::new(PmfxReloadResponder::new()))
         }
     }
 
@@ -395,17 +385,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
         }
 
-        // TODO: downcast
         // TODO: files from pmfx
-        let mut responder = self.reloader.1.lock().unwrap();
-        let responder = responder.as_any_mut().downcast_mut::<PmfxReloadResponder>();
-        if let Some(responder) = responder {
-            responder.add_file("../src/shaders/imdraw.hlsl");
-            responder.add_file("../src/shaders/imdraw.pmfx");
-        }
-        
-        self.reloader.0.start();
-        
+        self.reloader.add_file("../src/shaders/imdraw.hlsl");
+        self.reloader.add_file("../src/shaders/imdraw.hlsl");
+
         Ok(())
     }
 
@@ -837,11 +820,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
-        if self.reloader.0.check_for_reload() == ReloadState::Available {
+        // check if we have any reloads available
+        if self.reloader.check_for_reload() == ReloadState::Available {
+            // wait for last GPU frame so we can drop the resources
             swap_chain.wait_for_last_frame();
-            self.reloader.0.complete_reload();
+            self.reloader.complete_reload();
         }
-        
+        // TODO: this might be more performant being called on the render thread
+        // resets and syncs command buffers for re-use
         self.reset(swap_chain);
     }
 
@@ -1072,12 +1058,13 @@ impl PmfxReloadResponder {
             files: Vec::new()
         }
     }
-    fn add_file(&mut self, filepath: &str) {
-        self.files.push(filepath.to_string());
-    }   
 }
 
 impl ReloadResponder for PmfxReloadResponder {
+    fn add_file(&mut self, filepath: &str) {
+        self.files.push(filepath.to_string());
+    }  
+
     fn get_files(&self) -> &Vec<String> {
         &self.files
     }
@@ -1103,13 +1090,5 @@ impl ReloadResponder for PmfxReloadResponder {
         }
 
         output.status
-    }
-
-    fn as_any(&self) -> &dyn Any {
-        self
-    }
-    
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
     }
 }

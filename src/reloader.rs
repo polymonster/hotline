@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::process::ExitStatus;
 use std::time::SystemTime;
 use std::time::Duration;
@@ -11,38 +10,51 @@ pub struct Reloader {
     /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
     /// and timestamps for quick checking at run time.
     lock: Arc<Mutex<ReloadState>>,
+    /// You can implement your own `ReloadResponder` trait to get callback functions to trigger a build
     responder: Arc<Mutex<Box<dyn ReloadResponder>>>
 }
 
-/// Internal private enum to track reload states
+/// Query reload status with a responder:
+/// if 
 #[derive(PartialEq, Clone, Copy)]
 pub enum ReloadState {
+    /// No action needs taking
     None,
+    /// There is a reload available, get into a stable state and call `complete_reload` to complete
     Available,
-    Confirmed,
 }
 
 /// Trait to be implemented for custom reloader responses
 pub trait ReloadResponder: Send + Sync {
+    /// Add a file which is tracked and the time stamp compared for changes
+    fn add_file(&mut self, path: &str);
+    /// Returns a vector of files which are currently being tracked
     fn get_files(&self) -> &Vec<String>;
+    /// Retuns the current modified of the built respirce
     fn get_base_mtime(&self) -> SystemTime;
+    /// Called when a tracked file is modified more recently than get_base_mtime
     fn build(&mut self) -> ExitStatus;
-    fn as_any(&self) -> &dyn Any;
-    fn as_any_mut(&mut self) -> &mut dyn Any;
 }
 
 impl Reloader {
-    /// Create a new instance of a reload with the designated ReloadResponder
-    pub fn create(responder: Arc<Mutex<Box<dyn ReloadResponder>>>) -> Self {
+    /// Create a new instance of a reload with the designated ReloadResponder and start waiting for file changes
+    pub fn create(responder: Box<dyn ReloadResponder>) -> Self {
         Self {
             lock: Arc::new(Mutex::new(ReloadState::None)),
-            responder
-        }
+            responder: Arc::new(Mutex::new(responder)),
+        }.start()
+    }
+
+    /// Add files to check in a thread safe manner
+    pub fn add_file(&mut self, path: &str) {
+        let mut responder = self.responder.lock().unwrap();
+        responder.add_file(path);
     }
 
     /// Start watching for and invoking reload changes, this will spawn threads to watch files
-    pub fn start(&self) {
+    pub fn start(self) -> Self {
         self.file_watcher_thread();
+        self
     }
 
     /// Call this each frame, if ReloadResult::Reload you must then clean up any data in preperation for a reload
@@ -55,11 +67,12 @@ impl Reloader {
     pub fn complete_reload(&mut self) {
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
-        *lock = ReloadState::Confirmed;
+        *lock = ReloadState::None;
         drop(lock);
         println!("hotline_rs::reloader: reload complete");
     }
 
+    /// Returns the latest timestamp of all the files tracked by the reloader
     fn file_watcher_thread_check_mtime(responder: &Arc<Mutex<Box<dyn ReloadResponder>>>, cur_mtime: SystemTime) -> SystemTime {
         let responder = responder.lock().unwrap();
         let files = responder.get_files();

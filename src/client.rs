@@ -15,18 +15,15 @@ use gfx::RenderPass;
 
 use os::Window;
 
-use plugin::PluginLib;
+use plugin::PluginReloadResponder;
 use plugin::PluginCollection;
 use plugin::PluginState;
 
-use reloader::ReloadResponder;
 use reloader::Reloader;
 
 use serde::{Deserialize, Serialize};
 
 use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::Mutex;
 use std::collections::HashMap;
 
 /// Information to create a hotline context which will create an app, window, device
@@ -90,8 +87,8 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
+    pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
 
-    libs: HashMap<String, hot_lib_reloader::LibReloader>,
     plugins: Vec<PluginCollection>,
 }
 
@@ -363,7 +360,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let lib_path = path.to_string() + "/target/" + crate::get_config_name();
         let src_path = path.to_string() + "/" + name + "/src/lib.rs";
-        let plugin = PluginLib {
+        let plugin = PluginReloadResponder {
             name: name.to_string(),
             path: path.to_string(),
             output_filepath: lib_path.to_string(),
@@ -383,21 +380,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 // allow null instances, in plugins which only export function calls and not plugin traits
                 std::ptr::null_mut()
             };
-
-            // box it up
-            let plugin_box = Box::new(plugin);
-            let plugin_ref : Arc<Mutex<Box<dyn ReloadResponder>>> = Arc::new(Mutex::new(plugin_box));
-            let reloader = Reloader::create(plugin_ref.clone());
-        
-            // start watching for reloads
-            reloader.start();
-
-            // keep hold of everything gor updating
+            
+            // keep hold of everything for updating
             self.plugins.push( plugin::PluginCollection {
                 name: name.to_string(),
-                responder: plugin_ref.clone(), 
                 instance, 
-                reloader,
+                reloader: Reloader::create(Box::new(plugin)),
                 state: PluginState::Setup
             });
             self.libs.insert(name.to_string(), lib);
@@ -414,29 +402,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
             plugin_info.insert(name.to_string(), PluginInfo { path: path.to_string() });
         }
-    }
-
-    /// This allows plugins to extend their own behaviour without the client having knowledge of plugins
-    /// this function will call through functions that may be inside other dynamic libraries to find an Option<T> by name
-    /// for instance you could have something like:
-    /// #[no_mangle] fn find_something(name: String) -> Option<u32> {
-    ///     match name.as_str() {
-    ///         //.
-    ///     }
-    /// }
-    /// to disambiaguate between different libraries you can append the lib name to the function `"find_something_${lib_name}"`
-    pub fn call_lib_function_with_string<T>(&self, function: &str, arg: &str) -> Option<T> {
-        for (name, lib) in &self.libs {
-            unsafe {
-                let function_name = function.replace("${lib_name}", name);
-                let hook = lib.get_symbol::<unsafe extern fn(String) -> Option<T>>(function_name.as_bytes());
-                if hook.is_ok() {
-                    let hook_fn = hook.unwrap();
-                    return hook_fn(arg.to_string());
-                }
-            }
-        }
-        None
     }
     
     pub fn run(mut self) {

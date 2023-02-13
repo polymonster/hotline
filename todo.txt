@@ -1,11 +1,9 @@
 // TODO:
 
-// - consolidate sync code (responder ref)... downcast helper?
-//  - add files
+// - improve reloader / responder create / grouping
 
-// - file wtaches from pmfx -w
+// - file wataches from pmfx -w
 // - ui call hooks into plugin
-
 // - enumerate plugins
 // - delete plugin mem on shutdown
 // - in editor terminal / log
@@ -24,8 +22,6 @@
 
 // - msaa + texture format changing
 
-// - hotline dynamic lib (build times)
-
 // - timer stats
 // - thread stats
 
@@ -37,6 +33,7 @@
 // - update aabb's
 // - culling
 
+// - gfx
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
@@ -47,14 +44,10 @@
 // - Blend
 // - Raster
 
-// TESTS:
-// - imgui
-// - pmfx
-// - play video
-// - primitives
-// - bindless
-
 // DONE:
+// x hotline dynamic lib (build times)
+// x consolidate sync code (responder ref)... downcast helper?
+// x - add files
 // x persistent plugins
 // x different lib build commands
 // x build lib on load

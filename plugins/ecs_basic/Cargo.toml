@@ -8,5 +8,6 @@ crate-type = ["rlib", "dylib"]
 
 [dependencies]
 hotline-rs = { path = "../.." }
+ecs = { path = "../ecs" }
 maths-rs = "0.1.4"
 bevy_ecs = "0.9.1"
