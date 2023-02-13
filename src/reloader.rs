@@ -15,18 +15,11 @@ pub struct Reloader {
 }
 
 /// Internal private enum to track reload states
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone, Copy)]
 pub enum ReloadState {
     None,
-    Requested,
+    Available,
     Confirmed,
-}
-
-/// Check for reload changes
-#[derive(PartialEq)]
-pub enum ReloadResult {
-    Continue,
-    Reload
 }
 
 /// Trait to be implemented for custom reloader responses
@@ -53,14 +46,9 @@ impl Reloader {
     }
 
     /// Call this each frame, if ReloadResult::Reload you must then clean up any data in preperation for a reload
-    pub fn check_for_reload(&self) -> ReloadResult {
+    pub fn check_for_reload(&self) -> ReloadState {
         let lock = self.lock.lock().unwrap();
-        if *lock == ReloadState::Requested {
-            ReloadResult::Reload
-        }
-        else {
-            ReloadResult::Continue
-        }
+        *lock
     }
 
     /// Once data is cleaned up and it is safe to proceed this functions must be called 
@@ -69,7 +57,7 @@ impl Reloader {
         // signal it is safe to proceed and reload the new code
         *lock = ReloadState::Confirmed;
         drop(lock);
-        println!("hotline_rs::reloader: complete");
+        println!("hotline_rs::reloader: reload complete");
     }
 
     fn file_watcher_thread_check_mtime(responder: &Arc<Mutex<Box<dyn ReloadResponder>>>, cur_mtime: SystemTime) -> SystemTime {
@@ -111,8 +99,8 @@ impl Reloader {
                     let mut responder = responder.lock().unwrap();
                     if responder.build().success() {
                         let mut a = lock.lock().unwrap();
-                        println!("hotline_rs::reloader: reload requested");
-                        *a = ReloadState::Requested;
+                        println!("hotline_rs::reloader: build success, reload available");
+                        *a = ReloadState::Available;
                         drop(a);
                     }
                     else {

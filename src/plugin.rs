@@ -9,7 +9,7 @@ use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
 
-pub type PluginLibRef = Arc<Mutex<Box<dyn reloader::ReloadResponder>>>;
+pub type PluginReloadResponder = Arc<Mutex<Box<dyn reloader::ReloadResponder>>>;
 pub type PluginInstance = *mut core::ffi::c_void;
 
 #[derive(PartialEq, Eq)]
@@ -21,9 +21,9 @@ pub enum PluginState {
 
 pub struct PluginCollection {
     pub name: String,
-    pub lib: PluginLibRef,
-    pub instance: PluginInstance,
+    pub responder: PluginReloadResponder,
     pub reloader: reloader::Reloader,
+    pub instance: PluginInstance,
     pub state: PluginState
 }
 
