@@ -1105,10 +1105,6 @@ impl ReloadResponder for PmfxReloadResponder {
         output.status
     }
 
-    fn wait_for_completion(&mut self) {
-        // stub
-    }
-
     fn as_any(&self) -> &dyn Any {
         self
     }

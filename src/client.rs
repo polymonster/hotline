@@ -1,6 +1,7 @@
 use crate::gfx;
 use crate::os;
 use crate::imgui;
+use crate::plugin::PluginInstance;
 use crate::pmfx;
 use crate::imdraw;
 use crate::primitives;
@@ -90,6 +91,7 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
 
+    lib: Vec<hot_lib_reloader::LibReloader>,
     plugins: Vec<PluginCollection>,
 }
 
@@ -217,7 +219,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             imgui,
             unit_quad_mesh,
             user_config: user_config.clone(),
-            plugins: Vec::new()
+            plugins: Vec::new(),
+            lib: Vec::new()
         };
 
         // automatically load plugins from prev session
@@ -364,35 +367,40 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             name: name.to_string(),
             path: path.to_string(),
             output_filepath: lib_path.to_string(),
-            lib: hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap(),
             files: vec![
                 src_path
             ],
         };
+        let lib = hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap();
         unsafe {
-            let create = plugin.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-            if create.is_ok() {
-                // create an instance of the plugin
-                let create_fn = create.unwrap();
-                let instance = create_fn();
-
-                // box it up
-                let plugin_box = Box::new(plugin);
-                let plugin_ref : Arc<Mutex<Box<dyn ReloadResponder>>> = Arc::new(Mutex::new(plugin_box));
-                let reloader = Reloader::create(plugin_ref.clone());
-            
-                // start watching for reloads
-                reloader.start();
-
-                // keep hold of everything gor updating
-                self.plugins.push( plugin::PluginCollection {
-                    name: name.to_string(),
-                    lib: plugin_ref.clone(), 
-                    instance, 
-                    reloader,
-                    state: PluginState::Setup
-                });
+            // create instance if it is a Plugin trait
+            let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+            let instance = if create.is_ok() {
+                // create function returns pointer to instance
+                create.unwrap()()
             }
+            else {
+                // allow null instances, in plugins which only export function calls and not plugin traits
+                std::ptr::null_mut()
+            };
+
+            // box it up
+            let plugin_box = Box::new(plugin);
+            let plugin_ref : Arc<Mutex<Box<dyn ReloadResponder>>> = Arc::new(Mutex::new(plugin_box));
+            let reloader = Reloader::create(plugin_ref.clone());
+        
+            // start watching for reloads
+            reloader.start();
+
+            // keep hold of everything gor updating
+            self.plugins.push( plugin::PluginCollection {
+                name: name.to_string(),
+                lib: plugin_ref.clone(), 
+                instance, 
+                reloader,
+                state: PluginState::Setup
+            });
+            self.lib.push(lib);
         }
 
         // Track the plugin for auto re-loading
@@ -408,6 +416,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
     }
 
+    pub fn call_lib_function_with_string<T>(&self, function: &str, arg: &str) -> Option<T> {
+        for lib in &self.lib {
+            unsafe {
+                let hook = lib.get_symbol::<unsafe extern fn(String) -> Option<T>>(function.as_bytes());
+                if hook.is_ok() {
+                    let hook_fn = hook.unwrap();
+                    println!("arg: {}", arg);
+                    return hook_fn(arg.to_string());
+                }
+            }
+        }
+        None
+    }
+    
     pub fn run(mut self) {
         while self.app.run() {
 
@@ -458,68 +480,82 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                     || plugin.state == PluginState::Reload {
                         self.swap_chain.wait_for_last_frame();
                         reload = true;
+                        plugin.state = PluginState::Reload;
                         break;
                 }
             }
 
             // reload all... currently we need to reload all plugins
             if reload {
-                for plugin in &mut plugins {
-
-                    let lib = plugin.lib.lock().unwrap();
-                    if let Some(lib) = lib.as_any().downcast_ref::<PluginLib>() {
-                        unsafe {
-                            let reload = lib.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("reload".as_bytes());
-                            if reload.is_ok() {
-                                let reload_fn = reload.unwrap();
-                                self = reload_fn(self, plugin.instance);
-                            }
+                let mut i = 0;
+                for plugin in &plugins {
+                    unsafe {
+                        let reload = self.lib[i].get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("reload".as_bytes());
+                        if reload.is_ok() {
+                            let reload_fn = reload.unwrap();
+                            self = reload_fn(self, plugin.instance);
                         }
                     }
-                    drop(lib);
+                    i = i+1;
+                }
     
-                    // finalise reload (clean up)
-                    plugin.reloader.complete_reload();
-    
-                    // create a new instance of the plugin
-                    let lib = plugin.lib.lock().unwrap();
-                    if let Some(lib) = lib.as_any().downcast_ref::<PluginLib>() {
+                // finalise reload (clean up)
+                let mut i = 0;
+                for plugin in &mut plugins {
+                    if plugin.state == PluginState::Reload {
+                        println!("complete reload {}", plugin.name);
+                        
+                        // wait
+                        loop {
+                            if self.lib[i].update().unwrap() {
+                                break;
+                            }
+                            println!("lib waiting");
+                            std::thread::sleep(std::time::Duration::from_millis(16));
+                        }
+                        plugin.reloader.complete_reload();
+
                         unsafe {
-                            let create = lib.lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                            let create = self.lib[i].get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
                             if create.is_ok() {
                                 let create_fn = create.unwrap();
                                 plugin.instance = create_fn();
                             }
-                            plugin.state = PluginState::Setup;
+                        }
+                    }
+                    plugin.state = PluginState::Setup;
+                    i = i+1;
+                }
+            }
+
+            // setup
+            let mut i = 0;
+            for responder in &plugins {
+                unsafe {
+                    if responder.state == PluginState::Setup {
+                        let setup = self.lib[i].get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                        if setup.is_ok() {
+                            let setup_fn = setup.unwrap();
+                            self = setup_fn(self, responder.instance);
                         }
                     }
                 }
+                i = i + 1;
             }
             
-            // setup / update
+            // update
+            let mut i = 0;
             for responder in &mut plugins {
-                let plugin = responder.lib.lock().unwrap();
-                if let Some(plugin) = plugin.as_any().downcast_ref::<plugin::PluginLib>() {
-                    unsafe {
-                        if responder.state == PluginState::Setup {
-                            let setup = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
-                            if setup.is_ok() {
-                                let setup_fn = setup.unwrap();
-                                self = setup_fn(self, responder.instance);
-                            }
-                        }
-                        responder.state = PluginState::None;
-    
-                        let update = plugin.lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                        if update.is_ok() {
-                            let update_fn = update.unwrap();
-                            self = update_fn(self, responder.instance);
-                        }
+                unsafe {
+                    responder.state = PluginState::None;
+                    let update = self.lib[i].get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                    if update.is_ok() {
+                        let update_fn = update.unwrap();
+                        self = update_fn(self, responder.instance);
                     }
                 }
+                i = i + 1;
             }
-            
-            //self.run_setup = false;
             self.plugins = plugins;
 
             self.present("main_colour");
