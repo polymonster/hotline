@@ -3,11 +3,8 @@ use crate::gfx;
 use crate::os;
 use crate::reloader;
 
-use libloading::Symbol;
-
 use std::any::Any;
 use std::process::ExitStatus;
-use std::time::Duration;
 use std::process::Command;
 use std::sync::Arc;
 use std::sync::Mutex;
@@ -40,6 +37,9 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
     /// Called when the plugin source has been modified and a reload is required, here handle any cleanup logic
     fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
+    
+    // Called when the plugin is to be unloaded, this will clean up
+    // fn unload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
 /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
@@ -111,7 +111,7 @@ macro_rules! hotline_plugin {
     }
 }
 
-/// General dll plugin responder, will check for source code changes and run cargo build to re-build the libraru
+/// General dll plugin responder, will check for source code changes and run cargo build to re-build the library
 pub struct PluginLib {
     /// Name of the plugin
     pub name: String,
@@ -119,25 +119,8 @@ pub struct PluginLib {
     pub path: String,
     /// Full path to the build binary dylib or dll
     pub output_filepath: String,
-    /// Hot reloader library instance, get symbols from here
-    pub lib: hot_lib_reloader::LibReloader,
     /// Array of source code files to track and check for changes
     pub files: Vec<String>
-}
-
-/// Supplies an interface to access symbols from inside a dll
-impl PluginLib {
-    pub fn get_symbol<T>(&self, name: &str) -> Option<Symbol<T>> {
-        unsafe {
-            let get_function = self.lib.get_symbol::<T>(name.as_bytes());
-            if get_function.is_ok() {
-                return Some(get_function.unwrap());
-            }
-            else {
-                None
-            }
-        }
-    }
 }
 
 /// Reload responder implementation for `PluginLib` uses cargo build, and hot lib reloader
@@ -174,16 +157,6 @@ impl reloader::ReloadResponder for PluginLib {
         }
 
         output.status
-    }
-
-    fn wait_for_completion(&mut self) {
-        // wait for lib to reload
-        loop {
-            if self.lib.update().unwrap() {
-                break;
-            }
-            std::thread::sleep(Duration::from_millis(16));
-        }
     }
 
     fn as_any(&self) -> &dyn Any {

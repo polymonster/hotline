@@ -51,7 +51,7 @@ pub fn setup_single(
         ecs::Position { 0: Vec3f::zero() },
         ecs::Velocity { 0: Vec3f::one() },
         ecs::MeshComponent {0: cube_mesh.clone()},
-        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 0.0, 0.0))}
+        ecs::WorldMatrix { 0: Mat4f::from_translation(vec3f(0.0, 5.0, 0.0))}
     ));
 }
 
@@ -109,14 +109,6 @@ pub fn mat_movement(mut query:  bevy_ecs::system::Query<&mut ecs::WorldMatrix>) 
 }
 
 #[no_mangle]
-pub fn get_demo_names() -> Vec<String> {
-    vec![
-        "single".to_string(),
-        "multiple".to_string()
-    ]
-}
-
-#[no_mangle]
 pub fn get_system_function_lib(name: &str) -> Option<bevy_ecs::schedule::SystemDescriptor> {    
     match name {
         "mat_movement" => system_func![mat_movement],
@@ -127,31 +119,20 @@ pub fn get_system_function_lib(name: &str) -> Option<bevy_ecs::schedule::SystemD
 }
 
 impl BevyPlugin {
-    fn get_system_function(&self, name: &str, _client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
+    fn get_system_function(&self, name: &str, client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
         let func = ecs::get_system_function(name);
         if func.is_some() {
             func
         }
         else {
-            get_system_function_lib(name)
-
-            // TODO: downcast
-            /*
-            let responder = client.get_responder().unwrap();
-            let responder = responder.lock().unwrap();
-            let lib = responder.as_any().downcast_ref::<client::LibReloadResponder>().unwrap();
-
-            let sym = lib.get_symbol::<unsafe extern fn(String) -> Option<SystemDescriptor>>("get_system_function_lib");
-            unsafe {
-                let f = sym.unwrap()(name.to_string());
-                if f.is_some() {
-                    f
-                }
-                else {
-                    None
-                }
+            let func = get_system_function_lib(name);
+            if func.is_some() {
+                func
             }
-            */
+            else {
+                client
+                    .call_lib_function_with_string::<SystemDescriptor>("get_system_function_empty2", name)
+            }
         }
     }
 }
@@ -174,7 +155,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.pmfx.create_render_graph(& mut client.device, "forward").unwrap();
 
         let setup_systems = vec![
-            "setup_single".to_string(),
+            "setup_single2".to_string(),
         ];
         let update_systems = vec![
             "mat_movement".to_string(),

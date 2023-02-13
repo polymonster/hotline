@@ -34,7 +34,6 @@ pub trait ReloadResponder: Send + Sync {
     fn get_files(&self) -> &Vec<String>;
     fn get_base_mtime(&self) -> SystemTime;
     fn build(&mut self) -> ExitStatus;
-    fn wait_for_completion(&mut self);
     fn as_any(&self) -> &dyn Any;
     fn as_any_mut(&mut self) -> &mut dyn Any;
 }
@@ -66,14 +65,11 @@ impl Reloader {
 
     /// Once data is cleaned up and it is safe to proceed this functions must be called 
     pub fn complete_reload(&mut self) {
-        println!("hotline_rs::reloader:: wait for completion");
-        self.responder.lock().unwrap().wait_for_completion();
-
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
         *lock = ReloadState::Confirmed;
         drop(lock);
-        println!("hotline_rs::reloader:: confirmed");
+        println!("hotline_rs::reloader: complete");
     }
 
     fn file_watcher_thread_check_mtime(responder: &Arc<Mutex<Box<dyn ReloadResponder>>>, cur_mtime: SystemTime) -> SystemTime {
