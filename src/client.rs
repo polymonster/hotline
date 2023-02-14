@@ -416,7 +416,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
     }
 
-    fn plugin_ui(&mut self) {
+    fn core_ui(&mut self) {
         // main menu bar allow us to add plugins from files (libs)
         if self.imgui.begin_main_menu_bar() {
             if self.imgui.begin_menu("File") {
@@ -454,136 +454,143 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.imgui.end_main_menu_bar();
         }
     }
+
+    fn update_plugins(mut self) -> Self {
+        // take the plugin mem so we can decouple the shared mutability between client and plugins
+        let mut plugins = std::mem::take(&mut self.plugins);
+
+        // call plugin ui functions
+        for plugin in &mut plugins {
+            let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+            unsafe {
+                let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
+                if ui.is_ok() {
+                    let ui_fn = ui.unwrap();
+                    let imgui_ctx = self.imgui.get_current_context();
+                    self = ui_fn(self, plugin.instance, imgui_ctx);
+                }
+            }
+        }
+
+        // check for reloads
+        let mut reload = false;
+        for plugin in &mut plugins {
+            if plugin.reloader.check_for_reload() == reloader::ReloadState::Available 
+                || plugin.state == PluginState::Reload {
+                    self.swap_chain.wait_for_last_frame();
+                    reload = true;
+                    plugin.state = PluginState::Reload;
+                    break;
+            }
+        }
+
+        // perfrom unloads this will clean up memory, setup will be called again afterwards
+        for plugin in &plugins {
+            if plugin.state == PluginState::Reload || 
+                plugin.state == PluginState::Unload || 
+                plugin.state == PluginState::Setup {
+                unsafe {
+                    let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+                    let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                    if unload.is_ok() {
+                        let unload_fn = unload.unwrap();
+                        self = unload_fn(self, plugin.instance);
+                    }
+                }
+            }
+        }
+
+        // remove unloaded plugins entirely
+        loop {
+            let mut todo = false;
+            for i in 0..plugins.len() {
+                if plugins[i].state == PluginState::Unload {
+                    if let Some(plugin_info) = &mut self.user_config.plugins {
+                        plugin_info.remove_entry(&plugins[i].name);
+                    }
+                    self.libs.remove_entry(&plugins[i].name);
+                    plugins.remove(i);
+                    todo = true;
+                    break;
+                }
+            }
+            if !todo {
+                break;
+            }
+        }
+            
+        // reload all... currently we need to re-setup all plugins, as plugins can be linked
+        if reload {
+            // finalise reload, actually reloading the lib of any libs which had changes
+            for plugin in &mut plugins {
+                if plugin.state == PluginState::Reload {                        
+                    // wait for lib reloader itself
+                    let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
+                    loop {
+                        if lib.update().unwrap() {
+                            break;
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(16));
+                    }
+
+                    // signal it's ok to continue
+                    plugin.reloader.complete_reload();
+
+                    // create a new instance of the plugin
+                    unsafe {
+                        let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                        if create.is_ok() {
+                            let create_fn = create.unwrap();
+                            plugin.instance = create_fn();
+                        }
+                    }
+                }
+
+                // after reload, setup everything again
+                plugin.state = PluginState::Setup;
+            }
+        }
+
+        // setup
+        for plugin in &plugins {
+            let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+            unsafe {
+                if plugin.state == PluginState::Setup {
+                    let setup = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                    if setup.is_ok() {
+                        let setup_fn = setup.unwrap();
+                        self = setup_fn(self, plugin.instance);
+                    }
+                }
+            }
+        }
+        
+        // update
+        for plugin in &mut plugins {
+            let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+            unsafe {
+                let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                if update.is_ok() {
+                    let update_fn = update.unwrap();
+                    self = update_fn(self, plugin.instance);
+                }
+            }
+            plugin.state = PluginState::None;
+        }
+
+        // move plugins back and return self
+        self.plugins = plugins;
+        self
+    }
     
     pub fn run(mut self) {
         while self.app.run() {
 
             self.new_frame();
 
-            // ui calls
-            self.plugin_ui();
+            self.core_ui();
+            self = self.update_plugins();
 
-            let mut plugins = std::mem::take(&mut self.plugins);
-
-            // check for reloads
-            let mut reload = false;
-            for plugin in &mut plugins {
-                if plugin.reloader.check_for_reload() == reloader::ReloadState::Available 
-                    || plugin.state == PluginState::Reload {
-                        self.swap_chain.wait_for_last_frame();
-                        reload = true;
-                        plugin.state = PluginState::Reload;
-                        break;
-                }
-            }
-
-            // perfrom unloads this will clean up memory, setup will be called again afterwards
-            for plugin in &plugins {
-                if plugin.state == PluginState::Reload || plugin.state == PluginState::Unload {
-                    unsafe {
-                        let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                        let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
-                        if unload.is_ok() {
-                            let unload_fn = unload.unwrap();
-                            self = unload_fn(self, plugin.instance);
-                        }
-                    }
-                }
-            }
-
-            // remove unloaded plugins entirely
-            loop {
-                let mut todo = false;
-                for i in 0..plugins.len() {
-                    if plugins[i].state == PluginState::Unload {
-                        if let Some(plugin_info) = &mut self.user_config.plugins {
-                            plugin_info.remove_entry(&plugins[i].name);
-                        }
-                        self.libs.remove_entry(&plugins[i].name);
-                        plugins.remove(i);
-                        todo = true;
-                        break;
-                    }
-                }
-                if !todo {
-                    break;
-                }
-            }
-                
-            // reload all... currently we need to reload all plugins
-            if reload {
-                // finalise reload, actually reloading the lib of any libs which had changes
-                for plugin in &mut plugins {
-                    if plugin.state == PluginState::Reload {                        
-                        // wait for lib reloader itself
-                        let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
-                        loop {
-                            if lib.update().unwrap() {
-                                break;
-                            }
-                            std::thread::sleep(std::time::Duration::from_millis(16));
-                        }
-
-                        // signal it's ok to continue
-                        plugin.reloader.complete_reload();
-
-                        // create a new instance of the plugin
-                        unsafe {
-                            let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-                            if create.is_ok() {
-                                let create_fn = create.unwrap();
-                                plugin.instance = create_fn();
-                            }
-                        }
-                    }
-
-                    // after reload, setup everything again
-                    plugin.state = PluginState::Setup;
-                }
-            }
-
-            // setup
-            for plugin in &plugins {
-                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                unsafe {
-                    if plugin.state == PluginState::Setup {
-                        let setup = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
-                        if setup.is_ok() {
-                            let setup_fn = setup.unwrap();
-                            self = setup_fn(self, plugin.instance);
-                        }
-                    }
-                }
-            }
-            
-            // update
-            for plugin in &mut plugins {
-                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                unsafe {
-                    let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                    if update.is_ok() {
-                        let update_fn = update.unwrap();
-                        self = update_fn(self, plugin.instance);
-                    }
-                }
-                plugin.state = PluginState::None;
-            }
-
-            // ui
-            for plugin in &mut plugins {
-                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                unsafe {
-                    let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
-                    if ui.is_ok() {
-                        let ui_fn = ui.unwrap();
-                        let imgui_ctx = self.imgui.get_current_context();
-                        self = ui_fn(self, plugin.instance, imgui_ctx);
-                    }
-                }
-            }
-
-            self.plugins = plugins;
-            
             self.present("main_colour");
         }
 

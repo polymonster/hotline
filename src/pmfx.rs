@@ -103,7 +103,8 @@ struct File {
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
     render_graphs: HashMap<String, Vec<ViewInstanceInfo>>,
-    update_graphs: HashMap<String, UpdateInstanceInfo>
+    update_graphs: HashMap<String, UpdateInstanceInfo>,
+    dependencies: Vec<String>
 }
 
 /// pmfx File serialisation, 
@@ -118,6 +119,7 @@ impl File {
             views: HashMap::new(),
             render_graphs: HashMap::new(),
             update_graphs: HashMap::new(),
+            dependencies: Vec::new()
         }
     }
 }
@@ -385,9 +387,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.pmfx_folders.insert(name.to_string(), String::from(filepath));
         }
 
-        // TODO: files from pmfx
-        self.reloader.add_file("../src/shaders/imdraw.hlsl");
-        self.reloader.add_file("../src/shaders/imdraw.hlsl");
+        // add files from pmfx for tracking
+        for file in &self.pmfx.dependencies {
+            self.reloader.add_file(file);
+        }
 
         Ok(())
     }

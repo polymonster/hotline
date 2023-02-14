@@ -7,6 +7,7 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
+ecs_base = { path = "../ecs_base" }
 hotline-rs = { path = "../.." }
 maths-rs = "0.1.4"
 bevy_ecs = "0.9.1"
