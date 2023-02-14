@@ -22,9 +22,15 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
         client
     }
 
-    fn reload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
+    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
         -> Client<gfx_platform::Device, os_platform::App> {
-        println!("plugin reload");
+        println!("plugin unload");
+        client
+    }
+
+    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
+    -> Client<gfx_platform::Device, os_platform::App> {
+        println!("plugin ui");
         client
     }
 }

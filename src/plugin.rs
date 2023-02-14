@@ -6,20 +6,6 @@ use crate::reloader;
 use std::process::ExitStatus; 
 use std::process::Command;
 
-#[derive(PartialEq, Eq)]
-pub enum PluginState {
-    None,
-    Reload,
-    Setup
-}
-
-pub struct PluginCollection {
-    pub name: String,
-    pub reloader: reloader::Reloader,
-    pub instance: PluginInstance,
-    pub state: PluginState
-}
-
 /// General dll plugin responder, will check for source code changes and run cargo build to re-build the library
 pub struct PluginReloadResponder {
     /// Name of the plugin
@@ -40,11 +26,10 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
     /// Called each and every frame, here put your update and render logic
     fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
-    /// Called when the plugin source has been modified and a reload is required, here handle any cleanup logic
-    fn reload(&mut self, client: Client<D, A>) -> Client<D, A>;
-    
+    // Called where it is safe to make imgui calls
+    fn ui(&mut self, client: Client<D, A>) -> Client<D, A>;
     // Called when the plugin is to be unloaded, this will clean up
-    // fn unload(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn unload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
 /// Reload responder implementation for `PluginLib` uses cargo build, and hot lib reloader
@@ -57,7 +42,7 @@ impl reloader::ReloadResponder for PluginReloadResponder {
         &self.files
     }
 
-    fn get_base_mtime(&self) -> std::time::SystemTime {
+    fn get_last_mtime(&self) -> std::time::SystemTime {
         let meta = std::fs::metadata(&self.output_filepath);
         if meta.is_ok() {
             std::fs::metadata(&self.output_filepath).unwrap().modified().unwrap()
@@ -151,11 +136,22 @@ macro_rules! hotline_plugin {
         
         // c-abi wrapper for `Plugin::reload`
         #[no_mangle]
-        pub fn reload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+        pub fn unload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
             unsafe { 
                 let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
                 let plugin = plugin.as_mut().unwrap();
-                plugin.reload(client)
+                plugin.unload(client)
+            }
+        }
+
+        // c-abi wrapper for `Plugin::reload`
+        #[no_mangle]
+        pub fn ui(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void, imgui_ctx: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+            unsafe { 
+                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = plugin.as_mut().unwrap();
+                client.imgui.set_current_context(imgui_ctx);
+                plugin.ui(client)
             }
         }
     }

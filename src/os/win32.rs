@@ -29,7 +29,9 @@ pub struct App {
     mouse_pos_delta: super::Point<i32>,
     proc_data: ProcData,
     events: HashMap<isize, super::WindowEventFlags>,
-    hwnd_flags: HashMap<isize, super::WindowStyleFlags>
+    hwnd_flags: HashMap<isize, super::WindowStyleFlags>,
+    keyboard_input_enabled: bool,
+    mouse_input_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -493,7 +495,9 @@ impl super::App for App {
                     key_alt: false,
                 },
                 events: HashMap::new(),
-                hwnd_flags: HashMap::new()
+                hwnd_flags: HashMap::new(),
+                keyboard_input_enabled: true,
+                mouse_input_enabled: true
             }
         }
     }
@@ -621,6 +625,15 @@ impl super::App for App {
     fn get_key_code(key: super::Key) -> i32 {
         to_win32_key_code(key)
     }
+
+    fn set_input_enabled(&mut self, keyboard: bool, mouse: bool) {
+        self.keyboard_input_enabled = keyboard;
+        self.mouse_input_enabled = mouse;
+    }
+
+    fn get_input_enabled(&self) -> (bool, bool) {
+        (self.keyboard_input_enabled, self.mouse_input_enabled)
+    }   
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {

@@ -27,10 +27,10 @@ pub struct FontInfo {
 }
 
 /// Info required to create an instance of imgui
-pub struct ImGuiInfo<'a, D: Device, A: App> {
-    pub device: &'a mut D,
-    pub swap_chain: &'a mut D::SwapChain,
-    pub main_window: &'a A::Window,
+pub struct ImGuiInfo<'stack, D: Device, A: App> {
+    pub device: &'stack mut D,
+    pub swap_chain: &'stack mut D::SwapChain,
+    pub main_window: &'stack A::Window,
     pub fonts: Vec<FontInfo>,
 }
 
@@ -39,7 +39,7 @@ pub struct ImGui<D: Device, A: App> {
     _font_texture: D::Texture,
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
-    last_cursor: os::Cursor,
+    last_cursor: os::Cursor
 }
 
 #[derive(Clone)]
@@ -927,6 +927,21 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Get the current imgui context so it can be passed to other plugins and libs, to be used woth `set_current_context`
+    pub fn get_current_context(&self) ->*mut core::ffi::c_void {
+        unsafe {
+            igGetCurrentContext() as *mut core::ffi::c_void
+        }
+    }
+
+    /// This function will make the `ImGuiContext` current, required when calling imgui from inside in a plugin dll or lib
+    pub fn set_current_context(&self, context: *mut core::ffi::c_void) {
+        unsafe {
+            igSetCurrentContext(context as *mut ImGuiContext);
+        }
+    }
+
+    /// Begin a new imgui window
     pub fn begin(&self, title: &str, open: &mut bool, flags: WindowFlags) -> bool {
         unsafe {
             let null_title = CString::new(title).unwrap();
@@ -938,6 +953,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// End imgui window
     pub fn end(&self) {
         unsafe { 
             igEnd();
@@ -969,14 +985,55 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    pub fn menu_item(&self, label: &str, selected: bool, enabled: bool) -> bool {
+    pub fn begin_combo(&self, label: &str, preview_item: &str, flags: ImGuiComboFlags) -> bool {
+        unsafe {
+            let null_term_label = CString::new(label).unwrap();
+            let null_term_preview_item = CString::new(preview_item).unwrap();
+            igBeginCombo(
+                null_term_label.as_ptr() as *const i8, 
+                null_term_preview_item.as_ptr() as *const i8,
+                flags
+            )
+        }
+    }
+
+    pub fn end_combo(&self) {
+        unsafe {
+            igEndCombo()
+        }
+    }
+
+    pub fn selectable(&self, label: &str, selected: bool, flags: ImGuiSelectableFlags) -> bool {
+        unsafe {
+            let null_term_label = CString::new(label).unwrap();
+            igSelectableBool(null_term_label.as_ptr() as *const i8, selected, flags, ImVec2 { x: 0.0, y: 0.0 })
+        }
+    }
+
+    pub fn combo_list(&self, label: &str, items: &Vec<String>, selected: &str) -> (bool, String) {
+        let mut result = selected.to_string();
+        if self.begin_combo(label, selected, ImGuiComboFlags_None as i32) {
+            for i in 0..items.len() {
+                if self.selectable(&items[i], items[i] == selected, ImGuiSelectableFlags_None as i32) {
+                    result = items[i].to_string(); 
+                }
+            }
+            self.end_combo();
+            (true, result)
+        }
+        else {
+            (false, result)
+        }
+    }
+
+    pub fn menu_item(&self, label: &str) -> bool {
         let null_term_label = CString::new(label).unwrap();
         unsafe {
             igMenuItemBool(
                 null_term_label.as_ptr() as *const i8, 
                 std::ptr::null(), 
-                selected, 
-                enabled)
+                false, 
+                true)
         }
     }
 
@@ -1023,6 +1080,20 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 ImVec4 {x: 1.0, y: 1.0, z: 1.0, w: 1.0},
                 ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
             );
+        }
+    }
+
+    pub fn want_capture_keyboard(&self) -> bool {
+        unsafe {
+            let io = &mut *igGetIO();
+            io.WantCaptureKeyboard
+        }
+    }
+
+    pub fn want_capture_mouse(&self) -> bool {
+        unsafe {
+            let io = &mut *igGetIO();
+            io.WantCaptureMouse
         }
     }
 }

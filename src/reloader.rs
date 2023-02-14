@@ -30,8 +30,8 @@ pub trait ReloadResponder: Send + Sync {
     fn add_file(&mut self, path: &str);
     /// Returns a vector of files which are currently being tracked
     fn get_files(&self) -> &Vec<String>;
-    /// Retuns the current modified of the built respirce
-    fn get_base_mtime(&self) -> SystemTime;
+    /// Retuns the current modified time of the built resource
+    fn get_last_mtime(&self) -> SystemTime;
     /// Called when a tracked file is modified more recently than get_base_mtime
     fn build(&mut self) -> ExitStatus;
 }
@@ -102,7 +102,7 @@ impl Reloader {
             loop {
                 // check base mtime of the output lib, it might be old / stale when we run with a fresh client
                 if first_time_check {
-                    cur_mtime = responder.lock().unwrap().get_base_mtime();
+                    cur_mtime = responder.lock().unwrap().get_last_mtime();
                     first_time_check = false;
                 }
 

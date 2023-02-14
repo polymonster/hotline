@@ -16,9 +16,6 @@ use gfx::RenderPass;
 use os::Window;
 
 use plugin::PluginReloadResponder;
-use plugin::PluginCollection;
-use plugin::PluginState;
-
 use reloader::Reloader;
 
 use serde::{Deserialize, Serialize};
@@ -88,7 +85,6 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
     pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
-
     plugins: Vec<PluginCollection>,
 }
 
@@ -115,6 +111,21 @@ pub struct UserConfig {
     pub console_window_rect: Option<os::Rect<i32>>,
     pub main_camera: Option<CameraInfo>,
     pub plugins: Option<HashMap<String, PluginInfo>>
+}
+
+#[derive(PartialEq, Eq)]
+enum PluginState {
+    None,
+    Reload,
+    Setup,
+    Unload,
+}
+
+struct PluginCollection {
+    name: String,
+    reloader: reloader::Reloader,
+    instance: PluginInstance,
+    state: PluginState
 }
 
 impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
@@ -242,6 +253,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // start imgui new frame
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
+        self.app.set_input_enabled(!self.imgui.want_capture_keyboard(), !self.imgui.want_capture_mouse());
 
         // start new pmfx frame
         self.pmfx.reload(&mut self.device);
@@ -382,7 +394,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             };
             
             // keep hold of everything for updating
-            self.plugins.push( plugin::PluginCollection {
+            self.plugins.push( PluginCollection {
                 name: name.to_string(),
                 instance, 
                 reloader: Reloader::create(Box::new(plugin)),
@@ -403,47 +415,53 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             plugin_info.insert(name.to_string(), PluginInfo { path: path.to_string() });
         }
     }
+
+    fn plugin_ui(&mut self) {
+        // main menu bar allow us to add plugins from files (libs)
+        if self.imgui.begin_main_menu_bar() {
+            if self.imgui.begin_menu("File") {
+                if self.imgui.menu_item("Open") {
+                    let file = A::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".toml"]);
+                    if file.is_ok() {
+                        let file = file.unwrap();
+                        if !file.is_empty() {
+                            // add plugin from dll
+                            let plugin_path = PathBuf::from(file[0].to_string());
+                            let plugin_name = plugin_path.parent().unwrap().file_name().unwrap();
+                            let plugin_path = plugin_path.parent().unwrap().parent().unwrap();
+                            self.add_plugin_lib(plugin_name.to_str().unwrap(), plugin_path.to_str().unwrap());
+                        }
+                    }
+                }
+                self.imgui.end_menu();
+            }
+
+            // menu per plugin to allow the user to unload or reload
+            if self.imgui.begin_menu("Plugin") {
+                for plugin in &mut self.plugins {
+                    if self.imgui.begin_menu(&plugin.name) {
+                        if self.imgui.menu_item("Reload") {
+                            plugin.state = PluginState::Setup;
+                        }
+                        if self.imgui.menu_item("Unload") {
+                            plugin.state = PluginState::Unload;
+                        }
+                        self.imgui.end_menu();
+                    }
+                }
+                self.imgui.end_menu();
+            }
+            self.imgui.end_main_menu_bar();
+        }
+    }
     
     pub fn run(mut self) {
         while self.app.run() {
 
             self.new_frame();
 
-            // main menu bar
-            if self.imgui.begin_main_menu_bar() {
-                if self.imgui.begin_menu("File") {
-                    if self.imgui.menu_item("Open", false, true) {
-                        let file = A::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".toml"]);
-                        if file.is_ok() {
-                            let file = file.unwrap();
-                            if !file.is_empty() {
-                                // add plugin from dll
-                                let plugin_path = PathBuf::from(file[0].to_string());
-                                let plugin_name = plugin_path.parent().unwrap().file_name().unwrap();
-                                let plugin_path = plugin_path.parent().unwrap().parent().unwrap();
-                                self.add_plugin_lib(plugin_name.to_str().unwrap(), plugin_path.to_str().unwrap());
-                            }
-                        }
-                    }
-                    self.imgui.end_menu();
-                }
-                if self.imgui.begin_menu("View") {
-                
-                }
-                if self.imgui.begin_menu("Plugin") {
-
-                    for plugin in &self.plugins {
-                        if self.imgui.menu_item(&plugin.name, false, true) {
-                            if self.imgui.menu_item("Reload", false, true) {
-                            
-                            }
-                        }
-                    }
-
-                    self.imgui.end_menu();
-                }
-                self.imgui.end_main_menu_bar();
-            }
+            // ui calls
+            self.plugin_ui();
 
             let mut plugins = std::mem::take(&mut self.plugins);
 
@@ -459,21 +477,41 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 }
             }
 
-            // reload all... currently we need to reload all plugins
-            if reload {
-
-                // call reload on the plugins, this will clean up memory, setup will be called again afterwards
-                for plugin in &plugins {
+            // perfrom unloads this will clean up memory, setup will be called again afterwards
+            for plugin in &plugins {
+                if plugin.state == PluginState::Reload || plugin.state == PluginState::Unload {
                     unsafe {
                         let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                        let reload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("reload".as_bytes());
-                        if reload.is_ok() {
-                            let reload_fn = reload.unwrap();
-                            self = reload_fn(self, plugin.instance);
+                        let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                        if unload.is_ok() {
+                            let unload_fn = unload.unwrap();
+                            self = unload_fn(self, plugin.instance);
                         }
                     }
                 }
-    
+            }
+
+            // remove unloaded plugins entirely
+            loop {
+                let mut todo = false;
+                for i in 0..plugins.len() {
+                    if plugins[i].state == PluginState::Unload {
+                        if let Some(plugin_info) = &mut self.user_config.plugins {
+                            plugin_info.remove_entry(&plugins[i].name);
+                        }
+                        self.libs.remove_entry(&plugins[i].name);
+                        plugins.remove(i);
+                        todo = true;
+                        break;
+                    }
+                }
+                if !todo {
+                    break;
+                }
+            }
+                
+            // reload all... currently we need to reload all plugins
+            if reload {
                 // finalise reload, actually reloading the lib of any libs which had changes
                 for plugin in &mut plugins {
                     if plugin.state == PluginState::Reload {                        
@@ -530,8 +568,22 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 }
                 plugin.state = PluginState::None;
             }
-            self.plugins = plugins;
 
+            // ui
+            for plugin in &mut plugins {
+                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+                unsafe {
+                    let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
+                    if ui.is_ok() {
+                        let ui_fn = ui.unwrap();
+                        let imgui_ctx = self.imgui.get_current_context();
+                        self = ui_fn(self, plugin.instance, imgui_ctx);
+                    }
+                }
+            }
+
+            self.plugins = plugins;
+            
             self.present("main_colour");
         }
 

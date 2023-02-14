@@ -5,7 +5,6 @@ use crate::client;
 
 use crate::pmfx;
 use crate::imdraw;
-use crate::imgui;
 
 use crate::gfx_platform;
 use crate::os_platform;
@@ -46,9 +45,6 @@ pub struct PmfxRes(pub pmfx::Pmfx<gfx_platform::Device>);
 
 #[derive(Resource)]
 pub struct ImDrawRes(pub imdraw::ImDraw<gfx_platform::Device>);
-
-#[derive(Resource)]
-pub struct ImGuiRes(pub imgui::ImGui::<gfx_platform::Device, os_platform::App>);
 
 #[derive(Resource)]
 pub struct UserConfigRes(pub client::UserConfig);
