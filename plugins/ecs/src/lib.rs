@@ -36,7 +36,7 @@ struct BevyPlugin {
     setup_schedule: Schedule,
     schedule: Schedule,
     run_setup: bool,
-    demo: String
+    session_info: SessionInfo
 }
 
 use ecs_base::SheduleInfo;
@@ -44,10 +44,10 @@ use ecs_base::SheduleInfo;
 type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 
 fn update_main_camera_config(
-    mut config: ResMut<UserConfigRes>, 
+    mut info: ResMut<SessionInfo>, 
     mut query: Query<(&Position, &Rotation), With<MainCamera>>) {
     for (position, rotation) in &mut query {
-        config.0.main_camera = Some(CameraInfo{
+        info.main_camera = Some(CameraInfo{
             pos: (position.0.x, position.0.y, position.0.z),
             rot: (rotation.0.x, rotation.0.y, rotation.0.z),
             fov: 60.0,
@@ -267,10 +267,10 @@ impl BevyPlugin {
     /// Find the `SheduleInfo` within loaded plugins for the chosen `demo` or return the default otherwise
     fn get_demo_schedule_info(&self, client: &mut PlatformClient) -> SheduleInfo {
         // Get schedule info from the chosen demo
-        if !self.demo.is_empty() {
+        if !self.session_info.active_demo.is_empty() {
             for (_, lib) in &client.libs {
                 unsafe {
-                    let function_name = format!("{}", self.demo).to_string();
+                    let function_name = format!("{}", self.session_info.active_demo).to_string();
                     let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> SheduleInfo>(function_name.as_bytes());
                     if demo.is_ok() {
                         let demo_fn = demo.unwrap();
@@ -290,11 +290,19 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
             run_setup: false,
-            demo: String::new()
+            session_info: SessionInfo::default()
         }
     }
 
     fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
+
+        // deserialise user data saved from a previous session
+        self.session_info = if client.user_config.plugin_data.contains_key("ecs") {
+            serde_json::from_slice(&client.user_config.plugin_data["ecs"].as_bytes()).unwrap()
+        }
+        else {
+            SessionInfo::default()
+        };
 
         // dynamically change demos and lookup infos in other libs
         let info = self.get_demo_schedule_info(&mut client);
@@ -333,17 +341,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
     fn update(&mut self, mut client: PlatformClient) -> PlatformClient {
 
-        let main_camera = if let Some(main_camera) = &client.user_config.main_camera {
-            main_camera.clone()
-        }
-        else {
-            CameraInfo {
-                pos: (0.0, 100.0, 0.0),
-                rot: (-45.0, 0.0, 0.0),
-                aspect: 16.0/9.0,
-                fov: 60.0
-            }
-        };
+        let session_info = self.session_info.clone();
 
         // move hotline resource into world
         self.world.insert_resource(DeviceRes {0: client.device});
@@ -352,9 +350,23 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(PmfxRes {0: client.pmfx});
         self.world.insert_resource(ImDrawRes {0: client.imdraw});
         self.world.insert_resource(UserConfigRes {0: client.user_config});
+        self.world.insert_resource(session_info);
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
+
+            let main_camera = if let Some(main_camera) = &self.session_info.main_camera {
+                main_camera.clone()
+            }
+            else {
+                // TODO: make defaukts
+                CameraInfo {
+                    pos: (0.0, 100.0, 0.0),
+                    rot: (-45.0, 0.0, 0.0),
+                    aspect: 16.0/9.0,
+                    fov: 60.0
+                }
+            };
 
             let pos = Position { 0: Vec3f::new(main_camera.pos.0, main_camera.pos.1, main_camera.pos.2) };
             let rot = Rotation { 0: Vec3f::new(main_camera.rot.0, main_camera.rot.1, main_camera.rot.2) };
@@ -381,6 +393,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.pmfx = self.world.remove_resource::<PmfxRes>().unwrap().0;
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
         client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
+        self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
+
+        // write back session info which will be serialised to disk and reloaded between sessions
+        if let Some(config_info) = client.user_config.plugin_data.get_mut("ecs") {
+            *config_info = serde_json::to_string(&self.session_info).unwrap();
+        }
+
         client
     }
 
@@ -396,13 +415,20 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // Demo list / demo select
         let demo_list = self.get_demo_list(&client);
         if client.imgui.begin_main_menu_bar() {
-            let (open, selected) = client.imgui.combo_list("", &demo_list, &self.demo);
+            let (open, selected) = client.imgui.combo_list("", &demo_list, &self.session_info.active_demo);
             if open {
-                if selected != self.demo {
-                    self.demo = selected;
+                if selected != self.session_info.active_demo {
+
+                    // write back session info
+                    self.session_info.active_demo = selected;
+                    if let Some(config_info) = client.user_config.plugin_data.get_mut("ecs") {
+                        *config_info = serde_json::to_string(&self.session_info).unwrap();
+                    }
+
                     client.swap_chain.wait_for_last_frame();
                     client = self.unload(client);
                     client = self.setup(client);
+                    
                 }
             }
             client.imgui.end_main_menu_bar();

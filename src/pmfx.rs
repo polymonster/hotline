@@ -735,53 +735,53 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // create entry for this pipeline permutation set if it does not exist
             if !format_pipeline.contains_key(pipeline_name) {
                 format_pipeline.insert(pipeline_name.to_string(), HashMap::new());
-            }
-
-            // we create a pipeline per-permutation
-            for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
-                // TODO: infer compute or graphics pipeline from pmfx
-                let cs = self.get_shader(&pipeline.cs);
-                if let Some(cs) = cs {
-                    let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
-                        cs,
-                        descriptor_layout: pipeline.descriptor_layout.clone(),
-                    })?;
-                    println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
-                    self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
-                }
-                else {
-                    let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
-                    let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-                        vs: self.get_shader(&pipeline.vs),
-                        fs: self.get_shader(&pipeline.ps),
-                        input_layout: vertex_layout.to_vec(),
-                        descriptor_layout: pipeline.descriptor_layout.clone(),
-                        raster_info: gfx::RasterInfo::default(),
-                        depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
-                        blend_info: gfx::BlendInfo {
-                            alpha_to_coverage_enabled: false,
-                            independent_blend_enabled: false,
-                            render_target: vec![gfx::RenderTargetBlendInfo::default()],
-                        },
-                        topology: 
-                            if let Some(topology) = pipeline.topology {
-                                topology
-                            }
-                            else {
-                                gfx::Topology::TriangleList
+                // we create a pipeline per-permutation
+                for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                    // TODO: infer compute or graphics pipeline from pmfx
+                    let cs = self.get_shader(&pipeline.cs);
+                    if let Some(cs) = cs {
+                        let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
+                            cs,
+                            descriptor_layout: pipeline.descriptor_layout.clone(),
+                        })?;
+                        println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
+                        self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
+                    }
+                    else {
+                        let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
+                        let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
+                            vs: self.get_shader(&pipeline.vs),
+                            fs: self.get_shader(&pipeline.ps),
+                            input_layout: vertex_layout.to_vec(),
+                            descriptor_layout: pipeline.descriptor_layout.clone(),
+                            raster_info: gfx::RasterInfo::default(),
+                            depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
+                            blend_info: gfx::BlendInfo {
+                                alpha_to_coverage_enabled: false,
+                                independent_blend_enabled: false,
+                                render_target: vec![gfx::RenderTargetBlendInfo::default()],
                             },
-                        patch_index: 0,
-                        pass,
-                    })?;
-                    
-                    println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
-                    let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
-                    let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
+                            topology: 
+                                if let Some(topology) = pipeline.topology {
+                                    topology
+                                }
+                                else {
+                                    gfx::Topology::TriangleList
+                                },
+                            patch_index: 0,
+                            pass,
+                        })?;
+                        
+                        println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
+                        let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
+                        let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
 
-                    let mask = permutation.parse().unwrap();
-                    permutations.insert(mask, (pipeline.hash, pso));
+                        let mask = permutation.parse().unwrap();
+                        permutations.insert(mask, (pipeline.hash, pso));
+                    }
                 }
             }
+
             Ok(())
         }
         else {

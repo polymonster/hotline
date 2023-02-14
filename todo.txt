@@ -1,11 +1,13 @@
 // TODO:
 
 // plugins
+// - combo size
 // - preent redundant pmfx pipeline compilation
-// - plugin specific serialisation structs into user-config
-// - specify pmfx
+
+// - watch files in folders
+
 // - pmfx mltiple files
-// - update systems, setup systems
+
 // - systems with time
 // - download data
 // - github ref to build tools?
@@ -45,6 +47,9 @@
 // - Raster
 
 // DONE:
+// x plugin specific serialisation structs into user-config
+// x update systems, setup systems
+// x specify pmfx
 // x file wataches from pmfx -w
 // x input system
 // x selectable demo
