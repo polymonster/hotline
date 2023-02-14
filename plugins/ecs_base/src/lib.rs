@@ -2,20 +2,30 @@
 #![cfg(target_os = "windows")]
 
 use bevy_ecs::prelude::*;
-
-use hotline_rs::client;
-use hotline_rs::pmfx;
-use hotline_rs::imdraw;
-use hotline_rs::gfx_platform;
-use hotline_rs::os_platform;
-
-use maths_rs::Vec3f;
-use maths_rs::Mat4f;
+use serde::{Deserialize, Serialize};
+use hotline_rs::{client, pmfx, imdraw, gfx_platform, os_platform};
+use maths_rs::{Vec3f, Mat4f};
 
 pub struct SheduleInfo {
     pub setup: Vec<String>,
     pub update: Vec<String>,
     pub render: Vec<String>
+}
+
+/// Serialisable camera info
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub struct CameraInfo {
+    pub pos: (f32, f32, f32),
+    pub rot: (f32, f32, f32),
+    pub aspect: f32,
+    pub fov: f32,
+}
+
+/// Seriablisable user info for maintaining state between reloads and sessions
+#[derive(Serialize, Deserialize, Default, Resource, Clone)]
+pub struct SessionInfo {
+    pub active_demo: String,
+    pub main_camera: Option<CameraInfo>
 }
 
 //

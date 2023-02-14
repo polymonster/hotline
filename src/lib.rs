@@ -19,9 +19,6 @@ pub mod imdraw;
 /// High level graphics (data driven render pipelines, shaders, views).
 pub mod pmfx;
 
-/// Base ecs components, systems and resources.
-pub mod ecs;
-
 /// Primitive geometry meshes (quad, cube, sphere, etc).
 pub mod primitives;
 

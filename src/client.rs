@@ -88,15 +88,6 @@ pub struct Client<D: gfx::Device, A: os::App> {
     plugins: Vec<PluginCollection>,
 }
 
-/// Serialisable camera info
-#[derive(Serialize, Deserialize, Clone, Copy)]
-pub struct CameraInfo {
-    pub pos: (f32, f32, f32),
-    pub rot: (f32, f32, f32),
-    pub aspect: f32,
-    pub fov: f32,
-}
-
 /// Serialisable plugin
 #[derive(Serialize, Deserialize, Clone)]
 pub struct PluginInfo {
@@ -109,8 +100,8 @@ pub struct UserConfig {
     // pos xy, size xy
     pub main_window_rect: os::Rect<i32>,
     pub console_window_rect: Option<os::Rect<i32>>,
-    pub main_camera: Option<CameraInfo>,
-    pub plugins: Option<HashMap<String, PluginInfo>>
+    pub plugins: Option<HashMap<String, PluginInfo>>,
+    pub plugin_data: HashMap<String, String>
 }
 
 #[derive(PartialEq, Eq)]
@@ -141,7 +132,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             UserConfig {
                 main_window_rect: info.window_rect,
                 console_window_rect: None,
-                main_camera: None,
+                plugin_data: HashMap::new(),
                 plugins: None
             }
         };
