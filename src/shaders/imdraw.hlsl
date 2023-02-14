@@ -82,7 +82,7 @@ vs_output vs_mesh(vs_input_mesh input)
     output.position = mul(pos, projection_matrix);
 
     output.colour = float4(input.normal.xyz, 1.0);
-    output.colour = float4(0.0, 1.0, 1.0, 1.0);
+    output.colour = float4(1.0, 1.0, 1.0, 1.0);
     
     return output;
 }

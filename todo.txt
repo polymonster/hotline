@@ -1,10 +1,12 @@
 // TODO:
 
 // plugins
+// - preent redundant pmfx pipeline compilation
+// - plugin specific serialisation structs into user-config
 // - specify pmfx
+// - pmfx mltiple files
 // - update systems, setup systems
 // - systems with time
-// - file wataches from pmfx -w
 // - download data
 // - github ref to build tools?
 // - readme / docs
@@ -22,7 +24,6 @@
 // - culling
 
 // pmfx
-// - pmfx mltiple files
 // - view_texture_refs
 // - error handling
 // - msaa + texture format changing
@@ -44,6 +45,7 @@
 // - Raster
 
 // DONE:
+// x file wataches from pmfx -w
 // x input system
 // x selectable demo
 // x enumerate plugins

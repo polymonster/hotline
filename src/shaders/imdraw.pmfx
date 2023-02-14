@@ -53,7 +53,7 @@ pmfx: {
             format: "D24nS8u"
             usage: ["ShaderResource", "DepthStencil"]
         }
-    }s
+    }
     views: {
         main_view: {
             render_target: [

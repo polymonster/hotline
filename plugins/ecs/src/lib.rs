@@ -4,7 +4,8 @@
 use hotline_rs::*;
 use hotline_rs::client::*;
 use hotline_rs::plugin::*;
-use ecs::*;
+
+use ecs_base::*;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemDescriptor;
@@ -28,6 +29,7 @@ use hotline_rs::os;
 
 use gfx::RenderPass;
 use gfx::CmdBuf;
+use gfx::SwapChain;
 
 struct BevyPlugin {
     world: World,
@@ -37,7 +39,9 @@ struct BevyPlugin {
     demo: String
 }
 
-use hotline_rs::system_func;
+use ecs_base::SheduleInfo;
+
+type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 
 fn update_main_camera_config(
     mut config: ResMut<UserConfigRes>, 
@@ -212,7 +216,7 @@ fn render_world_view(
 
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_system_function(&self, name: &str, client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
+    fn get_system_function(&self, name: &str, client: &PlatformClient) -> Option<SystemDescriptor> {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
@@ -230,7 +234,7 @@ impl BevyPlugin {
     }
 
     /// Finds available demo names from inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_demo_list(&self, client: &Client<gfx_platform::Device, os_platform::App>) -> Vec<String> {
+    fn get_demo_list(&self, client: &PlatformClient) -> Vec<String> {
         let mut demos = Vec::new();
         for (lib_name, lib) in &client.libs {
             unsafe {
@@ -245,6 +249,38 @@ impl BevyPlugin {
         }
         demos
     }
+
+    // Default_setup, creates a render graph and update functions which are hooked into the scheduler
+    fn default_demo_shedule(&self, client: &mut PlatformClient) -> SheduleInfo {
+        client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
+        SheduleInfo {
+            update: vec![
+                "mat_movement".to_string(),
+                "update_cameras".to_string(),
+                "update_main_camera_config".to_string()
+            ],
+            render: client.pmfx.get_render_function_names("forward"),
+            setup: Vec::new()
+        }
+    }
+
+    /// Find the `SheduleInfo` within loaded plugins for the chosen `demo` or return the default otherwise
+    fn get_demo_schedule_info(&self, client: &mut PlatformClient) -> SheduleInfo {
+        // Get schedule info from the chosen demo
+        if !self.demo.is_empty() {
+            for (_, lib) in &client.libs {
+                unsafe {
+                    let function_name = format!("{}", self.demo).to_string();
+                    let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> SheduleInfo>(function_name.as_bytes());
+                    if demo.is_ok() {
+                        let demo_fn = demo.unwrap();
+                        return demo_fn(client);
+                    }
+                }
+            }
+        }
+        self.default_demo_shedule(client)
+    }
 }
 
 impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
@@ -258,53 +294,44 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
     }
 
-    fn setup(&mut self, mut client: Client<gfx_platform::Device, os_platform::App>) 
-        -> Client<gfx_platform::Device, os_platform::App> {
+    fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
 
-        client.pmfx.create_render_graph(& mut client.device, "forward").unwrap();
+        // dynamically change demos and lookup infos in other libs
+        let info = self.get_demo_schedule_info(&mut client);
 
-        let setup_systems = vec![
-            "cube".to_string(),
-        ];
-        let update_systems = vec![
-            "mat_movement".to_string(),
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
-        ];
-        let render_systems = client.pmfx.get_render_function_names("forward");
-        
-        // render functions
+        // hook in render functions
         let mut render_stage = SystemStage::parallel();
-        for func_name in &render_systems {
+        for func_name in &info.render {
             if let Some(func) = self.get_system_function(func_name, &client) {
                 render_stage = render_stage.with_system(func);
             }
         }
         self.schedule.add_stage(StageRender, render_stage);
 
-        // add startup funcs by name
+        // hook in startup funcs
         let mut setup_stage = SystemStage::parallel();
-        for func_name in &setup_systems {
+        for func_name in &info.setup {
             if let Some(func) = self.get_system_function(func_name, &client) {
                 setup_stage = setup_stage.with_system(func);
             }
         }
         self.setup_schedule.add_stage(StageStartup, setup_stage);
 
-        // add update funcs by name
+        // hook in updates funcs
         let mut update_stage = SystemStage::parallel();
-        for func_name in &update_systems {
+        for func_name in &info.update {
             if let Some(func) = self.get_system_function(func_name, &client) {
                 update_stage = update_stage.with_system(func);
             }
         }
         self.schedule.add_stage(StageUpdate, update_stage);
+
+        // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;
         client
     }
 
-    fn update(&mut self, mut client: client::Client<gfx_platform::Device, os_platform::App>) ->
-        client::Client<gfx_platform::Device, os_platform::App> {
+    fn update(&mut self, mut client: PlatformClient) -> PlatformClient {
 
         let main_camera = if let Some(main_camera) = &client.user_config.main_camera {
             main_camera.clone()
@@ -357,8 +384,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client
     }
 
-    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-        -> Client<gfx_platform::Device, os_platform::App> {
+    fn unload(&mut self, client: PlatformClient) -> PlatformClient {
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
@@ -366,19 +392,21 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client
     }
 
-    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-        -> Client<gfx_platform::Device, os_platform::App> {
-
-        // Demo list
+    fn ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+        // Demo list / demo select
         let demo_list = self.get_demo_list(&client);
         if client.imgui.begin_main_menu_bar() {
             let (open, selected) = client.imgui.combo_list("", &demo_list, &self.demo);
             if open {
-                self.demo = selected;
+                if selected != self.demo {
+                    self.demo = selected;
+                    client.swap_chain.wait_for_last_frame();
+                    client = self.unload(client);
+                    client = self.setup(client);
+                }
             }
             client.imgui.end_main_menu_bar();
         }
-
         client
     }
 }
@@ -392,10 +420,10 @@ hotline_plugin![BevyPlugin];
 #[no_mangle]
 pub fn get_system_ecs(name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
-        "update_cameras" => system_func![update_cameras],
-        "update_main_camera_config" => system_func![update_main_camera_config],
-        "render_grid" => system_func![render_grid],
-        "render_world_view" => view_func![render_world_view, "render_world_view"],
+        "update_cameras" => ecs_base::system_func![update_cameras],
+        "update_main_camera_config" => ecs_base::system_func![update_main_camera_config],
+        "render_grid" => ecs_base::system_func![render_grid],
+        "render_world_view" => ecs_base::view_func![render_world_view, "render_world_view"],
         _ => None
     }
 }
