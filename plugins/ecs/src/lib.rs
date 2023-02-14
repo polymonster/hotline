@@ -20,11 +20,6 @@ use maths_rs::mat::*;
 use hotline_rs::os::App;
 use hotline_rs::os::Window;
 
-//use hotline_rs::pmfx;
-//use hotline_rs::imdraw;
-
-use hotline_rs::imgui;
-
 use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
 
@@ -39,7 +34,6 @@ struct BevyPlugin {
     setup_schedule: Schedule,
     schedule: Schedule,
     run_setup: bool,
-    demo_list: Vec<String>,
     demo: String
 }
 
@@ -80,34 +74,41 @@ fn update_cameras(
     let app = &app.0;
     for (mut position, mut rotation, mut view_proj) in &mut query {
 
+        let (enable_keyboard, enable_mouse) = app.get_input_enabled();
         if main_window.0.is_focused() {
-            // get keyboard position movement
-            let keys = app.get_keys_down();
+
             let mut cam_move_delta = Vec3f::zero();
-            if keys['A' as usize] {
-                cam_move_delta.x -= 1.0;
-            }
-            if keys['D' as usize] {
-                cam_move_delta.x += 1.0;
-            }
-            if keys['Q' as usize] {
-                cam_move_delta.y -= 1.0;
-            }
-            if keys['E' as usize] {
-                cam_move_delta.y += 1.0;
-            }
-            if keys['W' as usize] {
-                cam_move_delta.z -= 1.0;
-            }
-            if keys['S' as usize] {
-                cam_move_delta.z += 1.0;
+
+            if enable_keyboard {
+                // get keyboard position movement
+                let keys = app.get_keys_down();
+                if keys['A' as usize] {
+                    cam_move_delta.x -= 1.0;
+                }
+                if keys['D' as usize] {
+                    cam_move_delta.x += 1.0;
+                }
+                if keys['Q' as usize] {
+                    cam_move_delta.y -= 1.0;
+                }
+                if keys['E' as usize] {
+                    cam_move_delta.y += 1.0;
+                }
+                if keys['W' as usize] {
+                    cam_move_delta.z -= 1.0;
+                }
+                if keys['S' as usize] {
+                    cam_move_delta.z += 1.0;
+                }
             }
 
             // get mouse rotation
-            if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
-                let mouse_delta = app.get_mouse_pos_delta();
-                rotation.0.x -= mouse_delta.y as f32;
-                rotation.0.y -= mouse_delta.x as f32;
+            if enable_mouse {
+                if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
+                    let mouse_delta = app.get_mouse_pos_delta();
+                    rotation.0.x -= mouse_delta.y as f32;
+                    rotation.0.y -= mouse_delta.x as f32;
+                }
             }
 
             // construct rotation matrix
@@ -209,17 +210,6 @@ fn render_world_view(
     view.cmd_buf.end_render_pass();
 }
 
-#[no_mangle]
-pub fn get_system_ecs(name: String) -> Option<SystemDescriptor> {
-    match name.as_str() {
-        "update_cameras" => system_func![update_cameras],
-        "update_main_camera_config" => system_func![update_main_camera_config],
-        "render_grid" => system_func![render_grid],
-        "render_world_view" => view_func![render_world_view, "render_world_view"],
-        _ => None
-    }
-}
-
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
     fn get_system_function(&self, name: &str, client: &Client<gfx_platform::Device, os_platform::App>) -> Option<SystemDescriptor> {
@@ -264,7 +254,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
             run_setup: false,
-            demo_list: Vec::new(),
             demo: String::new()
         }
     }
@@ -283,11 +272,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             "update_main_camera_config".to_string()
         ];
         let render_systems = client.pmfx.get_render_function_names("forward");
-
-        let list = self.get_demo_list(&client);
-        for item in list {
-            println!("{}", item);
-        }
         
         // render functions
         let mut render_stage = SystemStage::parallel();
@@ -340,7 +324,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(MainWindowRes {0: client.main_window});
         self.world.insert_resource(PmfxRes {0: client.pmfx});
         self.world.insert_resource(ImDrawRes {0: client.imdraw});
-        self.world.insert_resource(ImGuiRes {0: client.imgui});
         self.world.insert_resource(UserConfigRes {0: client.user_config});
 
         // run setup if requested, we did it here so hotline resources are inserted into World
@@ -370,40 +353,49 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.main_window = self.world.remove_resource::<MainWindowRes>().unwrap().0;
         client.pmfx = self.world.remove_resource::<PmfxRes>().unwrap().0;
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
-        client.imgui = self.world.remove_resource::<ImGuiRes>().unwrap().0;
         client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
         client
     }
 
-    fn reload(&mut self, client: Client<gfx_platform::Device, os_platform::App>) 
+    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
         -> Client<gfx_platform::Device, os_platform::App> {
-
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
         self.world = World::new();
         client
     }
-}
 
-impl<D, A> imgui::UserInterface<D, A> for BevyPlugin where D: gfx::Device, A: os::App {
-    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
-        if open {
-            let mut imgui_open = open;
-            if imgui.begin("bevy", &mut imgui_open, imgui::WindowFlags::NONE) {
-                for demo in &self.demo_list {
-                    if imgui.button(&demo) {
-                        self.demo = demo.to_string();
-                    }
-                }
+    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
+        -> Client<gfx_platform::Device, os_platform::App> {
+
+        // Demo list
+        let demo_list = self.get_demo_list(&client);
+        if client.imgui.begin_main_menu_bar() {
+            let (open, selected) = client.imgui.combo_list("", &demo_list, &self.demo);
+            if open {
+                self.demo = selected;
             }
-            imgui.end();
-            imgui_open
+            client.imgui.end_main_menu_bar();
         }
-        else {
-            false
-        }
+
+        client
     }
 }
 
+//
+// Plugin
+//
+
 hotline_plugin![BevyPlugin];
+
+#[no_mangle]
+pub fn get_system_ecs(name: String) -> Option<SystemDescriptor> {
+    match name.as_str() {
+        "update_cameras" => system_func![update_cameras],
+        "update_main_camera_config" => system_func![update_main_camera_config],
+        "render_grid" => system_func![render_grid],
+        "render_world_view" => view_func![render_world_view, "render_world_view"],
+        _ => None
+    }
+}

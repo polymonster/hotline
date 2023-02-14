@@ -1,39 +1,40 @@
 // TODO:
 
-// - improve reloader / responder create / grouping
-
-// - file wataches from pmfx -w
-// - ui call hooks into plugin
-// - enumerate plugins
-// - delete plugin mem on shutdown
-// - in editor terminal / log
-
-// - respect imgui flags (hovered / accept input) in camera controller
-// - download data
-// - github ref to build tools?
-
-// - specify pmfx
-// - update systems, setup systems
-// - systems with time
-
-// - pmfx mltiple files
-// - view_texture_refs
-// - error handling
-
-// - msaa + texture format changing
-
-// - timer stats
-// - thread stats
-
-// - texures from file pmfx
-// - minimise resource handling code? macros?... bastard! ref cell?
-
-// core updates
+// ecs
+// - billboard
+// - draw instanced
+// - draw indirect
+// - texture
+// - light
+// - shadow
+// - material
 // - update matrices
 // - update aabb's
 // - culling
 
-// - gfx
+// - selectable demo
+// - file wataches from pmfx -w
+// - download data
+// - github ref to build tools?
+
+// plugins
+// - specify pmfx
+// - update systems, setup systems
+// - systems with time
+// - input system
+
+// pmfx
+// - pmfx mltiple files
+// - view_texture_refs
+// - error handling
+// - msaa + texture format changing
+
+// log / debug / info
+// - timer stats
+// - thread stats
+// - in editor terminal / log
+
+// gfx
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
@@ -45,6 +46,11 @@
 // - Raster
 
 // DONE:
+// x enumerate plugins
+// x delete plugin mem on shutdown
+// x respect imgui flags (hovered / accept input) in camera controller
+// x improve reloader / responder create / grouping
+// x ui call hooks into plugin
 // x hotline dynamic lib (build times)
 // x consolidate sync code (responder ref)... downcast helper?
 // x - add files

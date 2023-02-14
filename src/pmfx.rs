@@ -1069,7 +1069,7 @@ impl ReloadResponder for PmfxReloadResponder {
         &self.files
     }
 
-    fn get_base_mtime(&self) -> SystemTime {
+    fn get_last_mtime(&self) -> SystemTime {
         SystemTime::now()
     }
 

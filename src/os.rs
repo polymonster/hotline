@@ -199,6 +199,10 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     fn is_sys_key_down(&self, key: SysKey) -> bool;
     /// Get os system virtual key code from Key
     fn get_key_code(key: Key) -> i32;
+    /// Set's whethere input from keybpard or mouse is available or not
+    fn set_input_enabled(&mut self, keyboard: bool, mouse: bool);
+    /// Get value for whether (keyboard, mouse) input is enabled
+    fn get_input_enabled(&self) -> (bool, bool);
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
     /// Sets the mouse cursor
