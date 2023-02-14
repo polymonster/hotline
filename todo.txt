@@ -1,5 +1,14 @@
 // TODO:
 
+// plugins
+// - specify pmfx
+// - update systems, setup systems
+// - systems with time
+// - file wataches from pmfx -w
+// - download data
+// - github ref to build tools?
+// - readme / docs
+
 // ecs
 // - billboard
 // - draw instanced
@@ -11,17 +20,6 @@
 // - update matrices
 // - update aabb's
 // - culling
-
-// - selectable demo
-// - file wataches from pmfx -w
-// - download data
-// - github ref to build tools?
-
-// plugins
-// - specify pmfx
-// - update systems, setup systems
-// - systems with time
-// - input system
 
 // pmfx
 // - pmfx mltiple files
@@ -46,6 +44,8 @@
 // - Raster
 
 // DONE:
+// x input system
+// x selectable demo
 // x enumerate plugins
 // x delete plugin mem on shutdown
 // x respect imgui flags (hovered / accept input) in camera controller
