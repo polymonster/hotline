@@ -77,18 +77,6 @@ impl reloader::ReloadResponder for PluginReloadResponder {
 /// and passed around as a void* through the hotline_plugin macro to become a `Plugin` trait
 pub type PluginInstance = *mut core::ffi::c_void;
 
-/// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
-pub fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
-    unsafe {
-        let layout = std::alloc::Layout::from_size_align(
-            std::mem::size_of::<T>(),
-            8,
-        )
-        .unwrap();
-        std::alloc::alloc_zeroed(layout) as *mut T
-    }
-}
-
 /// Macro to instantiate a new hotline plugin, simply defined a concrete plugin type:
 /// struct EmptyPlugin;
 /// 
@@ -102,6 +90,18 @@ pub fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::Ap
 #[macro_export]
 macro_rules! hotline_plugin {
     ($input:ident) => {
+        /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
+        fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
+            unsafe {
+                let layout = std::alloc::Layout::from_size_align(
+                    std::mem::size_of::<T>(),
+                    8,
+                )
+                .unwrap();
+                std::alloc::alloc_zeroed(layout) as *mut T
+            }
+        }
+        
         // c-abi wrapper for `Plugin::create`
         #[no_mangle]
         pub fn create() -> *mut core::ffi::c_void {
