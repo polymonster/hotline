@@ -16,3 +16,4 @@ Cargo.lock
 # pmbuild
 build/
 config.user.jsn
+hotline-data/

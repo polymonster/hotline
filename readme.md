@@ -11,29 +11,114 @@ Hotline is a live coding tool where you can editor code, shaders, render pipelin
 
 Currently Windows with Direct3D12 is the only suppported platform, there are plans for macOS, Metal, Linux Vulkan and more over time.
 
-[pmbuild](https://github.com/polymonster/pmbuild) and [pmfx-shader](https://github.com/polymonster/pmfx-shader) are required for building data and shaders, they are bundled with the repository.
+## Building Data
 
-If you are using hotline from [crates.io](https://crates.io/crates/hotline-rs) then the executables are not bundeled because this exceeds the 10mb package size limit. You can clone this repository to get the executables (stick them into `hotline_rs/bin/win32`) or download the pmbuild release [manualy](https://github.com/polymonster/pmbuild/releases) and then boostrap the rest of the process:
+The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down when running `cargo build` the `hotline-data` repository will be cloned automatically for you.
 
+The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure `pmbuild` build jobs and tools, if you wanted to manually configure the setup or add new steps.
+
+`cargo build` will automatically build data into `target/data` this is where the client and the examples will look for data files.
+
+## Using as a library
+
+You can use hotline as a library to use the low level abstractions and modules to create windowed applications with a graphics api backend. Here is a small example:
+
+```rust
+    // Create an Application
+    let mut app = os_platform::App::create(os::AppInfo {
+        name: String::from("triangle"),
+        window: false,
+        num_buffers: 0,
+        dpi_aware: true,
+    });
+
+    let num_buffers = 2;
+
+    // Create an a GPU Device
+    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
+        render_target_heap_size: num_buffers,
+        ..Default::default()
+    });
+
+    // Create main window
+    let mut window = app.create_window(os::WindowInfo {
+        title: String::from("triangle!"),
+        rect: os::Rect {
+            x: 100,
+            y: 100,
+            width: 1280,
+            height: 720,
+        },
+        style: os::WindowStyleFlags::NONE,
+        parent_handle: None,
+    });
+
+    /// Create swap chain
+    let swap_chain_info = gfx::SwapChainInfo {
+        num_buffers: num_buffers as u32,
+        format: gfx::Format::RGBA8n,
+        clear_colour: Some(gfx::ClearColour {
+            r: 0.45,
+            g: 0.55,
+            b: 0.60,
+            a: 1.00,
+        }),
+    };
+
+    let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
+    
+    /// Create a command buffer
+    let mut cmd = device.create_cmd_buf(2);
+
+    while app.run() {
+        // update window and swap chain
+        window.update(&mut app);
+        swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
+
+        // build command buffer and make draw calls
+        cmd.reset(&swap_chain);
+
+        // Render command can go here
+        // ..
+
+        cmd.close()?;
+
+        // execute command buffer
+        device.execute(&cmd);
+
+        // swap for the next frame
+        swap_chain.swap(&device);
+    }
+
+    // must wait for the final frame to be completed
+    swap_chain.wait_for_last_frame();
+    cmd.reset(&swap_chain);
+
+    Ok(());
+}
 ```
-./build.cmd update
-```
 
-The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure `pmbuild` build jobs and tools, if you wanted to manually configure the setup.
+## Using Hotreload Client
 
-## Building
+You can run the binary `client` which allows code to be reloaded through `Plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository.
 
-First build the live `lib` and then build the `host` executable and data (data will be built automatically when using `cargo build`). Then run the `host`:
 
 ```text
-cargo build -p lib
+// build the client and data
 cargo build
-cargo run host
+
+// then build plugins
+cargo build --manifest-path plugins/Cargo.toml
+
+// run the client
+cargo run client
 ```
 
-Once the `host` is running, any changes made to the source code in [lib.rs](https://github.com/polymonster/hotline/blob/master/lib/src/lib.rs) or the [pipelines](https://github.com/polymonster/hotline/blob/master/src/shaders) will be automatically reloaded into the running application. 
+You can then use the visual client to locate `Cargo.toml` files inside the `plugins` directory. The `ecs` plugin provides a basic wrapper around `bevy_ecs` and `scheduler`.
 
-### Examples
+Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to sepcify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
+
+## Examples
 
 There are a few standalone examples of how to use the lower level components of hotline (`gfx, app, av`). You can build and run these as follows:
 
@@ -42,10 +127,9 @@ cargo build --examples
 cargo run --example triangle
 ```
 
-### VScode
+## VSCode
 
-There are included `tasks` and `launch` files for vscode including configurations for the host and the examples.
-
+There are included `tasks` and `launch` files for vscode including configurations for the client and the examples.
 
 ## Design Goals
 - An easy to use cross platform graphics/compute/os api for rapid development.

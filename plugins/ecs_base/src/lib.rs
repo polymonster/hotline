@@ -21,6 +21,18 @@ pub struct CameraInfo {
     pub fov: f32,
 }
 
+/// Sensible default values for a 3D perspective camera looking downward in the y-axis to an xz-plane
+impl Default for CameraInfo {
+    fn default() -> CameraInfo {
+        CameraInfo {
+            pos: (0.0, 100.0, 0.0),
+            rot: (-45.0, 0.0, 0.0),
+            aspect: 16.0/9.0,
+            fov: 60.0
+        }
+    }
+}
+
 /// Seriablisable user info for maintaining state between reloads and sessions
 #[derive(Serialize, Deserialize, Default, Resource, Clone)]
 pub struct SessionInfo {

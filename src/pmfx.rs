@@ -60,14 +60,19 @@ struct TrackedTexture<D: gfx::Device>  {
     size: (u64, u64)
 }
 
+struct PmfxTrackingInfo {
+    /// Filepath to the data which the pmfx File was deserialised from
+    filepath: std::path::PathBuf,
+    /// Modified time of the .pmfx file this instance is associated with
+    modified_time: SystemTime,
+}
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
     pmfx: File,
-    /// Filepath to the data which the pmfx File was deserialised from
-    pmfx_filepath: std::path::PathBuf,
-    /// Modified time of the .pmfx file this instance is associated with
-    pmfx_modified_time: SystemTime,
+    /// Tracking info for check on data reloads, grouped by pmfx name
+    pmfx_tracking: HashMap<String, PmfxTrackingInfo>,
     /// Folder paths for 
     pmfx_folders: HashMap<String, String>, 
     /// Updated by calling 'update_window' this will cause any tracked textures to check for resizes and rebuild textures if necessary
@@ -103,7 +108,6 @@ struct File {
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
     render_graphs: HashMap<String, Vec<ViewInstanceInfo>>,
-    update_graphs: HashMap<String, UpdateInstanceInfo>,
     dependencies: Vec<String>
 }
 
@@ -118,7 +122,6 @@ impl File {
             textures: HashMap::new(),
             views: HashMap::new(),
             render_graphs: HashMap::new(),
-            update_graphs: HashMap::new(),
             dependencies: Vec::new()
         }
     }
@@ -344,8 +347,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn create() -> Self {        
         Pmfx {
             pmfx: File::new(),
-            pmfx_filepath: std::path::PathBuf::new(),
-            pmfx_modified_time: SystemTime::now(),
+            pmfx_tracking: HashMap::new(),
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
@@ -361,8 +363,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files
-    /// within the directory
+    /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files within the directory
+    /// You can load multiple pmfx files which will be merged together, shaders are grouped by pmfx_name/ps_main.psc
+    /// Render graphs and pipleines must have unique names, if multiple pmfx name a pipeline the same name  
     pub fn load(&mut self, filepath: &str) -> Result<(), super::Error> {        
         // get the name for indexing by pmfx name/folder
         let folder = Path::new(filepath);
@@ -373,29 +376,46 @@ impl<D> Pmfx<D> where D: gfx::Device {
             String::from(filepath)
         };
 
-        //  deserialise pmfx pipelines from file
-        let info_filepath = folder.join(format!("{}.json", pmfx_name));
-        let pmfx_data = fs::read(&info_filepath)?;
+        // check if we are already loaded
+        if !self.pmfx_tracking.contains_key(&pmfx_name) {
+            println!("hotline_rs::pmfx:: loading: {}", pmfx_name);
+            //  deserialise pmfx pipelines from file
+            let info_filepath = folder.join(format!("{}.json", pmfx_name));
+            let pmfx_data = fs::read(&info_filepath)?;
+            let file : File = serde_json::from_slice(&pmfx_data).unwrap();
 
-        // TODO: this should merge in
-        self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
-        self.pmfx_filepath = info_filepath.to_path_buf();
-        self.pmfx_modified_time = fs::metadata(&info_filepath).unwrap().modified().unwrap();
+            // prepend the pmfx name to the shaders so we can avoid collisions
+            for name in file.pipelines.keys() {
+                // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
+                self.pmfx_folders.insert(name.to_string(), String::from(filepath));
+            }
 
-        // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
-        for name in self.pmfx.pipelines.keys() {
-            self.pmfx_folders.insert(name.to_string(), String::from(filepath));
-        }
+            // create tracking info to check if the pmfx has been rebuilt
+            self.pmfx_tracking.insert(pmfx_name, PmfxTrackingInfo {
+                filepath: info_filepath.to_path_buf(),
+                modified_time: fs::metadata(&info_filepath).unwrap().modified().unwrap()
+            });
 
-        // add files from pmfx for tracking
-        for file in &self.pmfx.dependencies {
-            self.reloader.add_file(file);
+            // add files from pmfx for tracking
+            for dep in &file.dependencies {
+                self.reloader.add_file(dep);
+            }
+
+            // merge into pmfx
+            self.pmfx.shaders.extend(file.shaders);
+            self.pmfx.pipelines.extend(file.pipelines);
+            self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
+            self.pmfx.textures.extend(file.textures);
+            self.pmfx.views.extend(file.views);
+            self.pmfx.render_graphs.extend(file.render_graphs);
+            self.pmfx.dependencies.extend(file.dependencies);
         }
 
         Ok(())
     }
 
     fn create_shader(&mut self, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
+        let folder = folder.parent().unwrap();
         if let Some(file) = file {
             if !self.shaders.contains_key(file) {
                 println!("hotline_rs::pmfx:: compiling shader: {}", file);
@@ -704,6 +724,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
             }
 
+            // track the current render graph for if we need to rebuild due to resize, or file modification
+            self.active_render_graph = graph_name.to_string();
+
             Ok(())
         }
         else {
@@ -716,7 +739,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
     pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
         if self.pmfx.pipelines.contains_key(pipeline_name) {
-
+            println!("hotline_rs::pmfx:: creating pipeline: {}", pipeline_name);
             // first create shaders if necessary
             let folder = self.pmfx_folders[pipeline_name].to_string();
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
@@ -727,10 +750,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             
             // create entry for this format if it does not exist
             let fmt = pass.get_format_hash();
-            if !self.render_pipelines.contains_key(&fmt) {
-                self.render_pipelines.insert(fmt, HashMap::new());
-            }
-            let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
+            let format_pipeline = self.render_pipelines.entry(fmt).or_insert(HashMap::new());
             
             // create entry for this pipeline permutation set if it does not exist
             if !format_pipeline.contains_key(pipeline_name) {
@@ -822,11 +842,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
-    pub fn new_frame(&mut self, swap_chain: &D::SwapChain) {
+    pub fn new_frame(&mut self, device: &mut D, swap_chain: &D::SwapChain) {
         // check if we have any reloads available
         if self.reloader.check_for_reload() == ReloadState::Available {
             // wait for last GPU frame so we can drop the resources
             swap_chain.wait_for_last_frame();
+            self.reload(device);
             self.reloader.complete_reload();
         }
         // TODO: this might be more performant being called on the render thread
@@ -836,11 +857,26 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reload all active resources based on hashes
     pub fn reload(&mut self, device: &mut D) {        
-        let mtime = fs::metadata(&self.pmfx_filepath).unwrap().modified().unwrap();
-        if mtime > self.pmfx_modified_time {
-            println!("hotline::pmfx:: reload available");
-            let pmfx_data = fs::read(&self.pmfx_filepath).expect("hotline::pmfx:: failed to read file");
-            self.pmfx = serde_json::from_slice(&pmfx_data).unwrap();
+        let mut reload_filepath = String::new();
+        for (_, tracking) in &mut self.pmfx_tracking {
+            let mtime = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
+            if mtime > tracking.modified_time {
+                println!("hotline::pmfx:: reload available");
+                tracking.modified_time = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
+                reload_filepath = tracking.filepath.to_string_lossy().to_string();
+            }
+        }
+
+        if !reload_filepath.is_empty() {
+            let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
+            let file : File = serde_json::from_slice(&pmfx_data).unwrap();
+
+            self.pmfx.shaders.extend(file.shaders);
+            self.pmfx.pipelines.extend(file.pipelines);
+            self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
+            self.pmfx.textures.extend(file.textures);
+            self.pmfx.views.extend(file.views);
+            self.pmfx.render_graphs.extend(file.render_graphs);
 
             // find views that need reloading
             let mut reload_views = Vec::new();
@@ -879,7 +915,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
                 }
             }
-    
+
             // reload views
             for view in &reload_views {
                 println!("hotline::pmfx:: reloading view: {}", view);
@@ -906,8 +942,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 
                 self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
             }
-                    
-            self.pmfx_modified_time = fs::metadata(&self.pmfx_filepath).unwrap().modified().unwrap();
         }
     }
 
@@ -956,9 +990,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.create_view(device, view).unwrap();
         }
 
-        // TODO: store active graph
+        // recreate the active render graph
         if !rebuild_views.is_empty() {
-            self.create_render_graph(device, "forward").unwrap();
+            self.create_render_graph(device, &self.active_render_graph.to_string()).unwrap();
         }
     }
 
@@ -967,32 +1001,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
         for view in self.views.values() {
             let view = view.clone();
             view.1.lock().unwrap().cmd_buf.reset(swap_chain);
-        }
-    }
-
-    pub fn get_update_graph_names(&self) -> Vec<String> {
-        let mut names = Vec::new();
-        for key in self.pmfx.update_graphs.keys() {
-            names.push(key.to_string());
-        }
-        names
-    }
-
-    pub fn get_setup_function_names(&self, update_graph: &str) -> Vec<String> {
-        if self.pmfx.update_graphs.contains_key(update_graph) {
-            self.pmfx.update_graphs[update_graph].setup.to_vec()
-        }
-        else {
-            Vec::new()
-        }
-    }
-
-    pub fn get_update_function_names(&self, update_graph: &str) -> Vec<String> {
-        if self.pmfx.update_graphs.contains_key(update_graph) {
-            self.pmfx.update_graphs[update_graph].update.to_vec()
-        }
-        else {
-            Vec::new()
         }
     }
 
@@ -1036,15 +1044,31 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
     fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
-
             if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
-                imgui.image(self.get_texture("main_colour").unwrap(), 640.0, 360.0);
-                imgui.image(self.get_texture("main_depth").unwrap(), 640.0, 360.0);
-            }
+                imgui.text("Shaders");
+                imgui.separator();
+                for shader in self.pmfx.shaders.keys() {
+                    imgui.text(&shader);
+                }
+                imgui.separator();
 
+                imgui.text("Pipelines");
+                imgui.separator();
+                for shader in self.pmfx.pipelines.keys() {
+                    imgui.text(&shader);
+                }
+                imgui.separator();
+
+                imgui.text("Render Graphs");
+                imgui.separator();
+                for shader in self.pmfx.render_graphs.keys() {
+                    imgui.text(&shader);
+                }
+                imgui.separator();
+            }
             imgui.end();
             imgui_open
-        }
+        } 
         else {
             false
         }
@@ -1053,12 +1077,14 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
 
 pub struct PmfxReloadResponder {
     files: Vec<String>,
+    start_time: SystemTime
 }
 
 impl PmfxReloadResponder {
     fn new() -> Self {
         PmfxReloadResponder {
-            files: Vec::new()
+            files: Vec::new(),
+            start_time: SystemTime::now()
         }
     }
 }
@@ -1066,6 +1092,10 @@ impl PmfxReloadResponder {
 impl ReloadResponder for PmfxReloadResponder {
     fn add_file(&mut self, filepath: &str) {
         self.files.push(filepath.to_string());
+
+        for f in &self.files {
+            println!("{}", f);
+        }
     }  
 
     fn get_files(&self) -> &Vec<String> {
@@ -1073,11 +1103,11 @@ impl ReloadResponder for PmfxReloadResponder {
     }
 
     fn get_last_mtime(&self) -> SystemTime {
-        SystemTime::now()
+        self.start_time
     }
 
     fn build(&mut self) -> std::process::ExitStatus {
-        let output = std::process::Command::new("C:\\Users\\alex_\\dev\\hotline\\build.cmd")
+        let output = std::process::Command::new("C:\\Users\\alex_\\dev\\hotline\\hotline-data\\pmbuild.cmd")
             .current_dir("C:\\Users\\alex_\\dev\\hotline\\")
             .arg("win32")
             .arg("-pmfx")
@@ -1090,6 +1120,10 @@ impl ReloadResponder for PmfxReloadResponder {
 
         if output.stderr.len() > 0 {
             println!("{}", String::from_utf8(output.stderr).unwrap());
+        }
+
+        if output.status.success() {
+            self.start_time = SystemTime::now();
         }
 
         output.status

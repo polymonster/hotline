@@ -193,11 +193,17 @@ fn render_world_view(
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
+    let constant_colour_mesh = pmfx.get_render_pipeline_for_format("constant_colour_mesh", fmt);
+    if constant_colour_mesh.is_none() {
+        return;
+    }
+
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-    view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline_for_format("imdraw_mesh", fmt).unwrap());
+
+    view.cmd_buf.set_render_pipeline(&constant_colour_mesh.unwrap());
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
@@ -354,20 +360,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-
-            let main_camera = if let Some(main_camera) = &self.session_info.main_camera {
-                main_camera.clone()
-            }
-            else {
-                // TODO: make defaukts
-                CameraInfo {
-                    pos: (0.0, 100.0, 0.0),
-                    rot: (-45.0, 0.0, 0.0),
-                    aspect: 16.0/9.0,
-                    fov: 60.0
-                }
-            };
-
+            let main_camera = self.session_info.main_camera.unwrap_or_default();
             let pos = Position { 0: Vec3f::new(main_camera.pos.0, main_camera.pos.1, main_camera.pos.2) };
             let rot = Rotation { 0: Vec3f::new(main_camera.rot.0, main_camera.rot.1, main_camera.rot.2) };
 
@@ -421,6 +414,11 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
                     // write back session info
                     self.session_info.active_demo = selected;
+
+                    let serialised = serde_json::to_string(&self.session_info).unwrap();
+                    let config = client.user_config.plugin_data.entry("ecs".to_string()).or_insert(String::default());
+                    *config = serialised;
+
                     if let Some(config_info) = client.user_config.plugin_data.get_mut("ecs") {
                         *config_info = serde_json::to_string(&self.session_info).unwrap();
                     }

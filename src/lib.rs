@@ -7,7 +7,7 @@ pub mod gfx;
 /// Hardware accelerated audio and video decoding.
 pub mod av;
 
-/// Image reading/writing module support for (png, jpg, bmp, tiff, dds)
+/// Image reading/writing module support for (png, jpg, bmp, tiff, dds).
 pub mod image;
 
 /// Imgui rendering and platform implementation.
@@ -22,7 +22,8 @@ pub mod pmfx;
 /// Primitive geometry meshes (quad, cube, sphere, etc).
 pub mod primitives;
 
-/// Live reloader client
+/// Hotline clinet context contains an `App`, `Device`, `SwapChain` and main `Window` automatically setup
+/// It can load code dynamically from other `dylibs` or `dlls` abnd provides a very thin run loop for you to hook your own plugins into.
 pub mod client;
 
 /// Trait's and macros to assist the creation of plugins in other dynamically loaded libraries
@@ -79,22 +80,24 @@ pub fn get_config_name() -> &'static str {
 }
 
 
-/// return an absolute path for a resource given the relative resource name from the /data dir
+/// Return an absolute path for a resource given the relative resource name from the /data dir
 pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap().join("..");
     String::from(asset_path.join(asset).to_str().unwrap())
 }
 
-/// return an absolute path for a resource given the relative path from the /executable dir
+/// Return an absolute path for a resource given the relative path from the /executable dir
 pub fn get_exe_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     println!("{}", String::from(exe_path.join(asset).to_str().unwrap()));
     String::from(exe_path.join(asset).to_str().unwrap())
 }
 
+/// This is a hardcoded compile time selection of os backend for windows as win32
 #[cfg(target_os = "windows")]
 pub use os::win32 as os_platform;
 
+/// This is a hardcoded compile time selection of os backend for windows as d3d12
 #[cfg(target_os = "windows")]
 pub use gfx::d3d12 as gfx_platform;
