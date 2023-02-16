@@ -19,6 +19,16 @@ pmfx: {
             depth_stencil_state: depth_test_less
             topology: "TriangleList"
         }
+        billboard_mesh: {
+            vs: vs_billboard
+            ps: ps_main
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            topology: "TriangleList"
+        }
     }
     textures: {
         main_colour: {
@@ -68,6 +78,18 @@ pmfx: {
                 view: "render_world_view"
                 pipelines: ["imdraw_mesh", "constant_colour_mesh"]
                 function: "render_world_view"
+            }
+        ]
+        billboard: [
+            {
+                view: "render_grid"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
+            }
+            {
+                view: "render_world_view"
+                pipelines: ["imdraw_mesh", "billboard_mesh"]
+                function: "render_billboards_basic"
             }
         ]
     }

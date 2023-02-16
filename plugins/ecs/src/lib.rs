@@ -189,7 +189,12 @@ fn render_world_view(
     // unpack
     let pmfx = &pmfx.0;
 
-    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let arc_view = pmfx.get_view(&view_name);
+    if arc_view.is_none() {
+        return;
+    }
+    let arc_view = arc_view.unwrap();
+
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
@@ -301,7 +306,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     }
 
     fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
-
         // deserialise user data saved from a previous session
         self.session_info = if client.user_config.plugin_data.contains_key("ecs") {
             serde_json::from_slice(&client.user_config.plugin_data["ecs"].as_bytes()).unwrap()
@@ -389,9 +393,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
-        if let Some(config_info) = client.user_config.plugin_data.get_mut("ecs") {
-            *config_info = serde_json::to_string(&self.session_info).unwrap();
-        }
+        client.serialise_plugin_data("ecs", &self.session_info);
 
         client
     }
@@ -407,14 +409,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn ui(&mut self, mut client: PlatformClient) -> PlatformClient {
         // Demo list / demo select
         let demo_list = self.get_demo_list(&client);
-        if client.imgui.begin_main_menu_bar() {
-            let (open, selected) = client.imgui.combo_list("", &demo_list, &self.session_info.active_demo);
+        let mut open = true;
+        if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
+            let (open, selected) = client.imgui.combo_list("Demo", &demo_list, &self.session_info.active_demo);
             if open {
                 if selected != self.session_info.active_demo {
                     // write back session info
                     self.session_info.active_demo = selected;
 
-                    // serialise
+                    // serialise 
+                    client.serialise_plugin_data("ecs", &self.session_info);
 
                     client.swap_chain.wait_for_last_frame();
                     client = self.unload(client);
@@ -422,8 +426,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                     
                 }
             }
-            client.imgui.end_main_menu_bar();
         }
+        client.imgui.end();
         client
     }
 }

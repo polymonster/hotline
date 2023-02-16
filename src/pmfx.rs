@@ -679,6 +679,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
             for instance in pmfx_graph {
+                // allow missing views to be safely handled
+                if !self.pmfx.views.contains_key(&instance.view) {
+                    println!("hotline_rs::pmfx:: [warning] missing view {}", instance.view);
+                    continue;
+                }
+                
                 // create transitions by inspecting view info
                 let pmfx_view = self.pmfx.views[&instance.view].clone();
 
