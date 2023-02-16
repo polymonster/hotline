@@ -10,7 +10,7 @@ repository = "https://github.com/polymonster/hotline"
 keywords = ["graphics-engine", "compute", "video-decoding", "hot-reloading", "live-coding"]
 categories = ["game-development", "graphics"]
 license-file = "license"
-exclude = ["config.user.jsn", "bin"]
+exclude = ["config.user.jsn", "hotline-data"]
 
 [dependencies]
 bitflags = "1.3.2"

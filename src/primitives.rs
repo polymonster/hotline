@@ -67,6 +67,68 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     } 
 }
 
+/// Create a an indexed unit billboard quad mesh instance with the front face pointing +z 
+pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+    // cube veritces
+    let vertices: Vec<Vertex3D> = vec![
+        // front face
+        Vertex3D {
+            position: vec3f(-1.0, -1.0, 0.0),
+            texcoord: vec2f(-1.0, -1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, -1.0, 0.0),
+            texcoord: vec2f(1.0, -1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, 1.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, 1.0, 0.0),
+            texcoord: vec2f(-1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        }
+    ];
+
+    let indices: Vec<u16> = vec![
+        0,  2,  1,  2,  0,  3,   // front face
+    ];
+
+    pmfx::Mesh {
+        vb: dev.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::Vertex,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 4,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<Vertex3D>() 
+            }, 
+            Some(vertices.as_slice())
+        ).unwrap(),
+        ib: dev.create_buffer(&gfx::BufferInfo {
+            usage: gfx::BufferUsage::Index,
+            cpu_access: gfx::CpuAccessFlags::NONE,
+            num_elements: 6,
+            format: gfx::Format::R16u,
+            stride: std::mem::size_of::<u16>()
+            },
+            Some(indices.as_slice())
+        ).unwrap(),
+        num_indices: 6
+    } 
+}
+
 /// Create a an indexed unit cube mesh instance
 pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     // cube veritces

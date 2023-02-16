@@ -1,13 +1,9 @@
 // TODO:
 
 // plugins
-// - combo size
 // - watch files in folders
-
 // - systems with time
 // - download data
-// - github ref to build tools?
-// - readme / docs
 
 // ecs
 // - billboard
@@ -43,6 +39,9 @@
 // - Raster
 
 // DONE:
+// x github ref to build tools?
+// x readme / docs
+// x combo size
 // x hash map utils (add if new)
 // x name threads
 // x pmfx mltiple files

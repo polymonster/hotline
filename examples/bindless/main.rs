@@ -125,13 +125,13 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
-        asset_path.join("..\\examples\\bindless\\redchecker01.png"),
-        asset_path.join("..\\examples\\bindless\\blend_test_fg.png"),
-        asset_path.join("..\\examples\\bindless\\bear_stomp_anim_001.png"),
-        asset_path.join("..\\examples\\bindless\\bluechecker01.png"),
+        hotline_rs::get_src_data_path("textures/redchecker01.png"),
+        hotline_rs::get_src_data_path("textures/blend_test_fg.png"),
+        hotline_rs::get_src_data_path("textures/bear_stomp_anim_001.png"),
+        hotline_rs::get_src_data_path("textures/bluechecker01.png"),
     ];
     for file in files {
-        let image = image::load_from_file(String::from(file.to_str().unwrap()));
+        let image = image::load_from_file(file);
         let tex_info = gfx::TextureInfo {
             format: gfx::Format::RGBA8n,
             tex_type: gfx::TextureType::Texture2D,

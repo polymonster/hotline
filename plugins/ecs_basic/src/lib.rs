@@ -1,9 +1,10 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
-use hotline_rs::client::Client;
 
+use hotline_rs::client::Client;
 use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
+use hotline_rs::gfx;
 
 use ecs_base::*;
 use ecs_base::SheduleInfo;
@@ -18,93 +19,96 @@ use maths_rs::num::*;
 use maths_rs::vec::*;
 use maths_rs::mat::*;
 
-#[no_mangle]
-pub fn setup_billboard(
-    _device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    _commands: bevy_ecs::system::Commands) {
-}
+use gfx::CmdBuf;
+use gfx::RenderPass;
 
-#[no_mangle]
-pub fn setup_cube(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
-
-    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-    commands.spawn((
-        Position { 0: Vec3f::zero() },
-        Velocity { 0: Vec3f::one() },
-        MeshComponent {0: cube_mesh.clone()},
-        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_x() * 0.0)}
-    ));
-}
-
-#[no_mangle]
-pub fn setup_multiple(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands:  bevy_ecs::system::Commands) {
-
-    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-    let dim = 50;
-    let dim2 = dim / 2;
-
-    for y in 0..dim {    
-        for x in 0..dim {    
-            let wave_x = f32::abs(f32::sin((x as f32) / 20.0 as f32)) * 20.0;
-            let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
-            let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
-
-            commands.spawn((
-                Position { 0: Vec3f::zero() },
-                Velocity { 0: Vec3f::one() },
-                MeshComponent {0: cube_mesh.clone()},
-                WorldMatrix { 0: Mat4f::from_translation(
-                    vec3f(
-                        x as f32 * 2.5 - dim2 as f32 * 2.5, 
-                        0.0, 
-                        y as f32 * 2.5 - 2.5 * dim as f32)) * 
-                        Mat4::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0)) }
-            ));
-        }
-    }
-}
-
-#[no_mangle]
-pub fn movement(mut query:  bevy_ecs::system::Query<(&mut Position, &Velocity)>) {
-    for (mut position, velocity) in &mut query {
-        position.0 += velocity.0;
-    }
-}
-
-#[no_mangle]
-pub fn mat_movement(mut query:  bevy_ecs::system::Query<&mut WorldMatrix>) {
-    for mut mat in &mut query {
-        mat.0 = mat.0 * Mat4f::from_translation(vec3f(0.0, 0.0, 0.0));
-    }
-}
+#[derive(Component)]
+struct Billboard;
 
 #[no_mangle]
 pub fn billboard(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
-    client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
+    // pmfx
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str())
+        .expect("expected to have pmfx: data/shaders/basic");
+    client.pmfx.create_render_graph(&mut client.device, "billboard")
+        .expect("expected to have render graph: basic");
+
     SheduleInfo {
         update: vec![
-            "mat_movement".to_string(),
+            //"mat_movement".to_string(),
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render: client.pmfx.get_render_function_names("forward"),
+        render: client.pmfx.get_render_function_names("billboard"),
         setup: vec!["setup_billboard".to_string()]
     }
 }
 
 #[no_mangle]
+pub fn setup_billboard(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let billboard_mesh = hotline_rs::primitives::create_billboard_mesh(&mut device.0);
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: billboard_mesh.clone()},
+        WorldMatrix { 0: Mat4f::from_scale(splat3f(10.0))},
+        Billboard
+    ));
+}
+
+#[no_mangle]
+fn render_billboards_basic(
+    pmfx: Res<PmfxRes>,
+    view_name: String,
+    view_proj_query: Query<&ViewProjectionMatrix>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
+        
+    // unpack
+    let pmfx = &pmfx.0;
+    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let view = arc_view.lock().unwrap();
+    let fmt = view.pass.get_format_hash();
+
+    let billboard_mesh = pmfx.get_render_pipeline_for_format("billboard_mesh", fmt);
+    if billboard_mesh.is_none() {
+        return;
+    }
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&billboard_mesh.unwrap());
+
+    for view_proj in &view_proj_query {
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        for (world_matrix, mesh) in &mesh_draw_query {
+            // draw
+            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+            view.cmd_buf.set_index_buffer(&mesh.0.ib);
+            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        }
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+}
+
+#[no_mangle]
 pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+    // pmfx
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str())
         .expect("expected to have pmfx: data/shaders/basic");
     client.pmfx.create_render_graph(&mut client.device, "basic")
         .expect("expected to have render pipeline: basic");
+
     SheduleInfo {
         update: vec![
-            "mat_movement".to_string(),
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
@@ -114,11 +118,27 @@ pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Shed
 }
 
 #[no_mangle]
+pub fn setup_cube(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let pos = Mat4f::from_translation(Vec3f::unit_y() * 5.0);
+    let scale = Mat4f::from_scale(splat3f(5.0));
+
+    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    commands.spawn((
+        Position(Vec3f::zero()),
+        Velocity(Vec3f::one()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(pos * scale)
+    ));
+}
+
+#[no_mangle]
 pub fn multiple(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
     client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
     SheduleInfo {
         update: vec![
-            "mat_movement".to_string(),
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
@@ -126,6 +146,48 @@ pub fn multiple(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
         setup: vec!["setup_multiple".to_string()]
     }
 }
+
+#[no_mangle]
+pub fn setup_multiple(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands:  bevy_ecs::system::Commands) {
+
+    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    let dim = 64;
+    let dim2 = dim / 2;
+    let cube_size = 2.5;
+
+    let half_extent = dim2 as f32 * cube_size;
+
+    for y in 0..dim {    
+        for x in 0..dim {    
+            let wave_x = f32::abs(f32::sin((x as f32) / 20.0 as f32)) * 20.0;
+            let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
+            let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
+
+            let pos = Mat4f::from_translation(
+                vec3f(
+                    x as f32 * cube_size - half_extent, 
+                    50.0, 
+                    y as f32 * cube_size - cube_size * dim as f32 + half_extent
+                )
+            );
+
+            let scale = Mat4::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0));
+
+            commands.spawn((
+                Position(Vec3f::zero()),
+                Velocity(Vec3f::one()),
+                MeshComponent(cube_mesh.clone()),
+                WorldMatrix(pos * scale)
+            ));
+        }
+    }
+}
+
+//
+// Plugin
+//
 
 #[no_mangle]
 pub fn get_demos_ecs_basic() -> Vec<String> {
@@ -142,12 +204,7 @@ pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
         "setup_billboard" => ecs_base::system_func![setup_billboard],
         "setup_cube" => ecs_base::system_func![setup_cube],
         "setup_multiple" => ecs_base::system_func![setup_multiple],
-        _ => {
-            // TODO:
-            // weird! we need to print here otherwise it can cause access violation, I wonder of the return value is being
-            // optimised away?
-            print!("");
-            None
-        }
+        "render_billboards_basic" => ecs_base::view_func![render_billboards_basic, "render_billboards_basic"],
+        _ => std::hint::black_box(None)
     }
 }
