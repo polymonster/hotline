@@ -411,17 +411,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let (open, selected) = client.imgui.combo_list("", &demo_list, &self.session_info.active_demo);
             if open {
                 if selected != self.session_info.active_demo {
-
                     // write back session info
                     self.session_info.active_demo = selected;
 
-                    let serialised = serde_json::to_string(&self.session_info).unwrap();
-                    let config = client.user_config.plugin_data.entry("ecs".to_string()).or_insert(String::default());
-                    *config = serialised;
-
-                    if let Some(config_info) = client.user_config.plugin_data.get_mut("ecs") {
-                        *config_info = serde_json::to_string(&self.session_info).unwrap();
-                    }
+                    // serialise
 
                     client.swap_chain.wait_for_last_frame();
                     client = self.unload(client);
