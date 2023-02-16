@@ -4,6 +4,7 @@ use stb_image_write_rust::ImageWriter::ImageWriter;
 use std::fs;
 use std::io::Read;
 
+/// Minimal header to describe image data, with `width`, `height` and `components` to describe the data and a `Vec<u8>` of actual image data.
 pub struct ImageData {
     /// Horizontal dimension of the image in texels
     pub width: u64,

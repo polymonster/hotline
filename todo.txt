@@ -2,11 +2,7 @@
 
 // plugins
 // - combo size
-// - preent redundant pmfx pipeline compilation
-
 // - watch files in folders
-
-// - pmfx mltiple files
 
 // - systems with time
 // - download data
@@ -47,6 +43,10 @@
 // - Raster
 
 // DONE:
+// x hash map utils (add if new)
+// x name threads
+// x pmfx mltiple files
+// x preent redundant pmfx pipeline compilation
 // x plugin specific serialisation structs into user-config
 // x update systems, setup systems
 // x specify pmfx

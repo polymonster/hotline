@@ -953,19 +953,29 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    /// End imgui window
+    /// End imgui window must be called after a call to `begin` regardless of if `begin` returns true or false
     pub fn end(&self) {
         unsafe { 
             igEnd();
         };
     }
 
+    /// Add imgui text widget, you can format text to pass in: `imgui.text(&format!("{}", values));`
+    pub fn text(&self, text: &str) {
+        let null_term_text = CString::new(text).unwrap();
+        unsafe {
+            igText(null_term_text.as_ptr() as *const i8);
+        }
+    }
+
+    /// Begin imgui main menu bar which appears at the top of the main window
     pub fn begin_main_menu_bar(&self) -> bool {
         unsafe {
             igBeginMainMenuBar()
         }
     }
 
+    /// Ends main menu bar calls, this must be called after a call to `begin_main_menu_bar` returns true
     pub fn end_main_menu_bar(&self) {
         unsafe {
             igEndMainMenuBar()
@@ -1062,7 +1072,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     pub fn checkbox(&self, label: &str, v: &mut bool) -> bool {
-        unsafe {
+        unsafe {    
             let null_label = CString::new(label).unwrap();
             igCheckbox(null_label.as_ptr() as *const i8, v)
         }

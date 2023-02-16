@@ -98,7 +98,7 @@ impl Reloader {
         let mut cur_mtime = SystemTime::now();
         let mut first_time_check = true;
         let responder = self.responder.clone();
-        thread::spawn(move || {
+        thread::Builder::new().name("hotline_rs::reloader::file_watcher_thread".to_string()).spawn(move || {
             loop {
                 // check base mtime of the output lib, it might be old / stale when we run with a fresh client
                 if first_time_check {
@@ -123,6 +123,6 @@ impl Reloader {
                 }
                 std::thread::sleep(Duration::from_millis(16));
             }
-        });
+        }).unwrap();
     }
 }

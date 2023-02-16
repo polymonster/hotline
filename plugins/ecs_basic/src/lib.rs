@@ -34,7 +34,7 @@ pub fn setup_cube(
         Position { 0: Vec3f::zero() },
         Velocity { 0: Vec3f::one() },
         MeshComponent {0: cube_mesh.clone()},
-        WorldMatrix { 0: Mat4f::identity()}
+        WorldMatrix { 0: Mat4f::from_translation(Vec3f::unit_x() * 0.0)}
     ));
 }
 
@@ -99,14 +99,17 @@ pub fn billboard(client: &mut Client<gfx_platform::Device, os_platform::App>) ->
 
 #[no_mangle]
 pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
-    client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str())
+        .expect("expected to have pmfx: data/shaders/basic");
+    client.pmfx.create_render_graph(&mut client.device, "basic")
+        .expect("expected to have render pipeline: basic");
     SheduleInfo {
         update: vec![
             "mat_movement".to_string(),
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render: client.pmfx.get_render_function_names("forward"),
+        render: client.pmfx.get_render_function_names("basic"),
         setup: vec!["setup_cube".to_string()]
     }
 }

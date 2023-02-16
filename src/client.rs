@@ -15,6 +15,7 @@ use gfx::RenderPass;
 
 use os::Window;
 
+use imgui::UserInterface;
 use plugin::PluginReloadResponder;
 use reloader::Reloader;
 
@@ -23,25 +24,25 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::collections::HashMap;
 
-/// Information to create a hotline context which will create an app, window, device
+/// Information to create a hotline context which will create an app, window, device.
 pub struct HotlineInfo {
-    /// name for the app and window title
+    /// Name for the app and window title
     pub name: String,
-    /// window rect {pos_x pos_y, width, height}
+    /// Window rect {pos_x pos_y, width, height}
     pub window_rect: os::Rect<i32>,
-    /// signify if the app is DPI aware or not
+    /// Signify if the app is DPI aware or not
     pub dpi_aware: bool,
-    /// clear colour of the default swap chain
+    /// Clear colour of the default swap chain
     pub clear_colour: Option<gfx::ClearColour>,
-    /// optional name of gpu adaptor, use None for the default / primary device
+    /// Optional name of gpu adaptor, use None for the default / primary device
     pub adapter_name: Option<String>,
-    /// number of buffers in the swap chain (2 for double buffered, 3 for tripple etc)
+    /// Number of buffers in the swap chain (2 for double buffered, 3 for tripple etc)
     pub num_buffers: u32,
-    /// size of the default device heap for shader resources (textures, buffers, etc)
+    /// Size of the default device heap for shader resources (textures, buffers, etc)
     pub shader_heap_size: usize, 
-    /// size of the default device heap for render targets
+    /// Size of the default device heap for render targets
     pub render_target_heap_size: usize,
-    /// size of the default device heap for depth stencil targets
+    /// Size of the default device heap for depth stencil targets
     pub depth_stencil_heap_size: usize
 }
 
@@ -72,7 +73,7 @@ impl Default for HotlineInfo {
     }
 }
 
-/// Hotline client 
+/// Hotline client data members
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
     pub device: D,
@@ -104,6 +105,7 @@ pub struct UserConfig {
     pub plugin_data: HashMap<String, String>
 }
 
+/// Internal enum to track plugin state and syncornise unloads, reloads and setups etc.
 #[derive(PartialEq, Eq)]
 enum PluginState {
     None,
@@ -112,6 +114,7 @@ enum PluginState {
     Unload,
 }
 
+/// Container data describing a plugin 
 struct PluginCollection {
     name: String,
     reloader: reloader::Reloader,
@@ -119,6 +122,7 @@ struct PluginCollection {
     state: PluginState
 }
 
+/// Hotline `Client` implementation
 impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, super::Error> {
@@ -247,8 +251,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.app.set_input_enabled(!self.imgui.want_capture_keyboard(), !self.imgui.want_capture_mouse());
 
         // start new pmfx frame
-        self.pmfx.reload(&mut self.device);
-        self.pmfx.new_frame(&self.swap_chain);
+        self.pmfx.new_frame(&mut self.device, &self.swap_chain);
 
         // user config changes
         self.update_user_config_windows();
@@ -360,6 +363,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.pmfx.reset(&self.swap_chain);
     }
 
+    /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
+    /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
+    /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let lib_path = path.to_string() + "/target/" + crate::get_config_name();
         let src_path = path.to_string() + "/" + name + "/src/lib.rs";
@@ -371,6 +377,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 src_path
             ],
         };
+        println!("hotline::client:: loading plugin {} : {}", lib_path, name);
         let lib = hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap();
         unsafe {
             // create instance if it is a Plugin trait
@@ -407,6 +414,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
     }
 
+    /// Intenral core-ui function, it displays the main menu bar in the main window and
+    /// A plugin menu which allows users to reload or unload live plugins.
     fn core_ui(&mut self) {
         // main menu bar allow us to add plugins from files (libs)
         if self.imgui.begin_main_menu_bar() {
@@ -446,6 +455,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
     }
 
+    /// Internal plugin yupdate function process reloads, setups and updates of hooked in plugins
     fn update_plugins(mut self) -> Self {
         // take the plugin mem so we can decouple the shared mutability between client and plugins
         let mut plugins = std::mem::take(&mut self.plugins);
@@ -466,8 +476,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // check for reloads
         let mut reload = false;
         for plugin in &mut plugins {
-            if plugin.reloader.check_for_reload() == reloader::ReloadState::Available 
-                || plugin.state == PluginState::Reload {
+            if plugin.reloader.check_for_reload() == reloader::ReloadState::Available || plugin.state == PluginState::Reload {
                     self.swap_chain.wait_for_last_frame();
                     reload = true;
                     plugin.state = PluginState::Reload;
@@ -475,11 +484,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
         }
 
+        // if we require a reload, we also re-setup all the other plugins
+        // this could be configured to only re-setup necessary plugins that are dependent
+        if reload {
+            for plugin in &mut plugins {
+                if plugin.state == PluginState::None {
+                    plugin.state = PluginState::Setup 
+                }
+            }
+        }
+
         // perfrom unloads this will clean up memory, setup will be called again afterwards
         for plugin in &plugins {
-            if plugin.state == PluginState::Reload || 
-                plugin.state == PluginState::Unload || 
-                plugin.state == PluginState::Setup {
+            if plugin.state != PluginState::None {
                 unsafe {
                     let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
                     let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
@@ -510,33 +527,29 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
         }
             
-        // reload all... currently we need to re-setup all plugins, as plugins can be linked
-        if reload {
-            // finalise reload, actually reloading the lib of any libs which had changes
-            for plugin in &mut plugins {
-                if plugin.state == PluginState::Reload {                        
-                    // wait for lib reloader itself
-                    let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
-                    loop {
-                        if lib.update().unwrap() {
-                            break;
-                        }
-                        std::thread::sleep(std::time::Duration::from_millis(16));
+        // reload, actual reloading the lib of any libs which had changes
+        for plugin in &mut plugins {
+            if plugin.state == PluginState::Reload {                        
+                // wait for lib reloader itself
+                let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
+                loop {
+                    if lib.update().unwrap() {
+                        break;
                     }
-
-                    // signal it's ok to continue
-                    plugin.reloader.complete_reload();
-
-                    // create a new instance of the plugin
-                    unsafe {
-                        let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-                        if create.is_ok() {
-                            let create_fn = create.unwrap();
-                            plugin.instance = create_fn();
-                        }
-                    }
+                    std::hint::spin_loop();
                 }
 
+                // signal it's ok to continue
+                plugin.reloader.complete_reload();
+
+                // create a new instance of the plugin
+                unsafe {
+                    let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                    if create.is_ok() {
+                        let create_fn = create.unwrap();
+                        plugin.instance = create_fn();
+                    }
+                }
                 // after reload, setup everything again
                 plugin.state = PluginState::Setup;
             }
@@ -573,13 +586,44 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.plugins = plugins;
         self
     }
+
+    /// Allows users to pass serializable data which is stored into the `UserConfig` for the app.
+    /// Plugin data is arrange as a json object / dictionary hash map as so:
+    /// "plugin_data": {
+    ///     "plugin_name": {
+    ///         "plugin_data_members": true
+    ///     }
+    ///     "another_plugin_name": {
+    ///         "another_plugin_name_data": true
+    ///     }
+    /// }
+    pub fn serialise_plugin_data<T: Serialize>(&mut self, plugin_name: &str, data: &T) {
+        let serialised = serde_json::to_string(&data).unwrap();
+        *self.user_config.plugin_data
+            .entry(plugin_name.to_string()).or_insert(String::new()) = serialised;
+    }
     
+    /// Very simple run loop which can take control of your application, you could roll your own or
+    /// this is the most minimal usage example:
+    /// fn main() -> Result<(), hotline_rs::Error> {    
+    ///     let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+    ///         ..Default::default()
+    ///     })?;
+    /// 
+    ///     // run
+    ///     ctx.run();
+    ///
+    ///     // exited with code 0
+    ///     Ok(())
+    /// }
     pub fn run(mut self) {
         while self.app.run() {
 
             self.new_frame();
 
             self.core_ui();
+            self.pmfx.show_ui(&self.imgui, true);
+
             self = self.update_plugins();
 
             self.present("main_colour");
