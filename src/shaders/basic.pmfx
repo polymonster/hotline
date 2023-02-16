@@ -38,10 +38,12 @@ pmfx: {
             }
             format: "RGBA8n"
             usage: ["ShaderResource", "RenderTarget"]
+            samples: 8
         }
         main_depth(main_colour): {
             format: "D24nS8u"
             usage: ["ShaderResource", "DepthStencil"]
+            samples: 8
         }
     }
     views: {

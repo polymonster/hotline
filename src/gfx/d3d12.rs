@@ -200,11 +200,14 @@ pub struct Shader {
 #[derive(Clone)]
 pub struct Texture {
     resource: ID3D12Resource,
+    resolved_resource: Option<ID3D12Resource>,
+    resolved_format: DXGI_FORMAT,
     rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
     srv_index: Option<usize>,
+    resolved_srv_index: Option<usize>,
     uav_index: Option<usize>,
-    shared_handle: Option<HANDLE>
+    shared_handle: Option<HANDLE>,
 }
 
 #[derive(Clone)]
@@ -559,6 +562,23 @@ const fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
     }
 }
 
+fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) -> D3D12_SRV_DIMENSION {
+    if samples > 1 {
+        match tex_type {
+            super::TextureType::Texture1D => panic!(),
+            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2DMS,
+            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY,
+        }
+    }
+    else {
+        match tex_type {
+            super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
+            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
+            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
+        }
+    }
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -735,9 +755,12 @@ fn create_swap_chain_rtv(
             device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), h);
             textures.push(Texture {
                 resource: render_target.clone(),
+                resolved_resource: None,
+                resolved_format: DXGI_FORMAT_UNKNOWN,
                 rtv: Some(h),
                 dsv: None,
                 srv_index: None,
+                resolved_srv_index: None,
                 uav_index: None,
                 shared_handle: None
             });
@@ -1275,6 +1298,8 @@ impl super::Device for Device {
             BytecodeLength: 0,
         };
 
+        let msaa_format = info.pass.sample_count > 1;
+
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
             pRootSignature: Some(root_signature.clone()),
@@ -1302,8 +1327,8 @@ impl super::Device for Device {
                 DepthBiasClamp: raster.depth_bias_clamp,
                 SlopeScaledDepthBias: raster.slope_scaled_depth_bias,
                 DepthClipEnable: BOOL::from(raster.front_ccw),
-                MultisampleEnable: BOOL::from(raster.front_ccw),
-                AntialiasedLineEnable: BOOL::from(raster.front_ccw),
+                MultisampleEnable: BOOL::from(msaa_format),
+                AntialiasedLineEnable: BOOL::from(msaa_format),
                 ForcedSampleCount: raster.forced_sample_count,
                 ConservativeRaster: if raster.conservative_raster_mode {
                     D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON
@@ -1606,7 +1631,8 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
-        let mut tex: Option<ID3D12Resource> = None;
+        let mut resource: Option<ID3D12Resource> = None;
+        let mut resolved_resource: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         let size_bytes = size_for_format(info.format, info.width, info.height, info.depth) as usize;
         validate_data_size(size_bytes, data)?;
@@ -1644,8 +1670,45 @@ impl super::Device for Device {
                     initial_state
                 },
                 std::ptr::null(),
-                &mut tex,
+                &mut resource,
             )?;
+
+            // create a resolvable texture if we have samples
+            if info.samples > 1 {
+                self.device.CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_DEFAULT,
+                        ..Default::default()
+                    },
+                    to_d3d12_texture_heap_flags(info.usage),
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: match info.tex_type {
+                            super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
+                            super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+                            super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+                        },
+                        Alignment: 0,
+                        Width: info.width,
+                        Height: info.height as u32,
+                        DepthOrArraySize: info.depth as u16,
+                        MipLevels: info.mip_levels as u16,
+                        Format: dxgi_format,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
+                        Flags: to_d3d12_texture_usage_flags(info.usage),
+                    },
+                    if data.is_some() {
+                        D3D12_RESOURCE_STATE_COPY_DEST
+                    } else {
+                        initial_state
+                    },
+                    std::ptr::null(),
+                    &mut resolved_resource,
+                )?;
+            }
 
             if let Some(data) = &data {
                 // create upload buffer
@@ -1719,7 +1782,7 @@ impl super::Device for Device {
                 };
 
                 let dst = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(tex.clone().unwrap()),
+                    pResource: Some(resource.clone().unwrap()),
                     Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         SubresourceIndex: 0,
@@ -1729,7 +1792,7 @@ impl super::Device for Device {
                 self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
 
                 let barrier = transition_barrier(
-                    &tex.clone().unwrap(),
+                    &resource.clone().unwrap(),
                     D3D12_RESOURCE_STATE_COPY_DEST,
                     initial_state,
                 );
@@ -1756,14 +1819,10 @@ impl super::Device for Device {
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateShaderResourceView(
-                    &tex,
+                    &resource,
                     &D3D12_SHADER_RESOURCE_VIEW_DESC {
                         Format: to_dxgi_format_srv(info.format),
-                        ViewDimension: match info.tex_type {
-                            super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
-                            super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
-                            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
-                        },
+                        ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, info.samples),
                         Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
                             Texture2D: D3D12_TEX2D_SRV {
                                 MipLevels: info.mip_levels,
@@ -1778,11 +1837,38 @@ impl super::Device for Device {
                 srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
 
+            // create a srv for resolve texture for msaa
+            let mut resolved_srv_index = None;
+            let mut resolved_format = DXGI_FORMAT_UNKNOWN;
+            if info.samples > 1 {
+                if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
+                    let h = self.shader_heap.allocate();
+                    self.device.CreateShaderResourceView(
+                        &resolved_resource,
+                        &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: to_dxgi_format_srv(info.format),
+                            ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, 1),
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                Texture2D: D3D12_TEX2D_SRV {
+                                    MipLevels: info.mip_levels,
+                                    MostDetailedMip: 0,
+                                    ..Default::default()
+                                },
+                            },
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                        },
+                        h,
+                    );
+                    resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
+                    resolved_format = to_dxgi_format_srv(info.format);
+                }
+            }
+
             // create rtv
             let mut rtv_handle = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
                 let h = self.rtv_heap.allocate();
-                self.device.CreateRenderTargetView(&tex.clone().unwrap(), std::ptr::null_mut(), h);
+                self.device.CreateRenderTargetView(&resource.clone().unwrap(), std::ptr::null_mut(), h);
                 rtv_handle = Some(h);
             }
 
@@ -1790,7 +1876,7 @@ impl super::Device for Device {
             let mut dsv_handle = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
                 let h = self.dsv_heap.allocate();
-                self.device.CreateDepthStencilView(&tex.clone().unwrap(), std::ptr::null_mut(), h);
+                self.device.CreateDepthStencilView(&resource.clone().unwrap(), std::ptr::null_mut(), h);
                 dsv_handle = Some(h);
             }
 
@@ -1799,7 +1885,7 @@ impl super::Device for Device {
             if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateUnorderedAccessView(
-                    &tex.clone().unwrap(),
+                    &resource.clone().unwrap(),
                     None,
                     std::ptr::null_mut(),
                     h,
@@ -1811,7 +1897,7 @@ impl super::Device for Device {
             let mut shared_handle = None;
             if info.usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
                 let h = self.device.CreateSharedHandle(
-                    &tex.clone().unwrap(),
+                    &resource.clone().unwrap(),
                     std::ptr::null(),
                     GENERIC_ALL,
                     PCWSTR(std::ptr::null())
@@ -1820,10 +1906,13 @@ impl super::Device for Device {
             }
 
             Ok(Texture {
-                resource: tex.unwrap(),
+                resource: resource.unwrap(),
+                resolved_resource,
+                resolved_format,
                 rtv: rtv_handle,
                 dsv: dsv_handle,
                 srv_index,
+                resolved_srv_index,
                 uav_index,
                 shared_handle
             })
@@ -2562,6 +2651,26 @@ impl super::CmdBuf<Device> for CmdBuf {
             }
         }
     }
+
+    fn resolve_texture_subresource(&self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
+        unsafe {
+            if texture.resolved_resource.is_some() {
+                self.cmd().ResolveSubresource(
+                    &texture.resolved_resource,
+                    subresource,
+                    &texture.resource,
+                    subresource,
+                    texture.resolved_format
+                 );
+                 Ok(())
+            }
+            else {
+                return Err(super::Error {
+                    msg: format!("t")
+                })
+            }
+        }
+    }
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -2616,7 +2725,12 @@ pub fn get_texture_shared_handle(tex: &Texture) -> &Option<HANDLE> {
 
 impl super::Texture<Device> for Texture {
     fn get_srv_index(&self) -> Option<usize> {
-        self.srv_index
+        if self.resolved_srv_index.is_some() {
+            self.resolved_srv_index
+        }
+        else {
+            self.srv_index
+        }
     }
 
     fn get_uav_index(&self) -> Option<usize> {

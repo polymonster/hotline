@@ -307,6 +307,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
+        // resolve
+        if let Some(tex) = self.pmfx.get_texture(blit_view_name) {
+            self.cmd_buf.resolve_texture_subresource(tex, 0).unwrap();
+        }
+        
         // clear window
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
         self.cmd_buf.end_render_pass();

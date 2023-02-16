@@ -27,27 +27,20 @@ fn main() -> Result<(), hotline_rs::Error> {
         dpi_aware: true,
     });
 
-    let num_buffers = 2;
+    let num_buffers : u32 = 2;
 
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
-        render_target_heap_size: num_buffers,
+        render_target_heap_size: num_buffers as usize,
         ..Default::default()
     });
 
     let mut window = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
-        rect: os::Rect {
-            x: 100,
-            y: 100,
-            width: 1280,
-            height: 720,
-        },
-        style: os::WindowStyleFlags::NONE,
-        parent_handle: None,
+        ..Default::default()
     });
 
     let swap_chain_info = gfx::SwapChainInfo {
-        num_buffers: num_buffers as u32,
+        num_buffers: num_buffers.clone() as u32,
         format: gfx::Format::RGBA8n,
         clear_colour: Some(gfx::ClearColour {
             r: 0.45,
@@ -58,7 +51,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
 
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
-    let mut cmd = device.create_cmd_buf(2);
+    let mut cmd = device.create_cmd_buf(num_buffers);
 
     let vertices = [
         Vertex {

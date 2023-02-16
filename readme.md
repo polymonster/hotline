@@ -5,7 +5,7 @@
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 
-Hotline is a live coding tool where you can editor code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `host` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `lib` and render pipelines and shaders can be edited and hot reloaded through `pmfx` files.
+Hotline is a live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render pipelines and shaders can be edited and hot reloaded through `pmfx` files.
 
 ## Prequisites
 
@@ -43,14 +43,7 @@ You can use hotline as a library to use the low level abstractions and modules t
     // Create main window
     let mut window = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
-        rect: os::Rect {
-            x: 100,
-            y: 100,
-            width: 1280,
-            height: 720,
-        },
-        style: os::WindowStyleFlags::NONE,
-        parent_handle: None,
+        ..Default::default()
     });
 
     /// Create swap chain
@@ -68,7 +61,7 @@ You can use hotline as a library to use the low level abstractions and modules t
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     
     /// Create a command buffer
-    let mut cmd = device.create_cmd_buf(2);
+    let mut cmd = device.create_cmd_buf(num_buffers);
 
     while app.run() {
         // update window and swap chain
