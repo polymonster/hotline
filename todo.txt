@@ -3,7 +3,13 @@
 // plugins
 // - watch files in folders
 // - systems with time
-// - download data
+
+
+// pmfx
+// - update cameras from scene
+// - view_texture_refs
+// - error handling
+// - msaa + texture format changing
 
 // ecs
 // - billboard
@@ -16,11 +22,6 @@
 // - update matrices
 // - update aabb's
 // - culling
-
-// pmfx
-// - view_texture_refs
-// - error handling
-// - msaa + texture format changing
 
 // log / debug / info
 // - timer stats
@@ -39,6 +40,7 @@
 // - Raster
 
 // DONE:
+// x download data
 // x github ref to build tools?
 // x readme / docs
 // x combo size

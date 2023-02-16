@@ -282,3 +282,19 @@ impl Default for Point<u32> {
         Point::<u32> { x: 0, y: 0 }
     }
 }
+
+impl<A> Default for WindowInfo<A> where A: App {
+    fn default() -> Self {
+        Self {
+            title: "hotline".to_string(),
+            rect: Rect {
+                x: 100,
+                y: 100,
+                width: 1280,
+                height: 720,
+            },
+            style: WindowStyleFlags::NONE,
+            parent_handle: None,
+        }
+    }
+}

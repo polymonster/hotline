@@ -765,7 +765,6 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn get_adapter_info(&self) -> &AdapterInfo;
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;
-    
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -826,6 +825,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&self, group_count: Size3, thread_count: Size3);
+    fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 }
 
