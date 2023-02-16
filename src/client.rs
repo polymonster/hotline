@@ -603,19 +603,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             .entry(plugin_name.to_string()).or_insert(String::new()) = serialised;
     }
     
-    /// Very simple run loop which can take control of your application, you could roll your own or
-    /// this is the most minimal usage example:
-    /// fn main() -> Result<(), hotline_rs::Error> {    
-    ///     let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
-    ///         ..Default::default()
-    ///     })?;
-    /// 
-    ///     // run
-    ///     ctx.run();
-    ///
-    ///     // exited with code 0
-    ///     Ok(())
-    /// }
+    /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run(mut self) {
         while self.app.run() {
 

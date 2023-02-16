@@ -51,7 +51,6 @@ pub fn setup_multiple(
         for x in 0..dim {    
             let wave_x = f32::abs(f32::sin((x as f32) / 20.0 as f32)) * 20.0;
             let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
-
             let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
 
             commands.spawn((
