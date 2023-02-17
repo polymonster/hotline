@@ -29,7 +29,7 @@ pub trait ReloadResponder: Send + Sync {
     /// Add a file which is tracked and the time stamp compared for changes
     fn add_file(&mut self, path: &str);
     /// Returns a vector of files which are currently being tracked
-    fn get_files(&self) -> &Vec<String>;
+    fn get_files(&self) -> Vec<String>;
     /// Retuns the current modified time of the built resource
     fn get_last_mtime(&self) -> SystemTime;
     /// Called when a tracked file is modified more recently than get_base_mtime
@@ -76,7 +76,7 @@ impl Reloader {
     fn file_watcher_thread_check_mtime(responder: &Arc<Mutex<Box<dyn ReloadResponder>>>, cur_mtime: SystemTime) -> SystemTime {
         let responder = responder.lock().unwrap();
         let files = responder.get_files();
-        for file in files {
+        for file in &files {
             let filepath = super::get_data_path(file);
             let meta = std::fs::metadata(&filepath);
             if meta.is_ok() {

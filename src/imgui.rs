@@ -1106,6 +1106,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             io.WantCaptureMouse
         }
     }
+
+    pub fn save_ini_settings(&self) {
+        unsafe {
+            let io = &mut *igGetIO();
+            igSaveIniSettingsToDisk(io.IniFilename);
+        }
+    }
 }
 
 impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {

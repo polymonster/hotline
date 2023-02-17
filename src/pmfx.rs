@@ -1105,8 +1105,8 @@ impl ReloadResponder for PmfxReloadResponder {
         }
     }  
 
-    fn get_files(&self) -> &Vec<String> {
-        &self.files
+    fn get_files(&self) -> Vec<String> {
+        self.files.to_vec()
     }
 
     fn get_last_mtime(&self) -> SystemTime {

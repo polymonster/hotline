@@ -38,8 +38,14 @@ impl reloader::ReloadResponder for PluginReloadResponder {
         self.files.push(path.to_string());
     }
 
-    fn get_files(&self) -> &Vec<String> {
-        &self.files
+    fn get_files(&self) -> Vec<String> {
+        // scan for new files so we can dd them and pickup changes
+        // TODO; this could be more easily be configured in a plugin meta data file
+        let src_path = self.path.to_string() + "/" + &self.name.to_string() + "/src";
+        let src_files = super::get_files_recursive(&src_path, Vec::new());
+        let mut result = self.files.to_vec();
+        result.extend(src_files);
+        result
     }
 
     fn get_last_mtime(&self) -> std::time::SystemTime {

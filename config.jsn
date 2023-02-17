@@ -29,6 +29,13 @@
             files: [
                 // copy fonts to data dir
                 ["src/fonts", "${data_dir}/fonts"]
+
+                // default imgui layouts form the client.. todo. move to target
+                ["plugins/imgui.ini", "target/debug/imgui.ini"]
+                ["plugins/imgui.ini", "target/release/imgui.ini"]
+
+                // default user config for the client
+                ["plugins/user_config.json", "target/user_config.json"]
             ]
         }
     }
@@ -38,10 +45,10 @@
             files: [
                 // copies the win pix event run time for inserting pix events
                 // multiple build output locations may need a copy
-                ["bin/win32/WinPixEventRuntime.dll", "target/debug/WinPixEventRuntime.dll"]
-                ["bin/win32/WinPixEventRuntime.dll", "target/release/WinPixEventRuntime.dll"]
-                ["bin/win32/WinPixEventRuntime.dll", "target/debug/examples/WinPixEventRuntime.dll"]
-                ["bin/win32/WinPixEventRuntime.dll", "target/release/examples/WinPixEventRuntime.dll"]
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/debug/WinPixEventRuntime.dll"]
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/release/WinPixEventRuntime.dll"]
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/debug/examples/WinPixEventRuntime.dll"]
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/release/examples/WinPixEventRuntime.dll"]
             ]
         }
 
@@ -57,6 +64,7 @@
         }
 
         pmfx_dev(pmfx): {
+            explicit: true
         }
     }
 }
