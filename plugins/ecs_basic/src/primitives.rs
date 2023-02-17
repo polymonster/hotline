@@ -41,7 +41,7 @@ pub fn setup_primitives(
     mut commands: bevy_ecs::system::Commands) {
 
     let meshes = vec![
-        hotline_rs::primitives::create_plane_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_plane_mesh(&mut device.0, 1),
         hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_cube_mesh(&mut device.0),
     ];
@@ -51,8 +51,8 @@ pub fn setup_primitives(
     let irc = rc as i32; 
 
     let size = 10.0;
-    let half_size = size * 0.5;
-    let step = size * 2.5;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
     let half_extent = rc * half_size;
     let start_pos = vec3f(half_extent, size, half_extent);
 
@@ -62,8 +62,8 @@ pub fn setup_primitives(
             if i < meshes.len() {
                 let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
                 commands.spawn((
-                    MeshComponent {0: meshes[i].clone()},
-                    WorldMatrix { 0: Mat4f::from_translation(iter_pos) * Mat4f::from_scale(splat3f(10.0))},
+                    MeshComponent(meshes[i].clone()),
+                    WorldMatrix(Mat4f::from_translation(iter_pos) * Mat4f::from_scale(splat3f(10.0))),
                 ));
             }
             i = i + 1;
