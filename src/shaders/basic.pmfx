@@ -19,8 +19,28 @@ pmfx: {
             depth_stencil_state: depth_test_less
             topology: "TriangleList"
         }
+        checkerboard_mesh: {
+            vs: vs_mesh
+            ps: ps_checkerboard
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            topology: "TriangleList"
+        }
         billboard_mesh: {
             vs: vs_billboard
+            ps: ps_main
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            topology: "TriangleList"
+        }
+        heightmap_mesh: {
+            vs: vs_heightmap
             ps: ps_main
             push_constants: [
                 "view_push_constants"
@@ -90,8 +110,32 @@ pmfx: {
             }
             {
                 view: "render_world_view"
-                pipelines: ["imdraw_mesh", "billboard_mesh"]
+                pipelines: ["billboard_mesh"]
                 function: "render_billboards_basic"
+            }
+        ]
+        heightmap: [
+            {
+                view: "render_grid"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
+            }
+            {
+                view: "render_world_view"
+                pipelines: ["heightmap_mesh"]
+                function: "render_heightmap_basic"
+            }
+        ]
+        checkerboard: [
+            {
+                view: "render_grid"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
+            }
+            {
+                view: "render_world_view"
+                pipelines: ["checkerboard_mesh"]
+                function: "render_checkerboard_basic"
             }
         ]
     }

@@ -3,7 +3,12 @@
 // plugins
 // - watch files in folders
 // - systems with time
+// - dependencies
+// - plugin file format
 
+// ui
+// view menu
+// docked defaults
 
 // pmfx
 // - update cameras from scene
@@ -12,9 +17,12 @@
 // - msaa + texture format changing
 
 // ecs
+// - different camera
+// - raster examples
 // - billboard
 // - draw instanced
 // - draw indirect
+// - 3D texture -> compute
 // - texture
 // - light
 // - shadow
@@ -40,6 +48,7 @@
 // - Raster
 
 // DONE:
+// x plane - heightmap
 // x download data
 // x github ref to build tools?
 // x readme / docs

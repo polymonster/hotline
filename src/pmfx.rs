@@ -60,6 +60,7 @@ struct TrackedTexture<D: gfx::Device>  {
     size: (u64, u64)
 }
 
+/// Information to track changes to 
 struct PmfxTrackingInfo {
     /// Filepath to the data which the pmfx File was deserialised from
     filepath: std::path::PathBuf,
