@@ -1,11 +1,7 @@
-struct vs_input_3d {
-    float3 position : POSITION;
-    float4 colour: TEXCOORD;
-};
-
 struct vs_output {
     float4 position : SV_POSITION0;
-    float4 colour: TEXCOORD;
+    float4 colour: TEXCOORD0;
+    float2 texcoord: TEXCOORD1;
 };
 
 struct ps_output {
@@ -74,6 +70,7 @@ vs_output vs_mesh(vs_input_mesh input) {
     output.position = mul(pos, projection_matrix);
 
     output.colour = float4(input.normal.xyz * 0.5 + 0.5, 1.0);
+    output.texcoord = input.texcoord;
     
     return output;
 }
@@ -132,8 +129,29 @@ ps_output ps_main(vs_output input) {
     return output;
 }
 
+
+
 ps_output ps_checkerboard(vs_output input) {
     ps_output output;
     output.colour = input.colour;
+
+    float size = 5.0;
+
+    float x = (input.texcoord.x * 0.5 + 0.5) * size;
+    float y = (input.texcoord.y * 0.5 + 0.5) * size;
+
+    float ix;
+    modf(x, ix);
+    float rx = fmod(ix, 2.0) < 0.1 ? 0.0 : 1.0;
+
+    float iy;
+    modf(y, iy);
+    float ry = fmod(iy, 2.0) < 0.1 ? 0.0 : 1.0;
+
+    float rxy = rx + ry > 1.0 ? 0.0 : rx + ry;
+
+    output.colour.rgb *= rxy < 0.001 ? 0.5 : 1.0;
+
+    output.colour.a = 1.0;
     return output;
 }
