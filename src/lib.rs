@@ -100,6 +100,21 @@ pub fn get_exe_path(asset: &str) -> String {
     String::from(exe_path.join(asset).to_str().unwrap())
 }
 
+/// Recursivley get files from folder as a vector
+fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
+    let paths = std::fs::read_dir(dir).unwrap();
+    for path in paths {
+        let path = path.unwrap().path();
+        if std::fs::read_dir(&path).is_ok() {
+            files = get_files_recursive(path.to_str().unwrap(), files);
+        }
+        else {
+            files.push(path.to_str().unwrap().to_string());
+        }   
+    }
+    files
+}
+
 /// This is a hardcoded compile time selection of os backend for windows as win32
 #[cfg(target_os = "windows")]
 pub use os::win32 as os_platform;

@@ -259,7 +259,7 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     let right = Vec3f::unit_x();
     let up = Vec3f::unit_z();
     let at = Vec3f::unit_y();
-    let angle_step = (f32::pi() *2.0) / 3.0;
+    let angle_step = (f32::pi() * 2.0) / 3.0;
     let tip = pos + at * sqrt(2.0); // sqrt 2 is pythagoras constant
 
     // we gather the base vertices and faces as we iterate
@@ -312,7 +312,7 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         let tp = tip;
         
         base_positions.push(p);
-        vertices.extend(get_face_vertices(p, np, tp));
+        vertices.extend(get_face_vertices(p , np, tp));
     }
 
     // make the base face

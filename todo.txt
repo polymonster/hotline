@@ -1,22 +1,21 @@
 // TODO:
 
 // plugins
-// - watch files in folders
-// - systems with time
 // - dependencies
 // - plugin file format
 
 // ui
-// view menu
-// docked defaults
+// - view menu
+// - docked defaults
 
 // pmfx
 // - update cameras from scene
-// - view_texture_refs
-// - error handling
+// - error handling !!!! ->
 // - msaa + texture format changing
 
 // ecs
+// - per demo settings
+// - systems with time
 // - different camera
 // - raster examples
 // - billboard
@@ -31,7 +30,7 @@
 // - update aabb's
 // - culling
 
-// log / debug / info
+// log / debug / info !!!!!
 // - timer stats
 // - thread stats
 // - in editor terminal / log
@@ -48,6 +47,8 @@
 // - Raster
 
 // DONE:
+// x watch files in folders
+// x save imgui locations more reliably
 // x plane - heightmap
 // x download data
 // x github ref to build tools?

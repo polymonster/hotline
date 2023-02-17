@@ -379,6 +379,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             path: path.to_string(),
             output_filepath: lib_path.to_string(),
             files: vec![
+
                 src_path
             ],
         };
@@ -624,6 +625,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // save out values for next time
         self.save_user_config();
+        self.imgui.save_ini_settings();
 
         self.wait_for_last_frame();
     }

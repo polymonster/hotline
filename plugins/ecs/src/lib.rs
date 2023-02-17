@@ -6,6 +6,7 @@ use hotline_rs::client::*;
 use hotline_rs::plugin::*;
 
 use ecs_base::*;
+use ecs_base::SheduleInfo;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemDescriptor;
@@ -15,7 +16,6 @@ use maths_rs::Vec4f;
 use maths_rs::Mat4f;
 
 use maths_rs::num::*;
-use maths_rs::vec::*;
 use maths_rs::mat::*;
 
 use hotline_rs::os::App;
@@ -38,8 +38,6 @@ struct BevyPlugin {
     run_setup: bool,
     session_info: SessionInfo
 }
-
-use ecs_base::SheduleInfo;
 
 type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 
