@@ -25,6 +25,8 @@ use gfx::RenderPass;
 #[derive(Component)]
 struct Billboard;
 
+mod primitives;
+
 #[no_mangle]
 pub fn billboard(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
     // pmfx
@@ -35,7 +37,6 @@ pub fn billboard(client: &mut Client<gfx_platform::Device, os_platform::App>) ->
 
     SheduleInfo {
         update: vec![
-            //"mat_movement".to_string(),
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
@@ -125,7 +126,7 @@ pub fn setup_cube(
     let pos = Mat4f::from_translation(Vec3f::unit_y() * 5.0);
     let scale = Mat4f::from_scale(splat3f(5.0));
 
-    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    let cube_mesh = hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0);
     commands.spawn((
         Position(Vec3f::zero()),
         Velocity(Vec3f::one()),
@@ -185,6 +186,82 @@ pub fn setup_multiple(
     }
 }
 
+#[derive(Component)]
+struct Heightmap;
+
+#[no_mangle]
+pub fn heightmap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+    // pmfx
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str())
+        .expect("expected to have pmfx: data/shaders/basic");
+    client.pmfx.create_render_graph(&mut client.device, "heightmap")
+        .expect("expected to have render graph: heightmap");
+
+    SheduleInfo {
+        update: vec![
+            "update_cameras".to_string(),
+            "update_main_camera_config".to_string()
+        ],
+        render: client.pmfx.get_render_function_names("heightmap"),
+        setup: vec!["setup_heightmap".to_string()]
+    }
+}
+
+#[no_mangle]
+pub fn setup_heightmap(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let plane_mesh = hotline_rs::primitives::create_plane_mesh(&mut device.0, 64);
+    commands.spawn((
+        Position { 0: Vec3f::zero() },
+        Velocity { 0: Vec3f::one() },
+        MeshComponent {0: plane_mesh.clone()},
+        WorldMatrix { 0: Mat4f::from_scale(splat3f(500.0))},
+        Heightmap
+    ));
+}
+
+#[no_mangle]
+fn render_heightmap_basic(
+    pmfx: Res<PmfxRes>,
+    view_name: String,
+    view_proj_query: Query<&ViewProjectionMatrix>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) {
+        
+    // unpack
+    let pmfx = &pmfx.0;
+    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let view = arc_view.lock().unwrap();
+    let fmt = view.pass.get_format_hash();
+
+    let heightmap_mesh = pmfx.get_render_pipeline_for_format("heightmap_mesh", fmt);
+    if heightmap_mesh.is_none() {
+        return;
+    }
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&heightmap_mesh.unwrap());
+
+    for view_proj in &view_proj_query {
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        for (world_matrix, mesh) in &mesh_draw_query {
+            // draw
+            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+            view.cmd_buf.set_index_buffer(&mesh.0.ib);
+            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        }
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+}
+
 //
 // Plugin
 //
@@ -192,19 +269,27 @@ pub fn setup_multiple(
 #[no_mangle]
 pub fn get_demos_ecs_basic() -> Vec<String> {
     vec![
+        "primitives".to_string(),
         "billboard".to_string(),
         "cube".to_string(),
-        "multiple".to_string()
+        "multiple".to_string(),
+        "heightmap".to_string(),
     ]
 }
 
 #[no_mangle]
 pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
+        // setup functions
+        "setup_primitives" => ecs_base::system_func![crate::primitives::setup_primitives],
         "setup_billboard" => ecs_base::system_func![setup_billboard],
         "setup_cube" => ecs_base::system_func![setup_cube],
         "setup_multiple" => ecs_base::system_func![setup_multiple],
+        "setup_heightmap" => ecs_base::system_func![setup_heightmap],
+        // render functions
         "render_billboards_basic" => ecs_base::view_func![render_billboards_basic, "render_billboards_basic"],
+        "render_heightmap_basic" => ecs_base::view_func![render_heightmap_basic, "render_heightmap_basic"],
+        "render_checkerboard_basic" => ecs_base::view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
         _ => std::hint::black_box(None)
     }
 }
