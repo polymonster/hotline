@@ -49,11 +49,12 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_cube_mesh(&mut device.0),
         hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
     ];
 
     // square number of rows and columns
-    let rc = f32::round(f32::sqrt(meshes.len() as f32));
-    let irc = rc as i32; 
+    let rc = f32::ceil(f32::sqrt(meshes.len() as f32));
+    let irc = (rc + 0.5) as i32; 
 
     let size = 10.0;
     let half_size = size * 0.5;    

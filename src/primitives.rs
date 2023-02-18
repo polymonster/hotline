@@ -636,60 +636,49 @@ pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
 /// Intenral utility which can regursively build a hemi-dodecahedrin starting with a single pentagonal face with normal `axis`
 fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse: bool) -> Vec<Vertex3D> {
     let (right, up, _) = basis_from_axis(axis);
-    
-    let half_gr = 1.61803398875 / 2.0;
-    let internal_angle = 0.309017 * 1.5;
     let angle_step = f32::pi() / 2.5;
 
     let mut a = start_angle;
     let mut vertices = Vec::new();
 
-    // pentagon with tri per edge
+    // pos is centreed inthe middle of a pentagonal face
+    let t2 = pos;
+
+    // pentagon with tri per edge, makes a tri with the 2 edge vertices and 1 vertex and t2 in the centre
     for _ in 0..5 {
         let x = f32::sin(a) * INV_PHI;
         let y = f32::cos(a) * INV_PHI;
-        let p = pos + right * x + up * y;
+        let t0 = pos + right * x + up * y;
+        let uv0 = Vec2f::new(f32::sin(a), f32::cos(a));
         
         a += angle_step;
         let x2 = f32::sin(a) * INV_PHI;
         let y2 = f32::cos(a) * INV_PHI;
-        let np = pos + right * x2 + up * y2;
+        let t1 = pos + right * x2 + up * y2;
+        let uv1 = Vec2f::new(f32::sin(a), f32::cos(a));
 
-        let t0 = p;
-        let t1 = np;
-        let t2 = pos;
-        
         let n = get_triangle_normal(t0, t2, t1);
         let b = normalize(t0 - t1);
         let t = cross(n, b);
                     
-        let ev = normalize(np - p);
-        let cp = normalize(cross(ev, axis));
-        let mid = p + (np - p) * 0.5;
-        
-        let rx = f32::sin((f32::pi() * 2.0) + internal_angle) * INV_PHI;
-        let ry = f32::cos((f32::pi() * 2.0) + internal_angle) * INV_PHI;
-        let xp = mid + cp * rx + axis * ry;
-        let xv = normalize(xp - mid);
-
         let tri = vec![
             Vertex3D {
                 position: t0,
-                texcoord: vec2f(0.0, 1.0),
+                texcoord: uv0,
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: t1,
-                texcoord: vec2f(-1.0, -1.0),
+                texcoord: uv1,
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: t2,
-                texcoord: vec2f(1.0, -1.0),
+                texcoord: Vec2f::zero(),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -698,6 +687,18 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
         vertices.extend(tri);
 
         if recurse {
+            let half_gr = 1.61803398875 / 2.0;
+            let internal_angle = 0.309017 * 1.5;
+
+            let ev = normalize(t1 - t0);
+            let cp = normalize(cross(ev, axis));
+            let mid = t0 + (t1 - t0) * 0.5;
+            
+            let rx = f32::sin((f32::pi() * 2.0) + internal_angle) * INV_PHI;
+            let ry = f32::cos((f32::pi() * 2.0) + internal_angle) * INV_PHI;
+            let xp = mid + cp * rx + axis * ry;
+            let xv = normalize(xp - mid);
+
             let next_axis = normalize(cross(xv, ev));
             let face_vertices = dodecahedron_face_in_axis(next_axis, mid + xv * half_gr * INV_PHI, f32::pi() + start_angle, false);
             vertices.extend(face_vertices);
@@ -707,7 +708,7 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
 }
 
 /// Create an indexed faceted dodecahedron mesh.
-pub fn create_dododecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+pub fn create_dodecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     let h = f32::pi() * 0.83333333333 * 0.5 * INV_PHI;
     let mut vertices = dodecahedron_face_in_axis(Vec3f::unit_y(), vec3f(0.0, -h, 0.0), 0.0, true);
     let bottom_vertices = dodecahedron_face_in_axis(-Vec3f::unit_y(), vec3f(0.0, h, 0.0), f32::pi(), true);
