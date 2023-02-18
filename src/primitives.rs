@@ -7,6 +7,7 @@ use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::num::*;
 
+/// Generic structure for 3D lit geometry meshes
 #[derive(Clone)]
 pub struct Vertex3D {
     pub position: Vec3f,
@@ -16,12 +17,14 @@ pub struct Vertex3D {
     pub bitangent: Vec3f,
 }
 
+/// Generic structure for simple 2D textured meshes
 #[derive(Clone)]
 pub struct Vertex2D {
     pub position: Vec2f,
     pub texcoord: Vec2f,
 }
 
+/// Inverse golden ratio
 const INV_PHI : f32 = 0.61803398875;
 
 /// Returns an orthonormal basis given the axis returning (right, up, at)
@@ -846,6 +849,7 @@ pub fn create_icosahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     create_faceted_mesh_3d(dev, vertices)
 }
 
+/// Create an indexed faceted icosahedron mesh
 pub fn create_icosasphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
     let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, subdivisions);
     let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), subdivisions);
@@ -871,6 +875,7 @@ pub fn create_icosasphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -
     create_faceted_mesh_3d(dev, vertices)
 }
 
+/// Create an indexed smooth sphere with subdivided icosophere vertices and smooth normals
 pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
     let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, subdivisions);
     let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), subdivisions);
