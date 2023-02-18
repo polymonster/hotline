@@ -742,14 +742,13 @@ pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u3
         };
 
         let s0 = lerp_half(t0, t1);
-        let s1 = lerp_half(t0, t1);
-        let s2 = lerp_half(t0, t1);
+        let s1 = lerp_half(t0, t2);
+        let s2 = lerp_half(t2, t1);
 
-        let mut sub = Vec::new();
-        sub.extend(subdivide_triangle( t0, &s0, &s1, order + 1, max_order));
+        let mut sub = subdivide_triangle(t0, &s0, &s1, order + 1, max_order);
         sub.extend(subdivide_triangle(&s0,  t1, &s2, order + 1, max_order));
         sub.extend(subdivide_triangle(&s1, &s0, &s2, order + 1, max_order));
-        sub.extend(subdivide_triangle(&s1, &s2,  t2, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s1, &s2, &t2, order + 1, max_order));
         sub
     }
 }
@@ -834,7 +833,7 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
                 bitangent: b,
             }
         ];
-        vertices.extend(tri);
+        vertices.extend(subdivide_triangle(&tri[0], &tri[1], &tri[2], 0, subdivisions));
     }
     vertices
 }
@@ -851,5 +850,42 @@ pub fn create_icosasphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -
     let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, subdivisions);
     let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), subdivisions);
     vertices.extend(bottom_vertices);
+
+    // project the points outwards to make a sphere
+    for v in &mut vertices {
+        v.position = normalize(v.position);
+    }
+
+    // keep the facet normals
+    for i in (0..vertices.len()).step_by(3) {
+        let n = get_triangle_normal(vertices[i].position, vertices[i + 2].position, vertices[i + 1].position);
+        let b = normalize(vertices[i].position - vertices[i + 2].position);
+        let t = cross(n, b);
+        for j in i..i+3 {
+            vertices[j].normal = n;
+            vertices[j].bitangent = b;
+            vertices[j].tangent = t;
+        }
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}
+
+pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
+    let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, subdivisions);
+    let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), subdivisions);
+    vertices.extend(bottom_vertices);
+
+    // project the points outwards and fix up the normals
+    for v in &mut vertices {
+        v.position = normalize(v.position);
+        v.normal = normalize(v.position);
+
+        // we need the 64 precision here
+        let x = f64::atan2(abs(v.position.z as f64), abs(v.position.x as f64));
+        let y = f64::asin(abs(v.position.y as f64));
+        v.texcoord = Vec2f::new(x as f32, y as f32);
+    }
+
     create_faceted_mesh_3d(dev, vertices)
 }
