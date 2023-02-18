@@ -7,6 +7,7 @@ use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::num::*;
 
+#[derive(Clone)]
 pub struct Vertex3D {
     pub position: Vec3f,
     pub texcoord: Vec2f,
@@ -15,6 +16,7 @@ pub struct Vertex3D {
     pub bitangent: Vec3f,
 }
 
+#[derive(Clone)]
 pub struct Vertex2D {
     pub position: Vec2f,
     pub texcoord: Vec2f,
@@ -716,95 +718,138 @@ pub fn create_dodecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     create_faceted_mesh_3d(dev, vertices)
 }
 
+/// Subdivides a single triangle vertex into 4 evenly distributed smaller triangles, adjusting uv's and maintaining normals and tangents
+pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u32, max_order: u32) -> Vec<Vertex3D> {
+    if order == max_order {
+        vec![t0.clone(), t1.clone(), t2.clone()]
+    }
+    else {
+        //  /\      /\
+        // /__\ -> /\/\
+        // 
+        //      t1
+        //    s0  s2
+        //  t0  s1  t2
+
+        let lerp_half = |a: &Vertex3D, b: &Vertex3D| -> Vertex3D {
+            Vertex3D {
+                position: a.position + (b.position - a.position) * 0.5,
+                texcoord: a.texcoord + (b.texcoord - a.texcoord) * 0.5,
+                tangent: a.tangent,
+                normal: a.normal,
+                bitangent: a.bitangent
+            }
+        };
+
+        let s0 = lerp_half(t0, t1);
+        let s1 = lerp_half(t0, t1);
+        let s2 = lerp_half(t0, t1);
+
+        let mut sub = Vec::new();
+        sub.extend(subdivide_triangle( t0, &s0, &s1, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s0,  t1, &s2, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s1, &s0, &s2, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s1, &s2,  t2, order + 1, max_order));
+        sub
+    }
+}
+
+/// Create a hemi-icosahedron in axis with subdivisions
+pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions: u32) -> Vec<Vertex3D> {
+    let (right, up, at) = basis_from_axis(axis);
+
+    let tip = pos - at * INV_PHI;
+    let dip = pos + at * 0.5 * 2.0;
+
+    let angle_step = f32::pi() / 2.5;
+
+    let mut a = start_angle;
+    let mut vertices = Vec::new();
+
+    for _ in 0..5 {
+        let x = f32::sin(a);
+        let y = f32::cos(a);
+        let p = pos + right * x + up * y;
+
+        a += angle_step;
+        let x2 = f32::sin(a);
+        let y2 = f32::cos(a);
+        let np = pos + right * x2 + up * y2;
+
+        let n = get_triangle_normal(p, np, tip);
+        let b = normalize(p - tip);
+        let t = cross(n, b);
+
+        let tri = vec![
+            Vertex3D {
+                position: p,
+                texcoord: Vec2f::new(-1.0, -1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: tip,
+                texcoord: Vec2f::new(0.0, 1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: np,
+                texcoord: Vec2f::new(1.0, -1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            }
+        ];
+        vertices.extend(subdivide_triangle(&tri[0], &tri[1], &tri[2], 0, subdivisions));
+        
+        let side_dip = dip + cross(normalize(p-np), at);
+        
+        let n = get_triangle_normal(p, side_dip, np);
+        let b = normalize(p - np);
+        let t = cross(n, b);
+        
+        let tri = vec![
+            Vertex3D {
+                position: p,
+                texcoord: Vec2f::new(-1.0, 1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: np,
+                texcoord: Vec2f::new(1.0, 1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: side_dip,
+                texcoord: Vec2f::new(0.0, -1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            }
+        ];
+        vertices.extend(tri);
+    }
+    vertices
+}
+
 /// Create an indexed faceted icosohedron mesh.
 pub fn create_icosahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
-    let hemi_icosohedron = |axis: Vec3f, pos: Vec3f, start_angle: f32| -> Vec<Vertex3D> {
-        let (right, up, at) = basis_from_axis(axis);
-
-        let tip = pos - at * INV_PHI;
-        let dip = pos + at * 0.5 * 2.0;
-
-        let angle_step = f32::pi() / 2.5;
-
-        let mut a = start_angle;
-        let mut vertices = Vec::new();
-
-        for _ in 0..5 {
-            let x = f32::sin(a);
-            let y = f32::cos(a);
-            let p = pos + right * x + up * y;
-
-            a += angle_step;
-            let x2 = f32::sin(a);
-            let y2 = f32::cos(a);
-            let np = pos + right * x2 + up * y2;
-
-            let n = get_triangle_normal(p, np, tip);
-            let b = normalize(p - tip);
-            let t = cross(n, b);
-
-            let tri = vec![
-                Vertex3D {
-                    position: p,
-                    texcoord: Vec2f::new(-1.0, -1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: tip,
-                    texcoord: Vec2f::new(0.0, 1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: np,
-                    texcoord: Vec2f::new(1.0, -1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                }
-            ];
-            vertices.extend(tri);
-            
-            let side_dip = dip + cross(normalize(p-np), at);
-            
-            let n = get_triangle_normal(p, side_dip, np);
-            let b = normalize(p - np);
-            let t = cross(n, b);
-            
-            let tri = vec![
-                Vertex3D {
-                    position: p,
-                    texcoord: Vec2f::new(-1.0, 1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: np,
-                    texcoord: Vec2f::new(1.0, 1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: side_dip,
-                    texcoord: Vec2f::new(0.0, -1.0),
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                }
-            ];
-            vertices.extend(tri);
-        }
-        vertices
-    };
-    
-    let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0);
-    let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi());
+    let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, 0);
+    let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), 0);
     vertices.extend(bottom_vertices);
+    create_faceted_mesh_3d(dev, vertices)
+}
 
+pub fn create_icosasphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
+    let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0, subdivisions);
+    let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi(), subdivisions);
+    vertices.extend(bottom_vertices);
     create_faceted_mesh_3d(dev, vertices)
 }

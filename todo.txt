@@ -13,6 +13,9 @@
 // - error handling !!!! ->
 // - msaa + texture format changing
 
+// primitives
+// - icosasphere
+
 // ecs
 // - per demo settings
 // - systems with time
