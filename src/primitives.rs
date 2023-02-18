@@ -21,7 +21,28 @@ pub struct Vertex2D {
 }
 
 const INV_PHI : f32 = 0.61803398875;
-// const M_PHI : f32 = 1.61803398875;
+
+/// Returns an orthonormal basis given the axis returning (right, up, at)
+fn basis_from_axis(axis: Vec3f) -> (Vec3f, Vec3f, Vec3f) {
+    // right
+    let mut right = cross(axis, Vec3f::unit_y());
+    if mag(right) < 0.1 {
+        right = cross(axis, Vec3f::unit_z());
+    }
+    if mag(right) < 0.1 {
+        right = cross(axis, Vec3f::unit_x());
+    }
+    right = normalize(right);
+    
+    // up + re-adjust right
+    let up = normalize(cross(axis, right));
+    right = normalize(cross(axis, up));
+    
+    // at
+    let at = cross(right, up);
+
+    (right, up, at)
+}
 
 /// Utility to create faceted meshes with varying index sizes depending on the index requirements
 fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices: Vec<usize>) -> pmfx::Mesh<D> {
@@ -322,85 +343,7 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     create_faceted_mesh_3d(dev, vertices)
 }
 
-/// Creates a unit octahedron mesh aligned y-up
-pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
-    let corner = [
-        vec3f(-1.0, 0.0, -1.0),
-        vec3f(-1.0, 0.0,  1.0),
-        vec3f( 1.0, 0.0,  1.0),
-        vec3f( 1.0, 0.0, -1.0)
-    ];
-
-    let pc = sqrt(2.0);
-    let top = vec3f(0.0, pc, 0.0);
-    let bottom = vec3f(0.0, -pc, 0.0);
-
-    // we make it in 2 halfs one points up in y, the other down
-    let yextent = [
-        top,
-        bottom
-    ];
-
-    let mut vertices = Vec::new();
-
-    for i in 0..4 {
-        let n = (i + 1) % 4;
-                
-        // 2 tris per-edge 1 up, one down
-        for j in 0..2 {
-            
-            // vertices
-            let mut t0 = corner[i];
-            let t1 = corner[n];
-            let mut t2 = yextent[j];
-
-            // tex coords
-            let mut tc0 = vec2f(1.0, -1.0);
-            let tc1 = vec2f(-1.0, -1.0);
-            let mut tc2 = vec2f(0.0, 1.0); 
-
-            // flip if we are the top
-            if j == 0 {
-                std::mem::swap(&mut t0, &mut t2);
-                std::mem::swap(&mut tc0, &mut tc2);
-            }
-
-            // normals and tangents
-            let n = get_triangle_normal(t0, t2, t1);
-            let b = normalize(t0 - t1);
-            let t = cross(n, b);
-
-            let tri: Vec<Vertex3D> = vec![
-                Vertex3D {
-                    position: t0,
-                    texcoord: tc0,
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: t1,
-                    texcoord: tc1,
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                },
-                Vertex3D {
-                    position: t2,
-                    texcoord: tc2,
-                    normal: n,
-                    tangent: t,
-                    bitangent: b,
-                }
-            ];
-            vertices.extend(tri);
-        }
-    }
-
-    create_faceted_mesh_3d(dev, vertices)
-}
-
-/// Create a an indexed unit cube mesh instance
+/// Create an indexed unit cube mesh instance.
 pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     // cube veritces
     let vertices: Vec<Vertex3D> = vec![
@@ -610,4 +553,165 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         ).unwrap(),
         num_indices: 36
     } 
+}
+
+/// Creates a unit octahedron mesh aligned y-up
+pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+    let corner = [
+        vec3f(-1.0, 0.0, -1.0),
+        vec3f(-1.0, 0.0,  1.0),
+        vec3f( 1.0, 0.0,  1.0),
+        vec3f( 1.0, 0.0, -1.0)
+    ];
+
+    let pc = sqrt(2.0);
+    let top = vec3f(0.0, pc, 0.0);
+    let bottom = vec3f(0.0, -pc, 0.0);
+
+    // we make it in 2 halfs one points up in y, the other down
+    let yextent = [
+        top,
+        bottom
+    ];
+
+    let mut vertices = Vec::new();
+
+    for i in 0..4 {
+        let n = (i + 1) % 4;
+                
+        // 2 tris per-edge 1 up, one down
+        for j in 0..2 {
+            
+            // vertices
+            let mut t0 = corner[i];
+            let t1 = corner[n];
+            let mut t2 = yextent[j];
+
+            // tex coords
+            let mut tc0 = vec2f(1.0, -1.0);
+            let tc1 = vec2f(-1.0, -1.0);
+            let mut tc2 = vec2f(0.0, 1.0); 
+
+            // flip if we are the top
+            if j == 0 {
+                std::mem::swap(&mut t0, &mut t2);
+                std::mem::swap(&mut tc0, &mut tc2);
+            }
+
+            // normals and tangents
+            let n = get_triangle_normal(t0, t2, t1);
+            let b = normalize(t0 - t1);
+            let t = cross(n, b);
+
+            let tri: Vec<Vertex3D> = vec![
+                Vertex3D {
+                    position: t0,
+                    texcoord: tc0,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                },
+                Vertex3D {
+                    position: t1,
+                    texcoord: tc1,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                },
+                Vertex3D {
+                    position: t2,
+                    texcoord: tc2,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                }
+            ];
+            vertices.extend(tri);
+        }
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}
+
+/// Intenral utility which can regursively build a hemi-dodecahedrin starting with a single pentagonal face with normal `axis`
+fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse: bool) -> Vec<Vertex3D> {
+    let (right, up, _) = basis_from_axis(axis);
+    
+    let half_gr = 1.61803398875 / 2.0;
+    let internal_angle = 0.309017 * 1.5;
+    let angle_step = f32::pi() / 2.5;
+
+    let mut a = start_angle;
+    let mut vertices = Vec::new();
+
+    // pentagon with tri per edge
+    for _ in 0..5 {
+        let x = f32::sin(a) * INV_PHI;
+        let y = f32::cos(a) * INV_PHI;
+        let p = pos + right * x + up * y;
+        
+        a += angle_step;
+        let x2 = f32::sin(a) * INV_PHI;
+        let y2 = f32::cos(a) * INV_PHI;
+        let np = pos + right * x2 + up * y2;
+
+        let t0 = p;
+        let t1 = np;
+        let t2 = pos;
+        
+        let n = get_triangle_normal(t0, t2, t1);
+        let b = normalize(t0 - t1);
+        let t = cross(n, b);
+                    
+        let ev = normalize(np - p);
+        let cp = normalize(cross(ev, axis));
+        let mid = p + (np - p) * 0.5;
+        
+        let rx = f32::sin((f32::pi() * 2.0) + internal_angle) * INV_PHI;
+        let ry = f32::cos((f32::pi() * 2.0) + internal_angle) * INV_PHI;
+        let xp = mid + cp * rx + axis * ry;
+        let xv = normalize(xp - mid);
+
+        let tri = vec![
+            Vertex3D {
+                position: t0,
+                texcoord: vec2f(0.0, 1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: t1,
+                texcoord: vec2f(-1.0, -1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            },
+            Vertex3D {
+                position: t2,
+                texcoord: vec2f(1.0, -1.0),
+                normal: n,
+                tangent: t,
+                bitangent: b,
+            }
+        ];
+        vertices.extend(tri);
+
+        if recurse {
+            let next_axis = normalize(cross(xv, ev));
+            let face_vertices = dodecahedron_face_in_axis(next_axis, mid + xv * half_gr * INV_PHI, f32::pi() + start_angle, false);
+            vertices.extend(face_vertices);
+        }
+    }
+    vertices
+}
+
+/// Create an indexed faceted dodecahedron mesh.
+pub fn create_dododecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+    let h = f32::pi() * 0.83333333333 * 0.5 * INV_PHI;
+    let mut vertices = dodecahedron_face_in_axis(Vec3f::unit_y(), vec3f(0.0, -h, 0.0), 0.0, true);
+    let bottom_vertices = dodecahedron_face_in_axis(-Vec3f::unit_y(), vec3f(0.0, h, 0.0), f32::pi(), true);
+    vertices.extend(bottom_vertices);
+
+    create_faceted_mesh_3d(dev, vertices)
 }
