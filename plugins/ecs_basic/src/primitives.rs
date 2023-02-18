@@ -51,6 +51,8 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 4),
     ];
 
     // square number of rows and columns
