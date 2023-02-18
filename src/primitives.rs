@@ -717,7 +717,7 @@ pub fn create_dodecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
 }
 
 /// Create an indexed faceted icosohedron mesh.
-pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+pub fn create_icosahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     let hemi_icosohedron = |axis: Vec3f, pos: Vec3f, start_angle: f32| -> Vec<Vertex3D> {
         let (right, up, at) = basis_from_axis(axis);
 
@@ -733,13 +733,11 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let x = f32::sin(a);
             let y = f32::cos(a);
             let p = pos + right * x + up * y;
-            //let uv0 = Vec2f::new(x, y);
 
             a += angle_step;
             let x2 = f32::sin(a);
             let y2 = f32::cos(a);
             let np = pos + right * x2 + up * y2;
-            //let uv1 = Vec2f::new(x2, y2);
 
             let n = get_triangle_normal(p, np, tip);
             let b = normalize(p - tip);
