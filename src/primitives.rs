@@ -322,6 +322,84 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     create_faceted_mesh_3d(dev, vertices)
 }
 
+/// Creates a unit octahedron mesh aligned y-up
+pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+    let corner = [
+        vec3f(-1.0, 0.0, -1.0),
+        vec3f(-1.0, 0.0,  1.0),
+        vec3f( 1.0, 0.0,  1.0),
+        vec3f( 1.0, 0.0, -1.0)
+    ];
+
+    let pc = sqrt(2.0);
+    let top = vec3f(0.0, pc, 0.0);
+    let bottom = vec3f(0.0, -pc, 0.0);
+
+    // we make it in 2 halfs one points up in y, the other down
+    let yextent = [
+        top,
+        bottom
+    ];
+
+    let mut vertices = Vec::new();
+
+    for i in 0..4 {
+        let n = (i + 1) % 4;
+                
+        // 2 tris per-edge 1 up, one down
+        for j in 0..2 {
+            
+            // vertices
+            let mut t0 = corner[i];
+            let t1 = corner[n];
+            let mut t2 = yextent[j];
+
+            // tex coords
+            let mut tc0 = vec2f(1.0, -1.0);
+            let tc1 = vec2f(-1.0, -1.0);
+            let mut tc2 = vec2f(0.0, 1.0); 
+
+            // flip if we are the top
+            if j == 0 {
+                std::mem::swap(&mut t0, &mut t2);
+                std::mem::swap(&mut tc0, &mut tc2);
+            }
+
+            // normals and tangents
+            let n = get_triangle_normal(t0, t2, t1);
+            let b = normalize(t0 - t1);
+            let t = cross(n, b);
+
+            let tri: Vec<Vertex3D> = vec![
+                Vertex3D {
+                    position: t0,
+                    texcoord: tc0,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                },
+                Vertex3D {
+                    position: t1,
+                    texcoord: tc1,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                },
+                Vertex3D {
+                    position: t2,
+                    texcoord: tc2,
+                    normal: n,
+                    tangent: t,
+                    bitangent: b,
+                }
+            ];
+            vertices.extend(tri);
+        }
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}
+
 /// Create a an indexed unit cube mesh instance
 pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     // cube veritces
