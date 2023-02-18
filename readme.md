@@ -19,9 +19,231 @@ The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) 
 
 `cargo build` will automatically build data into `target/data` this is where the client and the examples will look for data files.
 
+## Using the Client
+
+You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository.
+
+```text
+// build the client and data
+cargo build
+
+// then build plugins
+cargo build --manifest-path plugins/Cargo.toml
+
+// run the client
+cargo run client
+```
+
+Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to sepcify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
+
+### Adding Plugins
+
+Plugins are loaded by passing a directory to `hotline_rs::client::Client::add_plugin_lib()` which contains a `Cargo.toml` and is a dynamic library. They can be opened in the client using the `File > Open` from the main menu bar by selecting the `Cargo.toml`.
+
+The basic `Cargo.toml` setup looks like this:
+
+```toml
+[package]
+name = "ecs_basic"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["rlib", "dylib"]
+
+[dependencies]
+hotline-rs = { path = "../.." }
+ecs_base = { path = "../ecs_base" }
+maths-rs = "0.1.4"
+bevy_ecs = "0.9.1"
+```
+
+You can provide your own plugins implementations using the [Plugin](https://docs.rs/hotline-rs/latest/hotline_rs/plugin/trait.Plugin.html) trait. A basic plugin can hook itself by implementing a few functions:
+
+```rust
+impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
+    fn create() -> Self {
+        EmptyPlugin {
+        }
+    }
+
+    fn setup(&mut self, client: Client<gfx_platform::Device, os_platform::App>) 
+        -> Client<gfx_platform::Device, os_platform::App> {
+        println!("plugin setup");
+        client
+    }
+
+    fn update(&mut self, client: client::Client<gfx_platform::Device, os_platform::App>)
+        -> Client<gfx_platform::Device, os_platform::App> {
+        println!("plugin update");
+        client
+    }
+
+    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
+        -> Client<gfx_platform::Device, os_platform::App> {
+        println!("plugin unload");
+        client
+    }
+
+    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
+    -> Client<gfx_platform::Device, os_platform::App> {
+        println!("plugin ui");
+        client
+    }
+}
+
+// the macro instantiates the plugin with a c-abi so it can be loaded dynamically.
+hotline_plugin![EmptyPlugin];
+```
+
+### Ecs Plugin
+
+There is a core `ecs` plugin which builds ontop of `bevy_ecs`. It allows you to supply you own systems and build schedules dynamically. It is possible to load and find new ecs systems in different dynamic libraries, you can register and instantiate `demos` which are collections of setup, update and render systems.
+
+#### Initialisation Functions
+
+You can setup a new ecs demo by providing an initialisation function named after the demo this returns a `SheduleInfo` for which systems to run:
+
+```rust
+/// Supply an in intialise function which returns a `SheduleInfo` for a demo
+#[no_mangle]
+pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+    // pmfx
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
+    client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
+
+    SheduleInfo {
+        update: vec![
+            "update_cameras".to_string(),
+            "update_main_camera_config".to_string()
+        ],
+        render: client.pmfx.get_render_function_names("checkerboard"),
+        setup: vec!["setup_cube".to_string()]
+    }
+}
+```
+
+#### Setup Systems
+
+You can supply setup systems to add entities into a scene, when a dynamic code reload happens the world will be cleared the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple setup systems and the will be executed concurrently.
+
+```rust
+#[no_mangle]
+pub fn setup_cube(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let pos = Mat4f::from_translation(Vec3f::unit_y() * 10.0);
+    let scale = Mat4f::from_scale(splat3f(10.0));
+
+    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    commands.spawn((
+        Position(Vec3f::zero()),
+        Velocity(Vec3f::one()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(pos * scale)
+    ));
+}
+```
+
+#### Render Systems
+
+You can specify render graphs in `pmfx` which setup `views` which get dispatched into render functions. All rneder systems run concurrently on the CPU, the command buffers they generate are executed in an order specified by the `pmfx` render graph and it's dependencies.
+
+```rust
+#[no_mangle]
+pub fn render_checkerboard_basic(
+    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
+    view_name: String,
+    view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
+    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
+        
+    // unpack
+    let pmfx = &pmfx.0;
+    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let view = arc_view.lock().unwrap();
+    let fmt = view.pass.get_format_hash();
+
+    let checkerboard = pmfx.get_render_pipeline_for_format("checkerboard_mesh", fmt);
+    if checkerboard.is_none() {
+        return;
+    }
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&checkerboard.unwrap());
+
+    for view_proj in &view_proj_query {
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        for (world_matrix, mesh) in &mesh_draw_query {
+            // draw
+            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+            view.cmd_buf.set_index_buffer(&mesh.0.ib);
+            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        }
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+}
+```
+
+#### Update Systems
+
+You can also supply your own update systems to animate and move your entities, these too are all executed concurrently.
+
+```rust
+fn update_cameras(
+    app: Res<AppRes>, 
+    main_window: Res<MainWindowRes>, 
+    mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
+    let app = &app.0;
+    for (mut position, mut rotation, mut view_proj) in &mut query {
+    
+    // logic
+    }
+}
+```
+
+#### Registering Systems
+
+Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them but for the time being this is a little bit of manual book-keeping.  
+
+You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a dynamic library and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name.
+
+```rust
+#[no_mangle]
+pub fn get_demos_ecs_basic() -> Vec<String> {
+    vec![
+        "primitives".to_string(),
+        "billboard".to_string(),
+        "cube".to_string(),
+        "multiple".to_string(),
+        "heightmap".to_string(),
+    ]
+}
+
+#[no_mangle]
+pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
+    match name.as_str() {
+        // setup functions
+        "setup_cube" => ecs_base::system_func![crate::primitives::setup_cube],
+        // ..
+        "render_checkerboard_basic" => ecs_base::view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
+        _ => std::hint::black_box(None)
+    }
+}
+```
+
 ## Using as a library
 
-You can use hotline as a library to use the low level abstractions and modules to create windowed applications with a graphics api backend. Here is a small example:
+You can use hotline as a library inside the plugin system or on it's own to use the low level abstractions and modules to create windowed applications with a graphics api backend. Here is a small example:
+
+### Basic Application
 
 ```rust
     // Create an Application
@@ -86,26 +308,6 @@ You can use hotline as a library to use the low level abstractions and modules t
     Ok(());
 }
 ```
-
-## Using Hotreload Client
-
-You can run the binary `client` which allows code to be reloaded through `Plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository.
-
-
-```text
-// build the client and data
-cargo build
-
-// then build plugins
-cargo build --manifest-path plugins/Cargo.toml
-
-// run the client
-cargo run client
-```
-
-You can then use the visual client to locate `Cargo.toml` files inside the `plugins` directory. The `ecs` plugin provides a basic wrapper around `bevy_ecs` and `scheduler`.
-
-Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to sepcify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
 
 ## Examples
 
