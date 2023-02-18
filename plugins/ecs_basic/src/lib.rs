@@ -101,41 +101,6 @@ fn render_billboards_basic(
 }
 
 #[no_mangle]
-pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
-    // pmfx
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str())
-        .expect("expected to have pmfx: data/shaders/basic");
-    client.pmfx.create_render_graph(&mut client.device, "basic")
-        .expect("expected to have render pipeline: basic");
-
-    SheduleInfo {
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
-        ],
-        render: client.pmfx.get_render_function_names("basic"),
-        setup: vec!["setup_cube".to_string()]
-    }
-}
-
-#[no_mangle]
-pub fn setup_cube(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
-
-    let pos = Mat4f::from_translation(Vec3f::unit_y() * 5.0);
-    let scale = Mat4f::from_scale(splat3f(5.0));
-
-    let cube_mesh = hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0);
-    commands.spawn((
-        Position(Vec3f::zero()),
-        Velocity(Vec3f::one()),
-        MeshComponent(cube_mesh.clone()),
-        WorldMatrix(pos * scale)
-    ));
-}
-
-#[no_mangle]
 pub fn multiple(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
     client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
     SheduleInfo {
@@ -281,9 +246,9 @@ pub fn get_demos_ecs_basic() -> Vec<String> {
 pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
         // setup functions
+        "setup_cube" => ecs_base::system_func![crate::primitives::setup_cube],
         "setup_primitives" => ecs_base::system_func![crate::primitives::setup_primitives],
         "setup_billboard" => ecs_base::system_func![setup_billboard],
-        "setup_cube" => ecs_base::system_func![setup_cube],
         "setup_multiple" => ecs_base::system_func![setup_multiple],
         "setup_heightmap" => ecs_base::system_func![setup_heightmap],
         // render functions

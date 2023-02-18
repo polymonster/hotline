@@ -31,7 +31,7 @@ fn build_data() {
         let output = Command::new("hotline-data/pmbuild.cmd")
         .arg("win32")
         .output()
-        .expect("pmbuild failed");
+        .expect("hotline_rs::build: pmbuild failed");
         println!("{}", String::from_utf8(output.stdout).unwrap());
         println!("{}", String::from_utf8(output.stderr).unwrap());
     }
