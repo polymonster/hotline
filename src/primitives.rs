@@ -733,13 +733,13 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let x = f32::sin(a);
             let y = f32::cos(a);
             let p = pos + right * x + up * y;
-            let uv0 = Vec2f::new(x, y);
+            //let uv0 = Vec2f::new(x, y);
 
             a += angle_step;
             let x2 = f32::sin(a);
             let y2 = f32::cos(a);
             let np = pos + right * x2 + up * y2;
-            let uv1 = Vec2f::new(x2, y2);
+            //let uv1 = Vec2f::new(x2, y2);
 
             let n = get_triangle_normal(p, np, tip);
             let b = normalize(p - tip);
@@ -748,21 +748,21 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let tri = vec![
                 Vertex3D {
                     position: p,
-                    texcoord: uv0,
+                    texcoord: Vec2f::new(-1.0, -1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
                 },
                 Vertex3D {
                     position: tip,
-                    texcoord: Vec2f::zero(),
+                    texcoord: Vec2f::new(0.0, 1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
                 },
                 Vertex3D {
                     position: np,
-                    texcoord: uv1,
+                    texcoord: Vec2f::new(1.0, -1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
@@ -772,10 +772,6 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             
             let side_dip = dip + cross(normalize(p-np), at);
             
-            v[0].pos.xyz = p;
-            v[1].pos.xyz = np;
-            v[2].pos.xyz = side_dip;
-            
             let n = get_triangle_normal(p, side_dip, np);
             let b = normalize(p - np);
             let t = cross(n, b);
@@ -783,21 +779,21 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let tri = vec![
                 Vertex3D {
                     position: p,
-                    texcoord: uv0,
+                    texcoord: Vec2f::new(-1.0, 1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
                 },
                 Vertex3D {
                     position: np,
-                    texcoord: uv1,
+                    texcoord: Vec2f::new(1.0, 1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
                 },
                 Vertex3D {
                     position: side_dip,
-                    texcoord: Vec2f::zero(),
+                    texcoord: Vec2f::new(0.0, -1.0),
                     normal: n,
                     tangent: t,
                     bitangent: b,
@@ -808,7 +804,7 @@ pub fn create_icosohedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         vertices
     };
     
-    let vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0);
+    let mut vertices = hemi_icosohedron(Vec3f::unit_y(), Vec3f::unit_y() * 0.5, 0.0);
     let bottom_vertices = hemi_icosohedron(-Vec3f::unit_y(), Vec3f::unit_y() * -0.5, f32::pi());
     vertices.extend(bottom_vertices);
 
