@@ -211,9 +211,9 @@ fn update_cameras(
 
 #### Registering Systems
 
-Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them but for the time being this is a little bit of manual book-keeping.  
+Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them.  
 
-You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a dynamic library and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name.
+You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a `plugin` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name, the ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
 
 ```rust
 #[no_mangle]
@@ -323,6 +323,7 @@ cargo run --example triangle
 There are included `tasks` and `launch` files for vscode including configurations for the client and the examples.
 
 ## Design Goals
+
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render graphs, code).
 - Concise low level graphics api... think somewhere in-between Metal and Direct3D12.
@@ -336,7 +337,8 @@ There are included `tasks` and `launch` files for vscode including configuration
 
 ## Roadmap
 
-#### In Progress
+### In Progress
+
 - Debug / Primitve Rendering API
 - High level graphics api (render graphs, data driven, Uber shaders)
 - Multi-threading support (async command buffer generation and job dispatches)
@@ -346,7 +348,8 @@ There are included `tasks` and `launch` files for vscode including configuration
 - ~~API (av::) / Windows Media Foundation (HW Video / Audio Decoding)~~
 - ~~Imgui support w/ Viewports~~
 
-#### Future Plans
+### Future Plans
+
 - Linux
 - Vulkan
 - macOS
@@ -357,5 +360,4 @@ There are included `tasks` and `launch` files for vscode including configuration
 
 ## Contributing
 
-Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interseted in being more involved in development I am happy to take on people to help with project of all experience levels, especially people with more experience in Rust. You can contact me if interested via [Twitter](twitter.com/polymonster) or [Discord](https://discord.com/invite/3yjXwJ8wJC).
- 
+Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interseted in being more involved in development I am happy to take on people to help with project of all experience levels, especially people with more experience in Rust. You can contact me if interested via [Twitter](twitter.com/polymonster) or [Discord](https://discord.com/invite/3yjXwJ8wJC).  
