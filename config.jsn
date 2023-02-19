@@ -9,14 +9,15 @@
             help_arg: "-help"
         }
     }
-	
-	tools_update: {
-		pmfx: {
-			tag_name: latest
-			repository: "https://api.github.com/repos/polymonster/pmfx-shader/releases"
-			asset_name<windows>: Windows-x64.zip
-		}
-	}
+    
+    tools_update: {
+        pmfx: {
+            tag_name: latest
+            repository: "https://api.github.com/repos/polymonster/pmfx-shader/releases"
+            asset_name<windows>: Windows-x64.zip
+            poop: yes
+        }
+    }
 
     base: {
         jsn_vars: {
@@ -26,14 +27,13 @@
 
         copy_base: {
             type: copy
+
             files: [
                 // copy fonts to data dir
                 ["src/fonts", "${data_dir}/fonts"]
-
                 // default imgui layouts form the client.. todo. move to target
                 ["plugins/imgui.ini", "target/debug/imgui.ini"]
                 ["plugins/imgui.ini", "target/release/imgui.ini"]
-
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
             ]
