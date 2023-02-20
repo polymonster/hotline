@@ -379,11 +379,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             path: path.to_string(),
             output_filepath: lib_path.to_string(),
             files: vec![
-
                 src_path
             ],
         };
-        println!("hotline::client:: loading plugin {} : {}", lib_path, name);
+
+        println!("hotline_rs::client:: loading plugin: {}/{}", lib_path, name);
         let lib = hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap();
         unsafe {
             // create instance if it is a Plugin trait

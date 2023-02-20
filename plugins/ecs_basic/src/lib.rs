@@ -220,6 +220,7 @@ fn render_heightmap_basic(
             view.cmd_buf.set_index_buffer(&mesh.0.ib);
             view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
             view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+
         }
     }
 

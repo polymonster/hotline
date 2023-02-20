@@ -129,8 +129,6 @@ ps_output ps_main(vs_output input) {
     return output;
 }
 
-
-
 ps_output ps_checkerboard(vs_output input) {
     ps_output output;
     output.colour = input.colour;
@@ -150,7 +148,7 @@ ps_output ps_checkerboard(vs_output input) {
 
     float rxy = rx + ry > 1.0 ? 0.0 : rx + ry;
 
-    output.colour.rgb *= rxy < 0.001 ? 0.5 : 1.0;
+    output.colour.rgb *= rxy < 0.001 ? 0.66 : 1.0;
 
     output.colour.a = 1.0;
     return output;

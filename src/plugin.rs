@@ -59,13 +59,27 @@ impl reloader::ReloadResponder for PluginReloadResponder {
     }
 
     fn build(&mut self) -> ExitStatus {
-        let output = Command::new("cargo")
-            .current_dir(format!("{}", self.path))
-            .arg("build")
-            .arg("-p")
-            .arg(format!("{}", self.name))
-            .output()
-            .expect("hotline::hot_lib:: hot lib failed to build!");
+        let output = if super::get_config_name() == "release" {
+            Command::new("cargo")
+                .current_dir(format!("{}", self.path))
+                .arg("build")
+                .arg(format!("{}", "--release"))
+                .arg("-p")
+                .arg(format!("{}", self.name))
+                .arg("--verbose")
+                .output()
+                .expect("hotline::hot_lib:: hot lib failed to build!")
+        }
+        else {
+            Command::new("cargo")
+                .current_dir(format!("{}", self.path))
+                .arg("build")
+                .arg("-p")
+                .arg(format!("{}", self.name))
+                .arg("--verbose")
+                .output()
+                .expect("hotline::hot_lib:: hot lib failed to build!")
+        };
 
         if output.stdout.len() > 0 {
             println!("{}", String::from_utf8(output.stdout).unwrap());
@@ -78,10 +92,6 @@ impl reloader::ReloadResponder for PluginReloadResponder {
         output.status
     }
 }
-
-/// Plugin instances are crated by the `Plugin::create` function, created on the heap
-/// and passed around as a void* through the hotline_plugin macro to become a `Plugin` trait
-pub type PluginInstance = *mut core::ffi::c_void;
 
 /// Macro to instantiate a new hotline plugin, simply defined a concrete plugin type:
 /// struct EmptyPlugin;
@@ -162,3 +172,7 @@ macro_rules! hotline_plugin {
         }
     }
 }
+
+/// Plugin instances are crated by the `Plugin::create` function, created on the heap
+/// and passed around as a void* through the hotline_plugin macro to become a `Plugin` trait
+pub type PluginInstance = *mut core::ffi::c_void;

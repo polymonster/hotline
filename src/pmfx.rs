@@ -516,7 +516,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // create textures
         if !self.views.contains_key(view_name) && self.pmfx.views.contains_key(view_name) {
 
-            println!("hotline::pmfx:: creating view {}", view_name);
+            println!("hotline_rs::pmfx:: creating view {}", view_name);
 
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
@@ -868,7 +868,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         for (_, tracking) in &mut self.pmfx_tracking {
             let mtime = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
             if mtime > tracking.modified_time {
-                println!("hotline::pmfx:: reload available");
+                println!("hotline_rs::pmfx:: reload available");
                 tracking.modified_time = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
                 reload_filepath = tracking.filepath.to_string_lossy().to_string();
             }
@@ -1099,10 +1099,6 @@ impl PmfxReloadResponder {
 impl ReloadResponder for PmfxReloadResponder {
     fn add_file(&mut self, filepath: &str) {
         self.files.push(filepath.to_string());
-
-        for f in &self.files {
-            println!("{}", f);
-        }
     }  
 
     fn get_files(&self) -> Vec<String> {
@@ -1114,9 +1110,10 @@ impl ReloadResponder for PmfxReloadResponder {
     }
 
     fn build(&mut self) -> std::process::ExitStatus {
-        // TODO: get abs path
-        let output = std::process::Command::new("C:\\Users\\alex_\\dev\\hotline\\hotline-data\\pmbuild.cmd")
-            .current_dir("C:\\Users\\alex_\\dev\\hotline\\")
+        let hotline_path = super::get_data_path("..");
+        let pmbuild = super::get_data_path("../hotline-data/pmbuild.cmd");
+        let output = std::process::Command::new(pmbuild)
+            .current_dir(hotline_path)
             .arg("win32")
             .arg("-pmfx")
             .output()
