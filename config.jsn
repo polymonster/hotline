@@ -15,7 +15,38 @@
             tag_name: latest
             repository: "https://api.github.com/repos/polymonster/pmfx-shader/releases"
             asset_name<windows>: Windows-x64.zip
-            poop: yes
+        }
+    }
+
+    hotline: {
+        jsn_vars: {
+            config_flags: ""
+            config: "debug"
+        }
+        client: {
+            type: shell
+            commands: [
+                "cargo build --manifest-path plugins/Cargo.toml ${config_flags} --verbose"
+            ]
+        }
+        plugins: {
+            type: shell
+            commands: [
+                "cargo build ${config_flags}--verbose"
+            ]
+        }
+        run: {
+            type: shell
+            commands: [
+                ".\\target\\${config}\\client.exe"
+            ]
+        }
+    }
+
+    hotline-release(hotline): {
+        jsn_vars: {
+            config_flags: "--release"
+            config: "release"
         }
     }
 
