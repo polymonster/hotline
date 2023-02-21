@@ -1,9 +1,10 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
+
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use hotline_rs::{client, pmfx, imdraw, gfx_platform, os_platform};
 use maths_rs::{Vec3f, Mat4f};
 
 pub struct SheduleInfo {
@@ -102,7 +103,6 @@ pub struct MainCamera;
 
 #[derive(Component)]
 pub struct MeshComponent(pub pmfx::Mesh<gfx_platform::Device>);
-
 
 #[macro_export]
 macro_rules! system_func {

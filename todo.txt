@@ -1,8 +1,7 @@
 // TODO:
 
-// plugins
-// - dependencies
-// - plugin file format
+// phi, inv phi to maths. generic sin cos?
+// pmfx not reloading
 
 // ui
 // - view menu
@@ -14,7 +13,7 @@
 // - msaa + texture format changing
 
 // primitives
-// - icosasphere
+
 
 // ecs
 // - per demo settings
@@ -50,6 +49,7 @@
 // - Raster
 
 // DONE:
+// x icosasphere
 // x watch files in folders
 // x save imgui locations more reliably
 // x plane - heightmap

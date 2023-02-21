@@ -5,9 +5,8 @@ use hotline_rs::client::Client;
 use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
 use hotline_rs::gfx;
-
-use ecs_base::*;
-use ecs_base::SheduleInfo;
+use hotline_rs::ecs_base::*;
+use hotline_rs::ecs_base::SheduleInfo;
 
 use maths_rs::Vec3f;
 use maths_rs::Mat4f;
@@ -52,8 +51,8 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 4),
-        hotline_rs::primitives::create_cylinder_mesh(&mut device.0, 16),
+        crate::dev::create_sphere_mesh(&mut device.0, 32),
+        crate::dev::create_cylinder_mesh(&mut device.0, 16),
     ];
 
     // square number of rows and columns
@@ -64,7 +63,7 @@ pub fn setup_primitives(
     let half_size = size * 0.5;    
     let step = size * half_size;
     let half_extent = rc * half_size;
-    let start_pos = vec3f(half_extent, size, half_extent);
+    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
 
     let mut i = 0;
     for y in 0..irc {

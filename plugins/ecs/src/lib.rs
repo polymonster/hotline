@@ -1,12 +1,19 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use hotline_rs::gfx;
+use hotline_rs::gfx_platform;
+use hotline_rs::os;
+use hotline_rs::os_platform;
+
 use hotline_rs::*;
 use hotline_rs::client::*;
 use hotline_rs::plugin::*;
-
-use ecs_base::*;
-use ecs_base::SheduleInfo;
+use hotline_rs::ecs_base::*;
+use hotline_rs::ecs_base::SheduleInfo;
+use hotline_rs::system_func;
+use hotline_rs::view_func;
+use hotline_rs::view_func_closure;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemDescriptor;
@@ -20,12 +27,6 @@ use maths_rs::mat::*;
 
 use hotline_rs::os::App;
 use hotline_rs::os::Window;
-
-use hotline_rs::gfx_platform;
-use hotline_rs::os_platform;
-
-use hotline_rs::gfx;
-use hotline_rs::os;
 
 use gfx::RenderPass;
 use gfx::CmdBuf;
@@ -440,10 +441,10 @@ hotline_plugin![BevyPlugin];
 #[no_mangle]
 pub fn get_system_ecs(name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
-        "update_cameras" => ecs_base::system_func![update_cameras],
-        "update_main_camera_config" => ecs_base::system_func![update_main_camera_config],
-        "render_grid" => ecs_base::system_func![render_grid],
-        "render_world_view" => ecs_base::view_func![render_world_view, "render_world_view"],
+        "update_cameras" => system_func![update_cameras],
+        "update_main_camera_config" => system_func![update_main_camera_config],
+        "render_grid" => system_func![render_grid],
+        "render_world_view" => view_func![render_world_view, "render_world_view"],
         _ => None
     }
 }

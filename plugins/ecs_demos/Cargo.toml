@@ -1,5 +1,5 @@
 [package]
-name = "ecs_base"
+name = "ecs_demos"
 version = "0.1.0"
 edition = "2021"
 
@@ -10,5 +10,3 @@ crate-type = ["rlib", "dylib"]
 hotline-rs = { path = "../.." }
 maths-rs = "0.1.4"
 bevy_ecs = "0.9.1"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.81"

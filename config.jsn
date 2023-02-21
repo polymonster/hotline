@@ -26,13 +26,13 @@
         client: {
             type: shell
             commands: [
-                "cargo build --manifest-path plugins/Cargo.toml ${config_flags} --verbose"
+                "cargo build --manifest-path plugins/Cargo.toml ${config_flags} --verbose --"
             ]
         }
         plugins: {
             type: shell
             commands: [
-                "cargo build ${config_flags}--verbose"
+                "cargo build ${config_flags} --verbose"
             ]
         }
         run: {
@@ -54,6 +54,7 @@
         jsn_vars: {
             data_dir: "target/data"
             temp_dir: "target/temp"
+            src_data_dir: "hotline-data/src"
         }
 
         copy_base: {
@@ -61,7 +62,7 @@
 
             files: [
                 // copy fonts to data dir
-                ["src/fonts", "${data_dir}/fonts"]
+                ["${src_data_dir}/fonts", "${data_dir}/fonts"]
                 // default imgui layouts form the client.. todo. move to target
                 ["plugins/imgui.ini", "target/debug/imgui.ini"]
                 ["plugins/imgui.ini", "target/release/imgui.ini"]
@@ -87,7 +88,7 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i src/shaders/"
+                "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-source"

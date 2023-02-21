@@ -9,6 +9,7 @@ use maths_rs::num::*;
 
 /// Generic structure for 3D lit geometry meshes
 #[derive(Clone)]
+#[repr(C)]
 pub struct Vertex3D {
     pub position: Vec3f,
     pub texcoord: Vec2f,
@@ -19,6 +20,7 @@ pub struct Vertex3D {
 
 /// Generic structure for simple 2D textured meshes
 #[derive(Clone)]
+#[repr(C)]
 pub struct Vertex2D {
     pub position: Vec2f,
     pub texcoord: Vec2f,
@@ -165,14 +167,14 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // front face
         Vertex3D {
             position: vec3f(-1.0, -1.0, 0.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, 0.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -186,7 +188,7 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, 0.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -238,14 +240,14 @@ pub fn create_plane_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx
             vertices.extend(vec![
                 Vertex3D {
                     position: vec3f(pos.x, 0.0, pos.z),
-                    texcoord: vec2f(-1.0, -1.0),
+                    texcoord: vec2f(0.0, 0.0),
                     normal: Vec3f::unit_y(),
                     tangent: vec3f(1.0, 0.0, 0.0),
                     bitangent: vec3f(0.0, 1.0, 0.0),
                 },
                 Vertex3D {
                     position: vec3f(pos.x + increment, 0.0, pos.z),
-                    texcoord: vec2f(1.0, -1.0),
+                    texcoord: vec2f(1.0, 0.0),
                     normal: Vec3f::unit_y(),
                     tangent: vec3f(1.0, 0.0, 0.0),
                     bitangent: vec3f(0.0, 1.0, 0.0),
@@ -259,7 +261,7 @@ pub fn create_plane_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx
                 },
                 Vertex3D {
                     position: vec3f(pos.x, 0.0, pos.z + increment),
-                    texcoord: vec2f(-1.0, 1.0),
+                    texcoord: vec2f(0.0, 1.0),
                     normal: Vec3f::unit_y(),
                     tangent: vec3f(1.0, 0.0, 0.0),
                     bitangent: vec3f(0.0, 1.0, 0.0),
@@ -299,22 +301,22 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         let t = cross(n, b);
         vec![
             Vertex3D {
-                position: tp,
-                texcoord: vec2f(0.0, 1.0),
+                position: normalize(tp),
+                texcoord: vec2f(0.5, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
-                position: p,
-                texcoord: vec2f(-1.0, -1.0),
+                position: normalize(p),
+                texcoord: vec2f(0.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
-                position: np,
-                texcoord: vec2f(1.0, -1.0),
+                position: normalize(np),
+                texcoord: vec2f(1.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -355,14 +357,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // front face
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0,  1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -376,7 +378,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -384,14 +386,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // back face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -405,7 +407,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -413,14 +415,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // right face
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -434,7 +436,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -442,14 +444,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // left face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -463,7 +465,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -471,14 +473,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // top face
         Vertex3D {
             position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -492,7 +494,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -500,14 +502,14 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // bottom face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(-1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -521,7 +523,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(-1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -593,9 +595,9 @@ pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let mut t2 = yextent[j];
 
             // tex coords
-            let mut tc0 = vec2f(1.0, -1.0);
-            let tc1 = vec2f(-1.0, -1.0);
-            let mut tc2 = vec2f(0.0, 1.0); 
+            let mut tc0 = vec2f(1.0, 0.0);
+            let tc1 = vec2f(0.0, 0.0);
+            let mut tc2 = vec2f(0.5, 1.0); 
 
             // flip if we are the top
             if j == 0 {
@@ -669,21 +671,21 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
         let tri = vec![
             Vertex3D {
                 position: t0,
-                texcoord: uv0,
+                texcoord: uv0 * 0.5 + 0.5,
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: t1,
-                texcoord: uv1,
+                texcoord: uv1 * 0.5 + 0.5,
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: t2,
-                texcoord: Vec2f::zero(),
+                texcoord: Vec2f::point_five(),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -785,21 +787,21 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
         let tri = vec![
             Vertex3D {
                 position: p,
-                texcoord: Vec2f::new(-1.0, -1.0),
+                texcoord: Vec2f::new(0.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: tip,
-                texcoord: Vec2f::new(0.0, 1.0),
+                texcoord: Vec2f::new(0.5, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: np,
-                texcoord: Vec2f::new(1.0, -1.0),
+                texcoord: Vec2f::new(1.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -816,7 +818,7 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
         let tri = vec![
             Vertex3D {
                 position: p,
-                texcoord: Vec2f::new(-1.0, 1.0),
+                texcoord: Vec2f::new(0.0, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -830,7 +832,7 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
             },
             Vertex3D {
                 position: side_dip,
-                texcoord: Vec2f::new(0.0, -1.0),
+                texcoord: Vec2f::new(0.5, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -940,24 +942,26 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
     // bottom ring
     for i in 0..segments {
         let bt = cross(tangents[i], points[i]);
+        let u = f32::atan2(bottom_points[i].z, bottom_points[i].x);
         vertices.push(Vertex3D{
             position: bottom_points[i],
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(f32::atan2(abs(bottom_points[i].z), abs(bottom_points[i].x)), -1.0)
+            texcoord: Vec2f::new(u, 0.0) 
         });
     }
 
     // top ring
     for i in 0..segments {
         let bt = cross(tangents[i], points[i]);
+        let u = f32::atan2(top_points[i].z, top_points[i].x);
         vertices.push(Vertex3D{
             position: top_points[i],
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(f32::atan2(abs(top_points[i].z), abs(top_points[i].x)), 1.0)
+            texcoord: Vec2f::new(u , 1.0)
         });
     }
         
@@ -968,7 +972,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
             normal: -Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z)
+            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
         });
     }
 
@@ -979,7 +983,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
             normal: Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z)
+            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
         });
     }
 
@@ -989,7 +993,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
         normal: -Vec3f::unit_y(),
         tangent: Vec3f::unit_x(),
         bitangent: Vec3f::unit_z(),
-        texcoord: Vec2f::zero()
+        texcoord: Vec2f::point_five()
     });
     let centre_bottom = vertices.len()-1;
 
@@ -998,7 +1002,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
         normal: Vec3f::unit_y(),
         tangent: Vec3f::unit_x(),
         bitangent: Vec3f::unit_z(),
-        texcoord: Vec2f::zero()
+        texcoord: Vec2f::point_five()
     });
     let centre_top = vertices.len()-1;
 

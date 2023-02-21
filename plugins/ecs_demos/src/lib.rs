@@ -1,13 +1,20 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::client::Client;
+
+use hotline_rs::gfx;
 use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
-use hotline_rs::gfx;
 
-use ecs_base::*;
-use ecs_base::SheduleInfo;
+use hotline_rs::ecs_base;
+use hotline_rs::system_func;
+use hotline_rs::view_func;
+use hotline_rs::view_func_closure;
+
+use hotline_rs::ecs_base::*;
+use hotline_rs::ecs_base::SheduleInfo;
+
+use hotline_rs::client::Client;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemDescriptor;
@@ -26,6 +33,7 @@ use gfx::RenderPass;
 struct Billboard;
 
 mod primitives;
+mod dev;
 
 #[no_mangle]
 pub fn billboard(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
@@ -233,7 +241,7 @@ fn render_heightmap_basic(
 //
 
 #[no_mangle]
-pub fn get_demos_ecs_basic() -> Vec<String> {
+pub fn get_demos_ecs_demos() -> Vec<String> {
     vec![
         "primitives".to_string(),
         "billboard".to_string(),
@@ -244,18 +252,18 @@ pub fn get_demos_ecs_basic() -> Vec<String> {
 }
 
 #[no_mangle]
-pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs_demos(name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
         // setup functions
-        "setup_cube" => ecs_base::system_func![crate::primitives::setup_cube],
-        "setup_primitives" => ecs_base::system_func![crate::primitives::setup_primitives],
-        "setup_billboard" => ecs_base::system_func![setup_billboard],
-        "setup_multiple" => ecs_base::system_func![setup_multiple],
-        "setup_heightmap" => ecs_base::system_func![setup_heightmap],
+        "setup_cube" => system_func![crate::primitives::setup_cube],
+        "setup_primitives" => system_func![crate::primitives::setup_primitives],
+        "setup_billboard" => system_func![setup_billboard],
+        "setup_multiple" => system_func![setup_multiple],
+        "setup_heightmap" => system_func![setup_heightmap],
         // render functions
-        "render_billboards_basic" => ecs_base::view_func![render_billboards_basic, "render_billboards_basic"],
-        "render_heightmap_basic" => ecs_base::view_func![render_heightmap_basic, "render_heightmap_basic"],
-        "render_checkerboard_basic" => ecs_base::view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
+        "render_billboards_basic" => view_func![render_billboards_basic, "render_billboards_basic"],
+        "render_heightmap_basic" => view_func![render_heightmap_basic, "render_heightmap_basic"],
+        "render_checkerboard_basic" => view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
         _ => std::hint::black_box(None)
     }
 }
