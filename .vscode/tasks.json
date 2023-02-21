@@ -12,6 +12,18 @@
 				"isDefault": true
 			},
 			"label": "cargo_build"
+		},
+		{
+			"label": "pmbuild-debug",
+			"command": "./hotline-data/pmbuild.cmd", // Could be any other shell command
+			"args": ["win32"],
+			"type": "shell"
+		},
+		{
+			"label": "pmbuild-release",
+			"command": "./hotline-data/pmbuild.cmd", // Could be any other shell command
+			"args": ["win32-release"],
+			"type": "shell"
 		}
 	]
 }

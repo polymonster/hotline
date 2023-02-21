@@ -188,10 +188,18 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             device: &mut device,
             swap_chain: &mut swap_chain,
             main_window: &main_window,
-            fonts: vec![imgui::FontInfo {
-                filepath: super::get_data_path("data/fonts/roboto_medium.ttf"),
-                glyph_ranges: None
-            }],
+            fonts: vec![
+                imgui::FontInfo {
+                    filepath: super::get_data_path("data/fonts/cousine_regular.ttf"),
+                    glyph_ranges: None
+                },
+                imgui::FontInfo {
+                    filepath: super::get_data_path("data/fonts/font_awesome.ttf"),
+                    glyph_ranges: Some(vec![
+                        [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32]
+                    ])
+                }
+            ]
         };
         let imgui = imgui::ImGui::create(&mut imgui_info)?;
 
@@ -278,14 +286,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // console window pos / size
         if let Some(console_window_rect) = self.user_config.console_window_rect {
-            if console_window_rect != self.app.get_console_window_rect() {
-                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
-                invalidated = true;
+            let current = self.app.get_console_window_rect();
+            if console_window_rect != current {
+                if current.x > 0 && current.y > 0 {
+                    self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+                    invalidated = true;
+                }
             }
         }
         else {
-            self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
-            invalidated = true;
+            let current = self.app.get_console_window_rect();
+            if current.x > 0 && current.y > 0 {
+                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+                invalidated = true;
+            }
         }
 
         // write to file
@@ -306,11 +320,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
         });
-
-        // resolve
-        if let Some(tex) = self.pmfx.get_texture(blit_view_name) {
-            self.cmd_buf.resolve_texture_subresource(tex, 0).unwrap();
-        }
         
         // clear window
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());

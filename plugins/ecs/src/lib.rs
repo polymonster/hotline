@@ -43,14 +43,17 @@ struct BevyPlugin {
 type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 
 fn update_main_camera_config(
-    mut info: ResMut<SessionInfo>, 
+    main_window: Res<MainWindowRes>,
+    mut info: ResMut<SessionInfo>,
     mut query: Query<(&Position, &Rotation), With<MainCamera>>) {
+    let window_rect = main_window.0.get_viewport_rect();
+    let aspect = window_rect.width as f32 / window_rect.height as f32;
     for (position, rotation) in &mut query {
         info.main_camera = Some(CameraInfo{
             pos: (position.0.x, position.0.y, position.0.z),
             rot: (rotation.0.x, rotation.0.y, rotation.0.z),
             fov: 60.0,
-            aspect: 16.0/9.0
+            aspect: aspect
         });
     }
 }
@@ -152,8 +155,19 @@ fn render_grid(
         let divisions = 10.0;
         for i in 0..((scale * 2.0) /divisions) as usize {
             let offset = -scale + i as f32 * divisions;
-            imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(0.3));
-            imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(0.3));
+            let mut tint = 0.3;
+            if i % 5 == 0 {
+                tint *= 0.5;
+            }
+            if i % 10 == 0 {
+                tint *= 0.25;
+            }
+            if i % 20 == 0 {
+                tint *= 0.125;
+            }
+
+            imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
+            imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
         }
 
         /*
@@ -369,7 +383,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let rot = Rotation { 0: Vec3f::new(main_camera.rot.0, main_camera.rot.1, main_camera.rot.2) };
 
             self.world.spawn((
-                ViewProjectionMatrix(camera_view_proj_from(&pos, &rot, 16.0/9.0, 60.0)),
+                ViewProjectionMatrix(camera_view_proj_from(&pos, &rot, main_camera.aspect, main_camera.fov)),
                 pos,
                 rot,
                 Camera,
@@ -407,24 +421,35 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     }
 
     fn ui(&mut self, mut client: PlatformClient) -> PlatformClient {
-        // Demo list / demo select
-        let demo_list = self.get_demo_list(&client);
         let mut open = true;
+        let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
+            // refresh button
+            if client.imgui.button("\u{f021}") {
+                resetup = true;
+            }
+            client.imgui.same_line();
+
+            // demo select
+            let demo_list = self.get_demo_list(&client);
             let (open, selected) = client.imgui.combo_list("Demo", &demo_list, &self.session_info.active_demo);
             if open {
                 if selected != self.session_info.active_demo {
-                    // write back session info
+                    // update session info
                     self.session_info.active_demo = selected;
-
-                    // serialise 
-                    client.serialise_plugin_data("ecs", &self.session_info);
-
-                    client.swap_chain.wait_for_last_frame();
-                    client = self.unload(client);
-                    client = self.setup(client);
-                    
+                    resetup = true;
                 }
+            }
+
+            // preform a restup
+            if resetup {
+                // serialise
+                client.serialise_plugin_data("ecs", &self.session_info);
+
+                // unload / setup
+                client.swap_chain.wait_for_last_frame();
+                client = self.unload(client);
+                client = self.setup(client);
             }
         }
         client.imgui.end();
@@ -444,7 +469,7 @@ pub fn get_system_ecs(name: String) -> Option<SystemDescriptor> {
         "update_cameras" => system_func![update_cameras],
         "update_main_camera_config" => system_func![update_main_camera_config],
         "render_grid" => system_func![render_grid],
-        "render_world_view" => view_func![render_world_view, "render_world_view"],
+        "render_world_view" => view_func![render_world_view, "render_world_view".to_string()],
         _ => None
     }
 }

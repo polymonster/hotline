@@ -6,7 +6,6 @@ use hotline_rs::gfx;
 use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
 
-use hotline_rs::ecs_base;
 use hotline_rs::system_func;
 use hotline_rs::view_func;
 use hotline_rs::view_func_closure;
@@ -261,9 +260,8 @@ pub fn get_system_ecs_demos(name: String) -> Option<SystemDescriptor> {
         "setup_multiple" => system_func![setup_multiple],
         "setup_heightmap" => system_func![setup_heightmap],
         // render functions
-        "render_billboards_basic" => view_func![render_billboards_basic, "render_billboards_basic"],
-        "render_heightmap_basic" => view_func![render_heightmap_basic, "render_heightmap_basic"],
-        "render_checkerboard_basic" => view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
+        "render_checkerboard_basic" => view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic".to_string()],
+        "render_wireframe" => view_func![crate::primitives::render_wireframe, "render_wireframe".to_string()],
         _ => std::hint::black_box(None)
     }
 }

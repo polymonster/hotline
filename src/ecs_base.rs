@@ -113,21 +113,21 @@ macro_rules! system_func {
 
 #[macro_export]
 macro_rules! view_func {
-    ($func:expr, $view:literal) => {
+    ($func:expr, $view:expr) => {
         Some(view_func_closure![$func, $view].into_descriptor())
     }
 }
 
 #[macro_export]
 macro_rules! view_func_closure {
-    ($func:expr, $view:literal) => {
+    ($func:expr, $view:expr) => {
         move |
             pmfx: Res<PmfxRes>,
             qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 $func(
                     pmfx,
-                    "render_world_view".to_string(),
+                    $view,
                     qvp,
                     qmesh
                 );
