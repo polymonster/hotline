@@ -32,6 +32,9 @@ pub mod plugin;
 /// Module to aid data / code file watching, rebuilding and reloading
 pub mod reloader;
 
+/// Shared types and resources for use with bevy ecs
+pub mod ecs_base;
+
 /// Use bitmask for flags
 #[macro_use]
 extern crate bitflags;

@@ -66,7 +66,6 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .arg(format!("{}", "--release"))
                 .arg("-p")
                 .arg(format!("{}", self.name))
-                .arg("--verbose")
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         }
@@ -76,7 +75,6 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .arg("build")
                 .arg("-p")
                 .arg(format!("{}", self.name))
-                .arg("--verbose")
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         };
