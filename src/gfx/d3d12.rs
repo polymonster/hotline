@@ -369,6 +369,8 @@ const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_
         super::ResourceState::IndexBuffer => D3D12_RESOURCE_STATE_INDEX_BUFFER,
         super::ResourceState::DepthStencil => D3D12_RESOURCE_STATE_DEPTH_WRITE,
         super::ResourceState::DepthStencilReadOnly => D3D12_RESOURCE_STATE_DEPTH_READ,
+        super::ResourceState::ResolveSrc => D3D12_RESOURCE_STATE_RESOLVE_SOURCE,
+        super::ResourceState::ResolveDst => D3D12_RESOURCE_STATE_RESOLVE_DEST,
     }
 }
 
@@ -2439,6 +2441,25 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(tex) = &barrier.texture {
             let barrier = transition_barrier(
                 &tex.resource,
+                to_d3d12_resource_state(barrier.state_before),
+                to_d3d12_resource_state(barrier.state_after),
+            );
+            unsafe {
+                let bb = self.bb_index;
+                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+                self.in_flight_barriers[bb].push(barrier);
+            }
+        }
+    }
+
+    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<Device>, subresource: Subresource) {        
+        if let Some(tex) = &barrier.texture {
+            let res = match subresource {
+                super::Subresource::Resource => &tex.resource,
+                super::Subresource::ResolveResource => &tex.resolved_resource.as_ref().unwrap()
+            };
+            let barrier = transition_barrier(
+                res,
                 to_d3d12_resource_state(barrier.state_before),
                 to_d3d12_resource_state(barrier.state_after),
             );

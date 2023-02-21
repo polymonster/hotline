@@ -422,6 +422,7 @@ pub enum Topology {
 }
 
 /// Information to control the rasterisation mode of primitives when using a `RenderPipeline`
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RasterInfo {
     pub fill_mode: FillMode,
     pub cull_mode: CullMode,
@@ -437,12 +438,14 @@ pub struct RasterInfo {
 }
 
 /// Polygon fillmode
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum FillMode {
     Wireframe,
     Solid,
 }
 
 /// Polygon cull mode
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum CullMode {
     None,
     Front,
@@ -678,6 +681,17 @@ pub enum ResourceState {
     VertexConstantBuffer,
     /// Bindable as an index buffer
     IndexBuffer,
+    /// Used as a source msaa texture to resolve into a non-msaa resource
+    ResolveSrc,
+    /// Used as a destination sngle sample texture to be resolved into by an msaa resource
+    ResolveDst
+}
+
+/// ome resources may contain subresources for resolving
+#[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
+pub enum Subresource {
+    Resource,
+    ResolveResource
 }
 
 /// Info to control mapping of resources for read/write access
@@ -798,6 +812,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn begin_event(&mut self, colour: u32, name: &str);
     fn end_event(&mut self);
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
+    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
     fn set_viewport(&self, viewport: &Viewport);
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     fn set_index_buffer(&self, buffer: &D::Buffer);

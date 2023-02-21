@@ -8,6 +8,7 @@ use crate::gfx;
 use crate::gfx::ResourceState;
 use crate::gfx::RenderPass;
 use crate::gfx::CmdBuf;
+use crate::gfx::Subresource;
 
 use crate::reloader::ReloadState;
 use crate::reloader::Reloader;
@@ -106,6 +107,7 @@ struct File {
     shaders: HashMap<String, PmfxHash>,
     pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>,
+    raster_states: HashMap<String, gfx::RasterInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
     render_graphs: HashMap<String, Vec<ViewInstanceInfo>>,
@@ -120,6 +122,7 @@ impl File {
             shaders: HashMap::new(),
             pipelines: HashMap::new(),
             depth_stencil_states: HashMap::new(),
+            raster_states: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
             render_graphs: HashMap::new(),
@@ -406,6 +409,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.pmfx.shaders.extend(file.shaders);
             self.pmfx.pipelines.extend(file.pipelines);
             self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
+            self.pmfx.raster_states.extend(file.raster_states);
             self.pmfx.textures.extend(file.textures);
             self.pmfx.views.extend(file.views);
             self.pmfx.render_graphs.extend(file.render_graphs);
@@ -622,6 +626,66 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Ok(())
     }
 
+    fn create_resolve_transition(
+        &mut self,
+        device: &mut D,
+        texture_barriers: &mut HashMap<String, ResourceState>, 
+        view_name: &str, 
+        texture_name: &str, 
+        target_state: ResourceState) -> Result<(), super::Error> {
+        if texture_barriers.contains_key(texture_name) {
+            let state = texture_barriers[texture_name];
+            if true {
+                // add barrier placeholder in the execute order
+                let barrier_name = format!("barrier_resolve{}-{}", view_name, texture_name);
+                self.render_graph_execute_order.push(barrier_name.to_string());
+
+                if let Some(tex) = self.get_texture(&texture_name) {
+                    // transition main resource into resolve src
+                    let mut cmd_buf = device.create_cmd_buf(1);
+                    cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                        texture: Some(self.get_texture(&texture_name).unwrap()),
+                        buffer: None,
+                        state_before: state,
+                        state_after: ResourceState::ResolveSrc,
+                    });
+
+                    // transition resolve resource into resolve dst
+                    cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
+                            texture: Some(self.get_texture(&texture_name).unwrap()),
+                            buffer: None,
+                            state_before: target_state,
+                            state_after: ResourceState::ResolveDst,
+                        },
+                        Subresource::ResolveResource
+                    );
+                    
+                    // perform the resolve
+                    cmd_buf.resolve_texture_subresource(tex, 0)?;
+
+                    // transition the resolve to shader resource for sampling
+                    cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
+                            texture: Some(self.get_texture(&texture_name).unwrap()),
+                            buffer: None,
+                            state_before: ResourceState::ResolveDst,
+                            state_after: target_state,
+                        },
+                        Subresource::ResolveResource
+                    );
+
+                    // insert barrier
+                    cmd_buf.close()?;
+                    self.barriers.insert(barrier_name.to_string(), cmd_buf);
+
+                    // update track state
+                    texture_barriers.remove(texture_name);
+                    texture_barriers.insert(texture_name.to_string(), ResourceState::ResolveSrc);
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn create_texture_transition_barrier(
         &mut self,
         device: &mut D,
@@ -634,7 +698,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             if state != target_state {
                 // add barrier placeholder in the execute order
                 let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
-                self.render_graph_execute_order.push(barrier_name.to_string());
+                self.render_graph_execute_order.push(barrier_name.to_string());          
 
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
@@ -727,6 +791,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
 
             for name in srvs {
+                self.create_resolve_transition(
+                    device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
+
                 self.create_texture_transition_barrier(
                     device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
             }
@@ -746,7 +813,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
     pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
         if self.pmfx.pipelines.contains_key(pipeline_name) {
-            println!("hotline_rs::pmfx:: creating pipeline: {}", pipeline_name);
             // first create shaders if necessary
             let folder = self.pmfx_folders[pipeline_name].to_string();
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
@@ -761,6 +827,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             
             // create entry for this pipeline permutation set if it does not exist
             if !format_pipeline.contains_key(pipeline_name) {
+                println!("hotline_rs::pmfx:: creating pipeline: {}", pipeline_name);
                 format_pipeline.insert(pipeline_name.to_string(), HashMap::new());
                 // we create a pipeline per-permutation
                 for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
@@ -781,7 +848,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             fs: self.get_shader(&pipeline.ps),
                             input_layout: vertex_layout.to_vec(),
                             descriptor_layout: pipeline.descriptor_layout.clone(),
-                            raster_info: gfx::RasterInfo::default(),
+                            raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states),
                             depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
                             blend_info: gfx::BlendInfo {
                                 alpha_to_coverage_enabled: false,
@@ -864,90 +931,95 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reload all active resources based on hashes
     pub fn reload(&mut self, device: &mut D) {        
-        let mut reload_filepath = String::new();
+        // TODO: blog ref, cant move reload_filepath int loop
+        let mut reload_paths = Vec::new();
         for (_, tracking) in &mut self.pmfx_tracking {
             let mtime = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
             if mtime > tracking.modified_time {
-                println!("hotline_rs::pmfx:: reload available");
                 tracking.modified_time = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
-                reload_filepath = tracking.filepath.to_string_lossy().to_string();
+                reload_paths.push(tracking.filepath.to_string_lossy().to_string())
             }
         }
 
-        if !reload_filepath.is_empty() {
-            let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
-            let file : File = serde_json::from_slice(&pmfx_data).unwrap();
+        for reload_filepath in reload_paths {
+            if !reload_filepath.is_empty() {
+                println!("hotline_rs::pmfx:: reload from {}", reload_filepath);
 
-            self.pmfx.shaders.extend(file.shaders);
-            self.pmfx.pipelines.extend(file.pipelines);
-            self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
-            self.pmfx.textures.extend(file.textures);
-            self.pmfx.views.extend(file.views);
-            self.pmfx.render_graphs.extend(file.render_graphs);
+                let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
+                let file : File = serde_json::from_slice(&pmfx_data).unwrap();
 
-            // find views that need reloading
-            let mut reload_views = Vec::new();
-            for (name, view) in &self.views {
-                if self.pmfx.views.contains_key(name) {
-                    if self.pmfx.views.get(name).unwrap().hash != view.0 {
-                        reload_views.push(name.to_string());
-                    }
-                }
-            }
+                self.pmfx.shaders.extend(file.shaders);
+                self.pmfx.pipelines.extend(file.pipelines);
+                self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
+                self.pmfx.raster_states.extend(file.raster_states);
+                self.pmfx.textures.extend(file.textures);
+                self.pmfx.views.extend(file.views);
+                self.pmfx.render_graphs.extend(file.render_graphs);
 
-            // find pipelines that need reloading
-            let mut reload_pipelines = Vec::new();
-            for (hash, formats) in &self.render_pipelines {
-                for (name, permutations) in formats {
-                    for (mask, pipeline) in permutations {
-
-                        let build_hash = self.pmfx.pipelines
-                            .get(name).unwrap()
-                            .get(&mask.to_string()).unwrap()
-                            .hash;
-
-                        if pipeline.0 != build_hash {
-                            reload_pipelines.push((*hash, name.to_string(), *mask));
+                // find views that need reloading
+                let mut reload_views = Vec::new();
+                for (name, view) in &self.views {
+                    if self.pmfx.views.contains_key(name) {
+                        if self.pmfx.views.get(name).unwrap().hash != view.0 {
+                            reload_views.push(name.to_string());
                         }
                     }
                 }
-            }
 
-            // find shaders that need reloading
-            let mut reload_shaders = Vec::new();
-            for (name, shader) in &self.shaders {
-                if self.pmfx.shaders.contains_key(name) {
-                    if *self.pmfx.shaders.get(name).unwrap() != shader.0 {
-                        reload_shaders.push(name.to_string());
+                // find pipelines that need reloading
+                let mut reload_pipelines = Vec::new();
+                for (hash, formats) in &self.render_pipelines {
+                    for (name, permutations) in formats {
+                        for (mask, pipeline) in permutations {
+
+                            let build_hash = self.pmfx.pipelines
+                                .get(name).unwrap()
+                                .get(&mask.to_string()).unwrap()
+                                .hash;
+
+                            if pipeline.0 != build_hash {
+                                reload_pipelines.push((*hash, name.to_string(), *mask));
+                            }
+                        }
                     }
                 }
-            }
 
-            // reload views
-            for view in &reload_views {
-                println!("hotline::pmfx:: reloading view: {}", view);
-                self.views.remove(view);
-                self.create_view(device, view).unwrap();
-            }
+                // find shaders that need reloading
+                let mut reload_shaders = Vec::new();
+                for (name, shader) in &self.shaders {
+                    if self.pmfx.shaders.contains_key(name) {
+                        if *self.pmfx.shaders.get(name).unwrap() != shader.0 {
+                            reload_shaders.push(name.to_string());
+                        }
+                    }
+                }
 
-            // reload shaders
-            for shader in &reload_shaders {
-                println!("hotline::pmfx:: reloading shader: {}", shader);
-                self.shaders.remove(shader);
-            }
-            
-            // reload pipelines tuple = (format_hash, pipeline_name, permutation_mask)
-            for pipeline in &reload_pipelines {
-                println!("hotline::pmfx:: reloading pipeline: {}", pipeline.1);
+                // reload views
+                for view in &reload_views {
+                    println!("hotline::pmfx:: reloading view: {}", view);
+                    self.views.remove(view);
+                    self.create_view(device, view).unwrap();
+                }
+
+                // reload shaders
+                for shader in &reload_shaders {
+                    println!("hotline::pmfx:: reloading shader: {}", shader);
+                    self.shaders.remove(shader);
+                }
                 
-                // TODO: here we could only remove affected permutations
-                let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
-                format_pipelines.remove(&pipeline.1);
+                // reload pipelines tuple = (format_hash, pipeline_name, permutation_mask)
+                for pipeline in &reload_pipelines {
+                    println!("hotline::pmfx:: reloading pipeline: {}", pipeline.1);
+                    
+                    // TODO: here we could only remove affected permutations
+                    let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
+                    format_pipelines.remove(&pipeline.1);
 
-                let view = self.get_view("render_world_view").unwrap().clone();
-                let view = view.lock().unwrap();
-                
-                self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+                    let view = self.get_view("render_world_view").unwrap().clone();
+                    let view = view.lock().unwrap();
+                    
+                    self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+                }
             }
         }
     }
@@ -1005,9 +1077,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reset all command buffers
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
-        for view in self.views.values() {
-            let view = view.clone();
-            view.1.lock().unwrap().cmd_buf.reset(swap_chain);
+        for (name, view) in &self.views {
+            // rest only command buffers that are in use
+            if self.render_graph_execute_order.contains(name) {
+                let view = view.clone();
+                view.1.lock().unwrap().cmd_buf.reset(swap_chain);
+            }
         }
     }
 
@@ -1028,9 +1103,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn execute(
         &mut self,
         device: &mut D) {
-
         for node in &self.render_graph_execute_order {
-            // println!("execute: {}", node);
             if self.barriers.contains_key(node) {
                 // transition barriers
                 device.execute(&self.barriers[node]);

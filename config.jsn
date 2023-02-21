@@ -26,27 +26,14 @@
         client: {
             type: shell
             commands: [
-                "cargo build --manifest-path plugins/Cargo.toml ${config_flags} --verbose --"
+                "cargo build --manifest-path plugins/Cargo.toml ${config_flags}"
             ]
         }
         plugins: {
             type: shell
             commands: [
-                "cargo build ${config_flags} --verbose"
+                "cargo build ${config_flags}"
             ]
-        }
-        run: {
-            type: shell
-            commands: [
-                ".\\target\\${config}\\client.exe"
-            ]
-        }
-    }
-
-    hotline-release(hotline): {
-        jsn_vars: {
-            config_flags: "--release"
-            config: "release"
         }
     }
 
@@ -63,16 +50,18 @@
             files: [
                 // copy fonts to data dir
                 ["${src_data_dir}/fonts", "${data_dir}/fonts"]
+
                 // default imgui layouts form the client.. todo. move to target
                 ["plugins/imgui.ini", "target/debug/imgui.ini"]
                 ["plugins/imgui.ini", "target/release/imgui.ini"]
+
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
             ]
         }
     }
 
-    win32(base): {
+    win32(base, hotline): {
         copy: {
             files: [
                 // copies the win pix event run time for inserting pix events
@@ -94,9 +83,12 @@
                 "-source"
             ]
         }
+    }
 
-        pmfx_dev(pmfx): {
-            explicit: true
+    win32-release(win32): {
+        jsn_vars: {
+            config_flags: "--release"
+            config: "release"
         }
     }
 }

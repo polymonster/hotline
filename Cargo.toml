@@ -57,6 +57,9 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+[lib]
+crate-type = ["rlib", "dylib"]
+
 [features]
 build_data = []
 client = []

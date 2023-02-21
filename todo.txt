@@ -1,7 +1,9 @@
 // TODO:
 
 // phi, inv phi to maths. generic sin cos?
-// pmfx not reloading
+
+// - billboard
+// - vs code build and run (debug and release)
 
 // ui
 // - view menu
@@ -10,7 +12,8 @@
 // pmfx
 // - update cameras from scene
 // - error handling !!!! ->
-// - msaa + texture format changing
+// - msaa + texture format 
+// - resolves
 
 // primitives
 
@@ -38,17 +41,19 @@
 // - in editor terminal / log
 
 // gfx
+// - Blend
 // - GPU Timer Query
 // - Draw Instanced
 // - Draw Indirect
 // - Stencil Ref
 // - MRT
-// - MSAA
 // - Texture Formats (BC)
-// - Blend
-// - Raster
 
 // DONE:
+// x raster
+// x pmfx not reloading
+// x wireframe
+// x MSAA
 // x icosasphere
 // x watch files in folders
 // x save imgui locations more reliably

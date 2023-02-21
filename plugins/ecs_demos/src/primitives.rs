@@ -51,7 +51,7 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
-        crate::dev::create_sphere_mesh(&mut device.0, 32),
+        crate::dev::create_sphere_mesh(&mut device.0, 16),
         crate::dev::create_cylinder_mesh(&mut device.0, 16),
     ];
 
@@ -104,6 +104,46 @@ pub fn render_checkerboard_basic(
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
     view.cmd_buf.set_render_pipeline(&checkerboard.unwrap());
+
+    for view_proj in &view_proj_query {
+        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
+        for (world_matrix, mesh) in &mesh_draw_query {
+            // draw
+            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+            view.cmd_buf.set_index_buffer(&mesh.0.ib);
+            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        }
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+}
+
+#[no_mangle]
+pub fn render_wireframe(
+    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
+    view_name: String,
+    view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
+    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
+        
+    // unpack
+    let pmfx = &pmfx.0;
+    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let view = arc_view.lock().unwrap();
+    let fmt = view.pass.get_format_hash();
+
+    let wireframe = pmfx.get_render_pipeline_for_format("wireframe_overlay", fmt);
+    if wireframe.is_none() {
+        return;
+    }
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&wireframe.unwrap());
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);

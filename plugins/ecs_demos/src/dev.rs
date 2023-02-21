@@ -289,7 +289,7 @@ pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
                 normal: p,
                 tangent: t,
                 bitangent: bt,
-                texcoord: vec2f(u, v)
+                texcoord: vec2f(u, v) * 3.0
             });
         }
 
@@ -375,7 +375,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(u, 0.0)
+            texcoord: Vec2f::new(u * 3.0, 0.0)
         });
     }
 
@@ -389,7 +389,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(u , 1.0)
+            texcoord: Vec2f::new(u * 3.0, 1.0)
         });
     }
         
