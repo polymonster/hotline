@@ -1,8 +1,10 @@
 // TODO:
 
-// - fix shader test failures
+// - fix warnings
+// - improve render function / naming and passing of view
 
-// - update matrices
+// - fix shader test failures
+// - update matrices ecs
 
 // ui
 // - view menu
@@ -11,7 +13,6 @@
 // - docked defaults
 
 // pmfx
-// - improve render function / naming and passing of view
 // - update cameras from scene
 // - error handling !!!! ->
 // - - missing plugin
@@ -25,7 +26,6 @@
 // - billboard
 // - capsule
 // - cone
-// - hemi-sphere
 // - prsims
 // - tourus
 // - chamfer cube
@@ -58,6 +58,7 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x hemi-sphere
 // x vs code build and run (debug and release)
 // x phi, inv phi to maths. generic sin cos?
 // x raster
