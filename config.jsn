@@ -61,18 +61,7 @@
         }
     }
 
-    win32(base, hotline): {
-        copy: {
-            files: [
-                // copies the win pix event run time for inserting pix events
-                // multiple build output locations may need a copy
-                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/debug/WinPixEventRuntime.dll"]
-                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/release/WinPixEventRuntime.dll"]
-                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/debug/examples/WinPixEventRuntime.dll"]
-                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/release/examples/WinPixEventRuntime.dll"]
-            ]
-        }
-
+    win32-data(base): {
         pmfx: {
             args: [
                 "-shader_platform hlsl"
@@ -85,7 +74,25 @@
         }
     }
 
-    win32-release(win32): {
+    win32-debug(win32-data, hotline): {
+        copy: {
+            files: [
+                // copies the win pix event run time for inserting pix events
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/${config}/WinPixEventRuntime.dll"]
+                ["hotline-data/bin/win32/WinPixEventRuntime.dll", "target/${config}/examples/WinPixEventRuntime.dll"]
+            ]
+        }
+
+        run: {
+            explicit: true
+            type: shell
+            commands: [
+                ".\\target\\${config}\\client.exe"
+            ]
+        }
+    }
+
+    win32-release(win32-debug): {
         jsn_vars: {
             config_flags: "--release"
             config: "release"
