@@ -530,7 +530,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
     ];
 
-    let indices: Vec<u16> = vec![
+    let indices: Vec<usize> = vec![
         0,  2,  1,  2,  0,  3,   // front face
         4,  6,  5,  6,  4,  7,   // back face
         8,  10, 9,  10, 8,  11,  // right face
@@ -539,27 +539,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         20, 22, 21, 22, 20, 23   // bottom face
     ];
 
-    pmfx::Mesh {
-        vb: dev.create_buffer(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
-                cpu_access: gfx::CpuAccessFlags::NONE,
-                num_elements: 24,
-                format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<Vertex3D>() 
-            }, 
-            Some(vertices.as_slice())
-        ).unwrap(),
-        ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
-            cpu_access: gfx::CpuAccessFlags::NONE,
-            num_elements: 36,
-            format: gfx::Format::R16u,
-            stride: std::mem::size_of::<u16>()
-            },
-            Some(indices.as_slice())
-        ).unwrap(),
-        num_indices: 36
-    } 
+    create_mesh_3d(dev, vertices, indices)
 }
 
 /// Creates a unit octahedron mesh aligned y-up
