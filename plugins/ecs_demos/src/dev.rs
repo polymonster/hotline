@@ -272,8 +272,10 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
     vertices
 }
 
-/// Create an indexed smooth sphere with subdivided icosophere vertices and smooth normals
-pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+/// Create a custom sphere mesh with segments subdivision, hemi_segments can clip the sphere
+/// in different heights, supply `hemi_segments=segments/2` to create a perfect hemi-sphere
+/// use cap to cap the cliped sphere or not
+pub fn create_sphere_mesh_ex<D: gfx::Device>(dev: &mut D, segments: usize, hemi_segments: usize, cap: bool) -> pmfx::Mesh<D> {
     let vertex_segments = segments + 2;
 
     let two_pi = f32::pi() * 2.0;
@@ -338,7 +340,7 @@ pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
     // Indices
     //
 
-    for r in 0..segments-1 {
+    for r in 0..hemi_segments-1 {
         for i in 0..segments+1 {
             let i_next = i + 1;
             let v_index = r * vertex_segments;
@@ -356,7 +358,62 @@ pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
         }
     }
 
+    if hemi_segments < segments && cap {
+        // basis
+        let n = Vec3f::unit_y();
+        let t = Vec3f::unit_x();
+        let bt = Vec3f::unit_z();
+        let y = -1.0 + (hemi_segments as f32 * height_step) - height_step;
+
+        let centre_cap = vertices.len();
+        vertices.push(Vertex3D{
+            position: Vec3f::unit_y() * y,
+            normal: n,
+            tangent: t,
+            bitangent: bt,
+            texcoord: Vec2f::point_five()
+        });
+
+        let loop_start = centre_cap + 1;
+
+        for i in 0..vertex_segments {
+            let x = f32::cos(angle);
+            let z = -f32::sin(angle);
+            let radius = 1.0 - abs(y);
+            let xz = vec3f(x, 0.0, z) * radius;
+            let p = vec3f(xz.x, y, xz.z);
+
+            let p_next = vec3f(xz.x, y, xz.z);
+            let p_next = normalize(p_next);
+            let p = normalize(p);
+
+            vertices.push(Vertex3D{
+                position: p,
+                normal: n,
+                tangent: t,
+                bitangent: bt,
+                texcoord: vec2f(p.x, p.z) * 0.5 + 0.5
+            });
+
+            angle += angle_step;
+        }
+
+        // triangle per cap segmnent
+        for i in 0..segments {
+            indices.extend(vec![
+                loop_start + i,
+                loop_start + i + 1,
+                centre_cap
+            ]);
+        }
+    }
+
     create_mesh_3d(dev, vertices, indices)
+}
+
+/// Create an indexed smooth sphere with subdivided icosophere vertices and smooth normals
+pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+    create_sphere_mesh_ex(dev, segments, segments, false)
 }
 
 pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
