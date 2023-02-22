@@ -1,29 +1,38 @@
 // TODO:
 
-// phi, inv phi to maths. generic sin cos?
+// - fix shader test failures
 
-// - billboard
-// - vs code build and run (debug and release)
+// - update matrices
 
 // ui
 // - view menu
+// - textures
+// - show schedule and errors
 // - docked defaults
 
 // pmfx
+// - improve render function / naming and passing of view
 // - update cameras from scene
 // - error handling !!!! ->
-// - msaa + texture format 
+// - - missing plugin
+// - - missing system func
+// - - missing view
+// - - missing pipeline
+// - msaa + texture format
 // - resolves
 
 // primitives
-
+// - billboard
+// - capsule
+// - cone
+// - hemi-sphere
+// - prsims
+// - tourus
+// - chamfer cube
 
 // ecs
 // - per demo settings
-// - systems with time
-// - different camera
 // - raster examples
-// - billboard
 // - draw instanced
 // - draw indirect
 // - 3D texture -> compute
@@ -31,7 +40,6 @@
 // - light
 // - shadow
 // - material
-// - update matrices
 // - update aabb's
 // - culling
 
@@ -50,6 +58,8 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x vs code build and run (debug and release)
+// x phi, inv phi to maths. generic sin cos?
 // x raster
 // x pmfx not reloading
 // x wireframe
