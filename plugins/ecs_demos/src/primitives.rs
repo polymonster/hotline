@@ -52,6 +52,7 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
         crate::dev::create_sphere_mesh(&mut device.0, 16),
+        crate::dev::create_sphere_mesh_ex(&mut device.0, 16, 8, true),
         crate::dev::create_cylinder_mesh(&mut device.0, 16),
         crate::dev::create_cube_dubdivision_mesh(&mut device.0, 1),
     ];
