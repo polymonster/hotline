@@ -51,10 +51,20 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
+
         crate::dev::create_sphere_mesh(&mut device.0, 16),
         crate::dev::create_sphere_mesh_ex(&mut device.0, 16, 8, true),
+
         crate::dev::create_cylinder_mesh(&mut device.0, 16),
-        crate::dev::create_cube_dubdivision_mesh(&mut device.0, 1),
+        crate::dev::create_cylinder_mesh(&mut device.0, 3),
+        crate::dev::create_cylinder_mesh(&mut device.0, 4),
+        crate::dev::create_cylinder_mesh(&mut device.0, 5),
+        
+        crate::dev::create_cone_mesh(&mut device.0, 16),
+        crate::dev::create_pyramid_mesh(&mut device.0, 4, false),
+        crate::dev::create_pyramid_mesh(&mut device.0, 5, false),
+
+        crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
     ];
 
     // square number of rows and columns

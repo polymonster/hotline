@@ -1,10 +1,12 @@
 // TODO:
 
+// - pmbuild runnin on close?
 // - fix warnings
 // - improve render function / naming and passing of view
 
 // - fix shader test failures
 // - update matrices ecs
+
 
 // ui
 // - view menu

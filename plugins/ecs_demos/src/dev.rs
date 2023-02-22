@@ -7,6 +7,8 @@ use maths_rs::Vec2f;
 use maths_rs::Vec3f;
 use maths_rs::num::*;
 
+use maths_rs::swizz::*;
+
 /// Generic structure for 3D lit geometry meshes
 #[derive(Clone)]
 #[repr(C)]
@@ -577,7 +579,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
 }
 
 /// Create an indexed unit cube subdivision mesh instance where the faces are subdivided into 4 smaller quads for `subdivisions` 
-pub fn create_cube_dubdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
+pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
     // cube veritces
     let vertices: Vec<Vertex3D> = vec![
         // front face
@@ -777,4 +779,145 @@ pub fn create_cube_dubdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
     }
 
     create_mesh_3d(dev, subdiv_vertices, indices)
+}
+
+/// creates a pyramid mesh, if smooth this is essentially a low poly cone with smooth normals
+pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool) -> pmfx::Mesh<D> {
+    let two_pi = f32::pi() * 2.0;
+    let axis = Vec3f::unit_y();
+    let right = Vec3f::unit_x();
+    let up = cross(axis, right);
+    let right = cross(axis, up);
+    let tip = Vec3f::unit_y();
+    let base = -Vec3f::unit_y();
+
+    let mut segment_vertices = Vec::new();
+    let mut vertices = Vec::new();
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+
+    // rotate around up axis and extract some data we can lookup to build vb and ib
+    let mut angle = 0.0;
+    let angle_step = two_pi / segments as f32;
+    for i in 0..vertex_segments {
+        // current
+        let mut x = f32::cos(angle);
+        let mut y = -f32::sin(angle);
+        let v1 = right * x + up * y;
+
+        // next
+        angle += angle_step;
+        x = f32::cos(angle);
+        y = -f32::sin(angle);
+        let v2 = right * x + up * y;
+
+        // uv
+        let u = 0.5 + f32::atan2(v1.z, v2.x) / two_pi;
+        let u = if i == segments { 0.0 } else { u };
+
+        // tbn
+        let n = normalize(cross(v2 - v1, tip - v1));
+        let t = v2 - v1;
+        let bt = cross(n, t);
+
+        segment_vertices.push(
+            Vertex3D {
+                position: v1 - Vec3f::unit_y(),
+                texcoord: vec2f(u * 3.0, 0.0),
+                normal: n,
+                tangent: t,
+                bitangent: bt
+            });
+    }
+
+    //
+    // Vertices (traingle faces)
+    //
+
+    // tri per segment connected to the tip
+    if smooth {
+        for i in 0..segments {
+            let mid = segment_vertices[i].texcoord.x + (segment_vertices[i + 1].texcoord.x - segment_vertices[i].texcoord.x) * 0.5;
+            vertices.extend(vec![
+                segment_vertices[i].clone(),
+                Vertex3D {
+                    position: tip,
+                    texcoord: vec2f(mid, 1.0),
+                    normal: segment_vertices[i].normal,
+                    tangent: segment_vertices[i].tangent,
+                    bitangent: segment_vertices[i].bitangent,
+                },
+                segment_vertices[i + 1].clone(),
+            ])
+        }
+    }
+    else {
+        for i in 0..segments {
+
+            let t0 = segment_vertices[i].position;
+            let t1 = tip;
+            let t2 = segment_vertices[i + 1].position;
+            let n = get_triangle_normal(t0, t2, t1);
+    
+            vertices.extend(vec![
+                Vertex3D {
+                    position: t0,
+                    texcoord: Vec2f::zero(),
+                    normal: n,
+                    tangent: segment_vertices[i].tangent,
+                    bitangent: segment_vertices[i].bitangent,
+                },
+                Vertex3D {
+                    position: t1,
+                    texcoord: vec2f(0.5, 1.0),
+                    normal: n,
+                    tangent: segment_vertices[i].tangent,
+                    bitangent: segment_vertices[i].bitangent,
+                },
+                Vertex3D {
+                    position: t2,
+                    texcoord: vec2f(1.0, 0.0),
+                    normal: n,
+                    tangent: segment_vertices[i].tangent,
+                    bitangent: segment_vertices[i].bitangent,
+                }
+            ])
+        }  
+    }
+
+
+    // base cap
+    for i in 0..segments {
+        vertices.extend(vec![
+            Vertex3D {
+                position: segment_vertices[i].position,
+                texcoord: segment_vertices[i].position.xz() * 0.5 + 0.5,
+                normal: -Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+            },
+            Vertex3D {
+                position: base,
+                texcoord: Vec2f::point_five(),
+                normal: -Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+            },
+            Vertex3D {
+                position: segment_vertices[i + 1].position,
+                texcoord: segment_vertices[i + 1].position.xz() * 0.5 + 0.5,
+                normal: -Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+            }
+        ])
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}
+
+// create a cone mesh with smooth normals made up of `segments` 
+pub fn create_cone_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+    create_pyramid_mesh(dev, segments, true)
 }
