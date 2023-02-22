@@ -1015,10 +1015,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
                     format_pipelines.remove(&pipeline.1);
 
-                    let view = self.get_view("render_world_view").unwrap().clone();
-                    let view = view.lock().unwrap();
-                    
-                    self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+                    // find a view with the same format
+                    let mut compatiblew_view = String::new();
+                    for (view_name, view) in &self.views {
+                        let pass = &view.1.lock().unwrap().pass;
+                        if pass.get_format_hash() == pipeline.0 {
+                            compatiblew_view = view_name.to_string();
+                            break;
+                        }
+                    }
+
+                    if !compatiblew_view.is_empty() {
+                        let view = self.get_view(&compatiblew_view).unwrap().clone();
+                        let view = view.lock().unwrap();
+                        self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+                    }
+                    else {
+                        println!("hotline::pmfx:: warning pipeline was not reloaded: {}", pipeline.1);
+                    }
                 }
             }
         }
@@ -1187,7 +1201,7 @@ impl ReloadResponder for PmfxReloadResponder {
         let pmbuild = super::get_data_path("../hotline-data/pmbuild.cmd");
         let output = std::process::Command::new(pmbuild)
             .current_dir(hotline_path)
-            .arg("win32")
+            .arg("win32-data")
             .arg("-pmfx")
             .output()
             .expect("hotline::hot_lib:: hot pmfx failed to compile!");
