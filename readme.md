@@ -1,4 +1,5 @@
 # Hotline
+
 [![tests](https://github.com/polymonster/hotline/actions/workflows/tests.yaml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/tests.yaml)
 [![samples](https://github.com/polymonster/hotline/actions/workflows/samples.yaml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/samples.yaml)
 [![publish](https://github.com/polymonster/hotline/actions/workflows/publish.yml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/publish.yml)
@@ -15,17 +16,26 @@ Currently Windows with Direct3D12 is the only suppported platform, there are pla
 
 The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down when running `cargo build` the `hotline-data` repository will be cloned automatically for you.
 
-The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure `pmbuild` build jobs and tools, if you wanted to manually configure the setup or add new steps.
+The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure [pmbuild](https://github.com/polymonster/pmbuild) build jobs and tools, if you wanted to manually configure the setup or add new steps.
 
-`cargo build` will automatically build data into `target/data` this is where the client and the examples will look for data files.
+```text
+// fetch the data repository and build the library and client
+cargo build
+
+// build the data to target/data
+.\hotline-data\pmbuild.cmd win32-data
+```
 
 ## Using the Client
 
-You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository.
+You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the client and data
+// build the hotline library, and the client, fetch the hotline-data repository
 cargo build
+
+// build the data
+.\hotline-data\pmbuild.cmd win32-data
 
 // then build plugins
 cargo build --manifest-path plugins/Cargo.toml
@@ -36,9 +46,31 @@ cargo run client
 
 Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to sepcify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
 
-### Adding Plugins
+### Building One-Liners
 
-Plugins are loaded by passing a directory to `hotline_rs::client::Client::add_plugin_lib()` which contains a `Cargo.toml` and is a dynamic library. They can be opened in the client using the `File > Open` from the main menu bar by selecting the `Cargo.toml`.
+To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled `pmbuild` in the `hotline-data` repository and use the following commands which bundle together build steps:
+
+```text
+// build release
+.\hotline-data\pmbuild.cmd win32-release
+
+// build debug
+.\hotline-data\pmbuild.cmd win32-debug
+
+// run the client 
+.\hotline-data\pmbuild.cmd win32-debug -run
+
+// build and run the client 
+.\hotline-data\pmbuild.cmd win32-release -all -run
+```
+
+### Building from VSCode
+
+There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from VSCode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.  
+
+## Adding Plugins
+
+Plugins are loaded by passing a directory to [add_plugin_lib](https://docs.rs/hotline-rs/latest/hotline_rs/client/struct.Client.html#method.add_plugin_lib) which contains a `Cargo.toml` and is a dynamic library. They can be opened interactively in the client using the `File > Open` from the main menu bar by selecting the `Cargo.toml`.
 
 The basic `Cargo.toml` setup looks like this:
 
@@ -98,7 +130,7 @@ hotline_plugin![EmptyPlugin];
 
 ### Ecs Plugin
 
-There is a core `ecs` plugin which builds ontop of `bevy_ecs`. It allows you to supply you own systems and build schedules dynamically. It is possible to load and find new ecs systems in different dynamic libraries, you can register and instantiate `demos` which are collections of setup, update and render systems.
+There is a core `ecs` plugin which builds ontop of [bevy_ecs](https://docs.rs/bevy_ecs/latest/bevy_ecs/). It allows you to supply you own systems and build schedules dynamically. It is possible to load and find new `ecs` systems in different dynamic libraries. You can register and instantiate `demos` which are collections of `setup`, `update` and `render` systems.
 
 #### Initialisation Functions
 
@@ -108,10 +140,11 @@ You can setup a new ecs demo by providing an initialisation function named after
 /// Supply an in intialise function which returns a `SheduleInfo` for a demo
 #[no_mangle]
 pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
-    // pmfx
+    // we can load pmfx and create a render graph which is defined in a config
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
     client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
 
+    // add update, render and setup functions
     SheduleInfo {
         update: vec![
             "update_cameras".to_string(),
@@ -125,7 +158,7 @@ pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Shed
 
 #### Setup Systems
 
-You can supply setup systems to add entities into a scene, when a dynamic code reload happens the world will be cleared the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple setup systems and the will be executed concurrently.
+You can supply `setup` systems to add entities into a scene, when a dynamic code reload happens the world will be cleared the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple `setup` systems and the will be executed concurrently.
 
 ```rust
 #[no_mangle]
@@ -148,7 +181,7 @@ pub fn setup_cube(
 
 #### Render Systems
 
-You can specify render graphs in `pmfx` which setup `views` which get dispatched into render functions. All rneder systems run concurrently on the CPU, the command buffers they generate are executed in an order specified by the `pmfx` render graph and it's dependencies.
+You can specify render graphs in `pmfx` which setup `views` which get dispatched into `render` functions. All render systems run concurrently on the CPU, the command buffers they generate are executed in an order determined by the `pmfx` render graph and it's dependencies.
 
 ```rust
 #[no_mangle]
@@ -194,7 +227,7 @@ pub fn render_checkerboard_basic(
 
 #### Update Systems
 
-You can also supply your own update systems to animate and move your entities, these too are all executed concurrently.
+You can also supply your own `update` systems to animate and move your entities, these too are all executed concurrently.
 
 ```rust
 fn update_cameras(
@@ -213,7 +246,7 @@ fn update_cameras(
 
 Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them.  
 
-You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a `plugin` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name, the ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
+You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name, the ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
 
 ```rust
 #[no_mangle]
@@ -314,13 +347,15 @@ You can use hotline as a library inside the plugin system or on it's own to use 
 There are a few standalone examples of how to use the lower level components of hotline (`gfx, app, av`). You can build and run these as follows:
 
 ```text
+// build examples
 cargo build --examples
+
+// make sure to build data
+.\hotline-data\pmbuild.cmd win32-data
+
+// run a single sample
 cargo run --example triangle
 ```
-
-## VSCode
-
-There are included `tasks` and `launch` files for vscode including configurations for the client and the examples.
 
 ## Design Goals
 
@@ -339,10 +374,10 @@ There are included `tasks` and `launch` files for vscode including configuration
 
 ### In Progress
 
-- Debug / Primitve Rendering API
-- High level graphics api (render graphs, data driven, Uber shaders)
-- Multi-threading support (async command buffer generation and job dispatches)
 - Samples and Demos
+- Debug / Primitve Rendering API
+~~- High level graphics api (render graphs, data driven, Uber shaders)~~
+~~- Multi-threading support (async command buffer generation and job dispatches)~~
 - ~~Hot reloading~~
 - ~~API (gfx::, os::) / Backend (d3d12::, win32::)~~
 - ~~API (av::) / Windows Media Foundation (HW Video / Audio Decoding)~~
