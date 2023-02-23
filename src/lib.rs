@@ -85,7 +85,7 @@ pub const fn get_config_name() -> &'static str {
 /// Return an absolute path for a resource given the relative resource name from the /hotline-data/src_data dir
 pub fn get_src_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap().join("../../../hotline-data/src_data");
+    let asset_path = exe_path.parent().unwrap().join("../../../hotline-data/src");
     String::from(asset_path.join(asset).to_str().unwrap())
 }
 

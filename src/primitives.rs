@@ -269,8 +269,8 @@ pub fn create_plane_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx
             ]);
             
             indices.extend(vec![
-                quad_base_index    ,  quad_base_index + 2,  quad_base_index + 1,  
-                quad_base_index + 2,  quad_base_index + 0,  quad_base_index + 3
+                quad_base_index,  quad_base_index + 1,  quad_base_index + 2,  
+                quad_base_index,  quad_base_index + 2,  quad_base_index + 3
             ]);
 
             pos.x += increment;
@@ -308,15 +308,15 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
                 bitangent: b,
             },
             Vertex3D {
-                position: normalize(p),
-                texcoord: vec2f(0.0, 0.0),
+                position: normalize(np),
+                texcoord: vec2f(1.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
-                position: normalize(np),
-                texcoord: vec2f(1.0, 0.0),
+                position: normalize(p),
+                texcoord: vec2f(0.0, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -392,8 +392,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -406,8 +406,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -450,8 +450,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -464,8 +464,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -479,8 +479,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, 1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -493,8 +493,8 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),

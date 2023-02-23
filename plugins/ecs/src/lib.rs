@@ -10,7 +10,7 @@ use hotline_rs::*;
 use hotline_rs::client::*;
 use hotline_rs::plugin::*;
 use hotline_rs::ecs_base::*;
-use hotline_rs::ecs_base::SheduleInfo;
+use hotline_rs::ecs_base::ScheduleInfo;
 use hotline_rs::system_func;
 use hotline_rs::view_func;
 use hotline_rs::view_func_closure;
@@ -36,6 +36,7 @@ struct BevyPlugin {
     world: World,
     setup_schedule: Schedule,
     schedule: Schedule,
+    schedule_info: ScheduleInfo,
     run_setup: bool,
     session_info: SessionInfo
 }
@@ -241,14 +242,14 @@ fn render_world_view(
 
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_system_function(&self, name: &str, client: &PlatformClient) -> Option<SystemDescriptor> {
+    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemDescriptor> {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String) -> Option<SystemDescriptor>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemDescriptor>>(function_name.as_bytes());
                 if hook.is_ok() {
                     let hook_fn = hook.unwrap();
-                    let desc = hook_fn(name.to_string());
+                    let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
                         return desc;
                     }
@@ -276,27 +277,27 @@ impl BevyPlugin {
     }
 
     // Default_setup, creates a render graph and update functions which are hooked into the scheduler
-    fn default_demo_shedule(&self, client: &mut PlatformClient) -> SheduleInfo {
+    fn default_demo_shedule(&self, client: &mut PlatformClient) -> ScheduleInfo {
         client.pmfx.create_render_graph(&mut client.device, "forward").unwrap();
-        SheduleInfo {
+        ScheduleInfo {
+            setup: Vec::new(),
             update: vec![
                 "mat_movement".to_string(),
                 "update_cameras".to_string(),
                 "update_main_camera_config".to_string()
             ],
-            render: client.pmfx.get_render_function_names("forward"),
-            setup: Vec::new()
+            render_graph: "forward".to_string()
         }
     }
 
-    /// Find the `SheduleInfo` within loaded plugins for the chosen `demo` or return the default otherwise
-    fn get_demo_schedule_info(&self, client: &mut PlatformClient) -> SheduleInfo {
+    /// Find the `ScheduleInfo` within loaded plugins for the chosen `demo` or return the default otherwise
+    fn get_demo_schedule_info(&self, client: &mut PlatformClient) -> ScheduleInfo {
         // Get schedule info from the chosen demo
         if !self.session_info.active_demo.is_empty() {
             for (_, lib) in &client.libs {
                 unsafe {
                     let function_name = format!("{}", self.session_info.active_demo).to_string();
-                    let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> SheduleInfo>(function_name.as_bytes());
+                    let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
                     if demo.is_ok() {
                         let demo_fn = demo.unwrap();
                         return demo_fn(client);
@@ -314,6 +315,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             world: World::new(),
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
+            schedule_info: ScheduleInfo::default(),
             run_setup: false,
             session_info: SessionInfo::default()
         }
@@ -329,12 +331,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         };
 
         // dynamically change demos and lookup infos in other libs
-        let info = self.get_demo_schedule_info(&mut client);
-
+        self.schedule_info = self.get_demo_schedule_info(&mut client);
+        let info = &self.schedule_info;
+        
         // hook in render functions
+        client.pmfx.create_render_graph(&mut client.device, &info.render_graph);
+        let render_functions = client.pmfx.get_render_function_names(&info.render_graph);
+
         let mut render_stage = SystemStage::parallel();
-        for func_name in &info.render {
-            if let Some(func) = self.get_system_function(func_name, &client) {
+        for func_name in &render_functions {
+            if let Some(func) = self.get_system_function(func_name, func_name, &client) {
                 render_stage = render_stage.with_system(func);
             }
         }
@@ -343,7 +349,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in startup funcs
         let mut setup_stage = SystemStage::parallel();
         for func_name in &info.setup {
-            if let Some(func) = self.get_system_function(func_name, &client) {
+            if let Some(func) = self.get_system_function(func_name, "", &client) {
                 setup_stage = setup_stage.with_system(func);
             }
         }
@@ -352,7 +358,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in updates funcs
         let mut update_stage = SystemStage::parallel();
         for func_name in &info.update {
-            if let Some(func) = self.get_system_function(func_name, &client) {
+            if let Some(func) = self.get_system_function(func_name, "", &client) {
                 update_stage = update_stage.with_system(func);
             }
         }
@@ -429,6 +435,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 resetup = true;
             }
             client.imgui.same_line();
+            client.imgui.spacing();
+            client.imgui.same_line();
 
             // demo select
             let demo_list = self.get_demo_list(&client);
@@ -441,7 +449,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 }
             }
 
-            // preform a restup
+            // preform a re-setup
             if resetup {
                 // serialise
                 client.serialise_plugin_data("ecs", &self.session_info);
@@ -450,6 +458,27 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 client.swap_chain.wait_for_last_frame();
                 client = self.unload(client);
                 client = self.setup(client);
+            }
+
+            // schedule
+            client.imgui.separator();
+            client.imgui.text("Shedule");
+            client.imgui.separator();
+
+            client.imgui.text("Setup:");
+            for i in 0..self.schedule_info.setup.len() {
+                client.imgui.text(&format!("  {}", self.schedule_info.setup[i]));
+            }
+
+            client.imgui.text("Update:");
+            for i in 0..self.schedule_info.update.len() {           
+                client.imgui.text(&format!("  {}", self.schedule_info.update[i]));
+            }
+
+            let render_functions = client.pmfx.get_render_function_names(&self.schedule_info.render_graph);
+            client.imgui.text("Render:");
+            for r in render_functions{           
+                client.imgui.text(&format!("  {}", r));
             }
         }
         client.imgui.end();

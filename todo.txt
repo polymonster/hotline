@@ -1,21 +1,14 @@
 // TODO:
 
-// - pmbuild runnin on close?
-// - fix warnings
+// - fix tests and samples
 // - improve render function / naming and passing of view
-
 // - fix shader test failures
 // - update matrices ecs
-
-
-// ui
-// - view menu
-// - textures
+// - update cameras from scene
 // - show schedule and errors
 // - docked defaults
 
 // pmfx
-// - update cameras from scene
 // - error handling !!!! ->
 // - - missing plugin
 // - - missing system func
@@ -27,10 +20,12 @@
 // primitives
 // - billboard
 // - capsule
-// - cone
-// - prsims
 // - tourus
 // - chamfer cube
+
+// ui
+// - view menu
+// - textures
 
 // ecs
 // - per demo settings
@@ -60,6 +55,10 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x fix warnings
+// x pmbuild running on close?
+// x cone
+// x prsims
 // x hemi-sphere
 // x vs code build and run (debug and release)
 // x phi, inv phi to maths. generic sin cos?

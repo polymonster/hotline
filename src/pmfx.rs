@@ -24,6 +24,10 @@ use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
 
+use maths_rs::Vec2f;
+use maths_rs::Vec3f;
+use maths_rs::Mat4f;
+
 /// Hash type for quick checks of changed resources from pmfx
 type PmfxHash = u64;
 
@@ -190,11 +194,19 @@ struct ViewInstanceInfo {
     function: String
 }
 
-#[derive(Serialize, Deserialize, Clone)]
-struct UpdateInstanceInfo {
-    setup: Vec<String>,
-    update: Vec<String>
+/*
+#[derive(Clone)]
+struct Camera {
+    aspect: f32,
+    fov: f32,
+    pos: Vec3f,
+    rot: Vec2f,
+    zoom: Vec3f,
+    look_at: Vec3f,
+    view_matrix: Mat4f,
+    projection_matrix: Mat4f
 }
+*/
 
 /// creates a shader from an option of filename, returning optional shader back
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {

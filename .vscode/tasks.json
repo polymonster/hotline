@@ -4,6 +4,9 @@
 		{
 			"type": "cargo",
 			"command": "build",
+			"args": [
+				"--examples"
+			],
 			"problemMatcher": [
 				"$rustc"
 			],
@@ -11,12 +14,12 @@
 				"kind": "build",
 				"isDefault": true
 			},
-			"label": "cargo_build"
+			"label": "examples"
 		},
 		{
 			"label": "pmbuild-debug",
 			"command": "./hotline-data/pmbuild.cmd", // Could be any other shell command
-			"args": ["win32"],
+			"args": ["win32-debug"],
 			"type": "shell"
 		},
 		{

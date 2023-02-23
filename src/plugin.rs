@@ -80,6 +80,7 @@ impl reloader::ReloadResponder for PluginReloadResponder {
         };
 
         if output.stdout.len() > 0 {
+            // println!("{}", String::from_utf8(output.stdout).unwrap());
             println!("{}", String::from_utf8(output.stdout).unwrap());
         }
 

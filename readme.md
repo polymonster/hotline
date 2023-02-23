@@ -134,18 +134,18 @@ There is a core `ecs` plugin which builds ontop of [bevy_ecs](https://docs.rs/be
 
 #### Initialisation Functions
 
-You can setup a new ecs demo by providing an initialisation function named after the demo this returns a `SheduleInfo` for which systems to run:
+You can setup a new ecs demo by providing an initialisation function named after the demo this returns a `ScheduleInfo` for which systems to run:
 
 ```rust
-/// Supply an in intialise function which returns a `SheduleInfo` for a demo
+/// Supply an in intialise function which returns a `ScheduleInfo` for a demo
 #[no_mangle]
-pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // we can load pmfx and create a render graph which is defined in a config
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
     client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
 
     // add update, render and setup functions
-    SheduleInfo {
+    ScheduleInfo {
         update: vec![
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
