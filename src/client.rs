@@ -23,6 +23,7 @@ use serde::{Deserialize, Serialize};
 
 use std::path::PathBuf;
 use std::collections::HashMap;
+use std::time::SystemTime;
 
 /// Information to create a hotline context which will create an app, window, device.
 pub struct HotlineInfo {
@@ -43,7 +44,9 @@ pub struct HotlineInfo {
     /// Size of the default device heap for render targets
     pub render_target_heap_size: usize,
     /// Size of the default device heap for depth stencil targets
-    pub depth_stencil_heap_size: usize
+    pub depth_stencil_heap_size: usize,
+    /// Optional user config, the default will be automatically located in the file system, this allows to override the launch configuration
+    pub user_config: Option<UserConfig>
 }
 
 /// Useful defaults for quick HotlineInfo initialisation
@@ -68,7 +71,8 @@ impl Default for HotlineInfo {
             adapter_name: None,
             shader_heap_size: 1024,
             render_target_heap_size: 128,
-            depth_stencil_heap_size: 64
+            depth_stencil_heap_size: 64,
+            user_config: None
         }
     }
 }
@@ -102,7 +106,7 @@ pub struct UserConfig {
     pub main_window_rect: os::Rect<i32>,
     pub console_window_rect: Option<os::Rect<i32>>,
     pub plugins: Option<HashMap<String, PluginInfo>>,
-    pub plugin_data: HashMap<String, String>
+    pub plugin_data: Option<HashMap<String, String>>
 }
 
 /// Internal enum to track plugin state and syncornise unloads, reloads and setups etc.
@@ -128,7 +132,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     pub fn create(info: HotlineInfo) -> Result<Self, super::Error> {
         // read user config or get defaults
         let user_config_path = super::get_data_path("user_config.json");
-        let user_config = if std::path::Path::new(&user_config_path).exists() {
+        let saved_user_config = if std::path::Path::new(&user_config_path).exists() {
             let user_data = std::fs::read(user_config_path)?;
             serde_json::from_slice(&user_data).unwrap()
         }
@@ -136,10 +140,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             UserConfig {
                 main_window_rect: info.window_rect,
                 console_window_rect: None,
-                plugin_data: HashMap::new(),
+                plugin_data: Some(HashMap::new()),
                 plugins: None
             }
         };
+        
+        // override by the supplied user config
+        let user_config = info.user_config.unwrap_or_else(|| saved_user_config);
         
         // app
         let mut app = A::create(os::AppInfo {
@@ -267,7 +274,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
     fn save_user_config(&mut self) {
-        let user_config_file_text = serde_json::to_string(&self.user_config).unwrap();
+        let user_config_file_text = serde_json::to_string_pretty(&self.user_config).unwrap();
         let user_config_path = super::get_data_path("user_config.json");
         std::fs::File::create(&user_config_path).unwrap();
         std::fs::write(&user_config_path, user_config_file_text).unwrap();
@@ -391,6 +398,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 src_path
             ],
         };
+
+        if !std::path::Path::new(&lib_path).join(name.to_string() + ".dll").exists() {
+            println!("hotline_rs::client:: plugin not found: {}/{}", lib_path, name);
+            return;
+        }
 
         println!("hotline_rs::client:: loading plugin: {}/{}", lib_path, name);
         let lib = hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap();
@@ -547,8 +559,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             if plugin.state == PluginState::Reload {                        
                 // wait for lib reloader itself
                 let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
+                let start = SystemTime::now();
                 loop {
                     if lib.update().unwrap() {
+                        break;
+                    }
+                    if start.elapsed().unwrap() > std::time::Duration::from_secs(10) {
+                        println!("hotline::client: [warning] reloading plugin: {} timed out", plugin.name);
                         break;
                     }
                     std::hint::spin_loop();
@@ -613,9 +630,29 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     ///     }
     /// }
     pub fn serialise_plugin_data<T: Serialize>(&mut self, plugin_name: &str, data: &T) {
-        let serialised = serde_json::to_string(&data).unwrap();
-        *self.user_config.plugin_data
-            .entry(plugin_name.to_string()).or_insert(String::new()) = serialised;
+        let serialised = serde_json::to_string_pretty(&data).unwrap();
+        if self.user_config.plugin_data.is_none() {
+            self.user_config.plugin_data = Some(HashMap::new());
+        }
+        if let Some(plugin_data) = &mut self.user_config.plugin_data {
+            *plugin_data.entry(plugin_name.to_string()).or_insert(String::new()) = serialised;
+        }
+    }
+
+    /// Deserialises string json into a `T` returning defaults if the entry does not exist
+    pub fn deserialise_plugin_data<'de, T: Deserialize<'de> + Default>(&'de mut self, plugin_name: &str) -> T {
+        // deserialise user data saved from a previous session
+        if let Some(plugin_data) = &self.user_config.plugin_data {
+            if plugin_data.contains_key(plugin_name) {
+                serde_json::from_slice(&plugin_data[plugin_name].as_bytes()).unwrap()
+            }
+            else {
+                T::default()
+            }
+        }
+        else {
+            T::default()
+        }
     }
     
     /// Very simple run loop which can take control of your application, you could roll your own
@@ -635,6 +672,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // save out values for next time
         self.save_user_config();
         self.imgui.save_ini_settings();
+
+        self.wait_for_last_frame();
+    }
+
+    /// Very simple run loop which can take control of your application, you could roll your own
+    pub fn run_once(mut self) {
+        self.new_frame();
+        
+        //self.core_ui();
+        
+        self.pmfx.show_ui(&self.imgui, true);
+        self = self.update_plugins();
+        self.present("main_colour");
 
         self.wait_for_last_frame();
     }

@@ -93,7 +93,19 @@ pub fn get_src_data_path(asset: &str) -> String {
 pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     let asset_path = exe_path.parent().unwrap().join("..");
-    String::from(asset_path.join(asset).to_str().unwrap())
+    if asset_path.join("data").exists() {
+        String::from(asset_path.join(asset).to_str().unwrap())
+    }
+    else {
+        let asset_path = asset_path.join("..");
+        if asset_path.join("data").exists() {
+            String::from(asset_path.join(asset).to_str().unwrap())
+        }
+        else {
+            // unable to locate data
+            panic!()
+        }
+    }
 }
 
 /// Return an absolute path for a resource given the relative path from the /executable dir

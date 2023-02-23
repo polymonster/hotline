@@ -34,7 +34,7 @@ pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "checkerboard".to_string()
+        render_graph: "mesh_debug".to_string()
     }
 }
 
@@ -95,7 +95,7 @@ pub fn setup_primitives(
 }
 
 #[no_mangle]
-pub fn render_checkerboard_basic(
+pub fn render_meshes(
     pmfx: bevy_ecs::prelude::Res<PmfxRes>,
     view_name: String,
     view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
@@ -177,16 +177,14 @@ pub fn render_wireframe(
 /// Sets up a single cube mesh
 #[no_mangle]
 pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    // pmfx
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
-    client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
 
     ScheduleInfo {
         update: vec![
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "checkerboard".to_string(),
+        render_graph: "mesh_debug".to_string(),
         setup: vec!["setup_cube".to_string()]
     }
 }

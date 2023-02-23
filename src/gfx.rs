@@ -865,8 +865,10 @@ pub trait Texture<D: Device>: Send + Sync {
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
-    /// return a clone
+    /// Return a clone of the internal (platform specific) resource
     fn clone_inner(&self) -> Self;
+    /// Returns true if this texture has a subresource which can be resolved into
+    fn is_resolvable(&self) -> bool;
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders

@@ -15,6 +15,14 @@ use crate::gfx::Texture;
 use std::ffi::CStr;
 use std::ffi::CString;
 
+use maths_rs::Vec4f;
+
+fn to_im_vec4(v: Vec4f) -> ImVec4 {
+    unsafe {
+        std::mem::transmute(v)
+    }
+}
+
 const DEFAULT_VB_SIZE: i32 = 5000;
 const DEFAULT_IB_SIZE: i32 = 10000;
 
@@ -489,6 +497,59 @@ fn render_draw_data<D: Device>(
 }
 
 impl<D, A> ImGui<D, A> where D: Device, A: App {
+    fn style_colours_hotline() {
+        unsafe {
+            igStyleColorsDark(std::ptr::null_mut());
+
+            let mut style = &mut *igGetStyle();
+            style.Colors[ImGuiCol_WindowBg as usize].w = 1.0;
+            style.WindowRounding = 2.0;
+            style.TabRounding = 2.0;
+
+            let colors = &mut style.Colors;
+
+            let hl = [
+                // sand
+                ImVec4{x: 251.0/255.0, y: 211.0/255.0, z: 122.0/255.0, w: 1.0},
+                ImVec4{x: 191.0/255.0, y: 161.0/255.0, z: 93.0/255.0, w: 1.0},
+
+                // mauve
+                ImVec4{x: 179.0/255.0, y:  85.0/255.0, z: 149.0/255.0, w: 1.0},
+                ImVec4{x: 131.0/255.0, y:  61.0/255.0, z: 109.0/255.0, w: 1.0},
+                ImVec4{x:  93.0/255.0, y:  50.0/255.0, z:  79.0/255.0, w: 1.0},
+
+                // darker sand
+                ImVec4{x: 251.0/255.0, y: 180.0/255.0, z: 93.0/255.0, w: 1.0},
+            ];
+
+            let bg = [
+                // warm grey
+                ImVec4{x: 0.31, y: 0.305, z: 0.30, w: 1.0},
+                ImVec4{x: 0.21, y: 0.205, z: 0.21, w: 1.0},
+                ImVec4{x: 0.15, y: 0.150, z: 0.15, w: 1.0},
+                ImVec4{x: 0.11, y: 0.105, z: 0.10, w: 1.0},
+            ];
+
+            colors[ImGuiCol_WindowBg as usize] = bg[3];
+            colors[ImGuiCol_Header as usize] = hl[3];
+            colors[ImGuiCol_HeaderHovered as usize] = hl[2];
+            colors[ImGuiCol_HeaderActive as usize] = hl[1];
+            colors[ImGuiCol_Button as usize] = hl[4];
+            colors[ImGuiCol_ButtonHovered as usize] = hl[1];
+            colors[ImGuiCol_ButtonActive as usize] = hl[0];
+            colors[ImGuiCol_FrameBg as usize] = bg[1];
+            colors[ImGuiCol_FrameBgHovered as usize] = bg[0];
+            colors[ImGuiCol_FrameBgActive as usize] = bg[2];
+            colors[ImGuiCol_Tab as usize] = hl[3];
+            colors[ImGuiCol_TabHovered as usize] = hl[5];
+            colors[ImGuiCol_TabActive as usize] = hl[1];
+            colors[ImGuiCol_TabUnfocused as usize] = bg[2];
+            colors[ImGuiCol_TabUnfocusedActive as usize] = hl[3];
+            colors[ImGuiCol_TitleBg as usize] = bg[2];
+            colors[ImGuiCol_TitleBgActive as usize] = hl[4];
+            colors[ImGuiCol_TitleBgCollapsed as usize] = bg[2];
+       }
+    }
     pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, super::Error> {
         unsafe {
             igCreateContext(std::ptr::null_mut());
@@ -510,7 +571,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             };
         
             //igStyleColorsLight(std::ptr::null_mut());
-            igStyleColorsDark(std::ptr::null_mut());
+            //igStyleColorsDark(std::ptr::null_mut());
+
+            Self::style_colours_hotline();
 
             let mut style = &mut *igGetStyle();
             style.WindowRounding = 0.0;
@@ -965,6 +1028,36 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         let null_term_text = CString::new(text).unwrap();
         unsafe {
             igText(null_term_text.as_ptr() as *const i8);
+        }
+    }
+
+    /// Add coloured text specified with rgba 0-1 range float.
+    pub fn colour_text(&self, text: &str, col: Vec4f) {
+        unsafe {
+            igPushStyleColorVec4(ImGuiCol_Text as i32, to_im_vec4(col));
+            self.text(text);
+            igPopStyleColor(1);
+        }
+    }
+
+    /// Push a style colour using ImGuiCol_ flags
+    pub fn push_style_colour(&self, flags: ImGuiStyleVar, col: Vec4f) {
+        unsafe {
+            igPushStyleColorVec4(flags as i32, to_im_vec4(col))
+        }
+    }
+
+    /// Pop a single style colour ImGuiStyleVar from the stack
+    pub fn pop_style_colour(&self) {
+        unsafe {
+            igPopStyleColor(1);
+        }
+    }
+    
+    /// Pop a style colour using ImGuiCol_ flags
+    pub fn pop_style_colour_count(&self, count: i32) {
+        unsafe {
+            igPopStyleColor(count);
         }
     }
 

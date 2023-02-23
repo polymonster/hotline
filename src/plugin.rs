@@ -32,6 +32,34 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     fn unload(&mut self, client: Client<D, A>) -> Client<D, A>;
 }
 
+/// Utility function to build all plugins, this can be used to bootstrap them if they don't exist
+pub fn build_all() {
+    let path = super::get_data_path("..");
+    let output = if super::get_config_name() == "release" {
+        Command::new("cargo")
+            .current_dir(format!("{}", path))
+            .arg("build")
+            .arg(format!("{}", "--release"))
+            .output()
+            .expect("hotline::hot_lib:: hot lib failed to build!")
+    }
+    else {
+        Command::new("cargo")
+            .current_dir(format!("{}", path))
+            .arg("build")
+            .output()
+            .expect("hotline::hot_lib:: hot lib failed to build!")
+    };
+
+    if output.stdout.len() > 0 {
+        println!("{}", String::from_utf8(output.stdout).unwrap());
+    }
+
+    if output.stderr.len() > 0 {
+        println!("{}", String::from_utf8(output.stderr).unwrap());
+    }
+}
+
 /// Reload responder implementation for `PluginLib` uses cargo build, and hot lib reloader
 impl reloader::ReloadResponder for PluginReloadResponder {
     fn add_file(&mut self, path: &str) {
@@ -80,7 +108,6 @@ impl reloader::ReloadResponder for PluginReloadResponder {
         };
 
         if output.stdout.len() > 0 {
-            // println!("{}", String::from_utf8(output.stdout).unwrap());
             println!("{}", String::from_utf8(output.stdout).unwrap());
         }
 
