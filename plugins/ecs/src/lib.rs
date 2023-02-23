@@ -273,7 +273,7 @@ impl BevyPlugin {
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
-    fn check_for_changes(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn check_for_changes(&mut self, client: PlatformClient) -> PlatformClient {
         // rendere graph itself has chaned
         if self.render_graph_hash != client.pmfx.get_render_graph_hash(&self.schedule_info.render_graph) {
             self.resetup(client)
@@ -285,7 +285,6 @@ impl BevyPlugin {
 
     fn status_ui_category(&self, imgui: &PlatformImgui, header: &str, function_list: &Vec<String>) {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
-        let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
         if function_list.len() > 0 {
             imgui.text(header);
@@ -458,7 +457,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
             let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
             let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
-            let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
 
             // refresh button
             if client.imgui.button("\u{f021}") {
@@ -538,7 +536,7 @@ hotline_plugin![BevyPlugin];
 
 /// Register plugin systems
 #[no_mangle]
-pub fn get_system_ecs(name: String, view_name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs(name: String, _view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
         "update_cameras" => system_func![update_cameras],
         "update_main_camera_config" => system_func![update_main_camera_config],
