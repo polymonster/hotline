@@ -123,14 +123,14 @@ macro_rules! system_func {
 }
 
 #[macro_export]
-macro_rules! view_func {
+macro_rules! render_func {
     ($func:expr, $view:expr) => {
-        Some(view_func_closure![$func, $view].into_descriptor())
+        Some(render_func_closure![$func, $view].into_descriptor())
     }
 }
 
 #[macro_export]
-macro_rules! view_func_closure {
+macro_rules! render_func_closure {
     ($func:expr, $view:expr) => {
         move |
             pmfx: Res<PmfxRes>,
@@ -138,7 +138,7 @@ macro_rules! view_func_closure {
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 $func(
                     pmfx,
-                    $view,
+                    $view.to_string(),
                     qvp,
                     qmesh
                 );

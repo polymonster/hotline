@@ -1,18 +1,15 @@
 // TODO:
 
-// - fix tests and samples
 // - improve render function / naming and passing of view
 // - fix shader test failures
 // - update matrices ecs
 // - update cameras from scene
 // - show schedule and errors
 // - docked defaults
+// - imgui push / pop colour
 
 // pmfx
-// - error handling !!!! ->
-// - - missing plugin
-// - - missing system func
-// - - missing view
+
 // - - missing pipeline
 // - msaa + texture format
 // - resolves
@@ -55,6 +52,11 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x error handling !!!! ->
+// x - missing plugin
+// x - missing system func
+// x - missing view
+// x fix tests and samples
 // x fix warnings
 // x pmbuild running on close?
 // x cone

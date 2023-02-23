@@ -7,8 +7,8 @@ use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
 
 use hotline_rs::system_func;
-use hotline_rs::view_func;
-use hotline_rs::view_func_closure;
+use hotline_rs::render_func;
+use hotline_rs::render_func_closure;
 
 use hotline_rs::ecs_base::*;
 use hotline_rs::ecs_base::ScheduleInfo;
@@ -32,13 +32,17 @@ use gfx::RenderPass;
 struct Billboard;
 
 mod primitives;
+mod test;
 mod dev;
 
 use crate::primitives::*;
 
+#[derive(Component)]
+struct Heightmap;
+
 #[no_mangle]
 pub fn multiple(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str());
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
     ScheduleInfo {
         setup: vec![
             "setup_multiple".to_string()
@@ -89,13 +93,10 @@ pub fn setup_multiple(
     }
 }
 
-#[derive(Component)]
-struct Heightmap;
-
 #[no_mangle]
 pub fn heightmap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // pmfx
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str());
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
 
     ScheduleInfo {
         setup: vec![
@@ -169,6 +170,7 @@ fn render_heightmap_basic(
 // Plugin
 //
 
+/// Register demo names
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
     vec![
@@ -176,9 +178,13 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "cube".to_string(),
         "multiple".to_string(),
         "heightmap".to_string(),
+        "test_missing_demo".to_string(),
+        "test_missing_systems".to_string(),
+        "test_missing_render_graph".to_string(),
     ]
 }
 
+/// Register plugin system functions
 #[no_mangle]
 pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
@@ -188,8 +194,8 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         "setup_multiple" => system_func![setup_multiple],
         "setup_heightmap" => system_func![setup_heightmap],
         // render functions
-        "render_checkerboard_basic" => view_func![render_checkerboard_basic, view_name.to_string()],
-        "render_wireframe" => view_func![render_wireframe, view_name.to_string()],
+        "render_meshes" => render_func![render_meshes, view_name],
+        "render_wireframe" => render_func![render_wireframe, view_name],
         _ => std::hint::black_box(None)
     }
 }

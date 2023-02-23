@@ -2761,6 +2761,10 @@ impl super::Texture<Device> for Texture {
     fn clone_inner(&self) -> Texture {
         self.clone()
     }
+
+    fn is_resolvable(&self) -> bool {
+        self.resolved_resource.is_some()
+    }
 }
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {

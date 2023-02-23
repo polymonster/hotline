@@ -1,7 +1,10 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use std::collections::HashMap;
+
 use hotline_rs::*;
+use hotline_rs::client::*;
 
 use gfx::CmdBuf;
 use gfx::Device;
@@ -377,4 +380,173 @@ fn align_tests() {
     assert_eq!(val % 52, 0);
     let val = gfx::align(5568, 21);
     assert_eq!(val % 21, 0);
+}
+
+
+// client tests must run 1 at a time, this boots the client with empty user info
+fn boot_empty_client() {
+    println!("test: boot_empty_client");
+    let config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: None,
+        plugin_data: Some(HashMap::new())
+    };
+
+    // create client
+    let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "boot_empty_client".to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+    
+    // run
+    ctx.run_once();
+}
+
+/// Load the basic empty plugin, should print and close gracefully
+/// plugin ui
+/// plugin unload
+/// plugin setup
+/// plugin update
+fn boot_client_empty_plugin() {
+    println!("test: boot_client_empty_plugin");
+    let mut config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: Some(HashMap::new()),
+        plugin_data: Some(HashMap::new())
+    };
+
+    // empty plugin
+    if let Some(plugins) = &mut config.plugins {
+        plugins.insert("empty".to_string(), PluginInfo {
+            path: get_data_path("../plugins")
+        });
+    }
+
+    // create client
+    let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "boot_client_empty_plugin".to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+    
+    // run
+    ctx.run_once();
+}
+
+/// Boots the client with a plugin that does not exist, should load gracefully and notify the missing plugin
+fn boot_client_missing_plugin() {
+    println!("test: boot_client_missing_plugin");
+    let mut config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: Some(HashMap::new()),
+        plugin_data: Some(HashMap::new())
+    };
+
+    // empty plugin
+    if let Some(plugins) = &mut config.plugins {
+        plugins.insert("missing".to_string(), PluginInfo {
+            path: get_data_path("../missing")
+        });
+    }
+
+    // create client
+    let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "boot_client_missing_plugin".to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+    
+    // run
+    ctx.run_once();
+}
+
+/// Boots the client with the ecs plugin and ecs_demos plugin but with no `PluginData`
+fn boot_client_ecs_plugin() {
+    println!("test: boot_client_ecs_plugin");
+    let mut config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: Some(HashMap::new()),
+        plugin_data: Some(HashMap::new()),
+    };
+
+    // ecs plugin with no demo active
+    if let Some(plugins) = &mut config.plugins {
+        plugins.insert("ecs".to_string(), PluginInfo {
+            path: get_data_path("../plugins")
+        });
+        plugins.insert("ecs_demos".to_string(), PluginInfo {
+            path: get_data_path("../plugins")
+        });
+    }
+
+    // create client
+    let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "boot_client_ecs_plugin".to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+    
+    // run
+    ctx.run_once();
+}
+
+/// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
+fn boot_client_ecs_plugin_demo(demo_name: &str) {
+    println!("test: boot_client_ecs_plugin");
+    let mut config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: Some(HashMap::new()),
+        plugin_data: Some(HashMap::new()),
+    };
+
+    // ecs plugin with no demo active
+    if let Some(plugins) = &mut config.plugins {
+        plugins.insert("ecs".to_string(), PluginInfo {
+            path: get_data_path("../plugins")
+        });
+        plugins.insert("ecs_demos".to_string(), PluginInfo {
+            path: get_data_path("../plugins")
+        });
+    }
+
+    if let Some(plugin_data) = &mut config.plugin_data {
+        plugin_data.insert("ecs".to_string(), format!("{{\"active_demo\": \"{}\"}}", demo_name));
+    }
+
+    // create client
+    let ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: demo_name.to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+    
+    // run
+    ctx.run_once();
+}
+
+#[test]
+fn client_tests() {
+    // build the plugins
+    hotline_rs::plugin::build_all();
+
+    // run the tests.. they need to run 1 by 1 as we cant have 2 clients running concurrently
+    boot_empty_client();
+
+    /*
+    boot_client_empty_plugin();
+    boot_client_ecs_plugin();
+    boot_client_missing_plugin();
+    boot_client_ecs_plugin_demo("test_missing_demo");
+    boot_client_ecs_plugin_demo("test_missing_systems");
+    boot_client_ecs_plugin_demo("primitives");
+    boot_client_ecs_plugin_demo("cube");
+    boot_client_ecs_plugin_demo("test_missing_systems");
+    boot_client_ecs_plugin_demo("test_missing_render_graph");
+    */
 }
