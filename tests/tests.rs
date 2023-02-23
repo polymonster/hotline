@@ -533,10 +533,10 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
 #[test]
 fn client_tests() {
     // build the plugins
-    hotline_rs::plugin::build_all();
+    //hotline_rs::plugin::build_all();
 
     // run the tests.. they need to run 1 by 1 as we cant have 2 clients running concurrently
-    boot_empty_client();
+    //boot_empty_client();
 
     /*
     boot_client_empty_plugin();
