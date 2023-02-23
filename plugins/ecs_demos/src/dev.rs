@@ -1,3 +1,5 @@
+#![allow(dead_code, unused_variables, unused_mut)]
+
 use hotline_rs::gfx;
 use hotline_rs::pmfx;
 
@@ -8,6 +10,7 @@ use maths_rs::Vec3f;
 use maths_rs::num::*;
 
 use maths_rs::swizz::*;
+
 
 /// Generic structure for 3D lit geometry meshes
 #[derive(Clone)]
@@ -187,11 +190,378 @@ fn create_faceted_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>) 
     create_mesh_3d(dev, vertices, indices)
 }
 
+fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, cap: bool) -> (Vec<Vertex3D>, Vec<usize>) {
+    let vertex_segments = segments + 2;
+
+    let angle_step = f32::two_pi() / segments as f32;
+    let height_step = 2.0 / (segments - 1) as f32;
+
+    let mid = segments / 2;
+
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+    let mut angle = 0.0;
+    let mut y = -1.0;
+
+    for r in 0..vertex_segments {
+        angle = 0.0;
+        for i in 0..vertex_segments {
+            let x = cos(angle);
+            let z = -sin(angle);
+
+            angle += angle_step;
+
+            let radius = 1.0 - abs(y);
+            let xz = vec3f(x, 0.0, z) * radius;
+            let p = vec3f(xz.x, y, xz.z);
+
+            // tangent
+            let x = cos(angle);
+            let z = -sin(angle);
+            let xz = vec3f(x, 0.0, z) * radius;
+
+            let p_next = vec3f(xz.x, y, xz.z);
+            let p_next = normalize(p_next);
+
+            let p = normalize(p);
+            let t = p_next - p;
+            let bt = cross(p, t);
+
+            let mut u = 0.5 + atan2(z, x) / f32::two_pi();
+            let v = 0.5 + asin(p.y) / f32::pi();
+
+            // clamps the UV's at the end to avoid interpolation artifacts
+            let u = if i == mid-1 { 0.0 } else { u };
+            let u = if i == mid { 1.0 } else { u };
+
+            if i == mid-1 {
+                angle -= angle_step;
+            }
+
+            vertices.push(Vertex3D{
+                position: p,
+                normal: p,
+                tangent: t,
+                bitangent: bt,
+                texcoord: vec2f(u, v) * 3.0
+            });
+        }
+
+        y += height_step;
+    }
+
+    //
+    // Indices
+    //
+
+    let hemi_start = if hemi_start > 0 {
+        hemi_start - 1
+    }
+    else {
+        hemi_start
+    };
+
+    let hemi_start = min(hemi_start, segments);
+    let hemi_end = max(min(hemi_end, segments-1), 1);
+
+    for r in hemi_start..hemi_end {
+        for i in 0..segments+1 {
+            let i_next = i + 1;
+            let v_index = r * vertex_segments;
+            let v_next_index = (r + 1) * vertex_segments + i;
+            let v_next_next_index = (r + 1) * vertex_segments + i_next;
+
+            indices.extend(vec![
+                v_index + i,
+                v_next_index,
+                v_index + i_next,
+                v_next_index,
+                v_next_next_index,
+                v_index + i_next,
+            ]);
+        }
+    }
+
+    if cap {
+        // basis
+        let n = Vec3f::unit_y();
+        let t = Vec3f::unit_x();
+        let bt = Vec3f::unit_z();
+        let y = -1.0 + (hemi_end as f32 * height_step); // - height_step;
+
+        let centre_cap = vertices.len();
+        vertices.push(Vertex3D{
+            position: Vec3f::unit_y() * y,
+            normal: n,
+            tangent: t,
+            bitangent: bt,
+            texcoord: Vec2f::point_five()
+        });
+
+        let loop_start = centre_cap + 1;
+
+        for i in 0..vertex_segments {
+            let x = cos(angle);
+            let z = -sin(angle);
+            let radius = 1.0 - abs(y);
+            let xz = vec3f(x, 0.0, z) * radius;
+            let p = vec3f(xz.x, y, xz.z);
+
+            let p_next = vec3f(xz.x, y, xz.z);
+            let p_next = normalize(p_next);
+            let p = normalize(p);
+
+            vertices.push(Vertex3D{
+                position: p,
+                normal: n,
+                tangent: t,
+                bitangent: bt,
+                texcoord: vec2f(p.x, p.z) * 0.5 + 0.5
+            });
+
+            angle += angle_step;
+        }
+
+        // triangle per cap segmnent
+        for i in 0..segments {
+            indices.extend(vec![
+                loop_start + i,
+                centre_cap,
+                loop_start + i + 1
+            ]);
+        }
+    }
+    (vertices, indices)
+}
+
+/// Create an `segments` sided prism, if `smooth` the prism is a cylinder with smooth normals
+pub fn create_prism_vertices(segments: usize, smooth: bool, cap: bool) -> (Vec<Vertex3D>, Vec<usize>) {
+    let axis = Vec3f::unit_y();
+    let right = Vec3f::unit_x();
+    let up = cross(axis, right);
+    let right = cross(axis, up);
+
+    let mut vertices = Vec::new();
+    let mut points = Vec::new();
+    let mut bottom_points = Vec::new();
+    let mut top_points = Vec::new();
+    let mut tangents = Vec::new();
+    let mut indices = Vec::new();
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+
+    // rotate around up axis and extract some data we can lookup to build vb and ib
+    let mut angle = 0.0;
+    let angle_step = f32::two_pi() / segments as f32;
+    for i in 0..vertex_segments {
+        // current
+        let mut x = cos(angle);
+        let mut y = -sin(angle);
+        let v1 = right * x + up * y;
+
+        // next
+        angle += angle_step;
+        x = cos(angle);
+        y = -sin(angle);
+        let v2 = right * x + up * y;
+
+        points.push(v1);
+        tangents.push(v2 - v1);
+        bottom_points.push(points[i] - Vec3f::unit_y());
+        top_points.push(points[i] + Vec3f::unit_y());
+    }
+
+    //
+    // Vertices
+    //
+
+    // bottom ring
+    for i in 0..vertex_segments {
+        let u = 0.5 + atan2(bottom_points[i].z, bottom_points[i].x) / f32::two_pi();
+        let u = if i == segments { 0.0 } else { u };
+        let bt = cross(tangents[i], points[i]);
+        vertices.push(Vertex3D{
+            position: bottom_points[i],
+            normal: points[i],
+            tangent: tangents[i],
+            bitangent: bt,
+            texcoord: Vec2f::new(u * 3.0, 0.0)
+        });
+    }
+
+    // top ring
+    for i in 0..vertex_segments {
+        let u = 0.5 + atan2(top_points[i].z, top_points[i].x) / f32::two_pi();
+        let u = if i == segments { 0.0 } else { u };
+        let bt = cross(tangents[i], points[i]);
+        vertices.push(Vertex3D{
+            position: top_points[i],
+            normal: points[i],
+            tangent: tangents[i],
+            bitangent: bt,
+            texcoord: Vec2f::new(u * 3.0, 1.0)
+        });
+    }
+        
+    // bottom face
+    for i in 0..vertex_segments {
+        vertices.push(Vertex3D{
+            position: bottom_points[i],
+            normal: -Vec3f::unit_y(),
+            tangent: Vec3f::unit_x(),
+            bitangent: Vec3f::unit_z(),
+            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+        });
+    }
+
+    // bottom face
+    for i in 0..vertex_segments {
+        vertices.push(Vertex3D{
+            position: top_points[i],
+            normal: Vec3f::unit_y(),
+            tangent: Vec3f::unit_x(),
+            bitangent: Vec3f::unit_z(),
+            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+        });
+    }
+
+    // centre points
+    vertices.push(Vertex3D{
+        position: -Vec3f::unit_y(),
+        normal: -Vec3f::unit_y(),
+        tangent: Vec3f::unit_x(),
+        bitangent: Vec3f::unit_z(),
+        texcoord: Vec2f::point_five()
+    });
+    let centre_bottom = vertices.len()-1;
+
+    vertices.push(Vertex3D{
+        position: Vec3f::unit_y(),
+        normal: Vec3f::unit_y(),
+        tangent: Vec3f::unit_x(),
+        bitangent: Vec3f::unit_z(),
+        texcoord: Vec2f::point_five()
+    });
+    let centre_top = vertices.len()-1;
+
+    if smooth {
+
+        //
+        // Smooth Indices
+        //
+
+        // sides
+        for i in 0..segments {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+            indices.extend(vec![
+                bottom,
+                top,
+                next,
+                top,
+                top_next,
+                next
+            ]);
+        }
+
+        if cap {
+            // bottom face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 2;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                indices.extend(vec![
+                    centre_bottom,
+                    face_current,
+                    face_next
+                ]);
+            }
+
+            // top face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 3;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                indices.extend(vec![
+                    centre_top,
+                    face_next,
+                    face_current
+                ]);
+            }
+        }
+
+        (vertices, indices)
+    }
+    else {
+        // 2 tris per segment
+        let mut triangle_vertices = Vec::new();
+        for i in 0..segments {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            let face_index = triangle_vertices.len();
+            triangle_vertices.extend(vec![
+                vertices[bottom].clone(),
+                vertices[top].clone(),
+                vertices[next].clone(),
+                vertices[top].clone(),
+                vertices[top_next].clone(),
+                vertices[next].clone()
+            ]);
+
+            let v = face_index;
+            let n = get_triangle_normal(
+                triangle_vertices[v].position, 
+                triangle_vertices[v+2].position, 
+                triangle_vertices[v+1].position
+            );
+
+            // set hard face normals
+            for v in face_index..triangle_vertices.len() {
+                triangle_vertices[v].normal = n;
+            }
+        }
+
+        if cap {
+            // bottom face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 2;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                triangle_vertices.extend(vec![
+                    vertices[centre_bottom].clone(),
+                    vertices[face_current].clone(),
+                    vertices[face_next].clone(),
+                ]);
+            }
+    
+            // top face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 3;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                triangle_vertices.extend(vec![
+                    vertices[centre_top].clone(),
+                    vertices[face_next].clone(),
+                    vertices[face_current].clone(),
+                ]);
+            }
+        }
+
+        (vertices, Vec::new())
+    }
+}
+
 /// Create a hemi-icosahedron in axis with subdivisions
 pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions: u32) -> Vec<Vertex3D> {
     let (right, up, at) = basis_from_axis(axis);
 
-    let tip = pos - at * INV_PHI;
+    let tip = pos - at * f32::inv_phi();
     let dip = pos + at * 0.5 * 2.0;
 
     let angle_step = f32::pi() / 2.5;
@@ -200,13 +570,13 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
     let mut vertices = Vec::new();
 
     for _ in 0..5 {
-        let x = f32::sin(a);
-        let y = f32::cos(a);
+        let x = sin(a);
+        let y = cos(a);
         let p = pos + right * x + up * y;
 
         a += angle_step;
-        let x2 = f32::sin(a);
-        let y2 = f32::cos(a);
+        let x2 = sin(a);
+        let y2 = cos(a);
         let np = pos + right * x2 + up * y2;
 
         let n = get_triangle_normal(p, np, tip);
@@ -278,138 +648,7 @@ pub fn hemi_icosohedron(axis: Vec3f, pos: Vec3f, start_angle: f32, subdivisions:
 /// in different heights, supply `hemi_segments=segments/2` to create a perfect hemi-sphere
 /// use cap to cap the cliped sphere or not
 pub fn create_sphere_mesh_ex<D: gfx::Device>(dev: &mut D, segments: usize, hemi_segments: usize, cap: bool) -> pmfx::Mesh<D> {
-    let vertex_segments = segments + 2;
-
-    let two_pi = f32::pi() * 2.0;
-    let angle_step = two_pi / segments as f32;
-    let height_step = 2.0 / (segments - 1) as f32;
-
-    let mid = segments / 2;
-
-    let mut vertices = Vec::new();
-    let mut indices = Vec::new();
-    let mut angle = 0.0;
-    let mut y = -1.0;
-
-    for r in 0..vertex_segments {
-        angle = 0.0;
-        for i in 0..vertex_segments {
-            let x = f32::cos(angle);
-            let z = -f32::sin(angle);
-
-            angle += angle_step;
-
-            let radius = 1.0 - abs(y);
-            let xz = vec3f(x, 0.0, z) * radius;
-            let p = vec3f(xz.x, y, xz.z);
-
-            // tangent
-            let x = f32::cos(angle);
-            let z = -f32::sin(angle);
-            let xz = vec3f(x, 0.0, z) * radius;
-
-            let p_next = vec3f(xz.x, y, xz.z);
-            let p_next = normalize(p_next);
-
-            let p = normalize(p);
-            let t = p_next - p;
-            let bt = cross(p, t);
-
-            let mut u = 0.5 + f32::atan2(z, x) / two_pi;
-            let v = 0.5 + f32::asin(p.y) / f32::pi();
-
-            // clamps the UV's at the end to avoid interpolation artifacts
-            let u = if i == mid-1 { 0.0 } else { u };
-            let u = if i == mid { 1.0 } else { u };
-
-            if i == mid-1 {
-                angle -= angle_step;
-            }
-
-            vertices.push(Vertex3D{
-                position: p,
-                normal: p,
-                tangent: t,
-                bitangent: bt,
-                texcoord: vec2f(u, v) * 3.0
-            });
-        }
-
-        y += height_step;
-    }
-
-    //
-    // Indices
-    //
-
-    for r in 0..hemi_segments-1 {
-        for i in 0..segments+1 {
-            let i_next = i + 1;
-            let v_index = r * vertex_segments;
-            let v_next_index = (r + 1) * vertex_segments + i;
-            let v_next_next_index = (r + 1) * vertex_segments + i_next;
-
-            indices.extend(vec![
-                v_index + i,
-                v_next_index,
-                v_index + i_next,
-                v_next_index,
-                v_next_next_index,
-                v_index + i_next,
-            ]);
-        }
-    }
-
-    if hemi_segments < segments && cap {
-        // basis
-        let n = Vec3f::unit_y();
-        let t = Vec3f::unit_x();
-        let bt = Vec3f::unit_z();
-        let y = -1.0 + (hemi_segments as f32 * height_step) - height_step;
-
-        let centre_cap = vertices.len();
-        vertices.push(Vertex3D{
-            position: Vec3f::unit_y() * y,
-            normal: n,
-            tangent: t,
-            bitangent: bt,
-            texcoord: Vec2f::point_five()
-        });
-
-        let loop_start = centre_cap + 1;
-
-        for i in 0..vertex_segments {
-            let x = f32::cos(angle);
-            let z = -f32::sin(angle);
-            let radius = 1.0 - abs(y);
-            let xz = vec3f(x, 0.0, z) * radius;
-            let p = vec3f(xz.x, y, xz.z);
-
-            let p_next = vec3f(xz.x, y, xz.z);
-            let p_next = normalize(p_next);
-            let p = normalize(p);
-
-            vertices.push(Vertex3D{
-                position: p,
-                normal: n,
-                tangent: t,
-                bitangent: bt,
-                texcoord: vec2f(p.x, p.z) * 0.5 + 0.5
-            });
-
-            angle += angle_step;
-        }
-
-        // triangle per cap segmnent
-        for i in 0..segments {
-            indices.extend(vec![
-                loop_start + i,
-                loop_start + i + 1,
-                centre_cap
-            ]);
-        }
-    }
-
+    let (vertices, indices) = create_sphere_vertices(segments, 0, hemi_segments, cap);
     create_mesh_3d(dev, vertices, indices)
 }
 
@@ -418,8 +657,8 @@ pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
     create_sphere_mesh_ex(dev, segments, segments, false)
 }
 
-pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
-    let two_pi = f32::pi() * 2.0;
+/// Create an `segments` sided prism, if `smooth` the prism is a cylinder with smooth normals
+pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool) -> pmfx::Mesh<D> {
     let axis = Vec3f::unit_y();
     let right = Vec3f::unit_x();
     let up = cross(axis, right);
@@ -437,17 +676,17 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
 
     // rotate around up axis and extract some data we can lookup to build vb and ib
     let mut angle = 0.0;
-    let angle_step = two_pi / segments as f32;
+    let angle_step = f32::two_pi() / segments as f32;
     for i in 0..vertex_segments {
         // current
-        let mut x = f32::cos(angle);
-        let mut y = -f32::sin(angle);
+        let mut x = cos(angle);
+        let mut y = -sin(angle);
         let v1 = right * x + up * y;
 
         // next
         angle += angle_step;
-        x = f32::cos(angle);
-        y = -f32::sin(angle);
+        x = cos(angle);
+        y = -sin(angle);
         let v2 = right * x + up * y;
 
         points.push(v1);
@@ -460,11 +699,9 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
     // Vertices
     //
 
-    let two_pi = 2.0 * f32::pi();
-
     // bottom ring
     for i in 0..vertex_segments {
-        let u = 0.5 + f32::atan2(bottom_points[i].z, bottom_points[i].x) / two_pi;
+        let u = 0.5 + atan2(bottom_points[i].z, bottom_points[i].x) / f32::two_pi();
         let u = if i == segments { 0.0 } else { u };
         let bt = cross(tangents[i], points[i]);
         vertices.push(Vertex3D{
@@ -478,7 +715,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
 
     // top ring
     for i in 0..vertex_segments {
-        let u = 0.5 + f32::atan2(top_points[i].z, top_points[i].x) / two_pi;
+        let u = 0.5 + atan2(top_points[i].z, top_points[i].x) / f32::two_pi();
         let u = if i == segments { 0.0 } else { u };
         let bt = cross(tangents[i], points[i]);
         vertices.push(Vertex3D{
@@ -531,51 +768,121 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
     });
     let centre_top = vertices.len()-1;
 
-    //
-    // Indices
-    //
+    if smooth {
 
-    // sides
-    for i in 0..segments {
-        let bottom = i;
-        let top = i + vertex_segments;
-        let next = i + 1;
-        let top_next = i + 1 + vertex_segments;
-        indices.extend(vec![
-            bottom,
-            top,
-            next,
-            top,
-            top_next,
-            next
-        ]);
+        //
+        // Smooth Indices
+        //
+
+        // sides
+        for i in 0..segments {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+            indices.extend(vec![
+                bottom,
+                top,
+                next,
+                top,
+                top_next,
+                next
+            ]);
+        }
+
+        if cap {
+            // bottom face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 2;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                indices.extend(vec![
+                    centre_bottom,
+                    face_current,
+                    face_next
+                ]);
+            }
+
+            // top face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 3;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                indices.extend(vec![
+                    centre_top,
+                    face_next,
+                    face_current
+                ]);
+            }
+        }
+
+        create_mesh_3d(dev, vertices, indices)
     }
+    else {
+        // 2 tris per segment
+        let mut triangle_vertices = Vec::new();
+        for i in 0..segments {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
 
-    // bottom face - tri fan
-    for i in 0..segments {
-        let face_offset = vertex_segments * 2;
-        let face_current = face_offset + i;
-        let face_next = face_offset + (i + 1);
-        indices.extend(vec![
-            centre_bottom,
-            face_current,
-            face_next
-        ]);
+            let face_index = triangle_vertices.len();
+            triangle_vertices.extend(vec![
+                vertices[bottom].clone(),
+                vertices[top].clone(),
+                vertices[next].clone(),
+                vertices[top].clone(),
+                vertices[top_next].clone(),
+                vertices[next].clone()
+            ]);
+
+            let v = face_index;
+            let n = get_triangle_normal(
+                triangle_vertices[v].position, 
+                triangle_vertices[v+2].position, 
+                triangle_vertices[v+1].position
+            );
+
+            // set hard face normals
+            for v in face_index..triangle_vertices.len() {
+                triangle_vertices[v].normal = n;
+            }
+        }
+
+        if cap {
+            // bottom face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 2;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                triangle_vertices.extend(vec![
+                    vertices[centre_bottom].clone(),
+                    vertices[face_current].clone(),
+                    vertices[face_next].clone(),
+                ]);
+            }
+    
+            // top face - tri fan
+            for i in 0..segments {
+                let face_offset = vertex_segments * 3;
+                let face_current = face_offset + i;
+                let face_next = face_offset + (i + 1);
+                triangle_vertices.extend(vec![
+                    vertices[centre_top].clone(),
+                    vertices[face_next].clone(),
+                    vertices[face_current].clone(),
+                ]);
+            }
+        }
+
+        create_faceted_mesh_3d(dev, triangle_vertices)
     }
+}
 
-    // top face - tri fan
-    for i in 0..segments {
-        let face_offset = vertex_segments * 3;
-        let face_current = face_offset + i;
-        let face_next = face_offset + (i + 1);
-        indices.extend(vec![
-            centre_top,
-            face_next,
-            face_current
-        ]);
-    }
-
-    create_mesh_3d(dev, vertices, indices)
+/// Create a smooth unit-cylinder mesh with extents -1 to 1 and radius 1
+pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+    create_prism_mesh(dev, segments, true, true)
 }
 
 /// Create an indexed unit cube subdivision mesh instance where the faces are subdivided into 4 smaller quads for `subdivisions` 
@@ -620,8 +927,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -634,8 +941,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -678,8 +985,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -692,8 +999,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -707,8 +1014,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            position: vec3f(-1.0, 1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -721,8 +1028,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -770,20 +1077,54 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
         v.normal = v.position;
     }
 
-    // create indices
+    // create indices... flip the triangles to create better 
+
+    //   ___
+    //  |/|\|
+    //  |\|/|
+    // 
+
     let mut indices = Vec::new();
     for i in (0..subdiv_vertices.len()).step_by(4) {
-        indices.extend(vec![
-            i,  i + 2,  i + 1,  i + 2,  i,  i + 3
-        ]);
+        let quad = (i / 4) % 4;
+        if subdivisions > 0 {
+            if quad == 0 {
+                indices.extend(vec![
+                    i,  i + 3,  i + 1,
+                    i + 1,  i + 3,  i + 2
+                ]);
+            }
+            else if quad == 3 {
+                indices.extend(vec![
+                    i,  i + 3,  i + 2,
+                    i,  i + 2,  i + 1
+                ]);
+            }
+            else if quad == 2 {
+                indices.extend(vec![
+                    i,  i + 3,  i + 1,
+                    i + 1,  i + 3,  i + 2
+                ]);
+            }
+            else {
+                indices.extend(vec![
+                    i,  i + 2,  i + 1,
+                    i,  i + 3,  i + 2
+                ]);
+            }
+        }
+        else {
+            indices.extend(vec![
+                i,  i + 2,  i + 1,  i + 2,  i,  i + 3
+            ]);
+        }
     }
 
     create_mesh_3d(dev, subdiv_vertices, indices)
 }
 
 /// creates a pyramid mesh, if smooth this is essentially a low poly cone with smooth normals
-pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool) -> pmfx::Mesh<D> {
-    let two_pi = f32::pi() * 2.0;
+pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool) -> pmfx::Mesh<D> {
     let axis = Vec3f::unit_y();
     let right = Vec3f::unit_x();
     let up = cross(axis, right);
@@ -799,25 +1140,25 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
 
     // rotate around up axis and extract some data we can lookup to build vb and ib
     let mut angle = 0.0;
-    let angle_step = two_pi / segments as f32;
+    let angle_step = f32::two_pi() / segments as f32;
     for i in 0..vertex_segments {
         // current
-        let mut x = f32::cos(angle);
-        let mut y = -f32::sin(angle);
+        let mut x = cos(angle);
+        let mut y = -sin(angle);
         let v1 = right * x + up * y;
 
         // next
         angle += angle_step;
-        x = f32::cos(angle);
-        y = -f32::sin(angle);
+        x = cos(angle);
+        y = -sin(angle);
         let v2 = right * x + up * y;
 
         // uv
-        let u = 0.5 + f32::atan2(v1.z, v2.x) / two_pi;
+        let u = 0.5 + atan2(v1.z, v2.x) / f32::two_pi();
         let u = if i == segments { 0.0 } else { u };
 
         // tbn
-        let n = normalize(cross(v2 - v1, tip - v1));
+        let n = cross(normalize(v2 - v1), normalize(tip - v1));
         let t = v2 - v1;
         let bt = cross(n, t);
 
@@ -886,38 +1227,84 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
         }  
     }
 
-
     // base cap
-    for i in 0..segments {
-        vertices.extend(vec![
-            Vertex3D {
-                position: segment_vertices[i].position,
-                texcoord: segment_vertices[i].position.xz() * 0.5 + 0.5,
-                normal: -Vec3f::unit_y(),
-                tangent: Vec3f::unit_x(),
-                bitangent: Vec3f::unit_z(),
-            },
-            Vertex3D {
-                position: base,
-                texcoord: Vec2f::point_five(),
-                normal: -Vec3f::unit_y(),
-                tangent: Vec3f::unit_x(),
-                bitangent: Vec3f::unit_z(),
-            },
-            Vertex3D {
-                position: segment_vertices[i + 1].position,
-                texcoord: segment_vertices[i + 1].position.xz() * 0.5 + 0.5,
-                normal: -Vec3f::unit_y(),
-                tangent: Vec3f::unit_x(),
-                bitangent: Vec3f::unit_z(),
-            }
-        ])
+    if cap {
+        for i in 0..segments {
+            vertices.extend(vec![
+                Vertex3D {
+                    position: segment_vertices[i].position,
+                    texcoord: segment_vertices[i].position.xz() * 0.5 + 0.5,
+                    normal: -Vec3f::unit_y(),
+                    tangent: Vec3f::unit_x(),
+                    bitangent: Vec3f::unit_z(),
+                },
+                Vertex3D {
+                    position: segment_vertices[i + 1].position,
+                    texcoord: segment_vertices[i + 1].position.xz() * 0.5 + 0.5,
+                    normal: -Vec3f::unit_y(),
+                    tangent: Vec3f::unit_x(),
+                    bitangent: Vec3f::unit_z(),
+                },
+                Vertex3D {
+                    position: base,
+                    texcoord: Vec2f::point_five(),
+                    normal: -Vec3f::unit_y(),
+                    tangent: Vec3f::unit_x(),
+                    bitangent: Vec3f::unit_z(),
+                }
+            ])
+        }
     }
 
     create_faceted_mesh_3d(dev, vertices)
 }
 
-// create a cone mesh with smooth normals made up of `segments` 
+// create a cone mesh with smooth normals made up of `segments` number of sides
 pub fn create_cone_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
-    create_pyramid_mesh(dev, segments, true)
+    create_pyramid_mesh(dev, segments, true, true)
+}
+
+// create a capsule mesh with smooth normals made up of `segments` number of sides
+pub fn create_capsule_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    // bottom sphere
+    let (mut v0, i0) = create_sphere_vertices(segments, 0, segments/2, false);
+    for v in &mut v0 {
+        v.position += vec3f(0.0, -0.5, 0.0);
+    }
+
+    // top sphere
+    let (mut v1, mut i1) = create_sphere_vertices(segments, segments/2, segments, false);    
+    for v in &mut v1 {
+        v.position += vec3f(0.0, 0.5, 0.0);
+    }
+
+    // offset the indices
+    let base = v0.len();
+    for i in &mut i1 {
+        *i += base;
+    }
+
+    // cylinder
+    let (mut v2, mut i2) = create_prism_vertices(segments, true, false);   
+    for v in &mut v2 {
+        v.position *= vec3f(1.0, 0.5, 1.0);
+    } 
+
+    // offset the indices
+    let base = base + v1.len();
+    for i in &mut i2 {
+        *i += base;
+    }
+
+    vertices.extend(v0);
+    indices.extend(i0);
+    vertices.extend(v1);
+    indices.extend(i1);
+    vertices.extend(v2);
+    indices.extend(i2);
+
+    create_mesh_3d(dev, vertices, indices)
 }

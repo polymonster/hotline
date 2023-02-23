@@ -1053,6 +1053,12 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    pub fn spacing(&self) {
+        unsafe {
+            igSpacing()
+        }
+    }
+
     pub fn same_line(&self) {
         unsafe { 
             igSameLine(0.0, 0.0);

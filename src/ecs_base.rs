@@ -7,10 +7,21 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use maths_rs::{Vec3f, Mat4f};
 
-pub struct SheduleInfo {
+pub struct ScheduleInfo {
     pub setup: Vec<String>,
     pub update: Vec<String>,
-    pub render: Vec<String>
+    pub render_graph: String
+}
+
+/// Empty schedule info
+impl Default for ScheduleInfo {
+    fn default() -> ScheduleInfo {
+        ScheduleInfo {
+            setup: Vec::new(),
+            update: Vec::new(),
+            render_graph: String::new(),
+        }
+    }
 }
 
 /// Serialisable camera info

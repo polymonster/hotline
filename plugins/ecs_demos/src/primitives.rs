@@ -6,7 +6,7 @@ use hotline_rs::gfx_platform;
 use hotline_rs::os_platform;
 use hotline_rs::gfx;
 use hotline_rs::ecs_base::*;
-use hotline_rs::ecs_base::SheduleInfo;
+use hotline_rs::ecs_base::ScheduleInfo;
 
 use maths_rs::Vec3f;
 use maths_rs::Mat4f;
@@ -22,18 +22,19 @@ struct Billboard;
 
 /// Init function for primitives demo
 #[no_mangle]
-pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // pmfx
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
-    client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
-
-    SheduleInfo {
+    
+    ScheduleInfo {
+        setup: vec![
+            "setup_primitives".to_string()
+        ],
         update: vec![
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render: client.pmfx.get_render_function_names("checkerboard"),
-        setup: vec!["setup_primitives".to_string()]
+        render_graph: "checkerboard".to_string()
     }
 }
 
@@ -55,16 +56,17 @@ pub fn setup_primitives(
         crate::dev::create_sphere_mesh(&mut device.0, 16),
         crate::dev::create_sphere_mesh_ex(&mut device.0, 16, 8, true),
 
+        crate::dev::create_prism_mesh(&mut device.0, 3, false, true),
+        crate::dev::create_prism_mesh(&mut device.0, 4, false, true),
+        crate::dev::create_prism_mesh(&mut device.0, 5, false, true),
         crate::dev::create_cylinder_mesh(&mut device.0, 16),
-        crate::dev::create_cylinder_mesh(&mut device.0, 3),
-        crate::dev::create_cylinder_mesh(&mut device.0, 4),
-        crate::dev::create_cylinder_mesh(&mut device.0, 5),
         
+        crate::dev::create_pyramid_mesh(&mut device.0, 4, false, true),
+        crate::dev::create_pyramid_mesh(&mut device.0, 5, false, true),
         crate::dev::create_cone_mesh(&mut device.0, 16),
-        crate::dev::create_pyramid_mesh(&mut device.0, 4, false),
-        crate::dev::create_pyramid_mesh(&mut device.0, 5, false),
 
         crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
+        crate::dev::create_capsule_mesh(&mut device.0, 16),
     ];
 
     // square number of rows and columns
@@ -174,17 +176,17 @@ pub fn render_wireframe(
 
 /// Sets up a single cube mesh
 #[no_mangle]
-pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> SheduleInfo {
+pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // pmfx
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
     client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
 
-    SheduleInfo {
+    ScheduleInfo {
         update: vec![
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render: client.pmfx.get_render_function_names("checkerboard"),
+        render_graph: "checkerboard".to_string(),
         setup: vec!["setup_cube".to_string()]
     }
 }

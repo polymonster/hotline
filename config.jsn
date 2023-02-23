@@ -18,6 +18,11 @@
         }
     }
 
+    // ensure -run always comes last
+    post_build_order: [
+        "run"
+    ]
+
     hotline: {
         jsn_vars: {
             config_flags: ""
