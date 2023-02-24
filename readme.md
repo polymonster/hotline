@@ -412,7 +412,7 @@ cargo run --example triangle
 
 - Samples and Demos
 - Debug / Primitve Rendering API
-~~- High level graphics api (render graphs, data driven, Uber shaders)~~
+- High level graphics api (render graphs, data driven, Uber shaders)  
 ~~- Multi-threading support (async command buffer generation and job dispatches)~~
 - ~~Hot reloading~~
 - ~~API (gfx::, os::) / Backend (d3d12::, win32::)~~
