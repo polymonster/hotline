@@ -95,8 +95,8 @@ pub fn render_meshes(
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
-    let checkerboard = pmfx.get_render_pipeline_for_format("checkerboard_mesh", fmt);
-    if checkerboard.is_none() {
+    let mesh_debug = pmfx.get_render_pipeline_for_format("mesh_debug", fmt);
+    if mesh_debug.is_none() {
         return;
     }
 
@@ -105,7 +105,7 @@ pub fn render_meshes(
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-    view.cmd_buf.set_render_pipeline(&checkerboard.unwrap());
+    view.cmd_buf.set_render_pipeline(&mesh_debug.unwrap());
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);

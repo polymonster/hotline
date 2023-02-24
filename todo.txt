@@ -1,10 +1,9 @@
 // TODO:
 
-// - improve render function / naming and passing of view
 // - fix shader test failures
 // - update matrices ecs
 // - update cameras from scene
-/
+// - remove relative path for the repo's plugins
 
 // pmfx
 // - handle missing pipeline
@@ -12,14 +11,15 @@
 // - resolves properly driven
 
 // primitives
+// - move from ecs to hotline
 // - billboard
-// - capsule
 // - tourus
 // - chamfer cube
+// - spring
 
 // ui
-// - view menu
-// - textures
+// - view menu + saving state
+// - option to save config and ini to disk location
 
 // ecs
 // - per demo settings
@@ -46,9 +46,12 @@
 // - Draw Indirect
 // - Stencil Ref
 // - MRT
-// - Texture Formats (BC)
+// - Texture Formats (BC etc)
 
 // DONE:
+// x capsule
+// x textures
+// x improve render function / naming and passing of view
 // x docked defaults
 // x imgui push / pop colour
 // x show schedule and errors

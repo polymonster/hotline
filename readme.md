@@ -137,21 +137,22 @@ There is a core `ecs` plugin which builds ontop of [bevy_ecs](https://docs.rs/be
 You can setup a new ecs demo by providing an initialisation function named after the demo this returns a `ScheduleInfo` for which systems to run:
 
 ```rust
-/// Supply an in intialise function which returns a `ScheduleInfo` for a demo
+/// Init function for primitives demo
 #[no_mangle]
-pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    // we can load pmfx and create a render graph which is defined in a config
+pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    // load resources we may need
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
-    client.pmfx.create_render_graph(&mut client.device, "checkerboard").unwrap();
-
-    // add update, render and setup functions
+    
+    // fill out info
     ScheduleInfo {
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
-        render: client.pmfx.get_render_function_names("checkerboard"),
-        setup: vec!["setup_cube".to_string()]
+        update: systems![
+            "update_cameras",
+            "update_main_camera_config"
+        ],
+        render_graph: "mesh_debug".to_string()
     }
 }
 ```
@@ -185,7 +186,7 @@ You can specify render graphs in `pmfx` which setup `views` which get dispatched
 
 ```rust
 #[no_mangle]
-pub fn render_checkerboard_basic(
+pub fn render_meshes(
     pmfx: bevy_ecs::prelude::Res<PmfxRes>,
     view_name: String,
     view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
@@ -197,8 +198,8 @@ pub fn render_checkerboard_basic(
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
-    let checkerboard = pmfx.get_render_pipeline_for_format("checkerboard_mesh", fmt);
-    if checkerboard.is_none() {
+    let mesh_debug = pmfx.get_render_pipeline_for_format("mesh_debug", fmt);
+    if mesh_debug.is_none() {
         return;
     }
 
@@ -207,7 +208,7 @@ pub fn render_checkerboard_basic(
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-    view.cmd_buf.set_render_pipeline(&checkerboard.unwrap());
+    view.cmd_buf.set_render_pipeline(&mesh_debug.unwrap());
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
@@ -249,26 +250,55 @@ Systems can be imported dynamically from different plugins, in order to do so th
 You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name, the ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
 
 ```rust
+/// Register demo names
 #[no_mangle]
-pub fn get_demos_ecs_basic() -> Vec<String> {
-    vec![
-        "primitives".to_string(),
-        "billboard".to_string(),
-        "cube".to_string(),
-        "multiple".to_string(),
-        "heightmap".to_string(),
+pub fn get_demos_ecs_demos() -> Vec<String> {
+    demos![
+        "primitives",
+        "draw_indexed",
+        "draw_indexed_push_constants",
+        "test_missing_demo",
+        "test_missing_systems",
+        "test_missing_render_graph"
     ]
 }
 
+/// Register plugin system functions
 #[no_mangle]
-pub fn get_system_ecs_basic(name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
         // setup functions
-        "setup_cube" => ecs_base::system_func![crate::primitives::setup_cube],
-        // ..
-        "render_checkerboard_basic" => ecs_base::view_func![crate::primitives::render_checkerboard_basic, "render_checkerboard_basic"],
+        "setup_draw_indexed" => system_func![setup_draw_indexed],
+        "setup_primitives" => system_func![setup_primitives],
+        "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
+        // render functions
+        "render_meshes" => render_func![render_meshes, view_name],
+        "render_wireframe" => render_func![render_wireframe, view_name],
         _ => std::hint::black_box(None)
     }
+}
+```
+### Serialising Plugin Data
+
+You can supply your own serialisable plugin data which will be serialised with the rest of the `user_config` and can be grouped with your plugin and reloaded between sessions.
+
+```rust
+/// Seriablisable user info for maintaining state between reloads and sessions
+#[derive(Serialize, Deserialize, Default, Resource, Clone)]
+pub struct SessionInfo {
+    pub active_demo: String,
+    pub main_camera: Option<CameraInfo>
+}
+
+// the client provides functions which can serialise and deserialise this data for you
+fn update_user_config(&mut self) {
+    // find plugin data for the "ecs" plugin
+    self.session_info = client.deserialise_plugin_data("ecs");
+
+    //.. make updates to your data here
+
+    // write back session info which will be serialised to disk and reloaded between sessions
+    client.serialise_plugin_data("ecs", &self.session_info);
 }
 ```
 
@@ -279,6 +309,10 @@ You can use hotline as a library inside the plugin system or on it's own to use 
 ### Basic Application
 
 ```rust
+// include prelude for convenience
+use hotline_rs::prelude::*;
+
+pub fn main() -> Result<(), hotline_rs::Error> { 
     // Create an Application
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("triangle"),
@@ -308,12 +342,12 @@ You can use hotline as a library inside the plugin system or on it's own to use 
         format: gfx::Format::RGBA8n,
         ..Default::default()
     };
-
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     
     /// Create a command buffer
     let mut cmd = device.create_cmd_buf(num_buffers);
 
+    // Run main loop
     while app.run() {
         // update window and swap chain
         window.update(&mut app);
@@ -336,6 +370,8 @@ You can use hotline as a library inside the plugin system or on it's own to use 
 
     // must wait for the final frame to be completed
     swap_chain.wait_for_last_frame();
+
+    /// must reset command buffers on shutdown otherwise they will leak COM objects (win32)
     cmd.reset(&swap_chain);
 
     Ok(());
