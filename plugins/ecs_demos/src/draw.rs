@@ -91,5 +91,3 @@ pub fn setup_draw_indexed(
         WorldMatrix(pos * scale)
     ));
 }
-
-
