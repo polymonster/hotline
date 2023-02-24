@@ -3,21 +3,7 @@
 
 use std::collections::HashMap;
 
-use hotline_rs::*;
-use hotline_rs::client::*;
-
-use gfx::CmdBuf;
-use gfx::Device;
-use gfx::SwapChain;
-
-use os::App;
-use os::Window;
-
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-
-#[cfg(target_os = "windows")]
-use gfx::d3d12 as gfx_platform;
+use hotline_rs::prelude::*;
 
 #[repr(C)]
 struct Vertex {
@@ -421,7 +407,7 @@ fn boot_client_empty_plugin() {
     // empty plugin
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("empty".to_string(), PluginInfo {
-            path: get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../plugins")
         });
     }
 
@@ -449,7 +435,7 @@ fn boot_client_missing_plugin() {
     // empty plugin
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("missing".to_string(), PluginInfo {
-            path: get_data_path("../missing")
+            path: hotline_rs::get_data_path("../missing")
         });
     }
 
@@ -477,10 +463,10 @@ fn boot_client_ecs_plugin() {
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("ecs".to_string(), PluginInfo {
-            path: get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../plugins")
         });
         plugins.insert("ecs_demos".to_string(), PluginInfo {
-            path: get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../plugins")
         });
     }
 
@@ -508,10 +494,10 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("ecs".to_string(), PluginInfo {
-            path: get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../plugins")
         });
         plugins.insert("ecs_demos".to_string(), PluginInfo {
-            path: get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../plugins")
         });
     }
 

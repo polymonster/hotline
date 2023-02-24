@@ -4,15 +4,12 @@
 // - fix shader test failures
 // - update matrices ecs
 // - update cameras from scene
-// - show schedule and errors
-// - docked defaults
-// - imgui push / pop colour
+/
 
 // pmfx
-
-// - - missing pipeline
+// - handle missing pipeline
 // - msaa + texture format
-// - resolves
+// - resolves properly driven
 
 // primitives
 // - billboard
@@ -52,6 +49,9 @@
 // - Texture Formats (BC)
 
 // DONE:
+// x docked defaults
+// x imgui push / pop colour
+// x show schedule and errors
 // x error handling !!!! ->
 // x - missing plugin
 // x - missing system func

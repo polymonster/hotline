@@ -1,21 +1,8 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::client::Client;
-use hotline_rs::gfx_platform;
-use hotline_rs::os_platform;
-use hotline_rs::gfx;
-use hotline_rs::ecs_base::*;
-use hotline_rs::ecs_base::ScheduleInfo;
-
-use maths_rs::Vec3f;
-use maths_rs::Mat4f;
-use maths_rs::num::*;
-use maths_rs::vec::*;
-use maths_rs::mat::*;
-
-use gfx::CmdBuf;
-use gfx::RenderPass;
+use hotline_rs::prelude::*;
+use maths_rs::prelude::*;
 
 #[derive(bevy_ecs::prelude::Component)]
 struct Billboard;
@@ -23,16 +10,16 @@ struct Billboard;
 /// Init function for primitives demo
 #[no_mangle]
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    // pmfx
+    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
     
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        update: systems![
+            "update_cameras",
+            "update_main_camera_config"
         ],
         render_graph: "mesh_debug".to_string()
     }
@@ -46,6 +33,7 @@ pub fn setup_primitives(
 
     let meshes = vec![
         hotline_rs::primitives::create_plane_mesh(&mut device.0, 1),
+        
         hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_cube_mesh(&mut device.0),
         hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
@@ -172,36 +160,4 @@ pub fn render_wireframe(
 
     // end / transition / execute
     view.cmd_buf.end_render_pass();
-}
-
-/// Sets up a single cube mesh
-#[no_mangle]
-pub fn cube(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
-
-    ScheduleInfo {
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
-        ],
-        render_graph: "mesh_debug".to_string(),
-        setup: vec!["setup_cube".to_string()]
-    }
-}
-
-#[no_mangle]
-pub fn setup_cube(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
-
-    let pos = Mat4f::from_translation(Vec3f::unit_y() * 10.0);
-    let scale = Mat4f::from_scale(splat3f(10.0));
-
-    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-    commands.spawn((
-        Position(Vec3f::zero()),
-        Velocity(Vec3f::one()),
-        MeshComponent(cube_mesh.clone()),
-        WorldMatrix(pos * scale)
-    ));
 }

@@ -137,3 +137,45 @@ pub use os::win32 as os_platform;
 /// This is a hardcoded compile time selection of os backend for windows as d3d12
 #[cfg(target_os = "windows")]
 pub use gfx::d3d12 as gfx_platform;
+
+/// This is a hardcoded compile time selection of os backend for windows as wmf
+#[cfg(target_os = "windows")]
+pub use av::wmf as av_platform;
+
+/// Most commonly used re-exported types.
+pub mod prelude {
+    #[doc(hidden)]
+    pub use crate::{
+        // modules
+        gfx,
+        os,
+        client,
+        plugin,
+        pmfx,
+        imgui,
+
+        // platform specific modules
+        gfx_platform,
+        os_platform,
+        av_platform,
+
+        // traits
+        ecs_base::*,
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        os::{App, Window},
+        pmfx::Pmfx,
+        imgui::ImGui,
+        imdraw::ImDraw,
+        client::{Client, HotlineInfo, PluginInfo},
+        plugin::{Plugin},
+        av::{VideoPlayer},
+
+        // macros
+        hotline_plugin,
+        system_func,
+        render_func,
+        render_func_closure,
+        demos,
+        systems
+    };
+}

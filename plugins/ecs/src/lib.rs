@@ -1,38 +1,13 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::gfx;
-use hotline_rs::gfx_platform;
-use hotline_rs::os;
-use hotline_rs::os_platform;
-
-use hotline_rs::*;
-use hotline_rs::client::*;
-use hotline_rs::plugin::*;
-use hotline_rs::ecs_base::*;
-use hotline_rs::ecs_base::ScheduleInfo;
-
-use hotline_rs::system_func;
+use hotline_rs::prelude::*;
+use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemDescriptor;
 
-use maths_rs::Vec3f;
-use maths_rs::Vec4f;
-use maths_rs::Mat4f;
-
-use maths_rs::num::*;
-use maths_rs::mat::*;
-use maths_rs::vec::vec4f;
-
-use hotline_rs::os::App;
-use hotline_rs::os::Window;
-
-use gfx::RenderPass;
-use gfx::CmdBuf;
-use gfx::SwapChain;
-
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 struct BevyPlugin {
     world: World,
@@ -41,7 +16,7 @@ struct BevyPlugin {
     schedule_info: ScheduleInfo,
     run_setup: bool,
     session_info: SessionInfo,
-    system_errors: HashMap<String, String>,
+    system_errors: HashSet<String>,
     render_graph_hash: pmfx::PmfxHash
 }
 
@@ -257,11 +232,6 @@ impl BevyPlugin {
         None
     }
 
-    fn log_error(&mut self, key: &str, msg: &str) {
-        *self.system_errors.entry(key.to_string())
-            .or_insert(String::new()) = msg.to_string();
-    }
-
     /// If we change demo or need to rebuild render graphs we need to invoke this, code changes will already invoke setup
     fn resetup(&mut self, mut client: PlatformClient) -> PlatformClient {
         // serialize
@@ -290,8 +260,8 @@ impl BevyPlugin {
             imgui.text(header);
             if function_list.len() > 0 {
                 for f in function_list {
-                    if self.system_errors.contains_key(f) {
-                        imgui.colour_text(&format!("  {} : {}", self.system_errors[f], f), error_col);
+                    if self.system_errors.contains(f) {
+                        imgui.colour_text(&format!("  missing function: `{}`", f), error_col);
                     }
                     else {
                         imgui.colour_text(&format!("  {}", f), default_col);
@@ -299,6 +269,53 @@ impl BevyPlugin {
                 }
             }
         }
+    }
+
+    fn schedule_ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+        let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
+        let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
+        
+        // schedule
+        client.imgui.separator();
+        client.imgui.text("Schedule");
+        client.imgui.separator();
+
+        // warn of missing demo
+        if self.system_errors.contains("active_demo") {
+            client.imgui.colour_text(&format!("warning: missing demo function: {}, using default schedule.", self.session_info.active_demo), warning_col);
+        }
+
+        self.status_ui_category(&mut client.imgui, "Setup:", &self.schedule_info.setup);
+        self.status_ui_category(&mut client.imgui, "Update:", &self.schedule_info.update);
+
+        let graph = &self.schedule_info.render_graph;
+
+        if self.system_errors.contains(graph) {
+            client.imgui.colour_text(
+                &format!("Render Graph: {}: {}", "missing render graph", graph), 
+                error_col
+            );
+        }
+        else {
+            let render_functions = client.pmfx.get_render_graph_function_info(graph);
+            let mut render_function_names = Vec::new();
+            for v in render_functions {
+                render_function_names.push(v.0);
+            }
+            self.status_ui_category(
+                &mut client.imgui, 
+                &format!("Render Graph ({}):", graph),
+                &render_function_names
+            );
+
+            // actual exec order
+            client.imgui.text(&format!("Command Queue ({}):", graph));
+            for f in client.pmfx.get_render_graph_execute_order() {
+                client.imgui.text(&format!("  {}", f));
+            }
+        }
+
+        client
     }
 }
 
@@ -312,13 +329,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             render_graph_hash: 0,
             run_setup: false,
             session_info: SessionInfo::default(),
-            system_errors: HashMap::new()
+            system_errors: HashSet::new()
         }
     }
 
     fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
         // clear errors
-        self.system_errors = HashMap::new();
+        self.system_errors = HashSet::new();
 
         self.session_info = client.deserialise_plugin_data("ecs");
 
@@ -330,19 +347,20 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             info
         }
         else {
-            self.log_error("active_demo", 
-                &format!("warning: missing demo function: '{}', using default.", self.session_info.active_demo));
+            self.system_errors.insert("active_demo".to_string());
             self.default_demo_shedule()
         };
 
-        let info = &self.schedule_info;
-
         // build render graph
-        let graph_result = client.pmfx.create_render_graph(&mut client.device, &info.render_graph);
+        let graph = self.schedule_info.render_graph.to_string();
+        let graph_result = client.pmfx.create_render_graph(&mut client.device, &graph);
         if graph_result.is_err() {
-            *self.system_errors.entry(info.render_graph.to_string())
-                .or_insert(String::new()) = "missing render graph".to_string();
+            self.system_errors.insert(graph.to_string());
+            self.schedule_info = ScheduleInfo::default();
+            self.schedule_info.render_graph = graph;
         }
+
+        let info = &self.schedule_info;
 
         // hook in render functions
         let render_functions = client.pmfx.get_render_graph_function_info(&info.render_graph);
@@ -352,8 +370,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 render_stage = render_stage.with_system(func);
             }
             else {
-                *self.system_errors.entry(func_name.to_string())
-                    .or_insert(String::new()) = "missing render function".to_string();
+                self.system_errors.insert(func_name.to_string());
             }
         }
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
@@ -366,8 +383,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 setup_stage = setup_stage.with_system(func);
             }
             else {
-                *self.system_errors.entry(func_name.to_string())
-                    .or_insert(String::new()) = "missing setup function".to_string();
+                self.system_errors.insert(func_name.to_string());
             }
         }
         self.setup_schedule.add_stage(StageStartup, setup_stage);
@@ -379,8 +395,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 update_stage = update_stage.with_system(func);
             }
             else {
-                *self.system_errors.entry(func_name.to_string())
-                    .or_insert(String::new()) = "missing update function".to_string();
+                self.system_errors.insert(func_name.to_string());
             }
         }
         self.schedule.add_stage(StageUpdate, update_stage);
@@ -455,15 +470,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
 
-            let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
-            let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
-
             // refresh button
             if client.imgui.button("\u{f021}") {
                 resetup = true;
             }
-            client.imgui.same_line();
-            client.imgui.spacing();
             client.imgui.same_line();
 
             // demo select
@@ -477,45 +487,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 }
             }
 
-            // schedule
-            client.imgui.separator();
-            client.imgui.text("Shedule");
-            client.imgui.separator();
-
-            // warn of missing demo
-            if self.system_errors.contains_key("active_demo") {
-                client.imgui.colour_text(&format!("{}", self.system_errors["active_demo"]), warning_col);
-            }
-
-            self.status_ui_category(&mut client.imgui, "Setup:", &self.schedule_info.setup);
-            self.status_ui_category(&mut client.imgui, "Update:", &self.schedule_info.update);
-
-            let graph = &self.schedule_info.render_graph;
-
-            if self.system_errors.contains_key(graph) {
-                client.imgui.colour_text(
-                    &format!("Render Graph: {}: {}", self.system_errors[graph], graph), 
-                    error_col
-                );
-            }
-            else {
-                let render_functions = client.pmfx.get_render_graph_function_info(graph);
-                let mut render_function_names = Vec::new();
-                for v in render_functions {
-                    render_function_names.push(v.0);
-                }
-                self.status_ui_category(
-                    &mut client.imgui, 
-                    &format!("Render Graph ({}):", graph),
-                    &render_function_names
-                );
-            }
-
-            // actual exec order
-            client.imgui.text(&format!("Render Execute Graph ({}):", graph));
-            for f in client.pmfx.get_render_graph_execute_order() {
-                client.imgui.text(&format!("  {}", f));
-            }
+            client = self.schedule_ui(client);
         }
 
         // preform any re-setup actions

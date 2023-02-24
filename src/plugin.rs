@@ -5,6 +5,7 @@ use crate::reloader;
 
 use std::process::ExitStatus; 
 use std::process::Command;
+use std::io::{self, Write};
 
 /// General dll plugin responder, will check for source code changes and run cargo build to re-build the library
 pub struct PluginReloadResponder {
@@ -107,12 +108,16 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         };
 
+        let mut stdout = io::stdout().lock();
+
         if output.stdout.len() > 0 {
-            println!("{}", String::from_utf8(output.stdout).unwrap());
+            stdout.write_all(&output.stdout).unwrap();
+            //println!("{}", String::from_utf8(output.stdout).unwrap());
         }
 
         if output.stderr.len() > 0 {
-            println!("{}", String::from_utf8(output.stderr).unwrap());
+            stdout.write_all(&output.stderr).unwrap();
+            //println!("{}", String::from_utf8(output.stderr).unwrap());
         }
 
         output.status

@@ -1,11 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::client::Client;
-use hotline_rs::gfx_platform;
-use hotline_rs::os_platform;
-
-use hotline_rs::ecs_base::ScheduleInfo;
+use hotline_rs::prelude::*;
 
 /// Tests missing setup and updates are handled gracefully and notified to the user
 #[no_mangle]
