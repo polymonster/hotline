@@ -1299,3 +1299,88 @@ pub fn create_capsule_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx
 
     create_mesh_3d(dev, vertices, indices)
 }
+
+/// Create a unit smooth tourus mesh 
+pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+    let mut segment_vertices = Vec::new();
+    let mut vertices = Vec::new();
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+    let radius = 0.5;
+
+    // rotate around up axis and extract some data we can lookup to build vb and ib
+    let mut hangle = 0.0;
+    let angle_step = f32::two_pi() / segments as f32;
+    for i in 0..vertex_segments {
+        let x = sin(hangle);
+        let y = cos(hangle);
+        
+        hangle += angle_step;
+        let x2 = sin(hangle);
+        let y2 = cos(hangle);
+        
+        let x3 = sin(hangle + angle_step);
+        let y3 = cos(hangle + angle_step);
+        
+        let p = vec3f(x, 0.0, y);
+        let np = vec3f(x2, 0.0, y2);
+        let nnp = vec3f(x3, 0.0, y3);
+        
+        let at = normalize(np - p);
+        let up = Vec3f::unit_y();
+        let right = cross(up, at);
+        
+        let nat = normalize(nnp - np);
+        let nright = cross(up, nat);
+
+        let mut vangle = 0.0;
+        for j in 0..vertex_segments {
+            let vx = sin(vangle) * radius;
+            let vy = cos(vangle) * radius;
+            let vv = p + vx * up + vy * right;
+              
+            let n = normalize(vx * up + vy * right);
+            let t = right;
+            let bt = up;
+
+            let mut u = 0.5 + atan2(y, x) / f32::two_pi();
+            let mut v = 0.5 + atan2(vy, vx) / f32::two_pi();
+
+            let u = if i == segments { 0.0 } else { u };
+            let v = if j >= 12 { v - 1.0 } else { v };
+
+            segment_vertices.extend(vec![
+                Vertex3D {
+                    position: vv,
+                    normal: n,
+                    tangent: t,
+                    bitangent: bt,
+                    texcoord: vec2f(u, v) * 3.0
+                }
+            ]);
+
+            vangle += angle_step;
+        }
+    }
+
+    for i in 0..segments {
+        for j in 0..segments {
+            let base = i * vertex_segments + j;
+            let next_loop = base + 1;
+            let next_base = (i + 1) * vertex_segments + j;
+            let next_next_loop = next_base + 1;
+            vertices.extend(vec![
+                segment_vertices[base].clone(),
+                segment_vertices[next_base].clone(),
+                segment_vertices[next_loop].clone(),
+
+                segment_vertices[next_base].clone(),
+                segment_vertices[next_next_loop].clone(),
+                segment_vertices[next_loop].clone(),
+            ]);
+        }
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}

@@ -55,6 +55,8 @@ pub fn setup_primitives(
 
         crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
         crate::dev::create_capsule_mesh(&mut device.0, 16),
+
+        crate::dev::create_tourus_mesh(&mut device.0, 16),
     ];
 
     // square number of rows and columns
