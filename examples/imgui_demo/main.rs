@@ -1,15 +1,11 @@
+// currently windows only because here we need a concrete gfx and os implementation
+#![cfg(target_os = "windows")]
+
 use hotline_rs::*;
 
-use os::App;
-use os::Window;
+use os::{App, Window};
+use gfx::{CmdBuf, Device, SwapChain};
 
-use gfx::CmdBuf;
-use gfx::Device;
-use gfx::SwapChain;
-
-#[cfg(target_os = "windows")]
-use hotline_rs::os::win32 as os_platform;
-use hotline_rs::gfx::d3d12 as gfx_platform;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app

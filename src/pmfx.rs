@@ -1214,6 +1214,23 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
     fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
+            if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::NONE) {
+                for texture in &self.textures {
+                    
+                    let thumb_size = 256.0;
+                    let aspect = texture.1.size.0 as f32 / texture.1.size.1 as f32;
+                    let w = thumb_size * aspect;
+                    let h = thumb_size;
+
+                    imgui.image(&texture.1.texture, w, h);
+
+                    imgui.same_line();
+                    imgui.spacing();
+                    imgui.same_line();
+                }
+            }
+            imgui.end();
+
             if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
                 imgui.text("Shaders");
                 imgui.separator();

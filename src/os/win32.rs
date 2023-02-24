@@ -535,7 +535,6 @@ impl super::App for App {
                 self.hinstance,
                 std::ptr::null_mut(),
             );
-
             // track window style to send to correct wnd proc
             self.hwnd_flags.insert(hwnd.0, info.style);
 
