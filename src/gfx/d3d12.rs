@@ -1842,28 +1842,26 @@ impl super::Device for Device {
             // create a srv for resolve texture for msaa
             let mut resolved_srv_index = None;
             let mut resolved_format = DXGI_FORMAT_UNKNOWN;
-            if info.samples > 1 {
-                if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
-                    let h = self.shader_heap.allocate();
-                    self.device.CreateShaderResourceView(
-                        &resolved_resource,
-                        &D3D12_SHADER_RESOURCE_VIEW_DESC {
-                            Format: to_dxgi_format_srv(info.format),
-                            ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, 1),
-                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                                Texture2D: D3D12_TEX2D_SRV {
-                                    MipLevels: info.mip_levels,
-                                    MostDetailedMip: 0,
-                                    ..Default::default()
-                                },
+            if info.samples > 1 && info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
+                let h = self.shader_heap.allocate();
+                self.device.CreateShaderResourceView(
+                    &resolved_resource,
+                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                        Format: to_dxgi_format_srv(info.format),
+                        ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, 1),
+                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D12_TEX2D_SRV {
+                                MipLevels: info.mip_levels,
+                                MostDetailedMip: 0,
+                                ..Default::default()
                             },
-                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                         },
-                        h,
-                    );
-                    resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
-                    resolved_format = to_dxgi_format_srv(info.format);
-                }
+                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                    },
+                    h,
+                );
+                resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
+                resolved_format = to_dxgi_format_srv(info.format);
             }
 
             // create rtv
