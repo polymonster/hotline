@@ -1,14 +1,14 @@
 // TODO:
 
-// - fix shader test failures
+// - msaa + texture format reloads
+// - resolves properly driven
+
 // - update matrices ecs
 // - update cameras from scene
 // - remove relative path for the repo's plugins
 
 // pmfx
 // - handle missing pipeline
-// - msaa + texture format
-// - resolves properly driven
 
 // primitives
 // - move from ecs to hotline
@@ -49,6 +49,7 @@
 // - Texture Formats (BC etc)
 
 // DONE:
+// x fix shader test failures
 // x capsule
 // x textures
 // x improve render function / naming and passing of view

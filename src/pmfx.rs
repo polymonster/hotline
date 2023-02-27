@@ -90,7 +90,7 @@ pub struct Pmfx<D: gfx::Device> {
     /// Shaders stored along with their build hash for quick checks if reload is necessary
     shaders: HashMap<String, (PmfxHash, D::Shader)>,
     /// Texture map of tracked texture info
-    textures: HashMap<String, TrackedTexture<D>>,
+    textures: HashMap<String, (PmfxHash, TrackedTexture<D>)>,
     /// Built views that are used in view function dispatches, the source view name which was used to generate the instnace is stored in .2 for hash checking
     views: HashMap<String, (PmfxHash, Arc<Mutex<View<D>>>, String)>,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
@@ -156,7 +156,8 @@ struct TextureInfo {
     array_levels: u32,
     samples: u32,
     format: gfx::Format,
-    usage: Vec<ResourceState>
+    usage: Vec<ResourceState>,
+    hash: u64
 }
 
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
@@ -499,11 +500,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let pmfx_tex = &self.pmfx.textures[texture_name];
             let size = self.get_texture_size_from_ratio(pmfx_tex)?;
             let tex = device.create_texture::<u8>(&to_gfx_texture_info(pmfx_tex, size), None)?;
-            self.textures.insert(texture_name.to_string(), TrackedTexture {
+            self.textures.insert(texture_name.to_string(), (pmfx_tex.hash, TrackedTexture {
                 texture: tex,
                 ratio: self.pmfx.textures[texture_name].ratio.clone(),
                 size
-            });
+            }));
         }
         Ok(())
     }
@@ -511,7 +512,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Returns a texture reference if the texture exists or none otherwise
     pub fn get_texture<'stack>(&'stack self, texture_name: &str) -> Option<&'stack D::Texture> {
         if self.textures.contains_key(texture_name) {
-            Some(&self.textures[texture_name].texture)
+            Some(&self.textures[texture_name].1.texture)
         }
         else {
             None
@@ -521,7 +522,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Returns the tuple (width, height) of a texture
     pub fn get_texture_2d_size(&self, texture_name: &str) -> Option<(u64, u64)> {
         if self.textures.contains_key(texture_name) {
-            Some(self.textures[texture_name].size)
+            Some(self.textures[texture_name].1.size)
         }
         else {
             None
@@ -543,22 +544,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
 
-                // TODO: tidy
+                // TODO: collect pattern
+                /*
                 if !self.view_texture_refs.contains_key(name) {
                     self.view_texture_refs.insert(name.to_string(), HashSet::new());
                 }
                 self.view_texture_refs.get_mut(name).unwrap().insert(instance_name.to_string());
+                */
+
+                self.view_texture_refs.entry(name.to_string())
+                .or_insert(HashSet::new()).insert(instance_name.to_string());
             }
 
             // create textures for depth stencils
             for name in &pmfx_view.depth_stencil {
                 self.create_texture(device, name)?;
 
-                // TODO: tidy
-                if !self.view_texture_refs.contains_key(name) {
-                    self.view_texture_refs.insert(name.to_string(), HashSet::new());
-                }
-                self.view_texture_refs.get_mut(name).unwrap().insert(instance_name.to_string());
+                self.view_texture_refs.entry(name.to_string())
+                .or_insert(HashSet::new()).insert(instance_name.to_string());
             }
 
             let mut size = (0, 0);
@@ -651,7 +654,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let state = texture_barriers[texture_name];
             if true {
                 // add barrier placeholder in the execute order
-                let barrier_name = format!("barrier_resolve{}-{}", view_name, texture_name);
+                let barrier_name = format!("barrier_resolve-{}-{}", view_name, texture_name);
                 self.render_graph_execute_order.push(barrier_name.to_string());
 
                 if let Some(tex) = self.get_texture(&texture_name) {
@@ -753,7 +756,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.barriers.clear();
             self.render_graph_execute_order.clear();
 
+            // TODO: collect pattern
             // gather up all render targets and check which ones want to be both written to and also uses as shader resources
+            /*
             let mut barriers = HashMap::new();
             for (name, texture) in &self.pmfx.textures {
                 if texture.usage.contains(&ResourceState::ShaderResource) {
@@ -763,16 +768,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
                 }
             }
+            */
+
+            let mut barriers = self.pmfx.textures.iter().filter(|tex|{
+                tex.1.usage.contains(&ResourceState::ShaderResource) || 
+                tex.1.usage.contains(&ResourceState::RenderTarget) ||
+                tex.1.usage.contains(&ResourceState::DepthStencil)
+            }).map(|tex|{
+              (tex.0.to_string(), ResourceState::ShaderResource)  
+            }).collect::<HashMap<String, ResourceState>>();
 
             // loop over the graph multiple times adding views in depends on order, until we add all the views
             let to_add = self.pmfx.render_graphs[graph_name].len();
            
             let mut added = 0;
             let mut dependencies = HashSet::new();
-           
             while added < to_add {
                 let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
-                for (instance_name, instance) in pmfx_graph {
+                for (instance_name, instance) in &pmfx_graph {
                     // allow missing views to be safely handled
                     if !self.pmfx.views.contains_key(&instance.view) {
                         println!("hotline_rs::pmfx:: [warning] missing view {}", instance.view);
@@ -780,7 +793,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
     
                     // already added this view
-                    if dependencies.contains(&instance_name) {
+                    if dependencies.contains(instance_name) {
                         continue;
                     }
     
@@ -789,7 +802,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         let mut passes = false;
                         if depends_on.len() > 0 {
                             for d in depends_on {
-                                if dependencies.contains(d) {
+                                if !pmfx_graph.contains_key(d) {
+                                    passes = true;
+                                    println!("hotline_rs::pmfx:: [warning] view {} missing dependency {}. ignoring", 
+                                        instance.view, d);
+                                }
+                                else if dependencies.contains(d) {
                                     passes = true;
                                 }
                                 else {
@@ -830,9 +848,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
     
                     }
     
-                    // if we want to read from we can put this in pmfx
-                    // TODO: barriers to transition to ShaderResource
-    
                     // push a view on
                     added += 1;
                     dependencies.insert(instance_name.to_string());
@@ -841,10 +856,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
             
             // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
-            let mut srvs = Vec::new();
-            for name in barriers.keys() {
-                srvs.push(name.to_string());
-            }
+            let srvs = barriers.keys().map(|k|{
+                k.to_string()
+            }).collect::<Vec<String>>();
 
             for name in srvs {
                 let result = self.create_resolve_transition(
@@ -991,15 +1005,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reload all active resources based on hashes
     pub fn reload(&mut self, device: &mut D) {        
+
+        let reload_paths = self.pmfx_tracking.iter_mut().filter(|(_, tracking)| {
+            fs::metadata(&tracking.filepath).unwrap().modified().unwrap() > tracking.modified_time
+        }).map(|tracking| {
+            tracking.1.filepath.to_string_lossy().to_string()
+        }).collect::<Vec<String>>();
+
         // TODO: blog ref, cant move reload_filepath int loop
-        let mut reload_paths = Vec::new();
+        /*
+        let mut og_reload_paths = Vec::new();
         for (_, tracking) in &mut self.pmfx_tracking {
             let mtime = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
             if mtime > tracking.modified_time {
                 tracking.modified_time = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
-                reload_paths.push(tracking.filepath.to_string_lossy().to_string())
+                og_reload_paths.push(tracking.filepath.to_string_lossy().to_string())
             }
         }
+        */
 
         for reload_filepath in reload_paths {
             if !reload_filepath.is_empty() {
@@ -1016,11 +1039,31 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.pmfx.views.extend(file.views);
                 self.pmfx.render_graphs.extend(file.render_graphs);
 
-                // find views that need reloading
+                // find textures that need reloading
+                let reload_textures = self.textures.iter().filter(|(k, v)| {
+                    if let Some(src) = self.pmfx.textures.get(*k) {
+                        src.hash != v.0
+                    }
+                    else {
+                        false
+                    }   
+                }).map(|(k, _)| {
+                    k.to_string()
+                }).collect::<HashSet<String>>();
+
+                // Get views to reload from changed textures
+                let reload_texture_views = reload_textures.iter().fold(HashSet::new(), |mut v, t|{
+                    v.extend(self.get_view_texture_refs(t));
+                    v
+                });
+
+                // Find views that have changed by hash
                 let mut reload_views = Vec::new();
                 for (name, view) in &self.views {
-                    if self.pmfx.views.contains_key(name) {
-                        if self.pmfx.views.get(&view.2).unwrap().hash != view.0 {
+                    println!("{}", view.2);
+                    if self.pmfx.views.contains_key(&view.2) {
+                        if self.pmfx.views.get(&view.2).unwrap().hash != view.0 || 
+                            reload_texture_views.contains(name) {
                             reload_views.push((name.to_string(), view.2.to_string()));
                         }
                     }
@@ -1054,6 +1097,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
                 }
 
+                // reload textures
+                self.recreate_textures(device, &reload_textures);
+
                 // reload views
                 for view in &reload_views {
                     println!("hotline::pmfx:: reloading view: {}", view.0);
@@ -1075,17 +1121,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
                     format_pipelines.remove(&pipeline.1);
 
-                    // find a view with the same format
-                    let mut compatiblew_view = String::new();
-                    for (view_name, view) in &self.views {
+                    // find first with the same format
+                    let compatiblew_view = self.views.iter().find(|(_, view)| {
                         let pass = &view.1.lock().unwrap().pass;
-                        if pass.get_format_hash() == pipeline.0 {
-                            compatiblew_view = view_name.to_string();
-                            break;
-                        }
-                    }
+                        pass.get_format_hash() == pipeline.0
+                    }).map(|v| v.0);
 
-                    if !compatiblew_view.is_empty() {
+                    // create pipeline with the pass from compatible view
+                    if let Some(compatiblew_view) = compatiblew_view {
                         let view = self.get_view(&compatiblew_view).unwrap().clone();
                         let view = view.lock().unwrap();
                         self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
@@ -1094,7 +1137,35 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         println!("hotline::pmfx:: warning pipeline was not reloaded: {}", pipeline.1);
                     }
                 }
+
+                // update the timestamp on the tracking info
+                self.pmfx_tracking.get_mut(&reload_filepath).and_then(|t| {
+                    t.modified_time = SystemTime::now();
+                    Some(t)
+                });
             }
+        }
+    }
+
+    /// Recreate the textures in `texture_names` call this when you know size / sample count has changed
+    /// and the tracking info is updated
+    fn recreate_textures(&mut self, device: &mut D, texture_names: &HashSet<String>) {
+        for texture_name in texture_names {
+            // remove the old and destroy
+            let tex = self.textures.remove(texture_name).unwrap();
+            device.destroy_texture(tex.1.texture);
+            // create with new dimensions from 'window_sizes'
+            self.create_texture(device, &texture_name).unwrap();
+        }
+    }
+
+    /// Returns `Vec<String>` containing view names associated with the texture name
+    fn get_view_texture_refs(&self, texture_name: &str) -> HashSet<String> {
+        if self.view_texture_refs.contains_key(texture_name) {
+            self.view_texture_refs[texture_name].clone()
+        }
+        else {
+            HashSet::new()
         }
     }
 
@@ -1104,18 +1175,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let size = window.get_size();
         let size = (size.x as f32, size.y as f32);
         let mut rebuild_views = HashSet::new();
-        let mut recreate_textures = HashSet::new();
+        let mut recreate_texture_names = HashSet::new();
         if self.window_sizes.contains_key(name) {
             if self.window_sizes[name] != size {
                 // update tracked textures
                 for (texture_name, texture) in &self.textures {
-                    if let Some(ratio) = &texture.ratio {
+                    if let Some(ratio) = &texture.1.ratio {
                         if ratio.window == name {
+
+                            // rebuild_views.extend(self.get_view_texture_refs(texture_name));
+                            recreate_texture_names.insert(texture_name.to_string());
+
                             if self.view_texture_refs.contains_key(texture_name) {
                                 for view_name in &self.view_texture_refs[texture_name] {
                                     self.views.remove(view_name);
                                     rebuild_views.insert(view_name.to_string());
-                                    recreate_textures.insert(texture_name.to_string());
+                                    //recreate_texture_names.insert(texture_name.to_string());
                                 }
                             }
                         }
@@ -1129,14 +1204,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.window_sizes.insert(name.to_string(), size);
 
         // recreate textures for the new sizes
-        for texture_name in recreate_textures {
-            // remove the old and destroy
-            let tex = self.textures.remove(&texture_name).unwrap();
-            device.destroy_texture(tex.texture);
-
-            // create with new dimensions from 'window_sizes'
-            self.create_texture(device, &texture_name).unwrap();
-        }
+        self.recreate_textures(device, &recreate_texture_names);
 
         // recreate the active render graph
         if !rebuild_views.is_empty() {
@@ -1144,7 +1212,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Reset all command buffers
+    /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for (name, view) in &self.views {
             // rest only command buffers that are in use
@@ -1159,11 +1227,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// which is called as so: `function_name(view)` so functions can be re-used for different views
     pub fn get_render_graph_function_info(&self, render_graph: &str) -> Vec<(String, String)> {
         if self.pmfx.render_graphs.contains_key(render_graph) {
-            let mut render_functions = Vec::new();
-            for (instance_name, instance) in &self.pmfx.render_graphs[render_graph] {
-                render_functions.push((instance.function.to_string(), instance_name.to_string()));
-            }
-            render_functions
+            self.pmfx.render_graphs[render_graph].iter().map(|graph|{
+                (graph.1.function.to_string(), graph.0.to_string())
+            }).collect()
         }
         else {
             Vec::new()
@@ -1173,16 +1239,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Returns the build hash for the render graph so you can compare if the graph has rebuilt and needs reloading
     pub fn get_render_graph_hash(&self, render_graph: &str) -> PmfxHash {
         // this could be calculated at build time
-        let mut hasher = DefaultHasher::new();
         if self.pmfx.render_graphs.contains_key(render_graph) {
-            for instance_name in self.pmfx.render_graphs[render_graph].keys() {
-                instance_name.hash(&mut hasher)
-            }
-            hasher.finish()
+            self.pmfx.render_graphs[render_graph].keys().fold(DefaultHasher::new(), |mut hasher, name|{
+                name.hash(&mut hasher);
+                hasher
+            }).finish()
         }
         else {
             0
         }
+
+        // todo collect
+        /*
+        let mut hasher = DefaultHasher::new();
+        for instance_name in self.pmfx.render_graphs[render_graph].keys() {
+            instance_name.hash(&mut hasher)
+        }
+        hasher.finish()
+        */
     }
 
     pub fn get_render_graph_execute_order(&self) -> &Vec<String> {
@@ -1215,7 +1289,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
         if open {
             let mut imgui_open = open;
             if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::NONE) {
-                for texture in &self.textures {
+                for (_, texture) in &self.textures {
                     
                     let thumb_size = 256.0;
                     let aspect = texture.1.size.0 as f32 / texture.1.size.1 as f32;
