@@ -163,14 +163,14 @@ impl<D> ImDraw<D> where D: gfx::Device {
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
         if !self.vertices_2d.cpu_data.is_empty() {
             let num_elems = self.vertices_2d.cpu_data.len() / 6;
-            if buffer_index >= self.vertices_2d.gpu_data.len() {
+            while buffer_index >= self.vertices_2d.gpu_data.len() {
                 // push a new buffer
                 self.vertices_2d.gpu_data.push(
                     device.create_buffer::<u8>(&Self::new_buffer_2d_info(num_elems), None)?
                 );
                 self.vertices_2d.gpu_data_size.push(num_elems);
             }
-            else if num_elems > self.vertices_2d.gpu_data_size[buffer_index] {
+            if num_elems > self.vertices_2d.gpu_data_size[buffer_index] {
                 // resize buffer
                 self.vertices_2d.gpu_data[buffer_index] = device.create_buffer::<u8>(
                     &Self::new_buffer_2d_info(num_elems), None)?;
@@ -183,14 +183,14 @@ impl<D> ImDraw<D> where D: gfx::Device {
         }
         if !self.vertices_3d.cpu_data.is_empty() {
             let num_elems = self.vertices_3d.cpu_data.len() / 7;
-            if buffer_index >= self.vertices_3d.gpu_data.len() {
+            while buffer_index >= self.vertices_3d.gpu_data.len() {
                 // push a new buffer
                 self.vertices_3d.gpu_data.push(
                     device.create_buffer::<u8>(&Self::new_buffer_3d_info(num_elems), None)?
                 );
                 self.vertices_3d.gpu_data_size.push(num_elems);
             }
-            else if num_elems > self.vertices_3d.gpu_data_size[buffer_index] {
+            if num_elems > self.vertices_3d.gpu_data_size[buffer_index] {
                 // resize buffer
                 self.vertices_3d.gpu_data[buffer_index] = device.create_buffer::<u8>(
                     &Self::new_buffer_3d_info(num_elems), None)?;

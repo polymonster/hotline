@@ -72,7 +72,7 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i shaders"
+                "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-source"

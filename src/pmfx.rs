@@ -41,6 +41,8 @@ pub struct View<D: gfx::Device> {
     pub scissor_rect: gfx::ScissorRect,
     /// A command buffer ready to be used to buffer draw / render commands
     pub cmd_buf: D::CmdBuf,
+    /// name of camera this view intends to be used with
+    pub camera: String
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
@@ -93,6 +95,8 @@ pub struct Pmfx<D: gfx::Device> {
     textures: HashMap<String, (PmfxHash, TrackedTexture<D>)>,
     /// Built views that are used in view function dispatches, the source view name which was used to generate the instnace is stored in .2 for hash checking
     views: HashMap<String, (PmfxHash, Arc<Mutex<View<D>>>, String)>,
+    /// Map of camera constants that can be retrieved by name for use as push constants
+    cameras: HashMap<String, CameraConstants>,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
     barriers: HashMap<String, D::CmdBuf>,
     /// Vector of view names to execute in designated order
@@ -114,7 +118,7 @@ struct File {
     raster_states: HashMap<String, gfx::RasterInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
-    render_graphs: HashMap<String, HashMap<String, ViewInstanceInfo>>,
+    render_graphs: HashMap<String, HashMap<String, GraphView>>,
     dependencies: Vec<String>
 }
 
@@ -185,30 +189,25 @@ struct ViewInfo {
     clear_colour: Option<Vec<f32>>,
     clear_depth: Option<f32>,
     clear_stencil: Option<u8>,
+    camera: String,
     hash: PmfxHash
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct ViewInstanceInfo {
+struct GraphView {
     view: String,
     pipelines: Option<Vec<String>>,
     function: String,
-    depends_on: Option<Vec<String>>
+    depends_on: Option<Vec<String>>,
 }
 
-/*
+#[repr(C)]
 #[derive(Clone)]
-struct Camera {
-    aspect: f32,
-    fov: f32,
-    pos: Vec3f,
-    rot: Vec2f,
-    zoom: Vec3f,
-    look_at: Vec3f,
-    view_matrix: Mat4f,
-    projection_matrix: Mat4f
+pub struct CameraConstants {
+    pub view_matrix: maths_rs::Mat4f,
+    pub projection_matrix: maths_rs::Mat4f,
+    pub view_projection_matrix:  maths_rs::Mat4f
 }
-*/
 
 /// creates a shader from an option of filename, returning optional shader back
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {
@@ -372,6 +371,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             shaders: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
+            cameras: HashMap::new(),
             barriers: HashMap::new(),
             render_graph_execute_order: Vec::new(),
             view_texture_refs: HashMap::new(),
@@ -537,13 +537,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Create a view from information specified in pmfx file
     pub fn create_view(&mut self, device: &mut D, view_name: &str, instance_name: &str) -> Result<(), super::Error> {
-        // create textures
-        if !self.pmfx.views.contains_key(view_name) {
-            println!("hotline_rs::pmfx:: missing view in src pmfx {} for {}", view_name, instance_name);
-        }
         if !self.views.contains_key(instance_name) && self.pmfx.views.contains_key(view_name) {
 
-            println!("hotline_rs::pmfx:: creating view instance {} of pmfx view: {}", instance_name, view_name);
+            println!("hotline_rs::pmfx:: creating graph view: {} for {}", instance_name, view_name);
 
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
@@ -619,7 +615,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     right: size.0 as i32,
                     bottom: size.1 as i32
                 },
-                cmd_buf: device.create_cmd_buf(2)
+                cmd_buf: device.create_cmd_buf(2),
+                camera: pmfx_view.camera.to_string()
             };
 
             self.views.insert(instance_name.to_string(), 
@@ -1209,6 +1206,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Update camera constants for the named camera, will create a new entry if one does not exist
+    pub fn update_camera_constants(&mut self, name: &str, constants: &CameraConstants) {
+        *self.cameras.entry(name.to_string()).or_insert(constants.clone()) = constants.clone();
+    }
+
+    /// Borrow camera constants to push into a command buffer, return `None` if they do not exist
+    pub fn get_camera_constants(&self, name: &str) -> Option<&CameraConstants> {
+        self.cameras.get(name).map(|cam| cam)
+    }
+
     /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for (name, view) in &self.views {
@@ -1312,15 +1319,22 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
 
                 imgui.text("Pipelines");
                 imgui.separator();
-                for shader in self.pmfx.pipelines.keys() {
-                    imgui.text(&shader);
+                for pipeline in self.pmfx.pipelines.keys() {
+                    imgui.text(&pipeline);
                 }
                 imgui.separator();
 
                 imgui.text("Render Graphs");
                 imgui.separator();
-                for shader in self.pmfx.render_graphs.keys() {
-                    imgui.text(&shader);
+                for graph in self.pmfx.render_graphs.keys() {
+                    imgui.text(&graph);
+                }
+                imgui.separator();
+
+                imgui.text("Cameras");
+                imgui.separator();
+                for camera in self.cameras.keys() {
+                    imgui.text(&camera);
                 }
                 imgui.separator();
             }
