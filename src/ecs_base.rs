@@ -119,6 +119,9 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct MeshComponent(pub pmfx::Mesh<gfx_platform::Device>);
 
+#[derive(Component)]
+pub struct Name(pub String);
+
 #[macro_export]
 macro_rules! system_func {
     ($func:expr) => {
@@ -141,12 +144,10 @@ macro_rules! render_func_closure {
     ($func:expr, $view:expr) => {
         move |
             pmfx: Res<PmfxRes>,
-            qvp: Query<&ViewProjectionMatrix>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
                 $func(
                     pmfx,
                     $view.to_string(),
-                    qvp,
                     qmesh
                 );
         }

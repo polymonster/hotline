@@ -182,25 +182,23 @@ fn create_faceted_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>) 
 }
 
 fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, cap: bool) -> (Vec<Vertex3D>, Vec<usize>) {
-    let vertex_segments = segments + 2;
+    let vertex_segments = segments + 1;
 
     let angle_step = f32::two_pi() / segments as f32;
     let height_step = 2.0 / (segments - 1) as f32;
-
-    let mid = segments / 2;
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
     let mut angle = 0.0;
     let mut y = -1.0;
 
-    let uoffet = 1.0 / segments as f32;
-
     for r in 0..vertex_segments {
-        angle = 0.0;
+        angle = -f32::pi();
         for i in 0..vertex_segments {
             let x = cos(angle);
             let z = -sin(angle);
+
+            let mut u = 0.5 + atan2(z, x) / f32::two_pi();
 
             angle += angle_step;
 
@@ -220,23 +218,18 @@ fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, c
             let t = p_next - p;
             let bt = cross(p, t);
 
-            let mut u = 0.5 + atan2(z, x) / f32::two_pi();
             let v = 0.5 + asin(p.y) / f32::pi();
 
-            // clamps the UV's at the end to avoid interpolation artifacts
-            let u = if i == mid-1 { 0.0 } else { u };
-            let u = if i == mid { 1.0 } else { u };
-
-            if i == mid-1 {
-                angle -= angle_step;
-            }
+            // clamps the UV's in the last segment to prevent interpolation artifacts            
+            let u = if i == segments { 0.0 } else { u };
+            let u = if i == 0 { 1.0 } else { u };
 
             vertices.push(Vertex3D{
                 position: p,
                 normal: p,
                 tangent: t,
                 bitangent: bt,
-                texcoord: vec2f(u + uoffet, v) * 3.0
+                texcoord: vec2f(u, v) * 3.0
             });
         }
 
@@ -258,7 +251,7 @@ fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, c
     let hemi_end = max(min(hemi_end, segments-1), 1);
 
     for r in hemi_start..hemi_end {
-        for i in 0..segments+1 {
+        for i in 0..segments {
             let i_next = i + 1;
             let v_index = r * vertex_segments;
             let v_next_index = (r + 1) * vertex_segments + i;

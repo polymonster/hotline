@@ -1,6 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use hotline_rs::pmfx::CameraConstants;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
@@ -62,12 +63,32 @@ pub fn camera_view_proj_from(pos: &Position, rot: &Rotation, aspect: f32, fov_de
     proj * view
 }
 
+pub fn camera_constants_from(pos: &Position, rot: &Rotation, aspect: f32, fov_degrees: f32) -> CameraConstants {
+    // rotational matrix
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.0.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.0.y));
+    let mat_rot = mat_rot_y * mat_rot_x;
+    // generate proj matrix
+    let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
+    // translation matrix
+    let translate = Mat4f::from_translation(pos.0);
+    // build view / proj matrix
+    let view = translate * mat_rot;
+    let view = view.inverse();
+    CameraConstants {
+        view_matrix: view,
+        projection_matrix: proj,
+        view_projection_matrix: proj * view
+    }
+}
+
 fn update_cameras(
     app: Res<AppRes>, 
-    main_window: Res<MainWindowRes>, 
-    mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
+    main_window: Res<MainWindowRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut query: Query<(&Name, &mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
     let app = &app.0;
-    for (mut position, mut rotation, mut view_proj) in &mut query {
+    for (name, mut position, mut rotation, mut view_proj) in &mut query {
 
         let (enable_keyboard, enable_mouse) = app.get_input_enabled();
         if main_window.0.is_focused() {
@@ -121,18 +142,22 @@ fn update_cameras(
        
         // assign view proj
         view_proj.0 = camera_view_proj_from(&position, &rotation, aspect, 60.0);
+
+        // update camera in pmfx
+        pmfx.0.update_camera_constants(&name.0, &camera_constants_from(&position, &rotation, aspect, 60.0));
     }
 }
 
 fn render_grid(
     mut device: ResMut<DeviceRes>,
     mut imdraw: ResMut<ImDrawRes>,
-    pmfx: Res<PmfxRes>,
-    mut query: Query<&ViewProjectionMatrix> ) {
+    pmfx: Res<PmfxRes>) {
 
-    let view = pmfx.0.get_view("grid");
+    let imdraw = &mut imdraw.0;
+    let pmfx = &pmfx.0;
+
+    let view = pmfx.get_view("grid");
     if view.is_none() {
-        // println!("missing view: grid");
         return;
     }
     
@@ -141,50 +166,51 @@ fn render_grid(
 
     let bb = view.cmd_buf.get_backbuffer_index();
     let fmt = view.pass.get_format_hash();
-    let imdraw = &mut imdraw.0;
-    let pmfx = &pmfx.0;
 
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt);
     if pipeline.is_none() {
-        println!("missing pipeline: imdraw_3d");
         return;
     }
     let pipeline = pipeline.unwrap();
 
-    for view_proj in &mut query {
-        // render grid
-        let scale = 1000.0;
-        let divisions = 10.0;
-        for i in 0..((scale * 2.0) /divisions) as usize {
-            let offset = -scale + i as f32 * divisions;
-            let mut tint = 0.3;
-            if i % 5 == 0 {
-                tint *= 0.5;
-            }
-            if i % 10 == 0 {
-                tint *= 0.25;
-            }
-            if i % 20 == 0 {
-                tint *= 0.125;
-            }
+    let camera = pmfx.get_camera_constants(&view.camera);
+    if camera.is_none() {
+        return;
+    }
+    let camera = camera.unwrap();
 
-            imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
-            imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
+    // render grid
+    let scale = 1000.0;
+    let divisions = 10.0;
+    for i in 0..((scale * 2.0) /divisions) as usize {
+        let offset = -scale + i as f32 * divisions;
+        let mut tint = 0.3;
+        if i % 5 == 0 {
+            tint *= 0.5;
+        }
+        if i % 10 == 0 {
+            tint *= 0.25;
+        }
+        if i % 20 == 0 {
+            tint *= 0.125;
         }
 
-        imdraw.submit(&mut device.0, bb as usize).unwrap();
-
-        view.cmd_buf.begin_render_pass(&view.pass);
-        view.cmd_buf.set_viewport(&view.viewport);
-        view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-
-        imdraw.draw_3d(&mut view.cmd_buf, bb as usize);
-
-        view.cmd_buf.end_render_pass();
+        imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
+        imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
     }
+
+    imdraw.submit(&mut device.0, bb as usize).unwrap();
+
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
+
+    imdraw.draw_3d(&mut view.cmd_buf, bb as usize);
+
+    view.cmd_buf.end_render_pass();
 }
 
 impl BevyPlugin {
@@ -383,17 +409,21 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let graph = self.schedule_info.render_graph.to_string();
         let graph_result = client.pmfx.create_render_graph(&mut client.device, &graph);
 
-        if let Err(error) = graph_result {
+        let render_functions = if let Err(error) = graph_result {
             // if render graph fails to build, use the default and log errors for the user
             self.schedule_info = ScheduleInfo::default();
-            self.errors.entry(graph.to_string()).or_insert(Vec::new()).push(error.msg);
+            let ext_msg = format!("{} (Check GPU Validation Messages For More Info)", error.msg);
+            self.errors.entry(graph.to_string()).or_insert(Vec::new()).push(ext_msg);
             self.schedule_info.render_graph = graph.to_string();
+            Vec::new()
         }
+        else {
+            client.pmfx.get_render_graph_function_info(&graph)
+        };
 
         let info = &self.schedule_info;
 
         // hook in render functions
-        let render_functions = client.pmfx.get_render_graph_function_info(&info.render_graph);
         let mut render_stage = SystemStage::parallel();
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
@@ -462,7 +492,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 pos,
                 rot,
                 Camera,
-                MainCamera
+                MainCamera,
+                Name(String::from("main_camera"))
             ));
 
             self.setup_schedule.run(&mut self.world);

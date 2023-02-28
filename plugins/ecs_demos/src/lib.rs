@@ -38,6 +38,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         // render functions
         "render_meshes" => render_func![render_meshes, view_name],
         "render_wireframe" => render_func![render_wireframe, view_name],
+        "render_billboards" => render_func![render_billboards, view_name],
         _ => std::hint::black_box(None)
     }
 }

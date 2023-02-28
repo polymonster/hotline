@@ -1,15 +1,16 @@
 // TODO:
 
-// - quick tidy on pmfx files and layout
-// - update matrices ecs
 // - update cameras from scene
+// - update matrices ecs
 // - remove relative path for the repo's plugins
+// - time resource for systems
 
 // pmfx
 // - handle missing pipeline
+// - handle missing view
+// - handle missing camera
 
 // primitives
-// - shit sphere seam
 // - move from ecs to hotline
 // - billboard
 // - tourus
@@ -49,6 +50,8 @@
 // - Texture Formats (BC etc)
 
 // DONE:
+// x shift sphere seam
+// x quick tidy on pmfx files and layout
 // x msaa + texture format reloads
 // x reply to pmtech user
 // x fix shader test failures

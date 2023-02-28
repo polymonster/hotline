@@ -85,10 +85,9 @@ pub fn setup_primitives(
 }
 
 #[no_mangle]
-pub fn render_meshes(
+pub fn render_billboards(
     pmfx: bevy_ecs::prelude::Res<PmfxRes>,
     view_name: String,
-    view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
     mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
         
     // unpack
@@ -98,8 +97,57 @@ pub fn render_meshes(
         return;
     }
     let arc_view = arc_view.unwrap();
-    
     let view = arc_view.lock().unwrap();
+
+    let fmt = view.pass.get_format_hash();
+
+    let billboard_debug = pmfx.get_render_pipeline_for_format("billboard_debug", fmt);
+    if billboard_debug.is_none() {
+        return;
+    }
+    let billboard_debug = billboard_debug.unwrap();
+
+    let camera = pmfx.get_camera_constants(&view.camera);
+    if camera.is_none() {
+        return;
+    }
+    let camera = camera.unwrap();
+
+    // setup pass
+    view.cmd_buf.begin_render_pass(&view.pass);
+    view.cmd_buf.set_viewport(&view.viewport);
+    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+
+    view.cmd_buf.set_render_pipeline(&billboard_debug);
+    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
+
+    for (world_matrix, mesh) in &mesh_draw_query {
+        // draw
+        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    // end / transition / execute
+    view.cmd_buf.end_render_pass();
+}
+
+#[no_mangle]
+pub fn render_meshes(
+    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
+    view_name: String,
+    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
+        
+    // unpack
+    let pmfx = &pmfx.0;
+    let arc_view = pmfx.get_view(&view_name);
+    if arc_view.is_none() {
+        return;
+    }
+    let arc_view = arc_view.unwrap();
+    let view = arc_view.lock().unwrap();
+
     let fmt = view.pass.get_format_hash();
 
     let mesh_debug = pmfx.get_render_pipeline_for_format("mesh_debug", fmt);
@@ -108,22 +156,26 @@ pub fn render_meshes(
     }
     let mesh_debug = mesh_debug.unwrap();
 
+    let camera = pmfx.get_camera_constants(&view.camera);
+    if camera.is_none() {
+        return;
+    }
+    let camera = camera.unwrap();
+
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
     view.cmd_buf.set_render_pipeline(&mesh_debug);
+    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
 
-    for view_proj in &view_proj_query {
-        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-        for (world_matrix, mesh) in &mesh_draw_query {
-            // draw
-            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-            view.cmd_buf.set_index_buffer(&mesh.0.ib);
-            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-        }
+    for (world_matrix, mesh) in &mesh_draw_query {
+        // draw
+        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     // end / transition / execute
@@ -134,14 +186,13 @@ pub fn render_meshes(
 pub fn render_wireframe(
     pmfx: bevy_ecs::prelude::Res<PmfxRes>,
     view_name: String,
-    view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
     mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
         
     // unpack
     let pmfx = &pmfx.0;
+
     let arc_view = pmfx.get_view(&view_name);
     if arc_view.is_none() {
-        //println!("missing view: {}", view_name);
         return;
     }
     let arc_view = arc_view.unwrap();
@@ -155,22 +206,27 @@ pub fn render_wireframe(
     }
     let wireframe = wireframe.unwrap();
 
+    let camera = pmfx.get_camera_constants(&view.camera);
+    if camera.is_none() {
+        return;
+    }
+    let camera = camera.unwrap();
+
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
     view.cmd_buf.set_render_pipeline(&wireframe);
+    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
 
-    for view_proj in &view_proj_query {
-        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-        for (world_matrix, mesh) in &mesh_draw_query {
-            // draw
-            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-            view.cmd_buf.set_index_buffer(&mesh.0.ib);
-            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-        }
+    
+    for (world_matrix, mesh) in &mesh_draw_query {
+        // draw
+        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     // end / transition / execute
