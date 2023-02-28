@@ -1,0 +1,61 @@
+{
+    depth_stencil_states: {
+        depth_test_less: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Less"
+        }
+        depth_test_equal: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Equal"
+        }
+        depth_test_always: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Less"
+        }
+    }
+    raster_states: {
+        wireframe: {
+            fill_mode: "Wireframe"
+            depth_bias: -5
+        }
+        cull_back: {
+            cull_mode: "Back"
+        }
+    }
+    textures: {
+        main_colour: {
+            ratio: {
+                window: "main_window",
+                scale: 1.0
+            }
+            format: "RGBA8n"
+            usage: ["ShaderResource", "RenderTarget"]
+            samples: 8
+        }
+        main_depth(main_colour): {
+            format: "D24nS8u"
+            usage: ["ShaderResource", "DepthStencil"]
+            samples: 8
+        }
+    }
+    views: {
+        main_view: {
+            render_target: [
+                "main_colour"
+            ]
+            clear_colour: [0.45, 0.55, 0.60, 1.0]
+            depth_stencil: [
+                "main_depth"
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+        }
+        main_view_no_clear(main_view): {
+            clear_colour: null
+            clear_depth: null
+        }
+    }
+}

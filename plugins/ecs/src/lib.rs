@@ -130,16 +130,29 @@ fn render_grid(
     pmfx: Res<PmfxRes>,
     mut query: Query<&ViewProjectionMatrix> ) {
 
-    let arc_view = pmfx.0.get_view("grid").unwrap();
+    let view = pmfx.0.get_view("grid");
+    if view.is_none() {
+        // println!("missing view: grid");
+        return;
+    }
+    
+    let arc_view = view.unwrap();
     let mut view = arc_view.lock().unwrap();
+
     let bb = view.cmd_buf.get_backbuffer_index();
     let fmt = view.pass.get_format_hash();
+    let imdraw = &mut imdraw.0;
+    let pmfx = &pmfx.0;
+
+    let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt);
+    if pipeline.is_none() {
+        println!("missing pipeline: imdraw_3d");
+        return;
+    }
+    let pipeline = pipeline.unwrap();
 
     for view_proj in &mut query {
         // render grid
-        let imdraw = &mut imdraw.0;
-        let pmfx = &pmfx.0;
-
         let scale = 1000.0;
         let divisions = 10.0;
         for i in 0..((scale * 2.0) /divisions) as usize {
@@ -165,7 +178,7 @@ fn render_grid(
         view.cmd_buf.set_viewport(&view.viewport);
         view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-        view.cmd_buf.set_render_pipeline(&pmfx.get_render_pipeline_for_format("imdraw_3d", fmt).unwrap());
+        view.cmd_buf.set_render_pipeline(&pipeline);
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
 
         imdraw.draw_3d(&mut view.cmd_buf, bb as usize);

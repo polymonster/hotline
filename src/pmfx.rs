@@ -420,19 +420,25 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
 
             // merge into pmfx
-            self.pmfx.shaders.extend(file.shaders);
-            self.pmfx.pipelines.extend(file.pipelines);
-            self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
-            self.pmfx.raster_states.extend(file.raster_states);
-            self.pmfx.textures.extend(file.textures);
-            self.pmfx.views.extend(file.views);
-            self.pmfx.render_graphs.extend(file.render_graphs);
-            self.pmfx.dependencies.extend(file.dependencies);
+            self.merge_pmfx(file);
         }
 
         Ok(())
     }
 
+    /// Merges the pmfx file `other` in the current `Pmfx` instance
+    fn merge_pmfx(&mut self, other: File) {
+        self.pmfx.shaders.extend(other.shaders);
+        self.pmfx.pipelines.extend(other.pipelines);
+        self.pmfx.depth_stencil_states.extend(other.depth_stencil_states);
+        self.pmfx.raster_states.extend(other.raster_states);
+        self.pmfx.textures.extend(other.textures);
+        self.pmfx.views.extend(other.views);
+        self.pmfx.render_graphs.extend(other.render_graphs);
+        self.pmfx.dependencies.extend(other.dependencies);
+    }
+
+    /// Internal utility which will create a shader from file or `None` if no file is passed, or the shader does not exist
     fn create_shader(&mut self, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
         let folder = folder.parent().unwrap();
         if let Some(file) = file {
@@ -532,6 +538,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a view from information specified in pmfx file
     pub fn create_view(&mut self, device: &mut D, view_name: &str, instance_name: &str) -> Result<(), super::Error> {
         // create textures
+        if !self.pmfx.views.contains_key(view_name) {
+            println!("hotline_rs::pmfx:: missing view in src pmfx {} for {}", view_name, instance_name);
+        }
         if !self.views.contains_key(instance_name) && self.pmfx.views.contains_key(view_name) {
 
             println!("hotline_rs::pmfx:: creating view instance {} of pmfx view: {}", instance_name, view_name);
@@ -998,8 +1007,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.reload(device);
             self.reloader.complete_reload();
         }
-        // TODO: this might be more performant being called on the render thread
-        // resets and syncs command buffers for re-use
         self.reset(swap_chain);
     }
 
@@ -1030,23 +1037,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                 let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
                 let file : File = serde_json::from_slice(&pmfx_data).unwrap();
-
-                self.pmfx.shaders.extend(file.shaders);
-                self.pmfx.pipelines.extend(file.pipelines);
-                self.pmfx.depth_stencil_states.extend(file.depth_stencil_states);
-                self.pmfx.raster_states.extend(file.raster_states);
-                self.pmfx.textures.extend(file.textures);
-                self.pmfx.views.extend(file.views);
-                self.pmfx.render_graphs.extend(file.render_graphs);
+                self.merge_pmfx(file);
 
                 // find textures that need reloading
                 let reload_textures = self.textures.iter().filter(|(k, v)| {
-                    if let Some(src) = self.pmfx.textures.get(*k) {
+                    self.pmfx.textures.get(*k).map_or_else(|| false, |src| {
                         src.hash != v.0
-                    }
-                    else {
-                        false
-                    }   
+                    })
                 }).map(|(k, _)| {
                     k.to_string()
                 }).collect::<HashSet<String>>();
@@ -1064,7 +1061,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     if self.pmfx.views.contains_key(&view.2) {
                         if self.pmfx.views.get(&view.2).unwrap().hash != view.0 || 
                             reload_texture_views.contains(name) {
-                            reload_views.push((name.to_string(), view.2.to_string()));
+                            reload_views.push((view.2.to_string(), name.to_string()));
                         }
                     }
                 }
@@ -1102,8 +1099,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                 // reload views
                 for view in &reload_views {
-                    println!("hotline::pmfx:: reloading view: {}", view.0);
-                    self.views.remove(&view.0);
+                    println!("hotline::pmfx:: reloading view: {}", view.1);
+                    self.views.remove(&view.1);
                     self.create_view(device, &view.0, &view.1).unwrap();
                 }
 
