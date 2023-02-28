@@ -93,7 +93,12 @@ pub fn render_meshes(
         
     // unpack
     let pmfx = &pmfx.0;
-    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let arc_view = pmfx.get_view(&view_name);
+    if arc_view.is_none() {
+        return;
+    }
+    let arc_view = arc_view.unwrap();
+    
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
@@ -101,13 +106,14 @@ pub fn render_meshes(
     if mesh_debug.is_none() {
         return;
     }
+    let mesh_debug = mesh_debug.unwrap();
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-    view.cmd_buf.set_render_pipeline(&mesh_debug.unwrap());
+    view.cmd_buf.set_render_pipeline(&mesh_debug);
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
@@ -133,7 +139,13 @@ pub fn render_wireframe(
         
     // unpack
     let pmfx = &pmfx.0;
-    let arc_view = pmfx.get_view(&view_name).unwrap();
+    let arc_view = pmfx.get_view(&view_name);
+    if arc_view.is_none() {
+        //println!("missing view: {}", view_name);
+        return;
+    }
+    let arc_view = arc_view.unwrap();
+
     let view = arc_view.lock().unwrap();
     let fmt = view.pass.get_format_hash();
 
@@ -141,13 +153,14 @@ pub fn render_wireframe(
     if wireframe.is_none() {
         return;
     }
+    let wireframe = wireframe.unwrap();
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
-    view.cmd_buf.set_render_pipeline(&wireframe.unwrap());
+    view.cmd_buf.set_render_pipeline(&wireframe);
 
     for view_proj in &view_proj_query {
         view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);

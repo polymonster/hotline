@@ -1,0 +1,45 @@
+{
+    include:[
+        "imdraw.hlsl"
+        "hotline.pmfx"
+    ]
+    depth_stencil_states: {
+        depth_test_less: {
+            depth_enabled: true
+            depth_write_mask: "All"
+            depth_func: "Less"
+        }
+    }
+    pipelines: {
+        imdraw_2d: {
+            vs: vs_2d
+            ps: ps_main
+            push_constants: ["view_push_constants"]
+            topology: "LineList"
+        }
+        imdraw_3d: {
+            vs: vs_3d
+            ps: ps_main
+            push_constants: ["view_push_constants"]
+            depth_stencil_state: depth_test_less
+            topology: "LineList"
+        }
+        imdraw_blit: {
+            vs: vs_blit
+            ps: ps_blit
+            push_constants: [
+                "blit_push_constants"
+            ]
+            topology: "TriangleList"
+        }
+    }
+    render_graphs: {
+        forward: {
+            grid: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_grid"
+            }
+        }
+    }
+}

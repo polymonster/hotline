@@ -1262,16 +1262,18 @@ pub fn create_capsule_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
 
+    let offset = 0.5 + (1.0 / segments as f32);
+
     // bottom sphere
     let (mut v0, i0) = create_sphere_vertices(segments, 0, segments/2, false);
     for v in &mut v0 {
-        v.position += vec3f(0.0, -0.5, 0.0);
+        v.position += vec3f(0.0, -offset, 0.0);
     }
 
     // top sphere
     let (mut v1, mut i1) = create_sphere_vertices(segments, segments/2, segments, false);    
     for v in &mut v1 {
-        v.position += vec3f(0.0, 0.5, 0.0);
+        v.position += vec3f(0.0, offset, 0.0);
     }
 
     // offset the indices
