@@ -585,6 +585,12 @@ impl super::App for App {
         }
     }
 
+    fn exit(&mut self, exit_code: i32) {
+        unsafe {
+            PostQuitMessage(exit_code);
+        }
+    }
+
     fn get_mouse_pos(&self) -> super::Point<i32> {
         self.mouse_pos
     }

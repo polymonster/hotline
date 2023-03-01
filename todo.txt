@@ -1,23 +1,20 @@
 // TODO:
 
-// - rename basic > debug
-// - update matrices ecs
-// - time resource for systems
-
 // primitives
 // - chamfer cube
 // - spring
+// - trapezoid
 
-// - recursive includes?
+
 // - update pmfx shader
-
 // - remove relative path for the repo's plugins
 // - add textures to dock
 // - option to save config and ini to disk location
 // - move primitives from ecs to hotline
 
 // - quick video
-// - ray intersect? tooltip?
+// - update matrices ecs
+// - time resource for systems
 
 // ----------
 
@@ -37,10 +34,10 @@
 // - update aabb's
 // - culling
 
-// log / debug / info !!!!!
+// log / debug / info
 // - timer stats
 // - thread stats
-// - in editor terminal / log
+// - in client terminal / log
 
 // gfx
 // - resolves properly driven
@@ -53,6 +50,8 @@
 // - Texture Formats (BC etc)
 
 // DONE:
+// x recursive includes?
+// x rename basic > debug
 // x tourus (uv)
 // x single pipeline render function
 // x update cameras from scene
