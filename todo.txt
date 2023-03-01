@@ -1,25 +1,28 @@
 // TODO:
 
-// - update cameras from scene
+// - rename basic > debug
 // - update matrices ecs
-// - remove relative path for the repo's plugins
 // - time resource for systems
 
-// pmfx
-// - handle missing pipeline
-// - handle missing view
-// - handle missing camera
-
 // primitives
-// - move from ecs to hotline
-// - billboard
-// - tourus
 // - chamfer cube
 // - spring
 
+// - recursive includes?
+// - update pmfx shader
+
+// - remove relative path for the repo's plugins
+// - add textures to dock
+// - option to save config and ini to disk location
+// - move primitives from ecs to hotline
+
+// - quick video
+// - ray intersect? tooltip?
+
+// ----------
+
 // ui
 // - view menu + saving state
-// - option to save config and ini to disk location
 
 // ecs
 // - per demo settings
@@ -50,6 +53,13 @@
 // - Texture Formats (BC etc)
 
 // DONE:
+// x tourus (uv)
+// x single pipeline render function
+// x update cameras from scene
+// x handle missing pipeline
+// x handle missing view
+// x handle missing camera
+// x billboard
 // x shift sphere seam
 // x quick tidy on pmfx files and layout
 // x msaa + texture format reloads

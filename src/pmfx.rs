@@ -33,6 +33,10 @@ use std::hash::{Hash, Hasher};
 
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
+    /// name of the graph view instance, this is the same as the key that is stored in the pmfx `views` map.
+    pub graph_view_name: String,
+    /// name of the pmfx view, this is the source view (camera, render targets)
+    pub pmfx_view_name: String,
     /// A pre-built render pass: multiple colour targets and depth possible
     pub pass: D::RenderPass,
     /// Pre-calculated viewport based on the output dimensions of the render target adjusted for user data from .pmfx
@@ -42,7 +46,9 @@ pub struct View<D: gfx::Device> {
     /// A command buffer ready to be used to buffer draw / render commands
     pub cmd_buf: D::CmdBuf,
     /// name of camera this view intends to be used with
-    pub camera: String
+    pub camera: String,
+    ///this is the name of a single pipeline used for all draw calls in the view. supplied in data as `pipelines: ["name"]`
+    pub view_pipeline: String
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
@@ -105,6 +111,8 @@ pub struct Pmfx<D: gfx::Device> {
     view_texture_refs: HashMap<String, HashSet<String>>,
     /// Watches for filestamp changes and will trigger callbacks in the `PmfxReloadResponder`
     reloader: Reloader,
+    /// Errors which occur through render systems can be pushed here for feedback to the user
+    pub view_errors: Arc<Mutex<HashMap<String, String>>>,
     /// Tracks the currently active render graph name
     pub active_render_graph: String
 }
@@ -118,7 +126,7 @@ struct File {
     raster_states: HashMap<String, gfx::RasterInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
-    render_graphs: HashMap<String, HashMap<String, GraphView>>,
+    render_graphs: HashMap<String, HashMap<String, GraphViewInfo>>,
     dependencies: Vec<String>
 }
 
@@ -194,7 +202,7 @@ struct ViewInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct GraphView {
+struct GraphViewInfo {
     view: String,
     pipelines: Option<Vec<String>>,
     function: String,
@@ -377,6 +385,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             view_texture_refs: HashMap::new(),
             window_sizes: HashMap::new(),
             active_render_graph: String::new(),
+            view_errors: Arc::new(Mutex::new(HashMap::new())),
             reloader: Reloader::create(Box::new(PmfxReloadResponder::new()))
         }
     }
@@ -536,10 +545,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create a view from information specified in pmfx file
-    pub fn create_view(&mut self, device: &mut D, view_name: &str, instance_name: &str) -> Result<(), super::Error> {
-        if !self.views.contains_key(instance_name) && self.pmfx.views.contains_key(view_name) {
+    fn create_view(&mut self, device: &mut D, view_name: &str, graph_view_name: &str, info: &GraphViewInfo) -> Result<(), super::Error> {
+        if !self.views.contains_key(graph_view_name) && self.pmfx.views.contains_key(view_name) {
 
-            println!("hotline_rs::pmfx:: creating graph view: {} for {}", instance_name, view_name);
+            println!("hotline_rs::pmfx:: creating graph view: {} for {}", graph_view_name, view_name);
 
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
@@ -554,11 +563,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 if !self.view_texture_refs.contains_key(name) {
                     self.view_texture_refs.insert(name.to_string(), HashSet::new());
                 }
-                self.view_texture_refs.get_mut(name).unwrap().insert(instance_name.to_string());
+                self.view_texture_refs.get_mut(name).unwrap().insert(graph_view_name.to_string());
                 */
 
                 self.view_texture_refs.entry(name.to_string())
-                .or_insert(HashSet::new()).insert(instance_name.to_string());
+                .or_insert(HashSet::new()).insert(graph_view_name.to_string());
             }
 
             // create textures for depth stencils
@@ -566,7 +575,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_texture(device, name)?;
 
                 self.view_texture_refs.entry(name.to_string())
-                .or_insert(HashSet::new()).insert(instance_name.to_string());
+                .or_insert(HashSet::new()).insert(graph_view_name.to_string());
             }
 
             let mut size = (0, 0);
@@ -599,7 +608,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
             })
             .unwrap();
 
+            // assing a view pipleine (if we supply 1 pipeline) for all draw calls in the view, otherwise leave it emptu
+            let view_pipeline = if let Some(pipelines) = &info.pipelines {
+                if pipelines.len() == 1 {
+                    pipelines[0].to_string()
+                }
+                else {
+                    String::new()
+                }
+            }
+            else {
+                String::new()
+            };
+
             let view = View::<D> {
+                graph_view_name: graph_view_name.to_string(),
+                pmfx_view_name: view_name.to_string(),
                 pass: render_target_pass,
                 viewport: gfx::Viewport {
                     x: 0.0,
@@ -616,10 +640,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     bottom: size.1 as i32
                 },
                 cmd_buf: device.create_cmd_buf(2),
-                camera: pmfx_view.camera.to_string()
+                camera: pmfx_view.camera.to_string(),
+                view_pipeline
             };
 
-            self.views.insert(instance_name.to_string(), 
+            self.views.insert(graph_view_name.to_string(), 
                 (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
         }
 
@@ -627,12 +652,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Return a reference to a view if the view exists or none otherwise
-    pub fn get_view(&self, view_name: &str) -> Option<ViewRef<D>> {
+    pub fn get_view(&self, view_name: &str) -> Result<ViewRef<D>, super::Error> {
         if self.views.contains_key(view_name) {
-            Some(self.views[view_name].1.clone())
+            Ok(self.views[view_name].1.clone())
         }
         else {
-            None
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: view: {} not found", view_name)
+            })
         }
     }
 
@@ -641,9 +668,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // create views for all of the nodes
         if self.pmfx.render_graphs.contains_key(graph_name) {
             let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
-            for (instance_name, node) in pmfx_graph {
+            for (graph_view_name, node) in &pmfx_graph {
                 // create view for each node
-                self.create_view(device, &node.view, &instance_name)?;
+                self.create_view(device, &node.view, graph_view_name, &node)?;
             }
         }
         Ok(())
@@ -785,21 +812,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }).collect::<HashMap<String, ResourceState>>();
 
             // loop over the graph multiple times adding views in depends on order, until we add all the views
-            let to_add = self.pmfx.render_graphs[graph_name].len();
+            let mut to_add = self.pmfx.render_graphs[graph_name].len();
            
             let mut added = 0;
             let mut dependencies = HashSet::new();
             while added < to_add {
                 let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
-                for (instance_name, instance) in &pmfx_graph {
+                for (graph_view_name, instance) in &pmfx_graph {
                     // allow missing views to be safely handled
                     if !self.pmfx.views.contains_key(&instance.view) {
                         println!("hotline_rs::pmfx:: [warning] missing view {}", instance.view);
+                        to_add -= 1;
                         continue;
                     }
     
                     // already added this view
-                    if dependencies.contains(instance_name) {
+                    if dependencies.contains(graph_view_name) {
                         continue;
                     }
     
@@ -847,7 +875,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // create pipelines requested for this view instance with the pass format
                     if let Some(view_pipelines) = &instance.pipelines {
                         for pipeline in view_pipelines {
-                            let view = self.get_view(&instance_name).clone().unwrap();
+                            let view = self.get_view(&graph_view_name)?;
+                            let view = view.clone();
                             let view = view.lock().unwrap();
                             self.create_pipeline(device, pipeline, &view.pass)?;
                         }
@@ -856,8 +885,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
     
                     // push a view on
                     added += 1;
-                    dependencies.insert(instance_name.to_string());
-                    self.render_graph_execute_order.push(instance_name.to_string());
+                    dependencies.insert(graph_view_name.to_string());
+                    self.render_graph_execute_order.push(graph_view_name.to_string());
                 }
             }
             
@@ -966,22 +995,26 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
-    pub fn get_render_pipeline_for_format<'stack>(&'stack self, pipeline_name: &str, format_hash: u64) -> Option<&'stack D::RenderPipeline> {
+    pub fn get_render_pipeline_for_format<'stack>(&'stack self, pipeline_name: &str, format_hash: u64) -> Result<&'stack D::RenderPipeline, super::Error> {
         self.get_render_pipeline_permutation_for_format(pipeline_name, 0, format_hash)
     }
 
     /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
-    pub fn get_render_pipeline_permutation_for_format<'stack>(&'stack self, pipeline_name: &str, permutation: u32, format_hash: u64) -> Option<&'stack D::RenderPipeline> {
+    pub fn get_render_pipeline_permutation_for_format<'stack>(&'stack self, pipeline_name: &str, permutation: u32, format_hash: u64) -> Result<&'stack D::RenderPipeline, super::Error> {
         if let Some(formats) = &self.render_pipelines.get(&format_hash) {
             if formats.contains_key(pipeline_name) {
-                Some(&formats[pipeline_name][&permutation].1)
+                Ok(&formats[pipeline_name][&permutation].1)
             }
             else {
-                None
+                Err(super::Error {
+                    msg: format!("hotline_rs::pmfx:: could not find pipeline for format: {} ({})", pipeline_name, format_hash),
+                })
             }
         }
         else {
-            None
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+            })
         }
     }
 
@@ -1004,7 +1037,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.reload(device);
             self.reloader.complete_reload();
         }
+
+        // reset command buffers
         self.reset(swap_chain);
+        
+        // reset errors
+        // self.view_errors.lock().unwrap().clear();
     }
 
     /// Reload all active resources based on hashes
@@ -1028,6 +1066,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
         */
 
+        let mut rebuild_graph = false;
         for reload_filepath in reload_paths {
             if !reload_filepath.is_empty() {
                 println!("hotline_rs::pmfx:: reload from {}", reload_filepath);
@@ -1054,7 +1093,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // Find views that have changed by hash
                 let mut reload_views = Vec::new();
                 for (name, view) in &self.views {
-                    println!("{}", view.2);
                     if self.pmfx.views.contains_key(&view.2) {
                         if self.pmfx.views.get(&view.2).unwrap().hash != view.0 || 
                             reload_texture_views.contains(name) {
@@ -1098,7 +1136,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 for view in &reload_views {
                     println!("hotline::pmfx:: reloading view: {}", view.1);
                     self.views.remove(&view.1);
-                    self.create_view(device, &view.0, &view.1).unwrap();
+                    rebuild_graph = true;
                 }
 
                 // reload shaders
@@ -1137,6 +1175,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     t.modified_time = SystemTime::now();
                     Some(t)
                 });
+            }
+
+            // 
+            if rebuild_graph {
+                self.create_render_graph(device, &self.active_render_graph.to_string()).unwrap();
             }
         }
     }
@@ -1212,8 +1255,15 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Borrow camera constants to push into a command buffer, return `None` if they do not exist
-    pub fn get_camera_constants(&self, name: &str) -> Option<&CameraConstants> {
-        self.cameras.get(name).map(|cam| cam)
+    pub fn get_camera_constants(&self, name: &str) -> Result<&CameraConstants, super::Error> {
+        if let Some(cam) = &self.cameras.get(name) {
+            Ok(cam)
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline::pmfx:: could not find camera {}", name)
+            })
+        }
     }
 
     /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame
@@ -1256,8 +1306,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // todo collect
         /*
         let mut hasher = DefaultHasher::new();
-        for instance_name in self.pmfx.render_graphs[render_graph].keys() {
-            instance_name.hash(&mut hasher)
+        for graph_view_name in self.pmfx.render_graphs[render_graph].keys() {
+            graph_view_name.hash(&mut hasher)
         }
         hasher.finish()
         */
@@ -1284,6 +1334,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 device.execute(&view.cmd_buf);
             }
         }
+    }
+
+    /// Log an error with an assosiated view and message.
+    pub fn log_error(&self, view_name: &str, msg: &str) {
+        let mut errors = self.view_errors.lock().unwrap();
+        errors.entry(view_name.to_string()).or_insert(msg.to_string());
     }
 }
 
