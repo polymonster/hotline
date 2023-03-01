@@ -7,6 +7,8 @@ fn get_hotline_data() {
             let output = Command::new("git")
                 .arg("clone")
                 .arg("https://github.com/polymonster/hotline-data.git")
+                .arg("--depth")
+                .arg("1")
                 .output()
                 .expect("hotline_rs::build: git clone hotline-data failed");
             println!("{}", String::from_utf8(output.stdout).unwrap());

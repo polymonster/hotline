@@ -141,15 +141,33 @@ macro_rules! render_func {
 /// so that a single render function can have different views
 #[macro_export]
 macro_rules! render_func_closure {
-    ($func:expr, $view:expr) => {
+    ($func:expr, $view_name:expr) => {
         move |
             pmfx: Res<PmfxRes>,
             qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
-                $func(
-                    pmfx,
-                    $view.to_string(),
-                    qmesh
-                );
+
+                let view = pmfx.0.get_view(&$view_name);
+
+                let err = match view {
+                    Ok(v) => { 
+                        let view = v.lock().unwrap();
+                        $func(
+                            &pmfx,
+                            &view,
+                            qmesh
+                        )
+                    }
+                    Err(v) => {
+                        Err(hotline_rs::Error {
+                            msg: v.msg
+                        })
+                    }
+                };
+
+                // record errors
+                if let Err(err) = err {
+                    pmfx.0.log_error(&$view_name, &err.msg);
+                }
         }
     }
 }

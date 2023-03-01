@@ -13,6 +13,7 @@ mod draw;
 
 use crate::draw::*;
 use crate::primitives::*;
+use crate::test::*;
 
 /// Register demo names
 #[no_mangle]
@@ -21,9 +22,15 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "primitives",
         "draw_indexed",
         "draw_indexed_push_constants",
+
+        // tests
         "test_missing_demo",
         "test_missing_systems",
-        "test_missing_render_graph"
+        "test_missing_render_graph",
+        "test_missing_view",
+        "test_missing_pipeline",
+        "test_failing_pipeline",
+        "test_missing_camera"
     ]
 }
 
@@ -35,10 +42,13 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         "setup_draw_indexed" => system_func![setup_draw_indexed],
         "setup_primitives" => system_func![setup_primitives],
         "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
+
         // render functions
         "render_meshes" => render_func![render_meshes, view_name],
-        "render_wireframe" => render_func![render_wireframe, view_name],
-        "render_billboards" => render_func![render_billboards, view_name],
+
+        // test functions
+        "render_missing_camera" => render_func![render_missing_camera, view_name],
+        "render_missing_pipeline" => render_func![render_missing_pipeline, view_name],
         _ => std::hint::black_box(None)
     }
 }

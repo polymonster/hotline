@@ -57,10 +57,12 @@ pub fn setup_primitives(
         crate::dev::create_capsule_mesh(&mut device.0, 16),
 
         crate::dev::create_tourus_mesh(&mut device.0, 16),
+
+        hotline_rs::primitives::create_billboard_mesh(&mut device.0)
     ];
 
     // square number of rows and columns
-    let rc = f32::ceil(f32::sqrt(meshes.len() as f32));
+    let rc = ceil(sqrt(meshes.len() as f32));
     let irc = (rc + 0.5) as i32; 
 
     let size = 10.0;
@@ -85,82 +87,19 @@ pub fn setup_primitives(
 }
 
 #[no_mangle]
-pub fn render_billboards(
-    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
-    view_name: String,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
-        
-    // unpack
-    let pmfx = &pmfx.0;
-    let arc_view = pmfx.get_view(&view_name);
-    if arc_view.is_none() {
-        return;
-    }
-    let arc_view = arc_view.unwrap();
-    let view = arc_view.lock().unwrap();
-
-    let fmt = view.pass.get_format_hash();
-
-    let billboard_debug = pmfx.get_render_pipeline_for_format("billboard_debug", fmt);
-    if billboard_debug.is_none() {
-        return;
-    }
-    let billboard_debug = billboard_debug.unwrap();
-
-    let camera = pmfx.get_camera_constants(&view.camera);
-    if camera.is_none() {
-        return;
-    }
-    let camera = camera.unwrap();
-
-    // setup pass
-    view.cmd_buf.begin_render_pass(&view.pass);
-    view.cmd_buf.set_viewport(&view.viewport);
-    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-    view.cmd_buf.set_render_pipeline(&billboard_debug);
-    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
-
-    for (world_matrix, mesh) in &mesh_draw_query {
-        // draw
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    // end / transition / execute
-    view.cmd_buf.end_render_pass();
-}
-
-#[no_mangle]
 pub fn render_meshes(
-    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
-    view_name: String,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
+    pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
-    // unpack
     let pmfx = &pmfx.0;
-    let arc_view = pmfx.get_view(&view_name);
-    if arc_view.is_none() {
-        return;
-    }
-    let arc_view = arc_view.unwrap();
-    let view = arc_view.lock().unwrap();
+
+    //let view = pmfx.get_view(&view_name)?;
+    //let view = view.lock().unwrap();
 
     let fmt = view.pass.get_format_hash();
-
-    let mesh_debug = pmfx.get_render_pipeline_for_format("mesh_debug", fmt);
-    if mesh_debug.is_none() {
-        return;
-    }
-    let mesh_debug = mesh_debug.unwrap();
-
-    let camera = pmfx.get_camera_constants(&view.camera);
-    if camera.is_none() {
-        return;
-    }
-    let camera = camera.unwrap();
+    let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
@@ -168,10 +107,14 @@ pub fn render_meshes(
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
     view.cmd_buf.set_render_pipeline(&mesh_debug);
-    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
+    view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
+
+    // let inv_rot = Mat3f::from(camera.view_matrix.transpose());
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        // draw
+
+        //let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
+
         view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -180,55 +123,6 @@ pub fn render_meshes(
 
     // end / transition / execute
     view.cmd_buf.end_render_pass();
-}
 
-#[no_mangle]
-pub fn render_wireframe(
-    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
-    view_name: String,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
-        
-    // unpack
-    let pmfx = &pmfx.0;
-
-    let arc_view = pmfx.get_view(&view_name);
-    if arc_view.is_none() {
-        return;
-    }
-    let arc_view = arc_view.unwrap();
-
-    let view = arc_view.lock().unwrap();
-    let fmt = view.pass.get_format_hash();
-
-    let wireframe = pmfx.get_render_pipeline_for_format("wireframe_overlay", fmt);
-    if wireframe.is_none() {
-        return;
-    }
-    let wireframe = wireframe.unwrap();
-
-    let camera = pmfx.get_camera_constants(&view.camera);
-    if camera.is_none() {
-        return;
-    }
-    let camera = camera.unwrap();
-
-    // setup pass
-    view.cmd_buf.begin_render_pass(&view.pass);
-    view.cmd_buf.set_viewport(&view.viewport);
-    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-    view.cmd_buf.set_render_pipeline(&wireframe);
-    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
-
-    
-    for (world_matrix, mesh) in &mesh_draw_query {
-        // draw
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    // end / transition / execute
-    view.cmd_buf.end_render_pass();
+    Ok(())
 }

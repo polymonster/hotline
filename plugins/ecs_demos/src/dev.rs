@@ -1309,7 +1309,7 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
     let mid = segments / 2;
 
     // rotate around up axis and extract some data we can lookup to build vb and ib
-    let mut hangle = 0.0;
+    let mut hangle = -f32::pi();
     let angle_step = f32::two_pi() / segments as f32;
     for i in 0..vertex_segments + 1 {
         let x = cos(hangle);
@@ -1333,7 +1333,7 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
         let nat = normalize(nnp - np);
         let nright = cross(up, nat);
 
-        let mut vangle = 0.0;
+        let mut vangle = -f32::pi();
         for j in 0..vertex_segments {
             let vx = cos(vangle) * radius;
             let vy = -sin(vangle) * radius;
@@ -1346,15 +1346,8 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
             let mut u = 0.5 + atan2(y, x) / f32::two_pi();
             let mut v = 0.5 + atan2(vy, vx) / f32::two_pi();
 
-            let u = if i == mid+1 { 1.0 } else { u };
-            if i == mid {
-                hangle -= angle_step;
-            }
-
-            let v = if j == mid+1 { 0.0 } else { v };
-            if j == mid {
-                //vangle -= angle_step;
-            }
+            let u = if i == 0 { 1.0 } else { u };
+            let v = if j == 0 { 1.0 } else { v };
 
             segment_vertices.extend(vec![
                 Vertex3D {
@@ -1370,7 +1363,7 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
         }
     }
 
-    for i in 0..segments+1 {
+    for i in 0..segments {
         for j in 0..segments {
             let base = (i * vertex_segments) + j;
             let next_loop = base + 1;

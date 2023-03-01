@@ -59,7 +59,7 @@ pub fn camera_view_proj_from(pos: &Position, rot: &Rotation, aspect: f32, fov_de
     let translate = Mat4f::from_translation(pos.0);
     // build view / proj matrix
     let view = translate * mat_rot;
-    let view = view.inverse();
+    let view = view.transpose();
     proj * view
 }
 
@@ -157,7 +157,7 @@ fn render_grid(
     let pmfx = &pmfx.0;
 
     let view = pmfx.get_view("grid");
-    if view.is_none() {
+    if view.is_err() {
         return;
     }
     
@@ -168,13 +168,13 @@ fn render_grid(
     let fmt = view.pass.get_format_hash();
 
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt);
-    if pipeline.is_none() {
+    if pipeline.is_err() {
         return;
     }
     let pipeline = pipeline.unwrap();
 
     let camera = pmfx.get_camera_constants(&view.camera);
-    if camera.is_none() {
+    if camera.is_err() {
         return;
     }
     let camera = camera.unwrap();
@@ -321,6 +321,7 @@ impl BevyPlugin {
     fn schedule_ui(&mut self, mut client: PlatformClient) -> PlatformClient {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
+        let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
         
         // schedule
         client.imgui.separator();
@@ -362,10 +363,26 @@ impl BevyPlugin {
                 &render_function_names
             );
 
-            // actual exec order
+            // actual exec order of the GPU command queue
+            let queue = client.pmfx.get_render_graph_execute_order();
+            let view_errors = client.pmfx.view_errors.lock().unwrap();
             client.imgui.text(&format!("Command Queue ({}):", graph));
-            for f in client.pmfx.get_render_graph_execute_order() {
-                client.imgui.text(&format!("  {}", f));
+
+            // flag missing views
+            for (k, v) in &*view_errors {
+                if !queue.contains(k) {
+                    client.imgui.colour_text(&format!("  {}: error: `{}`", k, v), error_col);
+                }
+            }
+
+            // flag errors with present views
+            for f in queue {
+                if view_errors.contains_key(f) {
+                    client.imgui.colour_text(&format!("  {}: error: `{}`", f, view_errors[f]), error_col);
+                }
+                else {
+                    client.imgui.colour_text(&format!("  {}", f), default_col);
+                }
             }
         }
 
@@ -472,14 +489,17 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // check for any changes
         client = self.check_for_changes(client);
 
+        // clear pmfx view errors before we render
+        client.pmfx.view_errors.lock().unwrap().clear();
+
         // move hotline resource into world
-        self.world.insert_resource(DeviceRes {0: client.device});
-        self.world.insert_resource(AppRes {0: client.app});
-        self.world.insert_resource(MainWindowRes {0: client.main_window});
-        self.world.insert_resource(PmfxRes {0: client.pmfx});
-        self.world.insert_resource(ImDrawRes {0: client.imdraw});
-        self.world.insert_resource(UserConfigRes {0: client.user_config});
         self.world.insert_resource(session_info);
+        self.world.insert_resource(DeviceRes(client.device));
+        self.world.insert_resource(AppRes(client.app));
+        self.world.insert_resource(MainWindowRes(client.main_window));
+        self.world.insert_resource(PmfxRes(client.pmfx));
+        self.world.insert_resource(ImDrawRes(client.imdraw));
+        self.world.insert_resource(UserConfigRes(client.user_config));
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
@@ -530,7 +550,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let mut open = true;
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
-
             // refresh button
             if client.imgui.button("\u{f021}") {
                 resetup = true;
