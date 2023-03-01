@@ -7,7 +7,7 @@ use maths_rs::prelude::*;
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
 #[no_mangle]
 pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_push_constants"
@@ -61,7 +61,7 @@ pub fn setup_draw_indexed_push_constants(
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
 
     ScheduleInfo {
         setup: systems![

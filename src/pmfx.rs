@@ -25,6 +25,8 @@ use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
 
+use maths_rs::max;
+
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
 
@@ -494,6 +496,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if let Some(ratio) = &pmfx_texture.ratio {
             if self.window_sizes.contains_key(&ratio.window) {
                 let size = self.window_sizes[&ratio.window];
+                let samples = pmfx_texture.samples as f32;
+                // clamp to samples x samples so if we want 0 size we still have a valid texture
+                let size = (max(size.0, samples), max(size.1, samples));
                 Ok(((size.0 * ratio.scale) as u64, (size.1 * ratio.scale) as u64))
             }
             else {
@@ -1219,15 +1224,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 for (texture_name, texture) in &self.textures {
                     if let Some(ratio) = &texture.1.ratio {
                         if ratio.window == name {
-
-                            // rebuild_views.extend(self.get_view_texture_refs(texture_name));
                             recreate_texture_names.insert(texture_name.to_string());
-
                             if self.view_texture_refs.contains_key(texture_name) {
                                 for view_name in &self.view_texture_refs[texture_name] {
                                     self.views.remove(view_name);
                                     rebuild_views.insert(view_name.to_string());
-                                    //recreate_texture_names.insert(texture_name.to_string());
                                 }
                             }
                         }

@@ -286,9 +286,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let mut invalidated = false;
         
         // main window pos / size
-        if self.user_config.main_window_rect != self.main_window.get_window_rect() {
-            self.user_config.main_window_rect = self.main_window.get_window_rect();
-            invalidated = true;
+        let current = self.main_window.get_window_rect();
+        if self.user_config.main_window_rect != current {
+            if current.x > 0 && current.y > 0 {
+                self.user_config.main_window_rect = self.main_window.get_window_rect();
+                invalidated = true;
+            }
         }
 
         // console window pos / size
