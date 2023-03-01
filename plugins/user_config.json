@@ -12,14 +12,14 @@
     "height": 28
   },
   "plugins": {
-    "ecs_demos": {
-      "path": "C:\\Users\\alex_\\dev\\hotline\\plugins"
-    },
     "ecs": {
-      "path": "C:\\Users\\alex_\\dev\\hotline\\plugins"
+      "path": "/plugins"
+    },
+    "ecs_demos": {
+      "path": "/plugins"
     }
   },
   "plugin_data": {
-    "ecs": "{\n  \"active_demo\": \"primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      114.784454,\n      187.29234,\n      225.6834\n    ],\n    \"rot\": [\n      -41.0,\n      -695.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
+    "ecs": "{\n  \"active_demo\": \"primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      136.86293,\n      163.6688,\n      177.45467\n    ],\n    \"rot\": [\n      -404.0,\n      -1408.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
   }
 }

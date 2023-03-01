@@ -399,11 +399,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
-        let lib_path = path.to_string() + "/target/" + crate::get_config_name();
-        let src_path = path.to_string() + "/" + name + "/src/lib.rs";
+
+        let abs_path = if path == "/plugins" {
+            super::get_data_path("../plugins")
+        }
+        else {
+            String::from(path)
+        };
+
+        let lib_path = abs_path.to_string() + "/target/" + crate::get_config_name();
+        let src_path = abs_path.to_string() + "/" + name + "/src/lib.rs";
+
         let plugin = PluginReloadResponder {
             name: name.to_string(),
-            path: path.to_string(),
+            path: abs_path.to_string(),
             output_filepath: lib_path.to_string(),
             files: vec![
                 src_path
@@ -444,6 +453,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.user_config.plugins = Some(HashMap::new());
         }
 
+        // plugins inside the main repro can have the abs path truncated so they are portable
+        let hotline_path = super::get_data_path("..");
+        let path = String::from(abs_path).replace(&hotline_path, "").replace("\\", "/");
+
         if let Some(plugin_info) = &mut self.user_config.plugins {
             if plugin_info.contains_key(name) {
                 plugin_info.remove(name);
@@ -481,6 +494,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                         let folder = folder.unwrap();
                         if !folder.is_empty() {
                             self.save_configs_to_location(&folder[0]);
+                            self.imgui.save_ini_settings_to_location(&folder[0]);
                         }
                     }
                 }

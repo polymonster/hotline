@@ -1212,6 +1212,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             igSaveIniSettingsToDisk(io.IniFilename);
         }
     }
+
+    pub fn save_ini_settings_to_location(&self, path: &str) {
+        unsafe {
+            let null_term_filename = CString::new(format!("{}/imgui.ini", path)).unwrap();
+            igSaveIniSettingsToDisk(null_term_filename.as_ptr() as *const i8);
+        }
+    }
 }
 
 impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {
