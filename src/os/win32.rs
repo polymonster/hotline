@@ -701,9 +701,9 @@ impl super::App for App {
                         pszSpec: PCWSTR(w.as_ptr() as _),
                     });
                 }
+                open_dialog.SetFileTypes(&specs)?;
             }
             
-            open_dialog.SetFileTypes(&specs)?;
             open_dialog.Show(HWND(0))?;
             let results : IShellItemArray = open_dialog.GetResults()?;
 
