@@ -11,7 +11,7 @@ struct Billboard;
 #[no_mangle]
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
     
     ScheduleInfo {
         setup: systems![
@@ -93,9 +93,6 @@ pub fn render_meshes(
     mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx.0;
-
-    //let view = pmfx.get_view(&view_name)?;
-    //let view = view.lock().unwrap();
 
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;

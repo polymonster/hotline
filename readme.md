@@ -76,7 +76,7 @@ The basic `Cargo.toml` setup looks like this:
 
 ```toml
 [package]
-name = "ecs_basic"
+name = "ecs_demos"
 version = "0.1.0"
 edition = "2021"
 
@@ -141,7 +141,7 @@ You can setup a new ecs demo by providing an initialisation function named after
 #[no_mangle]
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // load resources we may need
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/basic").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
     
     // fill out info
     ScheduleInfo {
