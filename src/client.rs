@@ -279,6 +279,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         std::fs::File::create(&user_config_path).unwrap();
         std::fs::write(&user_config_path, user_config_file_text).unwrap();
     }
+
+    /// Intenral function to save both the `user_config.json` and `imgui.ini` to a disk location, for saving re-usable presets
+    fn save_configs_to_location(&mut self, path: &str) {
+        let user_config_file_text = serde_json::to_string_pretty(&self.user_config).unwrap();
+        let user_config_path = format!("{}/user_config.json", path);
+        std::fs::File::create(&user_config_path).unwrap();
+        std::fs::write(&user_config_path, user_config_file_text).unwrap();
+    }
     
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
     fn update_user_config_windows(&mut self) {
@@ -447,9 +455,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Intenral core-ui function, it displays the main menu bar in the main window and
     /// A plugin menu which allows users to reload or unload live plugins.
     fn core_ui(&mut self) {
-        // main menu bar allow us to add plugins from files (libs)
+        // main menu bar 
         if self.imgui.begin_main_menu_bar() {
+            
             if self.imgui.begin_menu("File") {
+                // allow us to add plugins from files (libs)
                 if self.imgui.menu_item("Open") {
                     let file = A::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".toml"]);
                     if file.is_ok() {
@@ -463,6 +473,23 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                         }
                     }
                 }
+
+                // save configs for presets
+                if self.imgui.menu_item("Save User Config") {
+                    let folder = A::open_file_dialog(os::OpenFileDialogFlags::FOLDERS, Vec::new());
+                    if folder.is_ok() {
+                        let folder = folder.unwrap();
+                        if !folder.is_empty() {
+                            self.save_configs_to_location(&folder[0]);
+                        }
+                    }
+                }
+
+                self.imgui.separator();
+                if self.imgui.menu_item("Exit") {
+                    self.app.exit(0);
+                }
+
                 self.imgui.end_menu();
             }
 

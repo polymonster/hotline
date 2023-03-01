@@ -166,12 +166,15 @@ pub struct WindowInfo<A: App> {
 pub trait NativeHandle<A: App> {
     /// returns the handle as an isize (ie. HWND)
     fn get_isize(&self) -> isize;
+    /// returns a copy of the internal handle
     fn copy(&self) -> Self;
 }
 
 /// An interface which all platforms need to implement for general operating system calls
 pub trait App: 'static + Any + Sized + Send + Sync + Clone {
+    // A platform specific concrete window type
     type Window: Window<Self>;
+    /// A platform specific handle to window (or other os handles) ie `HWND`
     type NativeHandle: NativeHandle<Self>;
     /// Create an application instance
     fn create(info: AppInfo) -> Self;
@@ -181,6 +184,8 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     fn destroy_window(&mut self, window: &Self::Window);
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool;
+    /// Request to exit the application
+    fn exit(&mut self, exit_code: i32);
     /// Retuns the mouse in screen coordinates
     fn get_mouse_pos(&self) -> Point<i32>;
     /// Retuns the mouse vertical wheel position
