@@ -1382,3 +1382,287 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
 
     create_faceted_mesh_3d(dev, vertices)
 }
+
+pub fn chebyshev_normalize(v: Vec3f) -> Vec3f {
+    v / max(max(abs(v.x), abs(v.y)), abs(v.z))
+}
+
+pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
+
+    let inset = 0.8;
+
+    // cube veritces
+    let mut vertices: Vec<Vertex3D> = vec![
+        // front face
+        Vertex3D {
+            position: vec3f(-inset, -inset, 1.0),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, -inset,  1.0),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, inset, 1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-inset, inset, 1.0),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // back face
+        Vertex3D {
+            position: vec3f(-inset, -inset, -1.0),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-inset, inset, -1.0),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, inset, -1.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, -inset, -1.0),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // right face
+        Vertex3D {
+            position: vec3f(1.0, -inset, -inset),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, inset, -inset),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, inset, inset),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, -inset, inset),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // left face
+        Vertex3D {
+            position: vec3f(-1.0, -inset, -inset),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, -inset, inset),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, inset, inset),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, inset, -inset),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // top face
+        Vertex3D {
+            position: vec3f(-inset, 1.0, -inset),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-inset, 1.0, inset),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, 1.0, inset),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, 1.0, -inset),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        // bottom face
+        Vertex3D {
+            position: vec3f(-inset, -1.0, -inset),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, -1.0, -inset),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, -1.0, inset),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-inset, -1.0, inset),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+    ];
+
+    let mut indices: Vec<usize> = vec![
+        0,  2,  1,  2,  0,  3,   // front face
+        4,  6,  5,  6,  4,  7,   // back face
+        8,  10, 9,  10, 8,  11,  // right face
+        12, 14, 13, 14, 12, 15,  // left face
+        16, 18, 17, 18, 16, 19,  // top face
+        20, 22, 21, 22, 20, 23,  // bottom face
+    ];
+
+    // join edges
+
+    let join_edge = |edge_indices: [usize; 4], clamp_axis: usize, vertices: &mut Vec<Vertex3D>, indices: &mut Vec<usize>| {
+        let mut v0 = vertices[edge_indices[0]].clone();
+        let mut v1 = vertices[edge_indices[1]].clone();
+        let mut v2 = vertices[edge_indices[2]].clone();
+        let mut v3 = vertices[edge_indices[3]].clone();
+
+        let bottom_start = v0.position;
+        let top_start = v1.position; 
+        let top_end = v2.position;
+        let bottom_end = v3.position;   
+
+        let fsegments = segments as f32;
+        for i in 0..segments {
+            let cur = (1.0 / fsegments as f32) * i as f32;
+            let next = (1.0 / fsegments as f32) * (i+1) as f32;
+    
+            // linear lerp
+            let lv0 = lerp(bottom_start, bottom_end, cur);
+            let lv1 = lerp(top_start, top_end, cur);
+            let lv2 = lerp(top_start, top_end, next);
+            let lv3 = lerp(bottom_start, bottom_end, next);
+    
+            // project corner to unit cube (chebyshev_normalize)
+            let cur = if cur > 0.5 {
+                1.0 - cur
+            }
+            else {
+                cur
+            };
+    
+            let next = if next > 0.5 {
+                1.0 - next
+            }
+            else {
+                next
+            };
+    
+            // lerp between square corner and cut corner, forming circle
+            v0.position = lerp(chebyshev_normalize(lv0), lv0, cur);
+            v1.position = lerp(chebyshev_normalize(lv1), lv1, cur);
+            v3.position = lerp(chebyshev_normalize(lv2), lv2, next);
+            v2.position = lerp(chebyshev_normalize(lv3), lv3, next);
+    
+            // ..
+            v0.position[clamp_axis] = bottom_start[clamp_axis];
+            v1.position[clamp_axis] = top_start[clamp_axis];
+            v3.position[clamp_axis] = top_start[clamp_axis];
+            v2.position[clamp_axis] = bottom_start[clamp_axis];
+    
+            let base_index = vertices.len();
+            vertices.extend(
+                vec![
+                    v0.clone(),
+                    v1.clone(),
+                    v2.clone(),
+                    v3.clone(),
+                ]
+            );
+    
+            indices.extend(vec![
+                base_index, base_index + 1, base_index + 3, 
+                base_index, base_index + 3, base_index + 2
+            ]);
+        }
+    };
+
+    // join sides
+    join_edge([1, 2, 10, 11], 1, &mut vertices, &mut indices); // front-right
+    join_edge([8, 9, 6, 7], 1, &mut vertices, &mut indices); // right-back
+    join_edge([4, 5, 12, 15], 1, &mut vertices, &mut indices); // back-left
+    join_edge([13, 14, 0, 3], 1, &mut vertices, &mut indices); // left-front
+
+    // join top
+    join_edge([2, 3, 17, 18], 0, &mut vertices, &mut indices); // front-top
+    join_edge([9, 10, 19, 18], 2, &mut vertices, &mut indices); // right-top
+    join_edge([5, 6, 16, 19], 0, &mut vertices, &mut indices); // back-top
+    join_edge([14, 15, 16, 17], 2, &mut vertices, &mut indices); // left-top
+
+    // join bottom
+    join_edge([0, 1, 22, 23], 0, &mut vertices, &mut indices); // front-bottom
+    join_edge([11, 8, 22, 21], 2, &mut vertices, &mut indices); // right-bottom
+    join_edge([7, 4, 21, 20], 0, &mut vertices, &mut indices); // back-bottom
+    join_edge([12, 13, 20, 23], 2, &mut vertices, &mut indices); // left-bottom
+
+    create_mesh_3d(dev, vertices, indices)
+}

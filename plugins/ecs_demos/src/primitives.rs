@@ -58,6 +58,8 @@ pub fn setup_primitives(
 
         crate::dev::create_tourus_mesh(&mut device.0, 16),
 
+        crate::dev::create_chamfer_cube_mesh(&mut device.0, 8),
+
         hotline_rs::primitives::create_billboard_mesh(&mut device.0)
     ];
 
