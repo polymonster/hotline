@@ -3,7 +3,6 @@
 use crate::gfx::SwapChain;
 use crate::gfx::Texture;
 use crate::os;
-use crate::os::Window;
 
 use crate::gfx;
 use crate::gfx::ResourceState;
@@ -1211,11 +1210,28 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    pub fn get_window_size(&self, window_name: &str) -> (f32, f32) {
+        if self.window_sizes.contains_key(window_name) {
+            self.window_sizes[window_name]
+        }
+        else {
+            (0.0, 0.0)
+        }
+    }
+
+    pub fn get_window_aspect(&self, window_name: &str) -> f32 {
+        if self.window_sizes.contains_key(window_name) {
+            let size = self.window_sizes[window_name];
+            size.0 / size.1
+        }
+        else {
+            0.0
+        }
+    }
+
     /// Update render targets or views associated with a window, this will resize textures and rebuild views
     /// which need to be modified if a window size changes
-    pub fn update_window<A: os::App>(&mut self, device: &mut D, window: &A::Window, name: &str) {
-        let size = window.get_size();
-        let size = (size.x as f32, size.y as f32);
+    pub fn update_window(&mut self, device: &mut D, size: (f32, f32), name: &str) {
         let mut rebuild_views = HashSet::new();
         let mut recreate_texture_names = HashSet::new();
         if self.window_sizes.contains_key(name) {
@@ -1346,7 +1362,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
 use crate::imgui;
 impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::App {
-    fn show_ui(&mut self, imgui: &imgui::ImGui<D, A>, open: bool) -> bool {
+    fn show_ui(&mut self, imgui: &mut imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
             if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::NONE) {

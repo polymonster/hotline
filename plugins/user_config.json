@@ -20,6 +20,6 @@
     }
   },
   "plugin_data": {
-    "ecs": "{\n  \"active_demo\": \"primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      136.86293,\n      163.6688,\n      177.45467\n    ],\n    \"rot\": [\n      -404.0,\n      -1408.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
+    "ecs": "{\n  \"active_demo\": \"primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      112.54314,\n      109.77736,\n      122.23886\n    ],\n    \"rot\": [\n      -760.0,\n      -1402.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
   }
 }
