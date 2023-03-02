@@ -137,8 +137,7 @@ fn update_cameras(
         }
 
         // generate proj matrix
-        let window_rect = main_window.0.get_viewport_rect();
-        let aspect = window_rect.width as f32 / window_rect.height as f32;
+        let aspect = pmfx.0.get_window_aspect("main_dock");
        
         // assign view proj
         view_proj.0 = camera_view_proj_from(&position, &rotation, aspect, 60.0);
@@ -300,7 +299,7 @@ impl BevyPlugin {
         }
     }
 
-    fn status_ui_category(&self, imgui: &PlatformImgui, header: &str, function_list: &Vec<String>) {
+    fn status_ui_category(&self, imgui: &mut PlatformImgui, header: &str, function_list: &Vec<String>) {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
         if function_list.len() > 0 {

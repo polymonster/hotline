@@ -5,11 +5,7 @@
 // - spring
 // - trapezoid
 
-
 // - update pmfx shader
-// - remove relative path for the repo's plugins
-// - add textures to dock
-// - option to save config and ini to disk location
 // - move primitives from ecs to hotline
 
 // - quick video
@@ -20,6 +16,7 @@
 
 // ui
 // - view menu + saving state
+// - status bar
 
 // ecs
 // - per demo settings
@@ -50,6 +47,9 @@
 // - Texture Formats (BC etc)
 
 // DONE:
+// - add textures to dock
+// - option to save config and ini to disk location
+// x remove relative path for the repo's plugins
 // x recursive includes?
 // x rename basic > debug
 // x tourus (uv)

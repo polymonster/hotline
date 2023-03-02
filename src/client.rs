@@ -217,7 +217,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         pmfx.load(&super::get_data_path("data/shaders/imdraw").as_str())?;
         pmfx.create_pipeline(&mut device, "imdraw_blit", &swap_chain.get_backbuffer_pass())?;
 
-        pmfx.update_window::<A>(&mut device, &main_window, "main_window");
+        let size = main_window.get_size();
+        pmfx.update_window(&mut device, (size.x as f32, size.y as f32), "main_window");
 
         // blit pmfx
         let unit_quad_mesh = primitives::create_unit_quad_mesh(&mut device);
@@ -256,14 +257,23 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // update window and swap chain for the new frame
         self.main_window.update(&mut self.app);
         self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);
-        self.pmfx.update_window::<A>(&mut self.device, &self.main_window, "main_window");
 
         // reset main command buffer
         self.cmd_buf.reset(&self.swap_chain);
 
         // start imgui new frame
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
-        self.app.set_input_enabled(!self.imgui.want_capture_keyboard(), !self.imgui.want_capture_mouse());
+
+        let dock_input = self.imgui.main_dock_hovered();
+        self.app.set_input_enabled(
+            !self.imgui.want_capture_keyboard() || dock_input, 
+            !self.imgui.want_capture_mouse() || dock_input);
+
+        let size = self.main_window.get_size();
+        self.pmfx.update_window(&mut self.device, (size.x as f32, size.y as f32), "main_window");
+
+        let size = self.imgui.get_main_dock_size();
+        self.pmfx.update_window(&mut self.device, size, "main_dock");
 
         // start new pmfx frame
         self.pmfx.new_frame(&mut self.device, &self.swap_chain);
@@ -706,9 +716,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.new_frame();
 
             self.core_ui();
-            self.pmfx.show_ui(&self.imgui, true);
+            self.pmfx.show_ui(&mut self.imgui, true);
 
             self = self.update_plugins();
+
+            if let Some(tex) = self.pmfx.get_texture("main_colour") {
+                self.imgui.image_window("main_dock", tex);
+            }
 
             self.present("main_colour");
         }
@@ -726,7 +740,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         
         //self.core_ui();
         
-        self.pmfx.show_ui(&self.imgui, true);
+        self.pmfx.show_ui(&mut self.imgui, true);
         self = self.update_plugins();
         self.present("main_colour");
 

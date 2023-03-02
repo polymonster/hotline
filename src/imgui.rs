@@ -26,6 +26,18 @@ fn to_im_vec4(v: Vec4f) -> ImVec4 {
 const DEFAULT_VB_SIZE: i32 = 5000;
 const DEFAULT_IB_SIZE: i32 = 10000;
 
+const MAIN_DOCKSPACE_FLAGS : u32 = ImGuiWindowFlags_NoTitleBar |
+    ImGuiWindowFlags_NoCollapse |
+    ImGuiWindowFlags_NoResize |
+    ImGuiWindowFlags_NoMove |
+    ImGuiWindowFlags_NoBringToFrontOnFocus |
+    ImGuiWindowFlags_NoNavFocus |
+    ImGuiWindowFlags_MenuBar |
+    ImGuiWindowFlags_NoScrollbar;
+
+const IMVEC2_ZERO : ImVec2 = ImVec2 {x: 0.0, y: 0.0 };
+const MAIN_DOCK_NAME : *const i8 = "main_dock\0".as_ptr() as *const i8;
+
 /// Info to supply fonts from .ttf files for use with imgui
 pub struct FontInfo {
     /// filepath to a .ttf file
@@ -76,7 +88,7 @@ struct UserData<'a, D: Device, A: App> {
 
 /// Trait for hooking into imgui ui calls into other modules
 pub trait UserInterface<D: gfx::Device, A: os::App> {
-    fn show_ui(&mut self, imgui: &ImGui<D, A>, open: bool) -> bool;
+    fn show_ui(&mut self, imgui: &mut ImGui<D, A>, open: bool) -> bool;
 }
 
 bitflags! {
@@ -853,7 +865,61 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             igNewFrame();
 
+            // set main window as dockspace
+            let main_viewport = igGetMainViewport();
+
+            igSetNextWindowPos((*main_viewport).Pos, 0, IMVEC2_ZERO);
+            igSetNextWindowSize((*main_viewport).Size, 0);
+
+            igSetNextWindowViewport((*main_viewport).ID);
+
+            igPushStyleVarFloat(ImGuiStyleVar_WindowRounding as i32, 0.0);
+            igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
+            igPushStyleVarVec2(ImGuiStyleVar_WindowPadding as i32, IMVEC2_ZERO);
+
+            let dockspace_name = "main_window_dockspace\0".as_ptr() as *const i8;
+
+            let mut open = true;
+            igBegin(dockspace_name, &mut open, MAIN_DOCKSPACE_FLAGS as i32);
+            
+            let id = igGetIDStr(dockspace_name);
+
+            igDockSpace(id, ImVec2{x: 0.0, y: 0.0}, ImGuiDockNodeFlags_PassthruCentralNode as i32, std::ptr::null_mut());
+            
+            igPopStyleVar(3);
+            igEnd();
+
+            // create main dock area
+            igPushStyleVarFloat(ImGuiStyleVar_ChildRounding as i32, 0.0);
+            igPushStyleVarFloat(ImGuiStyleVar_ChildBorderSize as i32, 0.0);
+            igPushStyleVarFloat(ImGuiStyleVar_WindowRounding as i32, 0.0);
+            igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
+            igPushStyleVarVec2(ImGuiStyleVar_WindowPadding as i32, IMVEC2_ZERO);
+
+            let mut window_class = ImGuiWindowClass::default();
+            window_class.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+            igSetNextWindowClass(&window_class);
+
+            igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
+            
+            let mut avail = IMVEC2_ZERO;
+            igGetContentRegionAvail(&mut avail);
+    
+            igEnd();
+            igPopStyleVar(5);
+
             io.UserData = std::ptr::null_mut();
+        }
+    }
+
+    /// Return the size of the main dockspace viewport which is the background of the main window
+    pub fn get_main_dock_size(&self) -> (f32, f32) {
+        unsafe {
+            igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
+            let mut avail = IMVEC2_ZERO;
+            igGetContentRegionAvail(&mut avail);
+            igEnd();
+            (avail.x, avail.y)
         }
     }
 
@@ -998,14 +1064,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     /// This function will make the `ImGuiContext` current, required when calling imgui from inside in a plugin dll or lib
-    pub fn set_current_context(&self, context: *mut core::ffi::c_void) {
+    pub fn set_current_context(&mut self, context: *mut core::ffi::c_void) {
         unsafe {
             igSetCurrentContext(context as *mut ImGuiContext);
         }
     }
 
     /// Begin a new imgui window
-    pub fn begin(&self, title: &str, open: &mut bool, flags: WindowFlags) -> bool {
+    pub fn begin(&mut self, title: &str, open: &mut bool, flags: WindowFlags) -> bool {
         unsafe {
             let null_title = CString::new(title).unwrap();
             igBegin(
@@ -1017,14 +1083,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     /// End imgui window must be called after a call to `begin` regardless of if `begin` returns true or false
-    pub fn end(&self) {
+    pub fn end(&mut self) {
         unsafe { 
             igEnd();
         };
     }
 
     /// Add imgui text widget, you can format text to pass in: `imgui.text(&format!("{}", values));`
-    pub fn text(&self, text: &str) {
+    pub fn text(&mut self, text: &str) {
         let null_term_text = CString::new(text).unwrap();
         unsafe {
             igText(null_term_text.as_ptr() as *const i8);
@@ -1032,7 +1098,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     /// Add coloured text specified with rgba 0-1 range float.
-    pub fn colour_text(&self, text: &str, col: Vec4f) {
+    pub fn colour_text(&mut self, text: &str, col: Vec4f) {
         unsafe {
             igPushStyleColorVec4(ImGuiCol_Text as i32, to_im_vec4(col));
             self.text(text);
@@ -1041,54 +1107,54 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     /// Push a style colour using ImGuiCol_ flags
-    pub fn push_style_colour(&self, flags: ImGuiStyleVar, col: Vec4f) {
+    pub fn push_style_colour(&mut self, flags: ImGuiStyleVar, col: Vec4f) {
         unsafe {
             igPushStyleColorVec4(flags as i32, to_im_vec4(col))
         }
     }
 
     /// Pop a single style colour ImGuiStyleVar from the stack
-    pub fn pop_style_colour(&self) {
+    pub fn pop_style_colour(&mut self) {
         unsafe {
             igPopStyleColor(1);
         }
     }
     
     /// Pop a style colour using ImGuiCol_ flags
-    pub fn pop_style_colour_count(&self, count: i32) {
+    pub fn pop_style_colour_count(&mut self, count: i32) {
         unsafe {
             igPopStyleColor(count);
         }
     }
 
     /// Begin imgui main menu bar which appears at the top of the main window
-    pub fn begin_main_menu_bar(&self) -> bool {
+    pub fn begin_main_menu_bar(&mut self) -> bool {
         unsafe {
             igBeginMainMenuBar()
         }
     }
 
     /// Ends main menu bar calls, this must be called after a call to `begin_main_menu_bar` returns true
-    pub fn end_main_menu_bar(&self) {
+    pub fn end_main_menu_bar(&mut self) {
         unsafe {
             igEndMainMenuBar()
         }
     }
 
-    pub fn begin_menu(&self, label: &str) -> bool {
+    pub fn begin_menu(&mut self, label: &str) -> bool {
         let null_term_label = CString::new(label).unwrap();
         unsafe {
             igBeginMenu(null_term_label.as_ptr() as *const i8, true)
         }
     }
 
-    pub fn end_menu(&self) {
+    pub fn end_menu(&mut self) {
         unsafe {
             igEndMenu()
         }
     }
 
-    pub fn begin_combo(&self, label: &str, preview_item: &str, flags: ImGuiComboFlags) -> bool {
+    pub fn begin_combo(&mut self, label: &str, preview_item: &str, flags: ImGuiComboFlags) -> bool {
         unsafe {
             let null_term_label = CString::new(label).unwrap();
             let null_term_preview_item = CString::new(preview_item).unwrap();
@@ -1100,20 +1166,20 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    pub fn end_combo(&self) {
+    pub fn end_combo(&mut self) {
         unsafe {
             igEndCombo()
         }
     }
 
-    pub fn selectable(&self, label: &str, selected: bool, flags: ImGuiSelectableFlags) -> bool {
+    pub fn selectable(&mut self, label: &str, selected: bool, flags: ImGuiSelectableFlags) -> bool {
         unsafe {
             let null_term_label = CString::new(label).unwrap();
             igSelectableBool(null_term_label.as_ptr() as *const i8, selected, flags, ImVec2 { x: 0.0, y: 0.0 })
         }
     }
 
-    pub fn combo_list(&self, label: &str, items: &Vec<String>, selected: &str) -> (bool, String) {
+    pub fn combo_list(&mut self, label: &str, items: &Vec<String>, selected: &str) -> (bool, String) {
         let mut result = selected.to_string();
         if self.begin_combo(label, selected, ImGuiComboFlags_None as i32) {
             for i in 0..items.len() {
@@ -1129,7 +1195,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    pub fn menu_item(&self, label: &str) -> bool {
+    pub fn menu_item(&mut self, label: &str) -> bool {
         let null_term_label = CString::new(label).unwrap();
         unsafe {
             igMenuItemBool(
@@ -1140,25 +1206,25 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    pub fn separator(&self) {
+    pub fn separator(&mut self) {
         unsafe {
             igSeparator()
         }
     }
 
-    pub fn spacing(&self) {
+    pub fn spacing(&mut self) {
         unsafe {
             igSpacing()
         }
     }
 
-    pub fn same_line(&self) {
+    pub fn same_line(&mut self) {
         unsafe { 
             igSameLine(0.0, 0.0);
         };
     }
 
-    pub fn button(&self, label: &str) -> bool {
+    pub fn button(&mut self, label: &str) -> bool {
         unsafe {
             let null_label = CString::new(label).unwrap();
             if igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0}) {
@@ -1170,14 +1236,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    pub fn checkbox(&self, label: &str, v: &mut bool) -> bool {
+    pub fn checkbox(&mut self, label: &str, v: &mut bool) -> bool {
         unsafe {    
             let null_label = CString::new(label).unwrap();
             igCheckbox(null_label.as_ptr() as *const i8, v)
         }
     }
 
-    pub fn image(&self, tex: &D::Texture, w: f32, h: f32) {
+    pub fn image(&mut self, tex: &D::Texture, w: f32, h: f32) {
         unsafe {
             let id = to_imgui_texture_id::<D>(tex);
 
@@ -1189,6 +1255,39 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 ImVec4 {x: 1.0, y: 1.0, z: 1.0, w: 1.0},
                 ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
             );
+        }
+    }
+
+    pub fn image_window(&mut self, label: &str, tex: &D::Texture) {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+
+            let (w, h) = self.get_main_dock_size();
+
+            let id = to_imgui_texture_id::<D>(tex);
+
+            igBegin(null_label.as_ptr() as *const i8, std::ptr::null_mut(), 0);
+            
+            igImage(
+                id, 
+                ImVec2 {x: w, y: h},
+                ImVec2 {x: 0.0, y: 0.0},
+                ImVec2 {x: 1.0, y: 1.0},
+                ImVec4 {x: 1.0, y: 1.0, z: 1.0, w: 1.0},
+                ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
+            );
+
+            igEnd();
+
+        }
+    }
+
+    pub fn main_dock_hovered(&self) -> bool {
+        unsafe {
+            igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
+            let result = igIsWindowHovered(0);
+            igEnd();
+            result
         }
     }
 
