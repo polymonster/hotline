@@ -1420,7 +1420,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
     }
 }
 
-pub struct PmfxReloadResponder {
+struct PmfxReloadResponder {
     files: Vec<String>,
     start_time: SystemTime
 }

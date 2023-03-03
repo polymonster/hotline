@@ -1579,7 +1579,6 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     ];
 
     // join edges
-
     let join_edge = |edge_indices: [usize; 4], clamp_axis: usize, vertices: &mut Vec<Vertex3D>, indices: &mut Vec<usize>| {
         let mut v0 = vertices[edge_indices[0]].clone();
         let mut v1 = vertices[edge_indices[1]].clone();
@@ -1647,14 +1646,19 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     };
 
     // join sides
+    let fr_loop_start = vertices.len();
     join_edge([1, 2, 10, 11], 1, &mut vertices, &mut indices); // front-right
     join_edge([8, 9, 6, 7], 1, &mut vertices, &mut indices); // right-back
     join_edge([4, 5, 12, 15], 1, &mut vertices, &mut indices); // back-left
     join_edge([13, 14, 0, 3], 1, &mut vertices, &mut indices); // left-front
 
     // join top
+    let ft_loop_start = vertices.len();
     join_edge([2, 3, 17, 18], 0, &mut vertices, &mut indices); // front-top
+
+    let rt_loop_start = vertices.len();
     join_edge([9, 10, 19, 18], 2, &mut vertices, &mut indices); // right-top
+
     join_edge([5, 6, 16, 19], 0, &mut vertices, &mut indices); // back-top
     join_edge([14, 15, 16, 17], 2, &mut vertices, &mut indices); // left-top
 
@@ -1663,6 +1667,92 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     join_edge([11, 8, 22, 21], 2, &mut vertices, &mut indices); // right-bottom
     join_edge([7, 4, 21, 20], 0, &mut vertices, &mut indices); // back-bottom
     join_edge([12, 13, 20, 23], 2, &mut vertices, &mut indices); // left-bottom
+
+    // join corners
+    // 2, 10, 18
+
+    let mut dbg = vertices[2].clone();
+    dbg.position = Vec3f::zero();
+
+    let base_index = vertices.len();
+
+    let centre = splat3f(inset);
+
+    let fsegments = segments as f32;
+    for j in 0..segments {
+
+        let joffset = j * 4;
+
+        let top_start = vertices[ft_loop_start + 2 + joffset].clone();
+        let top_end = vertices[rt_loop_start + 3 + joffset].clone();
+
+        let bottom_start = vertices[ft_loop_start + 0 + joffset].clone();
+        let bottom_end = vertices[rt_loop_start + 1 + joffset].clone();
+
+        for i in 0..segments {
+            let cur = (1.0 / fsegments as f32) * i as f32;
+            let next = (1.0 / fsegments as f32) * (i+1) as f32;
+
+            // upper loop
+            let lv0 = lerp(top_start.position, top_end.position, cur);
+            let mut vv0 = vertices[fr_loop_start + 3].clone();
+            vv0.position = lv0;
+
+            let lv1 = lerp(top_start.position, top_end.position, next);
+            let mut vv1 = vertices[fr_loop_start + 3].clone();
+            vv1.position = lv1;
+
+            // bottom loop
+            let lv2 = lerp(bottom_start.position, bottom_end.position, cur);
+            let mut vv2 = vertices[fr_loop_start + 3].clone();
+            vv2.position = lv2;
+
+            let lv3 = lerp(bottom_start.position, bottom_end.position, next);
+            let mut vv3 = vertices[fr_loop_start + 3].clone();
+            vv3.position = lv3;
+
+            let offset = i * 4;
+
+            // project central vertices to sphere, 
+            let radius = 1.0 - inset;
+            if true {
+                vv0.position = centre + normalize(lv0 - centre) * radius;
+                vv1.position = centre + normalize(lv1 - centre) * radius;
+                vv2.position = centre + normalize(lv2 - centre) * radius;
+                vv3.position = centre + normalize(lv3 - centre) * radius;
+            }
+
+            // welded to the bottom
+            if j == 0 {
+                vv2.position = vertices[fr_loop_start + 1 + offset].position;
+                vv3.position = vertices[fr_loop_start + 3 + offset].position;
+            }
+            
+            if i == 0 {
+                vv2.position = lv2;
+                vv0.position = lv0;
+            }
+
+            if i == segments-1 {
+                vv3.position = lv3;
+                vv1.position = lv1;
+            }
+
+            vertices.extend(vec![
+                vv2.clone(),
+                vv0.clone(),
+                vv3.clone(),
+
+                vv3.clone(),
+                vv0.clone(),
+                vv1.clone(),
+            ]);
+        }
+    }
+
+    for i in base_index..vertices.len() {
+        indices.push(i);
+    }
 
     create_mesh_3d(dev, vertices, indices)
 }
