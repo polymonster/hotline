@@ -146,6 +146,7 @@ pub use gfx::d3d12 as gfx_platform;
 pub use av::wmf as av_platform;
 
 /// Most commonly used re-exported types.
+#[cfg(target_os = "windows")]
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
@@ -157,7 +158,7 @@ pub mod prelude {
         pmfx,
         imgui,
 
-        // platform specific modules
+        // platform specific 
         gfx_platform,
         os_platform,
         av_platform,
@@ -180,5 +181,29 @@ pub mod prelude {
         render_func_closure,
         demos,
         systems
+    };
+}
+
+#[cfg(not(target_os = "windows"))]
+pub mod prelude {
+    #[doc(hidden)]
+    pub use crate::{
+        // modules
+        gfx,
+        os,
+        client,
+        plugin,
+        pmfx,
+        imgui,
+
+        // traits
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        os::{App, Window},
+        pmfx::Pmfx,
+        imgui::ImGui,
+        imdraw::ImDraw,
+        client::{Client, HotlineInfo, PluginInfo},
+        plugin::{Plugin},
+        av::{VideoPlayer},
     };
 }
