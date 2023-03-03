@@ -237,10 +237,9 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_demos_{}", lib_name).to_string();
-                let demo = lib.get_symbol::<unsafe extern fn() ->  Vec<String>>(function_name.as_bytes());
-                if demo.is_ok() {
-                    let demo_fn = demo.unwrap();
-                    let mut lib_demos = demo_fn();
+                let list = lib.get_symbol::<unsafe extern fn() ->  Vec<String>>(function_name.as_bytes());
+                if let Ok(list_fn) = list {
+                    let mut lib_demos = list_fn();
                     demos.append(&mut lib_demos);
                 }
             }
@@ -268,8 +267,7 @@ impl BevyPlugin {
                 unsafe {
                     let function_name = format!("{}", self.session_info.active_demo).to_string();
                     let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
-                    if demo.is_ok() {
-                        let demo_fn = demo.unwrap();
+                    if let Ok(demo_fn) = demo {
                         return Some(demo_fn(client));
                     }
                 }

@@ -1,24 +1,21 @@
 // TODO:
 
+
+
 // primitives
 // - chamfer cube
 // - spring
 // - trapezoid
 
-// - update pmfx shader
 // - move primitives from ecs to hotline
-
-// - quick video
-// - update matrices ecs
-// - time resource for systems
-
-// ----------
 
 // ui
 // - view menu + saving state
 // - status bar
 
 // ecs
+// - update matrices ecs
+// - time resource for systems
 // - per demo settings
 // - raster examples
 // - draw instanced
@@ -47,8 +44,11 @@
 // - Texture Formats (BC etc)
 
 // DONE:
-// - add textures to dock
-// - option to save config and ini to disk location
+// x quick video
+// x update hotline-data
+// x update pmfx shader
+// x add textures to dock
+// x option to save config and ini to disk location
 // x remove relative path for the repo's plugins
 // x recursive includes?
 // x rename basic > debug
