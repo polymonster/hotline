@@ -1685,7 +1685,7 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     let fsegments = segments as f32;
     for j in 0..segments {
 
-        let joffset = j * 4;
+        let joffset = j * 2;
 
         let top_start = vertices[ft_loop_start + 2 + joffset].clone();
         let top_end = vertices[rt_loop_start + 3 + joffset].clone();
@@ -1693,76 +1693,80 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
         let bottom_start = vertices[ft_loop_start + 0 + joffset].clone();
         let bottom_end = vertices[rt_loop_start + 1 + joffset].clone();
 
-        for i in 0..segments {
+        let cur = (1.0 / fsegments as f32) * j as f32;
+        let v = cur;
+
+        for i in 0..segments+1 {
             let cur = (1.0 / fsegments as f32) * i as f32;
             let next = (1.0 / fsegments as f32) * (i+1) as f32;
+
+            let u = cur;
 
             // upper loop
             let lv0 = lerp(top_start.position, top_end.position, cur);
             let mut vv0 = vertices[fr_loop_start + 3].clone();
             vv0.position = lv0;
 
-            let lv1 = lerp(top_start.position, top_end.position, next);
-            let mut vv1 = vertices[fr_loop_start + 3].clone();
-            vv1.position = lv1;
-
             // bottom loop
             let lv2 = lerp(bottom_start.position, bottom_end.position, cur);
             let mut vv2 = vertices[fr_loop_start + 3].clone();
             vv2.position = lv2;
 
-            let lv3 = lerp(bottom_start.position, bottom_end.position, next);
-            let mut vv3 = vertices[fr_loop_start + 3].clone();
-            vv3.position = lv3;
-
-            let offset = i * 4;
+            let offset = i * 2;
 
             // project central vertices to sphere, 
             let radius = 1.0 - inset;
             if true {
                 vv0.position = centre + normalize(lv0 - centre) * radius;
-                vv1.position = centre + normalize(lv1 - centre) * radius;
                 vv2.position = centre + normalize(lv2 - centre) * radius;
-                vv3.position = centre + normalize(lv3 - centre) * radius;
             }
 
             // welded to the bottom
             if j == 0 {
                 vv2.position = vertices[fr_loop_start + 1 + offset].position;
-                vv3.position = vertices[fr_loop_start + 3 + offset].position;
+                //vv3.position = vertices[fr_loop_start + 3 + offset].position;
             }
             
-            // weld to start
-            if i == 0 {
+            // weld to start / end
+            if i == 0 ||  i == segments {
                 vv2.position = lv2;
                 vv0.position = lv0;
-
                 //vv1.position = centre + normalize(lv1 - centre) * radius * 1.01;
             }
 
-            // weld to end
-            if i == segments-1 {
-                vv3.position = lv3;
-                vv1.position = lv1;
-            }
+            let n = vv0.normal;
+            let t = vv0.tangent;
+            let bt = cross(n, t);
 
             vertices.extend(vec![
-                vv2.clone(),
-                vv0.clone(),
-                vv3.clone(),
-
-                vv3.clone(),
-                vv0.clone(),
-                vv1.clone(),
+                Vertex3D {
+                    position: vv2.position,
+                    normal: n,
+                    tangent: n,
+                    bitangent: bt,
+                    texcoord: vec2f(u, 0.0)
+                },
+                Vertex3D {
+                    position: vv0.position,
+                    normal: n,
+                    tangent: n,
+                    bitangent: bt,
+                    texcoord: vec2f(u, 0.0)
+                }
             ]);
         }
     }
 
-    /*
-    for i in base_index..vertices.len() {
-        indices.push(i);
+    for j in 0..segments {
+        let strip_base = base_index + j * ((segments+1) * 2);
+        for i in 0..segments {
+            let strip_base = strip_base + i * 2;
+            indices.extend(vec![
+                strip_base, strip_base + 1, strip_base + 3, 
+                strip_base, strip_base + 3, strip_base + 2
+            ]);
+        }
     }
-    */
 
     create_mesh_3d(dev, vertices, indices)
 }
