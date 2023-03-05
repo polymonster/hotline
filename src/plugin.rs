@@ -155,8 +155,7 @@ macro_rules! hotline_plugin {
             let ptr = new_plugin::<$input>() as *mut core::ffi::c_void;
             unsafe {
                 let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                *plugin = $input::create();
+                plugin.write($input::create());
             }
             ptr
         }
