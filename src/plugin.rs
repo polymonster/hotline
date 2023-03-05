@@ -139,13 +139,12 @@ macro_rules! hotline_plugin {
     ($input:ident) => {
         /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
         fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
-            unsafe {
-                let layout = std::alloc::Layout::from_size_align(
-                    std::mem::size_of::<T>(),
-                    8,
-                )
-                .unwrap();
-                std::alloc::alloc_zeroed(layout) as *mut T
+            if std::mem::size_of::<T>() == 0 {
+                std::ptr::NonNull::dangling().as_ptr()
+            } else {
+                unsafe {
+                    std::alloc::alloc_zeroed(std::alloc::Layout::new::<T>()) as *mut T
+                }
             }
         }
         
