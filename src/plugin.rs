@@ -138,25 +138,12 @@ impl reloader::ReloadResponder for PluginReloadResponder {
 macro_rules! hotline_plugin {
     ($input:ident) => {
         /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
-        fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
-            if std::mem::size_of::<T>() == 0 {
-                std::ptr::NonNull::dangling().as_ptr()
-            } else {
-                unsafe {
-                    std::alloc::alloc_zeroed(std::alloc::Layout::new::<T>()) as *mut T
-                }
-            }
-        }
-        
         // c-abi wrapper for `Plugin::create`
         #[no_mangle]
         pub fn create() -> *mut core::ffi::c_void {
-            let ptr = new_plugin::<$input>() as *mut core::ffi::c_void;
-            unsafe {
-                let plugin = ptr.cast::<$input>();
-                plugin.write($input::create());
-            }
-            ptr
+            let plugin = $input::create();
+            let ptr = Box::into_raw(Box::new(plugin));
+            ptr.cast()
         }
         
         // c-abi wrapper for `Plugin::update`
