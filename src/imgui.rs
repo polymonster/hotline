@@ -896,8 +896,11 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
             igPushStyleVarVec2(ImGuiStyleVar_WindowPadding as i32, IMVEC2_ZERO);
 
-            let mut window_class = ImGuiWindowClass::default();
-            window_class.DockNodeFlagsOverrideSet = ImGuiDockNodeFlags_NoTabBar;
+            let window_class = ImGuiWindowClass {
+                DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoTabBar,
+                ..Default::default()
+            };
+
             igSetNextWindowClass(&window_class);
 
             igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
@@ -1109,7 +1112,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     /// Push a style colour using ImGuiCol_ flags
     pub fn push_style_colour(&mut self, flags: ImGuiStyleVar, col: Vec4f) {
         unsafe {
-            igPushStyleColorVec4(flags as i32, to_im_vec4(col))
+            igPushStyleColorVec4(flags, to_im_vec4(col))
         }
     }
 
@@ -1182,9 +1185,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     pub fn combo_list(&mut self, label: &str, items: &Vec<String>, selected: &str) -> (bool, String) {
         let mut result = selected.to_string();
         if self.begin_combo(label, selected, ImGuiComboFlags_None as i32) {
-            for i in 0..items.len() {
-                if self.selectable(&items[i], items[i] == selected, ImGuiSelectableFlags_None as i32) {
-                    result = items[i].to_string(); 
+            for item in items {
+                if self.selectable(item, item == selected, ImGuiSelectableFlags_None as i32) {
+                    result = item.to_string(); 
                 }
             }
             self.end_combo();
@@ -1227,12 +1230,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     pub fn button(&mut self, label: &str) -> bool {
         unsafe {
             let null_label = CString::new(label).unwrap();
-            if igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0}) {
-                true
-            }
-            else {
-                false
-            }
+            igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0})
         }
     }
 

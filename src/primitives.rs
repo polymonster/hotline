@@ -27,7 +27,7 @@ pub struct Vertex2D {
 }
 
 /// Inverse golden ratio
-const INV_PHI : f32 = 0.61803398875;
+const INV_PHI : f32 = 0.618034;
 
 /// Returns an orthonormal basis given the axis returning (right, up, at)
 fn basis_from_axis(axis: Vec3f) -> (Vec3f, Vec3f, Vec3f) {
@@ -567,12 +567,12 @@ pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         let n = (i + 1) % 4;
                 
         // 2 tris per-edge 1 up, one down
-        for j in 0..2 {
+        for (j, yextent) in yextent.iter().enumerate() {
             
             // vertices
             let mut t0 = corner[i];
             let t1 = corner[n];
-            let mut t2 = yextent[j];
+            let mut t2 = *yextent;
 
             // tex coords
             let mut tc0 = vec2f(1.0, 0.0);
@@ -674,7 +674,7 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
         vertices.extend(tri);
 
         if recurse {
-            let half_gr = 1.61803398875 / 2.0;
+            let half_gr = INV_PHI / 2.0;
             let internal_angle = 0.309017 * 1.5;
 
             let ev = normalize(t1 - t0);
@@ -696,7 +696,7 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
 
 /// Create an indexed faceted dodecahedron mesh.
 pub fn create_dodecahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
-    let h = f32::pi() * 0.83333333333 * 0.5 * INV_PHI;
+    let h = f32::pi() * 0.8333333 * 0.5 * INV_PHI;
     let mut vertices = dodecahedron_face_in_axis(Vec3f::unit_y(), vec3f(0.0, -h, 0.0), 0.0, true);
     let bottom_vertices = dodecahedron_face_in_axis(-Vec3f::unit_y(), vec3f(0.0, h, 0.0), f32::pi(), true);
     vertices.extend(bottom_vertices);
@@ -733,7 +733,7 @@ pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u3
         let mut sub = subdivide_triangle(t0, &s0, &s1, order + 1, max_order);
         sub.extend(subdivide_triangle(&s0,  t1, &s2, order + 1, max_order));
         sub.extend(subdivide_triangle(&s1, &s0, &s2, order + 1, max_order));
-        sub.extend(subdivide_triangle(&s1, &s2, &t2, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s1, &s2,  t2, order + 1, max_order));
         sub
     }
 }
@@ -849,10 +849,10 @@ pub fn create_icosasphere_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -
         let n = get_triangle_normal(vertices[i].position, vertices[i + 2].position, vertices[i + 1].position);
         let b = normalize(vertices[i].position - vertices[i + 2].position);
         let t = cross(n, b);
-        for j in i..i+3 {
-            vertices[j].normal = n;
-            vertices[j].bitangent = b;
-            vertices[j].tangent = t;
+        for v in vertices.iter_mut().skip(i).take(3) {
+            v.normal = n;
+            v.bitangent = b;
+            v.tangent = t;
         }
     }
 
@@ -946,13 +946,13 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
     }
         
     // bottom face
-    for i in 0..segments {
+    for point in bottom_points.iter().take(segments) {
         vertices.push(Vertex3D{
-            position: bottom_points[i],
+            position: *point,
             normal: -Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
         });
     }
 

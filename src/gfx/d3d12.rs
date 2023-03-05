@@ -2081,9 +2081,9 @@ impl super::Device for Device {
         // hash together the rt, ds and sample count to get a unique hash for format combo
         let mut fmthash = DefaultHasher::new();
         sample_count.unwrap().hash(&mut fmthash);
-        (ds_format.0 as u32).hash(&mut fmthash);
+        ds_format.0.hash(&mut fmthash);
         for rt in &formats {
-            (rt.0 as u32).hash(&mut fmthash);
+            rt.0.hash(&mut fmthash);
         }
         
         Ok(RenderPass {
@@ -2160,8 +2160,8 @@ impl super::Device for Device {
                     if let Some(dsv) = &tex.dsv {
                         self.dsv_heap.deallocate_internal(dsv)
                     }
-                    cur = i;
                     todo = true;
+                    cur = i;
                     break;
                 }
             }
@@ -2454,7 +2454,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(tex) = &barrier.texture {
             let res = match subresource {
                 super::Subresource::Resource => &tex.resource,
-                super::Subresource::ResolveResource => &tex.resolved_resource.as_ref().unwrap()
+                super::Subresource::ResolveResource => tex.resolved_resource.as_ref().unwrap()
             };
             let barrier = transition_barrier(
                 res,
@@ -2685,7 +2685,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             }
             else {
                 return Err(super::Error {
-                    msg: format!("t")
+                    msg: format!("hotline::gfx::d3d12:: failed to resolve texture subresource {}", subresource)
                 })
             }
         }
