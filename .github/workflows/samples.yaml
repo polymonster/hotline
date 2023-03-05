@@ -1,5 +1,5 @@
 name: samples
-on: [push]
+on: [push, pull_request]
 jobs:
   win32:
     runs-on: self-hosted
