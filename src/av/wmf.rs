@@ -139,7 +139,7 @@ impl VideoPlayer {
 
     fn cleanup_textures(&mut self, device: &mut d3d12::Device) {
         // remove elements from the cleanup_textures array
-        while self.cleanup_textures.len() > 0 {
+        while !self.cleanup_textures.is_empty() {
             let tex = self.cleanup_textures.remove(0);
             device.destroy_texture(tex);
         }

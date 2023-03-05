@@ -38,25 +38,25 @@ pub fn build_all() {
     let path = super::get_data_path("..");
     let output = if super::get_config_name() == "release" {
         Command::new("cargo")
-            .current_dir(format!("{}", path))
+            .current_dir(path)
             .arg("build")
-            .arg(format!("{}", "--release"))
+            .arg("--release")
             .output()
             .expect("hotline::hot_lib:: hot lib failed to build!")
     }
     else {
         Command::new("cargo")
-            .current_dir(format!("{}", path))
+            .current_dir(path)
             .arg("build")
             .output()
             .expect("hotline::hot_lib:: hot lib failed to build!")
     };
 
-    if output.stdout.len() > 0 {
+    if !output.stdout.is_empty() {
         println!("{}", String::from_utf8(output.stdout).unwrap());
     }
 
-    if output.stderr.len() > 0 {
+    if !output.stderr.is_empty() {
         println!("{}", String::from_utf8(output.stderr).unwrap());
     }
 }
@@ -90,34 +90,32 @@ impl reloader::ReloadResponder for PluginReloadResponder {
     fn build(&mut self) -> ExitStatus {
         let output = if super::get_config_name() == "release" {
             Command::new("cargo")
-                .current_dir(format!("{}", self.path))
+                .current_dir(&self.path)
                 .arg("build")
-                .arg(format!("{}", "--release"))
+                .arg("--release")
                 .arg("-p")
-                .arg(format!("{}", self.name))
+                .arg(&self.name)
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         }
         else {
             Command::new("cargo")
-                .current_dir(format!("{}", self.path))
+                .current_dir(&self.path)
                 .arg("build")
                 .arg("-p")
-                .arg(format!("{}", self.name))
+                .arg(&self.name)
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         };
 
         let mut stdout = io::stdout().lock();
 
-        if output.stdout.len() > 0 {
+        if !output.stdout.is_empty() {
             stdout.write_all(&output.stdout).unwrap();
-            //println!("{}", String::from_utf8(output.stdout).unwrap());
         }
 
-        if output.stderr.len() > 0 {
+        if !output.stderr.is_empty() {
             stdout.write_all(&output.stderr).unwrap();
-            //println!("{}", String::from_utf8(output.stderr).unwrap());
         }
 
         output.status

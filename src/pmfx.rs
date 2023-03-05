@@ -1,4 +1,4 @@
-
+#![allow(clippy::collapsible_if)] 
 
 use crate::gfx::SwapChain;
 use crate::gfx::Texture;
@@ -82,6 +82,12 @@ struct PmfxTrackingInfo {
     modified_time: SystemTime,
 }
 
+// pipelines (name) > permutation (mask : u32) which is tuple (build_hash, pipeline)
+type FormatPipelineMap<T> = HashMap<String, HashMap<u32, (PmfxHash, T)>>;
+
+// hash of the view in .0, the view itself in .1 the source view name which was used to generate the instance is stored in .2, 
+type TrackedView<D> = (PmfxHash, Arc<Mutex<View<D>>>, String);
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
@@ -92,8 +98,8 @@ pub struct Pmfx<D: gfx::Device> {
     pmfx_folders: HashMap<String, String>, 
     /// Updated by calling 'update_window' this will cause any tracked textures to check for resizes and rebuild textures if necessary
     window_sizes: HashMap<String, (f32, f32)>,
-    /// Nested structure of: format (u64) > pipelines (name) > permutation (mask) which is tuple (build_hash, pipeline)
-    render_pipelines: HashMap<PmfxHash, HashMap<String, HashMap<u32, (PmfxHash, D::RenderPipeline)>>>,
+    /// Nested structure of: format (u64) > FormatPipelineMap
+    render_pipelines: HashMap<PmfxHash, FormatPipelineMap<D::RenderPipeline>>,
     /// Compute Pipelines grouped by name then as a tuple (build_hash, pipeline)
     compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
     /// Shaders stored along with their build hash for quick checks if reload is necessary
@@ -101,7 +107,7 @@ pub struct Pmfx<D: gfx::Device> {
     /// Texture map of tracked texture info
     textures: HashMap<String, (PmfxHash, TrackedTexture<D>)>,
     /// Built views that are used in view function dispatches, the source view name which was used to generate the instnace is stored in .2 for hash checking
-    views: HashMap<String, (PmfxHash, Arc<Mutex<View<D>>>, String)>,
+    views: HashMap<String, TrackedView<D>>,
     /// Map of camera constants that can be retrieved by name for use as push constants
     cameras: HashMap<String, CameraConstants>,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
@@ -405,33 +411,33 @@ impl<D> Pmfx<D> where D: gfx::Device {
         };
 
         // check if we are already loaded
-        if !self.pmfx_tracking.contains_key(&pmfx_name) {
-            println!("hotline_rs::pmfx:: loading: {}", pmfx_name);
-            //  deserialise pmfx pipelines from file
-            let info_filepath = folder.join(format!("{}.json", pmfx_name));
-            let pmfx_data = fs::read(&info_filepath)?;
-            let file : File = serde_json::from_slice(&pmfx_data).unwrap();
-
-            // prepend the pmfx name to the shaders so we can avoid collisions
-            for name in file.pipelines.keys() {
-                // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
-                self.pmfx_folders.insert(name.to_string(), String::from(filepath));
-            }
-
-            // create tracking info to check if the pmfx has been rebuilt
-            self.pmfx_tracking.insert(pmfx_name, PmfxTrackingInfo {
-                filepath: info_filepath.to_path_buf(),
-                modified_time: fs::metadata(&info_filepath).unwrap().modified().unwrap()
-            });
-
-            // add files from pmfx for tracking
-            for dep in &file.dependencies {
-                self.reloader.add_file(dep);
-            }
-
-            // merge into pmfx
-            self.merge_pmfx(file);
-        }
+        if let std::collections::hash_map::Entry::Vacant(e) = self.pmfx_tracking.entry(pmfx_name.to_string()) {
+             println!("hotline_rs::pmfx:: loading: {}", pmfx_name);
+             //  deserialise pmfx pipelines from file
+             let info_filepath = folder.join(format!("{}.json", pmfx_name));
+             let pmfx_data = fs::read(&info_filepath)?;
+             let file : File = serde_json::from_slice(&pmfx_data).unwrap();
+ 
+             // prepend the pmfx name to the shaders so we can avoid collisions
+             for name in file.pipelines.keys() {
+                 // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
+                 self.pmfx_folders.insert(name.to_string(), String::from(filepath));
+             }
+ 
+             // create tracking info to check if the pmfx has been rebuilt
+             e.insert(PmfxTrackingInfo {
+                 modified_time: fs::metadata(&info_filepath).unwrap().modified().unwrap(),
+                 filepath: info_filepath
+             });
+ 
+             // add files from pmfx for tracking
+             for dep in &file.dependencies {
+                 self.reloader.add_file(dep);
+             }
+ 
+             // merge into pmfx
+             self.merge_pmfx(file);
+         }
 
         Ok(())
     }
@@ -674,7 +680,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
             for (graph_view_name, node) in &pmfx_graph {
                 // create view for each node
-                self.create_view(device, &node.view, graph_view_name, &node)?;
+                self.create_view(device, &node.view, graph_view_name, node)?;
             }
         }
         Ok(())
@@ -694,7 +700,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 let barrier_name = format!("barrier_resolve-{}-{}", view_name, texture_name);
                 self.render_graph_execute_order.push(barrier_name.to_string());
 
-                if let Some(tex) = self.get_texture(&texture_name) {
+                if let Some(tex) = self.get_texture(texture_name) {
 
                     // prevent resolving non msaa surfaces
                     if !tex.is_resolvable() {
@@ -706,7 +712,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // transition main resource into resolve src
                     let mut cmd_buf = device.create_cmd_buf(1);
                     cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-                        texture: Some(self.get_texture(&texture_name).unwrap()),
+                        texture: Some(self.get_texture(texture_name).unwrap()),
                         buffer: None,
                         state_before: state,
                         state_after: ResourceState::ResolveSrc,
@@ -714,7 +720,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     // transition resolve resource into resolve dst
                     cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
-                            texture: Some(self.get_texture(&texture_name).unwrap()),
+                            texture: Some(self.get_texture(texture_name).unwrap()),
                             buffer: None,
                             state_before: target_state,
                             state_after: ResourceState::ResolveDst,
@@ -727,7 +733,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     // transition the resolve to shader resource for sampling
                     cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
-                            texture: Some(self.get_texture(&texture_name).unwrap()),
+                            texture: Some(self.get_texture(texture_name).unwrap()),
                             buffer: None,
                             state_before: ResourceState::ResolveDst,
                             state_after: target_state,
@@ -737,7 +743,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     // insert barrier
                     cmd_buf.close()?;
-                    self.barriers.insert(barrier_name.to_string(), cmd_buf);
+                    self.barriers.insert(barrier_name, cmd_buf);
 
                     // update track state
                     texture_barriers.remove(texture_name);
@@ -765,13 +771,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
                 cmd_buf.transition_barrier(&gfx::TransitionBarrier {
-                    texture: Some(self.get_texture(&texture_name).unwrap()),
+                    texture: Some(self.get_texture(texture_name).unwrap()),
                     buffer: None,
                     state_before: state,
                     state_after: target_state,
                 });
                 cmd_buf.close()?;
-                self.barriers.insert(barrier_name.to_string(), cmd_buf);
+                self.barriers.insert(barrier_name, cmd_buf);
     
                 // update track state
                 texture_barriers.remove(texture_name);
@@ -838,7 +844,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // wait for dependencies
                     if let Some(depends_on) = &instance.depends_on {
                         let mut passes = false;
-                        if depends_on.len() > 0 {
+                        if !depends_on.is_empty() {
                             for d in depends_on {
                                 if !pmfx_graph.contains_key(d) {
                                     passes = true;
@@ -879,7 +885,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // create pipelines requested for this view instance with the pass format
                     if let Some(view_pipelines) = &instance.pipelines {
                         for pipeline in view_pipelines {
-                            let view = self.get_view(&graph_view_name)?;
+                            let view = self.get_view(graph_view_name)?;
                             let view = view.clone();
                             let view = view.lock().unwrap();
                             self.create_pipeline(device, pipeline, &view.pass)?;
@@ -1097,11 +1103,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // Find views that have changed by hash
                 let mut reload_views = Vec::new();
                 for (name, view) in &self.views {
-                    if self.pmfx.views.contains_key(&view.2) {
-                        if self.pmfx.views.get(&view.2).unwrap().hash != view.0 || 
-                            reload_texture_views.contains(name) {
-                            reload_views.push((view.2.to_string(), name.to_string()));
-                        }
+                    if self.pmfx.views.contains_key(&view.2) &&
+                    (self.pmfx.views.get(&view.2).unwrap().hash != view.0 || reload_texture_views.contains(name)) {
+                        reload_views.push((view.2.to_string(), name.to_string()));
                     }
                 }
 
@@ -1165,7 +1169,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     // create pipeline with the pass from compatible view
                     if let Some(compatiblew_view) = compatiblew_view {
-                        let view = self.get_view(&compatiblew_view).unwrap().clone();
+                        let view = self.get_view(compatiblew_view).unwrap().clone();
                         let view = view.lock().unwrap();
                         self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
                     }
@@ -1175,9 +1179,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 }
 
                 // update the timestamp on the tracking info
-                self.pmfx_tracking.get_mut(&reload_filepath).and_then(|t| {
+                self.pmfx_tracking.get_mut(&reload_filepath).map(|t| {
                     t.modified_time = SystemTime::now();
-                    Some(t)
+                    t
                 });
             }
 
@@ -1196,7 +1200,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let tex = self.textures.remove(texture_name).unwrap();
             device.destroy_texture(tex.1.texture);
             // create with new dimensions from 'window_sizes'
-            self.create_texture(device, &texture_name).unwrap();
+            self.create_texture(device, texture_name).unwrap();
         }
     }
 
@@ -1366,7 +1370,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
         if open {
             let mut imgui_open = open;
             if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::NONE) {
-                for (_, texture) in &self.textures {
+                for texture in self.textures.values() {
                     
                     let thumb_size = 256.0;
                     let aspect = texture.1.size.0 as f32 / texture.1.size.1 as f32;
@@ -1386,28 +1390,28 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
                 imgui.text("Shaders");
                 imgui.separator();
                 for shader in self.pmfx.shaders.keys() {
-                    imgui.text(&shader);
+                    imgui.text(shader);
                 }
                 imgui.separator();
 
                 imgui.text("Pipelines");
                 imgui.separator();
                 for pipeline in self.pmfx.pipelines.keys() {
-                    imgui.text(&pipeline);
+                    imgui.text(pipeline);
                 }
                 imgui.separator();
 
                 imgui.text("Render Graphs");
                 imgui.separator();
                 for graph in self.pmfx.render_graphs.keys() {
-                    imgui.text(&graph);
+                    imgui.text(graph);
                 }
                 imgui.separator();
 
                 imgui.text("Cameras");
                 imgui.separator();
                 for camera in self.cameras.keys() {
-                    imgui.text(&camera);
+                    imgui.text(camera);
                 }
                 imgui.separator();
             }
@@ -1457,11 +1461,11 @@ impl ReloadResponder for PmfxReloadResponder {
             .output()
             .expect("hotline::hot_lib:: hot pmfx failed to compile!");
 
-        if output.stdout.len() > 0 {
+        if !output.stdout.is_empty() {
             println!("{}", String::from_utf8(output.stdout).unwrap());
         }
 
-        if output.stderr.len() > 0 {
+        if !output.stderr.is_empty() {
             println!("{}", String::from_utf8(output.stderr).unwrap());
         }
 

@@ -1728,11 +1728,15 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
                 vv3.position = vertices[fr_loop_start + 3 + offset].position;
             }
             
+            // weld to start
             if i == 0 {
                 vv2.position = lv2;
                 vv0.position = lv0;
+
+                //vv1.position = centre + normalize(lv1 - centre) * radius * 1.01;
             }
 
+            // weld to end
             if i == segments-1 {
                 vv3.position = lv3;
                 vv1.position = lv1;

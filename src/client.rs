@@ -146,7 +146,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         };
         
         // override by the supplied user config
-        let user_config = info.user_config.unwrap_or_else(|| saved_user_config);
+        let user_config = info.user_config.unwrap_or(saved_user_config);
         
         // app
         let mut app = A::create(os::AppInfo {
@@ -214,8 +214,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let mut pmfx = pmfx::Pmfx::<D>::create();
 
         // core pipelines
-        pmfx.load(&super::get_data_path("data/shaders/imdraw").as_str())?;
-        pmfx.create_pipeline(&mut device, "imdraw_blit", &swap_chain.get_backbuffer_pass())?;
+        pmfx.load(super::get_data_path("data/shaders/imdraw").as_str())?;
+        pmfx.create_pipeline(&device, "imdraw_blit", swap_chain.get_backbuffer_pass())?;
 
         let size = main_window.get_size();
         pmfx.update_window(&mut device, (size.x as f32, size.y as f32), "main_window");
@@ -305,21 +305,17 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         
         // main window pos / size
         let current = self.main_window.get_window_rect();
-        if self.user_config.main_window_rect != current {
-            if current.x > 0 && current.y > 0 {
-                self.user_config.main_window_rect = self.main_window.get_window_rect();
-                invalidated = true;
-            }
+        if current.x > 0 && current.y > 0 && self.user_config.main_window_rect != current {
+            self.user_config.main_window_rect = self.main_window.get_window_rect();
+            invalidated = true;
         }
 
         // console window pos / size
         if let Some(console_window_rect) = self.user_config.console_window_rect {
             let current = self.app.get_console_window_rect();
-            if console_window_rect != current {
-                if current.x > 0 && current.y > 0 {
-                    self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
-                    invalidated = true;
-                }
+            if current.x > 0 && current.y > 0 && console_window_rect != current {
+                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+                invalidated = true;
             }
         }
         else {
@@ -435,13 +431,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
 
         println!("hotline_rs::client:: loading plugin: {}/{}", lib_path, name);
-        let lib = hot_lib_reloader::LibReloader::new(lib_path.to_string(), name.to_string(), None).unwrap();
+        let lib = hot_lib_reloader::LibReloader::new(&lib_path, name, None).unwrap();
         unsafe {
             // create instance if it is a Plugin trait
             let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-            let instance = if create.is_ok() {
+            
+            let instance = if let Ok(create) = create {
                 // create function returns pointer to instance
-                create.unwrap()()
+                create()
             }
             else {
                 // allow null instances, in plugins which only export function calls and not plugin traits
@@ -465,13 +462,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // plugins inside the main repro can have the abs path truncated so they are portable
         let hotline_path = super::get_data_path("..");
-        let path = String::from(abs_path).replace(&hotline_path, "").replace("\\", "/");
+        let path = abs_path.replace(&hotline_path, "").replace('\\', "/");
 
         if let Some(plugin_info) = &mut self.user_config.plugins {
             if plugin_info.contains_key(name) {
                 plugin_info.remove(name);
             }
-            plugin_info.insert(name.to_string(), PluginInfo { path: path.to_string() });
+            plugin_info.insert(name.to_string(), PluginInfo { path });
         }
     }
 
@@ -485,8 +482,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 // allow us to add plugins from files (libs)
                 if self.imgui.menu_item("Open") {
                     let file = A::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".toml"]);
-                    if file.is_ok() {
-                        let file = file.unwrap();
+                    if let Ok(file) = file {
                         if !file.is_empty() {
                             // add plugin from dll
                             let plugin_path = PathBuf::from(file[0].to_string());
@@ -500,8 +496,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 // save configs for presets
                 if self.imgui.menu_item("Save User Config") {
                     let folder = A::open_file_dialog(os::OpenFileDialogFlags::FOLDERS, Vec::new());
-                    if folder.is_ok() {
-                        let folder = folder.unwrap();
+                    if let Ok(folder) = folder {
                         if !folder.is_empty() {
                             self.save_configs_to_location(&folder[0]);
                             self.imgui.save_ini_settings_to_location(&folder[0]);
@@ -546,8 +541,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
                 let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
-                if ui.is_ok() {
-                    let ui_fn = ui.unwrap();
+                if let Ok(ui_fn) = ui {
                     let imgui_ctx = self.imgui.get_current_context();
                     self = ui_fn(self, plugin.instance, imgui_ctx);
                 }
@@ -581,8 +575,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 unsafe {
                     let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
                     let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
-                    if unload.is_ok() {
-                        let unload_fn = unload.unwrap();
+                    if let Ok(unload_fn) = unload {
                         self = unload_fn(self, plugin.instance);
                     }
                 }
@@ -631,8 +624,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 // create a new instance of the plugin
                 unsafe {
                     let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-                    if create.is_ok() {
-                        let create_fn = create.unwrap();
+                    if let Ok(create_fn) = create {
                         plugin.instance = create_fn();
                     }
                 }
@@ -647,8 +639,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             unsafe {
                 if plugin.state == PluginState::Setup {
                     let setup = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
-                    if setup.is_ok() {
-                        let setup_fn = setup.unwrap();
+                    if let Ok(setup_fn) = setup {
                         self = setup_fn(self, plugin.instance);
                     }
                 }
@@ -660,8 +651,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
                 let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                if update.is_ok() {
-                    let update_fn = update.unwrap();
+                if let Ok(update_fn) = update {
                     self = update_fn(self, plugin.instance);
                 }
             }
@@ -698,7 +688,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // deserialise user data saved from a previous session
         if let Some(plugin_data) = &self.user_config.plugin_data {
             if plugin_data.contains_key(plugin_name) {
-                serde_json::from_slice(&plugin_data[plugin_name].as_bytes()).unwrap()
+                serde_json::from_slice(plugin_data[plugin_name].as_bytes()).unwrap()
             }
             else {
                 T::default()
