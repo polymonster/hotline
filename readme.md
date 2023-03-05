@@ -156,7 +156,7 @@ pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -
 
 #### Setup Systems
 
-You can supply `setup` systems to add entities into a scene, when a dynamic code reload happens the world will be cleared and the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple `setup` systems and the will be executed concurrently.
+You can supply `setup` systems to add entities into a scene, when a dynamic code reload happens the world will be cleared and the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple `setup` systems and they will be executed concurrently.
 
 ```rust
 #[no_mangle]
@@ -184,42 +184,34 @@ You can specify render graphs in `pmfx` which set up `views` which get dispatche
 ```rust
 #[no_mangle]
 pub fn render_meshes(
-    pmfx: bevy_ecs::prelude::Res<PmfxRes>,
-    view_name: String,
-    view_proj_query: bevy_ecs::prelude::Query<&ViewProjectionMatrix>,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) {
+    pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
-    // unpack
     let pmfx = &pmfx.0;
-    let arc_view = pmfx.get_view(&view_name).unwrap();
-    let view = arc_view.lock().unwrap();
-    let fmt = view.pass.get_format_hash();
 
-    let mesh_debug = pmfx.get_render_pipeline_for_format("mesh_debug", fmt);
-    if mesh_debug.is_none() {
-        return;
-    }
+    let fmt = view.pass.get_format_hash();
+    let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
 
     // setup pass
     view.cmd_buf.begin_render_pass(&view.pass);
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
+    view.cmd_buf.set_render_pipeline(&mesh_debug);
+    view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
-    view.cmd_buf.set_render_pipeline(&mesh_debug.unwrap());
-
-    for view_proj in &view_proj_query {
-        view.cmd_buf.push_constants(0, 16, 0, &view_proj.0);
-        for (world_matrix, mesh) in &mesh_draw_query {
-            // draw
-            view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-            view.cmd_buf.set_index_buffer(&mesh.0.ib);
-            view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-            view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-        }
+    // make draw calls
+    for (world_matrix, mesh) in &mesh_draw_query {
+        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     // end / transition / execute
     view.cmd_buf.end_render_pass();
+    Ok(())
 }
 ```
 
@@ -408,6 +400,7 @@ let psc_info = gfx::ShaderInfo {
 };
 let fs = device.create_shader(&psc_info, &psc_data)?;
 
+// create the pipeline itself with the vs and fs
 let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
     vs: Some(&vs),
     fs: Some(&fs),
@@ -486,7 +479,7 @@ swap_chain.swap(&device);
 
 Pmfx builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html) module and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
 
-You can supply [jsn]() config files to specify render pipelines, textures (render targets), views (render pass with cameras) and render graphs. Useful defaults are supplied for all fields and combined with jsn inheritance it can aid creating many different render strategies with minimal repetition.
+You can supply [jsn](https://github.com/polymonster/jsnr) config files to specify render pipelines, textures (render targets), views (render pass with cameras) and render graphs. Useful defaults are supplied for all fields and combined with jsn inheritance it can aid creating many different render strategies with minimal repetition.
 
 ```pmfx
 textures: {
@@ -559,7 +552,7 @@ render_graphs: {
 }
 ```
 
-When pmfx is built shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) which contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts can automatically be generated.
+When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) which contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts can automatically be generated.
 
 ## Examples
 
@@ -581,7 +574,7 @@ cargo run --example triangle
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render graphs, code).
 - Concise low level graphics api... think somewhere in-between Metal and Direct3D12.
-- High level data driven graphics api for ease of use and speed.
+- High level data driven graphics api (`pmfx`) for ease of use and speed.
 - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless, ray-tracing).
 - Flexibility to easily create and use different rendering strategies (deferred vs forward, gpu-driven vs cpu driven, etc).
 - Hardware accelerated video decoding.
