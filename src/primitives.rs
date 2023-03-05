@@ -674,7 +674,7 @@ fn dodecahedron_face_in_axis(axis: Vec3f, pos: Vec3f, start_angle: f32, recurse:
         vertices.extend(tri);
 
         if recurse {
-            let half_gr = INV_PHI / 2.0;
+            let half_gr = f32::phi() / 2.0;
             let internal_angle = 0.309017 * 1.5;
 
             let ev = normalize(t1 - t0);
