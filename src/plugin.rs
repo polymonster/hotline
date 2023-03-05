@@ -138,34 +138,19 @@ impl reloader::ReloadResponder for PluginReloadResponder {
 macro_rules! hotline_plugin {
     ($input:ident) => {
         /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
-        fn new_plugin<T : Plugin<crate::gfx_platform::Device, crate::os_platform::App> + Sized>() -> *mut T {
-            unsafe {
-                let layout = std::alloc::Layout::from_size_align(
-                    std::mem::size_of::<T>(),
-                    8,
-                )
-                .unwrap();
-                std::alloc::alloc_zeroed(layout) as *mut T
-            }
-        }
-        
         // c-abi wrapper for `Plugin::create`
         #[no_mangle]
         pub fn create() -> *mut core::ffi::c_void {
-            let ptr = new_plugin::<$input>() as *mut core::ffi::c_void;
-            unsafe {
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
-                let plugin = plugin.as_mut().unwrap();
-                *plugin = $input::create();
-            }
-            ptr
+            let plugin = $input::create();
+            let ptr = Box::into_raw(Box::new(plugin));
+            ptr.cast()
         }
         
         // c-abi wrapper for `Plugin::update`
         #[no_mangle]
         pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
             unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.update(client)
             }
@@ -175,7 +160,7 @@ macro_rules! hotline_plugin {
         #[no_mangle]
         pub fn setup(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
             unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.setup(client)
             }
@@ -185,7 +170,7 @@ macro_rules! hotline_plugin {
         #[no_mangle]
         pub fn unload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
             unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.unload(client)
             }
@@ -195,7 +180,7 @@ macro_rules! hotline_plugin {
         #[no_mangle]
         pub fn ui(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void, imgui_ctx: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
             unsafe { 
-                let plugin = std::mem::transmute::<*mut core::ffi::c_void, *mut $input>(ptr);
+                let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 client.imgui.set_current_context(imgui_ctx);
                 plugin.ui(client)
