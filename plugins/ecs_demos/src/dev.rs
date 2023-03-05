@@ -1580,26 +1580,24 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
 
     // join edges
     let join_edge = |edge_indices: [usize; 4], clamp_axis: usize, vertices: &mut Vec<Vertex3D>, indices: &mut Vec<usize>| {
-        let mut v0 = vertices[edge_indices[0]].clone();
-        let mut v1 = vertices[edge_indices[1]].clone();
-        let mut v2 = vertices[edge_indices[2]].clone();
-        let mut v3 = vertices[edge_indices[3]].clone();
-
-        let bottom_start = v0.position;
-        let top_start = v1.position; 
-        let top_end = v2.position;
-        let bottom_end = v3.position;   
-
+        let bottom_start = vertices[edge_indices[0]].position;
+        let top_start = vertices[edge_indices[1]].position; 
+        let top_end = vertices[edge_indices[2]].position;
+        let bottom_end = vertices[edge_indices[3]].position;   
         let fsegments = segments as f32;
-        for i in 0..segments {
+        let base_index = vertices.len();
+        
+        let mut pivot = bottom_start - vertices[edge_indices[0]].normal * (1.0 - inset);
+
+        for i in 0..segments+1 {
             let cur = (1.0 / fsegments as f32) * i as f32;
             let next = (1.0 / fsegments as f32) * (i+1) as f32;
+            let v = cur * 0.25;
     
             // linear lerp
             let lv0 = lerp(bottom_start, bottom_end, cur);
+            let lvt = lerp(bottom_start, bottom_end, next);
             let lv1 = lerp(top_start, top_end, cur);
-            let lv2 = lerp(top_start, top_end, next);
-            let lv3 = lerp(bottom_start, bottom_end, next);
     
             // project corner to unit cube (chebyshev_normalize)
             let cur = if cur > 0.5 {
@@ -1608,39 +1606,45 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
             else {
                 cur
             };
-    
-            let next = if next > 0.5 {
-                1.0 - next
-            }
-            else {
-                next
-            };
-    
+
             // lerp between square corner and cut corner, forming circle
-            v0.position = lerp(chebyshev_normalize(lv0), lv0, cur);
-            v1.position = lerp(chebyshev_normalize(lv1), lv1, cur);
-            v3.position = lerp(chebyshev_normalize(lv2), lv2, next);
-            v2.position = lerp(chebyshev_normalize(lv3), lv3, next);
+            let mut p0 = lerp(chebyshev_normalize(lv0), lv0, cur);
+            let mut p1 = lerp(chebyshev_normalize(lv1), lv1, cur);
+            let mut pt = lerp(chebyshev_normalize(lvt), lvt, cur);
     
             // ..
-            v0.position[clamp_axis] = bottom_start[clamp_axis];
-            v1.position[clamp_axis] = top_start[clamp_axis];
-            v3.position[clamp_axis] = top_start[clamp_axis];
-            v2.position[clamp_axis] = bottom_start[clamp_axis];
+            p0[clamp_axis] = bottom_start[clamp_axis];
+            p1[clamp_axis] = top_start[clamp_axis];
+
+            let n = normalize(p0 - pivot);
+            let t = normalize(pt - p0);
+            let bt = cross(n, t);
     
-            let base_index = vertices.len();
             vertices.extend(
                 vec![
-                    v0.clone(),
-                    v1.clone(),
-                    v2.clone(),
-                    v3.clone(),
+                    Vertex3D {
+                        position: p0,
+                        normal: n,
+                        tangent: n,
+                        bitangent: bt,
+                        texcoord: vec2f(0.0, v)
+                    },
+                    Vertex3D {
+                        position: p1,
+                        normal: n,
+                        tangent: n,
+                        bitangent: bt,
+                        texcoord: vec2f(1.0, v)
+                    }
                 ]
             );
-    
+        }
+
+        for i in 0..segments {
+            let strip_base = base_index + i * 2;
             indices.extend(vec![
-                base_index, base_index + 1, base_index + 3, 
-                base_index, base_index + 3, base_index + 2
+                strip_base, strip_base + 1, strip_base + 3, 
+                strip_base, strip_base + 3, strip_base + 2
             ]);
         }
     };
@@ -1754,9 +1758,11 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
         }
     }
 
+    /*
     for i in base_index..vertices.len() {
         indices.push(i);
     }
+    */
 
     create_mesh_3d(dev, vertices, indices)
 }
