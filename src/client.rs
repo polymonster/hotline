@@ -405,7 +405,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
-
         let abs_path = if path == "/plugins" {
             super::get_data_path("../plugins")
         }
@@ -413,8 +412,16 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             String::from(path)
         };
 
-        let lib_path = abs_path.to_string() + "/target/" + crate::get_config_name();
-        let src_path = abs_path.to_string() + "/" + name + "/src/lib.rs";
+        let lib_path = PathBuf::from(abs_path.to_string())
+            .join("target")
+            .join(crate::get_config_name())
+            .to_str().unwrap().to_string();
+        
+        let src_path = PathBuf::from(abs_path.to_string())
+            .join(name)
+            .join("src")
+            .join("lib.rs")
+            .to_str().unwrap().to_string();
 
         let plugin = PluginReloadResponder {
             name: name.to_string(),
