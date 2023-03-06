@@ -1652,7 +1652,6 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     };
 
     // join sides
-    let fr_loop_start = vertices.len();
     join_edge([1, 2, 10, 11], 1, &mut vertices, &mut indices); // front-right
     join_edge([8, 9, 6, 7], 1, &mut vertices, &mut indices); // right-back
     join_edge([4, 5, 12, 15], 1, &mut vertices, &mut indices); // back-left
@@ -1665,62 +1664,80 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     let rt_loop_start = vertices.len();
     join_edge([9, 10, 19, 18], 2, &mut vertices, &mut indices); // right-top
 
+    let bt_loop_start = vertices.len();
     join_edge([5, 6, 16, 19], 0, &mut vertices, &mut indices); // back-top
+
+    let lt_loop_start = vertices.len();
     join_edge([14, 15, 16, 17], 2, &mut vertices, &mut indices); // left-top
 
     // join bottom
+    let fb_loop_start = vertices.len();
     join_edge([0, 1, 22, 23], 0, &mut vertices, &mut indices); // front-bottom
+
+    let rb_loop_start = vertices.len();
     join_edge([11, 8, 22, 21], 2, &mut vertices, &mut indices); // right-bottom
+
+    let bb_loop_start = vertices.len();
     join_edge([7, 4, 21, 20], 0, &mut vertices, &mut indices); // back-bottom
+
+    let lb_loop_start = vertices.len();
     join_edge([12, 13, 20, 23], 2, &mut vertices, &mut indices); // left-bottom
 
-    // join corners
-    // 2, 10, 18
-    let base_index = vertices.len();
-    let centre = splat3f(inset);
-    let fsegments = segments as f32;
-    let angle_step = (f32::pi() / 2.0) / fsegments;
-    let radius = 1.0 - inset;
+    let join_corner = |start_loop_start: usize, end_loop_start: usize, vertices: &mut Vec<Vertex3D>, indices: &mut Vec<usize>| {
+        let base_index = vertices.len();        
+        let fsegments = segments as f32;
+        let radius = 1.0 - inset;
+        let centre = vertices[start_loop_start].position - vertices[start_loop_start].normal * radius;
 
-    for j in 0..segments+1 {
-        let joffset = j * 2;
-        let start = vertices[ft_loop_start + 0 + joffset].position;
-        let end = vertices[rt_loop_start + 1 + joffset].position;
-        let v = (1.0 / fsegments as f32) * j as f32;
-
-        for i in 0..segments+1 {
-            let u = (1.0 / fsegments as f32) * i as f32;
-
-            let mut lv2 = lerp(start, end, u);
-
-            let n = normalize(lv2 - centre);
-            let t = n; // TODO:
-            let bt = cross(n, t);
-
-            vertices.extend(vec![
-                Vertex3D {
-                    position: centre + normalize(lv2 - centre) * radius,
-                    normal: n,
-                    tangent: n,
-                    bitangent: bt,
-                    texcoord: vec2f(u, v)
-                },
-            ]);
+        for j in 0..segments+1 {
+            let joffset = j * 2;
+            let start = vertices[start_loop_start + joffset].position;
+            let end = vertices[end_loop_start + 1 + joffset].position;
+            let v = (1.0 / fsegments as f32) * j as f32;
+    
+            for i in 0..segments+1 {
+                let u = (1.0 / fsegments as f32) * i as f32;
+    
+                let lv2 = lerp(start, end, u);
+    
+                let n = normalize(lv2 - centre);
+                let t = n; // TODO:
+                let bt = cross(n, t);
+    
+                vertices.extend(vec![
+                    Vertex3D {
+                        position: centre + normalize(lv2 - centre) * radius,
+                        normal: n,
+                        tangent: n,
+                        bitangent: bt,
+                        texcoord: vec2f(u, v)
+                    },
+                ]);
+            }
         }
-    }
-
-    for j in 0..segments {
-        let ycur = base_index + j * (segments+1);
-        let ynext = base_index + (j+1) * (segments+1);
-        for i in 0..segments {
-            let xcur = ycur + i;
-            let xnext = ynext + i;
-            indices.extend(vec![
-                xcur, xnext, xcur + 1,
-                xnext, xnext+1, xcur + 1
-            ]);
+    
+        for j in 0..segments {
+            let ycur = base_index + j * (segments+1);
+            let ynext = base_index + (j+1) * (segments+1);
+            for i in 0..segments {
+                let xcur = ycur + i;
+                let xnext = ynext + i;
+                indices.extend(vec![
+                    xcur, xnext, xcur + 1,
+                    xnext, xnext+1, xcur + 1
+                ]);
+            }
         }
-    }
+    };
+
+    join_corner(ft_loop_start, rt_loop_start, &mut vertices, &mut indices);
+    join_corner(rt_loop_start, bt_loop_start, &mut vertices, &mut indices);
+    join_corner(bt_loop_start, lt_loop_start, &mut vertices, &mut indices);
+    join_corner(lt_loop_start, ft_loop_start, &mut vertices, &mut indices);
+    join_corner(rb_loop_start, fb_loop_start, &mut vertices, &mut indices);
+    join_corner(bb_loop_start, rb_loop_start, &mut vertices, &mut indices);
+    join_corner(lb_loop_start, bb_loop_start, &mut vertices, &mut indices);
+    join_corner(fb_loop_start, lb_loop_start, &mut vertices, &mut indices);
 
     create_mesh_3d(dev, vertices, indices)
 }
