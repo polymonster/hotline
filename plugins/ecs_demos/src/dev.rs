@@ -644,7 +644,8 @@ pub fn create_sphere_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
 }
 
 /// Create an `segments` sided prism, if `smooth` the prism is a cylinder with smooth normals
-pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool) -> pmfx::Mesh<D> {
+/// convert to a trapezoid using `taper` with a value between 0-1 to taper the top cap inward where 1 is no taper and 0 makes a pyramid
+pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool, height: f32, taper: f32) -> pmfx::Mesh<D> {
     let axis = Vec3f::unit_y();
     let right = Vec3f::unit_x();
     let up = cross(axis, right);
@@ -677,8 +678,9 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
 
         points.push(v1);
         tangents.push(v2 - v1);
-        bottom_points.push(points[i] - Vec3f::unit_y());
-        top_points.push(points[i] + Vec3f::unit_y());
+
+        bottom_points.push(points[i] - Vec3f::unit_y() * height);
+        top_points.push(points[i] * taper + Vec3f::unit_y() * height);
     }
 
     //
@@ -737,7 +739,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
 
     // centre points
     vertices.push(Vertex3D{
-        position: -Vec3f::unit_y(),
+        position: -Vec3f::unit_y() * height,
         normal: -Vec3f::unit_y(),
         tangent: Vec3f::unit_x(),
         bitangent: Vec3f::unit_z(),
@@ -746,7 +748,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
     let centre_bottom = vertices.len()-1;
 
     vertices.push(Vertex3D{
-        position: Vec3f::unit_y(),
+        position: Vec3f::unit_y() * height,
         normal: Vec3f::unit_y(),
         tangent: Vec3f::unit_x(),
         bitangent: Vec3f::unit_z(),
@@ -834,6 +836,16 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
             for v in face_index..triangle_vertices.len() {
                 triangle_vertices[v].normal = n;
             }
+
+            // harder uv's for trapezoids
+            if taper != 1.0 {
+                triangle_vertices[face_index].texcoord.x = 0.0;
+                triangle_vertices[face_index + 1].texcoord.x = 0.0; // top
+                triangle_vertices[face_index + 2].texcoord.x = 1.0;
+                triangle_vertices[face_index + 3].texcoord.x = 0.0; // top
+                triangle_vertices[face_index + 4].texcoord.x = 1.0; // top next
+                triangle_vertices[face_index + 5].texcoord.x = 1.0;
+            }
         }
 
         if cap {
@@ -868,7 +880,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
 
 /// Create a smooth unit-cylinder mesh with extents -1 to 1 and radius 1
 pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
-    create_prism_mesh(dev, segments, true, true)
+    create_prism_mesh(dev, segments, true, true, 1.0, 1.0)
 }
 
 /// Create an indexed unit cube subdivision mesh instance where the faces are subdivided into 4 smaller quads for `subdivisions` 
@@ -1109,8 +1121,8 @@ pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u
     create_mesh_3d(dev, subdiv_vertices, indices)
 }
 
-/// creates a pyramid mesh, if smooth this is essentially a low poly cone with smooth normals
-pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool) -> pmfx::Mesh<D> {
+/// creates a pyramid mesh, if smooth this is essentially a low poly cone with smooth normals, 
+pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: bool, cap: bool, truncate: f32) -> pmfx::Mesh<D> {
     let axis = Vec3f::unit_y();
     let right = Vec3f::unit_x();
     let up = cross(axis, right);
@@ -1247,7 +1259,7 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
 
 // create a cone mesh with smooth normals made up of `segments` number of sides
 pub fn create_cone_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
-    create_pyramid_mesh(dev, segments, true, true)
+    create_pyramid_mesh(dev, segments, true, true, 1.0)
 }
 
 // create a capsule mesh with smooth normals made up of `segments` number of sides
@@ -1387,9 +1399,11 @@ pub fn chebyshev_normalize(v: Vec3f) -> Vec3f {
     v / max(max(abs(v.x), abs(v.y)), abs(v.z))
 }
 
-pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx::Mesh<D> {
-
-    let inset = 0.8;
+/// Creates a chamfer cube mesh with curved edges with `radius` size and `segments` subdivisions
+pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segments: usize) -> pmfx::Mesh<D> {
+    
+    let inset = 1.0 - radius;
+    let edge_uv_scale = radius;
 
     // cube veritces
     let mut vertices: Vec<Vertex3D> = vec![
@@ -1587,14 +1601,13 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
         let fsegments = segments as f32;
         let base_index = vertices.len();
         
-        let radius = 1.0 - inset;
         let mut pivot = bottom_start - vertices[edge_indices[0]].normal * radius;
         let mut top_pivot = top_start - vertices[edge_indices[0]].normal * radius;
 
         for i in 0..segments+1 {
             let cur = (1.0 / fsegments as f32) * i as f32;
             let next = (1.0 / fsegments as f32) * (i+1) as f32;
-            let v = cur * 0.25;
+            let v = cur * edge_uv_scale;
     
             // linear lerp
             let lv0 = lerp(bottom_start, bottom_end, cur);
@@ -1686,7 +1699,6 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     let join_corner = |start_loop_start: usize, end_loop_start: usize, vertices: &mut Vec<Vertex3D>, indices: &mut Vec<usize>| {
         let base_index = vertices.len();        
         let fsegments = segments as f32;
-        let radius = 1.0 - inset;
         let centre = vertices[start_loop_start].position - vertices[start_loop_start].normal * radius;
 
         for j in 0..segments+1 {
@@ -1697,20 +1709,25 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
     
             for i in 0..segments+1 {
                 let u = (1.0 / fsegments as f32) * i as f32;
+                let next = (1.0 / fsegments as f32) * (i+1) as f32;
     
-                let lv2 = lerp(start, end, u);
+                let lv0 = lerp(start, end, u);
+                let lv1 = lerp(start, end, next);
+
+                let p = centre + normalize(lv0 - centre) * radius;
+                let nextp = centre + normalize(lv1 - centre) * radius;
     
-                let n = normalize(lv2 - centre);
-                let t = n; // TODO:
+                let n = normalize(lv0 - centre);
+                let t = normalize(nextp - p);
                 let bt = cross(n, t);
     
                 vertices.extend(vec![
                     Vertex3D {
-                        position: centre + normalize(lv2 - centre) * radius,
+                        position: p,
                         normal: n,
                         tangent: n,
                         bitangent: bt,
-                        texcoord: vec2f(u, v)
+                        texcoord: vec2f(u, v) * edge_uv_scale
                     },
                 ]);
             }

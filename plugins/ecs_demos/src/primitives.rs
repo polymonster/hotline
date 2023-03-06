@@ -44,13 +44,13 @@ pub fn setup_primitives(
         crate::dev::create_sphere_mesh(&mut device.0, 16),
         crate::dev::create_sphere_mesh_ex(&mut device.0, 16, 8, true),
 
-        crate::dev::create_prism_mesh(&mut device.0, 3, false, true),
-        crate::dev::create_prism_mesh(&mut device.0, 4, false, true),
-        crate::dev::create_prism_mesh(&mut device.0, 5, false, true),
+        crate::dev::create_prism_mesh(&mut device.0, 3, false, true, 1.0, 1.0),
+        crate::dev::create_prism_mesh(&mut device.0, 4, false, true, 1.0, 1.0),
+        crate::dev::create_prism_mesh(&mut device.0, 5, false, true, 1.0, 1.0),
         crate::dev::create_cylinder_mesh(&mut device.0, 16),
         
-        crate::dev::create_pyramid_mesh(&mut device.0, 4, false, true),
-        crate::dev::create_pyramid_mesh(&mut device.0, 5, false, true),
+        crate::dev::create_pyramid_mesh(&mut device.0, 4, false, true, 1.0),
+        crate::dev::create_pyramid_mesh(&mut device.0, 5, false, true, 1.0),
         crate::dev::create_cone_mesh(&mut device.0, 16),
 
         crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
@@ -58,9 +58,13 @@ pub fn setup_primitives(
 
         crate::dev::create_tourus_mesh(&mut device.0, 16),
 
-        crate::dev::create_chamfer_cube_mesh(&mut device.0, 8),
+        crate::dev::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
 
-        hotline_rs::primitives::create_billboard_mesh(&mut device.0)
+        hotline_rs::primitives::create_billboard_mesh(&mut device.0),
+
+        crate::dev::create_prism_mesh(&mut device.0, 3, false, true, 0.25, 0.5),
+        crate::dev::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
+        crate::dev::create_prism_mesh(&mut device.0, 5, false, true, 0.25, 0.5),
     ];
 
     // square number of rows and columns
