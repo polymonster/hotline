@@ -1587,7 +1587,9 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
         let fsegments = segments as f32;
         let base_index = vertices.len();
         
-        let mut pivot = bottom_start - vertices[edge_indices[0]].normal * (1.0 - inset);
+        let radius = 1.0 - inset;
+        let mut pivot = bottom_start - vertices[edge_indices[0]].normal * radius;
+        let mut top_pivot = top_start - vertices[edge_indices[0]].normal * radius;
 
         for i in 0..segments+1 {
             let cur = (1.0 / fsegments as f32) * i as f32;
@@ -1623,14 +1625,14 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
             vertices.extend(
                 vec![
                     Vertex3D {
-                        position: p0,
+                        position: pivot + normalize(p0 - pivot) * radius,
                         normal: n,
                         tangent: n,
                         bitangent: bt,
                         texcoord: vec2f(0.0, v)
                     },
                     Vertex3D {
-                        position: p1,
+                        position: top_pivot + normalize(p1 - top_pivot) * radius,
                         normal: n,
                         tangent: n,
                         bitangent: bt,
@@ -1674,96 +1676,48 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, segments: usize) ->
 
     // join corners
     // 2, 10, 18
-
-    let mut dbg = vertices[2].clone();
-    dbg.position = Vec3f::zero();
-
     let base_index = vertices.len();
-
     let centre = splat3f(inset);
-
     let fsegments = segments as f32;
-    for j in 0..segments {
+    let angle_step = (f32::pi() / 2.0) / fsegments;
+    let radius = 1.0 - inset;
 
+    for j in 0..segments+1 {
         let joffset = j * 2;
-
-        let top_start = vertices[ft_loop_start + 2 + joffset].clone();
-        let top_end = vertices[rt_loop_start + 3 + joffset].clone();
-
-        let bottom_start = vertices[ft_loop_start + 0 + joffset].clone();
-        let bottom_end = vertices[rt_loop_start + 1 + joffset].clone();
-
-        let cur = (1.0 / fsegments as f32) * j as f32;
-        let v = cur;
+        let start = vertices[ft_loop_start + 0 + joffset].position;
+        let end = vertices[rt_loop_start + 1 + joffset].position;
+        let v = (1.0 / fsegments as f32) * j as f32;
 
         for i in 0..segments+1 {
-            let cur = (1.0 / fsegments as f32) * i as f32;
-            let next = (1.0 / fsegments as f32) * (i+1) as f32;
+            let u = (1.0 / fsegments as f32) * i as f32;
 
-            let u = cur;
+            let mut lv2 = lerp(start, end, u);
 
-            // upper loop
-            let lv0 = lerp(top_start.position, top_end.position, cur);
-            let mut vv0 = vertices[fr_loop_start + 3].clone();
-            vv0.position = lv0;
-
-            // bottom loop
-            let lv2 = lerp(bottom_start.position, bottom_end.position, cur);
-            let mut vv2 = vertices[fr_loop_start + 3].clone();
-            vv2.position = lv2;
-
-            let offset = i * 2;
-
-            // project central vertices to sphere, 
-            let radius = 1.0 - inset;
-            if true {
-                vv0.position = centre + normalize(lv0 - centre) * radius;
-                vv2.position = centre + normalize(lv2 - centre) * radius;
-            }
-
-            // welded to the bottom
-            if j == 0 {
-                vv2.position = vertices[fr_loop_start + 1 + offset].position;
-                //vv3.position = vertices[fr_loop_start + 3 + offset].position;
-            }
-            
-            // weld to start / end
-            if i == 0 ||  i == segments {
-                vv2.position = lv2;
-                vv0.position = lv0;
-                //vv1.position = centre + normalize(lv1 - centre) * radius * 1.01;
-            }
-
-            let n = vv0.normal;
-            let t = vv0.tangent;
+            let n = normalize(lv2 - centre);
+            let t = n; // TODO:
             let bt = cross(n, t);
 
             vertices.extend(vec![
                 Vertex3D {
-                    position: vv2.position,
+                    position: centre + normalize(lv2 - centre) * radius,
                     normal: n,
                     tangent: n,
                     bitangent: bt,
-                    texcoord: vec2f(u, 0.0)
+                    texcoord: vec2f(u, v)
                 },
-                Vertex3D {
-                    position: vv0.position,
-                    normal: n,
-                    tangent: n,
-                    bitangent: bt,
-                    texcoord: vec2f(u, 0.0)
-                }
             ]);
         }
     }
 
     for j in 0..segments {
-        let strip_base = base_index + j * ((segments+1) * 2);
+        let ycur = base_index + j * (segments+1);
+        let ynext = base_index + (j+1) * (segments+1);
         for i in 0..segments {
-            let strip_base = strip_base + i * 2;
+            let xcur = ycur + i;
+            let xnext = ynext + i;
             indices.extend(vec![
-                strip_base, strip_base + 1, strip_base + 3, 
-                strip_base, strip_base + 3, strip_base + 2
+                xcur, xnext, xcur + 1,
+                xnext, xnext+1, xcur + 1
             ]);
         }
     }
