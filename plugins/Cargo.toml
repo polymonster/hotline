@@ -4,6 +4,7 @@ members = ["empty", "ecs", "ecs_demos"]
 
 [profile.dev]
 opt-level = 1
+lto = "off"
 
 [profile.release]
 lto = "off"

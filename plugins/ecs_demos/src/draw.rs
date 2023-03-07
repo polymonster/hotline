@@ -16,7 +16,8 @@ pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_
             "update_cameras",
             "update_main_camera_config"
         ],
-        render_graph: "mesh_debug".to_string()
+        render_graph: "mesh_debug".to_string(),
+        ..Default::default()
     }
 }
 
@@ -72,6 +73,7 @@ pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>)
             "update_main_camera_config"
         ],
         render_graph: "mesh_debug".to_string(),
+        ..Default::default()
     }
 }
 

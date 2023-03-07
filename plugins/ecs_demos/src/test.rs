@@ -15,7 +15,8 @@ pub fn test_missing_systems(_: &mut Client<gfx_platform::Device, os_platform::Ap
             "update_main_camera_config".to_string(),
             "missing".to_string()
         ],
-        render_graph: "mesh_debug".to_string()
+        render_graph: "mesh_debug".to_string(),
+        ..Default::default()
     }
 }
 
@@ -30,7 +31,8 @@ pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platfor
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing".to_string()
+        render_graph: "missing".to_string(),
+        ..Default::default()
     }
 }
 
@@ -46,7 +48,8 @@ pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing_view".to_string()
+        render_graph: "missing_view".to_string(),
+        ..Default::default()
     }
 }
 
@@ -62,7 +65,8 @@ pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing_pipeline".to_string()
+        render_graph: "missing_pipeline".to_string(),
+        ..Default::default()
     }
 }
 
@@ -78,7 +82,8 @@ pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing_pipeline".to_string()
+        render_graph: "missing_pipeline".to_string(),
+        ..Default::default()
     }
 }
 
@@ -94,7 +99,8 @@ pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing_camera".to_string()
+        render_graph: "missing_camera".to_string(),
+        ..Default::default()
     }
 }
 
@@ -110,7 +116,8 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
             "update_cameras".to_string(),
             "update_main_camera_config".to_string()
         ],
-        render_graph: "missing_function".to_string()
+        render_graph: "missing_function".to_string(),
+        ..Default::default()
     }
 }
 
