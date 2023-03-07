@@ -78,7 +78,6 @@ mod imp {
 }
 pub use imp::*;
 
-
 #[allow(non_snake_case)]
 impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
     fn EventNotify(&self, event: u32, _param1: usize, _param2: u32) -> ::windows::core::Result<()>  {

@@ -2359,6 +2359,16 @@ impl CmdBuf {
     }
 }
 
+impl Drop for CmdBuf {
+    fn drop(&mut self) {
+        // care needs to be taken that all in flight frames have been completed before this drop is called
+        // blocking with swap_chain.wait_for_last frame will ensure this is safe
+        for bb in 0..self.in_flight_barriers.len() {
+            self.drop_complete_in_flight_barriers(bb);
+        }
+    }
+}
+
 impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
         let prev_bb = self.bb_index;

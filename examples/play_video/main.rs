@@ -167,12 +167,9 @@ fn main() -> Result<(), hotline_rs::Error> {
     }
 
     player.shutdown(&mut dev);
+
     swap_chain.wait_for_last_frame();
-
-    dev.report_live_objects()?;
-
-    // must wait for the final frame to be completed
-    cmdbuffer.reset(&swap_chain);
+    dev.clean_up_resources(&swap_chain);
 
     Ok(())
 }

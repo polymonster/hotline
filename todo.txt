@@ -1,12 +1,7 @@
 // TODO:
 
-
-
 // primitives
-// - chamfer cube
 // - spring
-// - trapezoid
-
 // - move primitives from ecs to hotline
 
 // ui
@@ -34,16 +29,19 @@
 // - in client terminal / log
 
 // gfx
-// - resolves properly driven
+// - resolves properly data driven
 // - Blend
+// - MRT
+// - Alpha to coverage
 // - GPU Timer Query
-// - Draw Instanced
+// - Draw Instanced 
 // - Draw Indirect
 // - Stencil Ref
-// - MRT
 // - Texture Formats (BC etc)
 
 // DONE:
+// x trapezoid
+// x chamfer cube
 // x quick video
 // x update hotline-data
 // x update pmfx shader

@@ -40,6 +40,7 @@ pub fn setup_primitives(
         hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
         hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
+        crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
 
         crate::dev::create_sphere_mesh(&mut device.0, 16),
         crate::dev::create_sphere_mesh_ex(&mut device.0, 16, 8, true),
@@ -53,7 +54,7 @@ pub fn setup_primitives(
         crate::dev::create_pyramid_mesh(&mut device.0, 5, false, true, 1.0),
         crate::dev::create_cone_mesh(&mut device.0, 16),
 
-        crate::dev::create_cube_subdivision_mesh(&mut device.0, 1),
+        
         crate::dev::create_capsule_mesh(&mut device.0, 16),
 
         crate::dev::create_tourus_mesh(&mut device.0, 16),
@@ -62,7 +63,7 @@ pub fn setup_primitives(
 
         hotline_rs::primitives::create_billboard_mesh(&mut device.0),
 
-        crate::dev::create_prism_mesh(&mut device.0, 3, false, true, 0.25, 0.5),
+        crate::dev::create_prism_mesh(&mut device.0, 3, false, true, 0.25, 0.7),
         crate::dev::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
         crate::dev::create_prism_mesh(&mut device.0, 5, false, true, 0.25, 0.5),
     ];
