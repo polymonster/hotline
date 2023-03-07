@@ -394,13 +394,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.device.clean_up_resources(&self.swap_chain);
     }
 
-    /// Wait for the last submitted frame to complete to ensure safe shutdown once all in-flight resources are no longer needed
-    pub fn wait_for_last_frame(&mut self) {
-        self.swap_chain.wait_for_last_frame();
-        self.cmd_buf.reset(&self.swap_chain);
-        self.pmfx.reset(&self.swap_chain);
-    }
-
     /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
@@ -709,7 +702,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run(mut self) {
         while self.app.run() {
-
             self.new_frame();
 
             self.core_ui();
@@ -721,26 +713,24 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 self.imgui.image_window("main_dock", tex);
             }
 
-            self.present("main_colour");
+            self.present("");
         }
 
         // save out values for next time
         self.save_user_config();
         self.imgui.save_ini_settings();
 
-        self.wait_for_last_frame();
+        self.swap_chain.wait_for_last_frame();
     }
 
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run_once(mut self) {
         self.new_frame();
-        
-        //self.core_ui();
-        
+        self.core_ui();
         self.pmfx.show_ui(&mut self.imgui, true);
         self = self.update_plugins();
         self.present("main_colour");
-
-        self.wait_for_last_frame();
+       
+        self.swap_chain.wait_for_last_frame();
     }
 }

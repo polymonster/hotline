@@ -567,17 +567,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let mut render_targets = Vec::new();
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
-
-                // TODO: collect pattern
-                /*
-                if !self.view_texture_refs.contains_key(name) {
-                    self.view_texture_refs.insert(name.to_string(), HashSet::new());
-                }
-                self.view_texture_refs.get_mut(name).unwrap().insert(graph_view_name.to_string());
-                */
-
                 self.view_texture_refs.entry(name.to_string())
-                .or_insert(HashSet::new()).insert(graph_view_name.to_string());
+                    .or_insert(HashSet::new()).insert(graph_view_name.to_string());
             }
 
             // create textures for depth stencils
@@ -695,61 +686,58 @@ impl<D> Pmfx<D> where D: gfx::Device {
         target_state: ResourceState) -> Result<(), super::Error> {
         if texture_barriers.contains_key(texture_name) {
             let state = texture_barriers[texture_name];
-            if true {
-                // add barrier placeholder in the execute order
-                let barrier_name = format!("barrier_resolve-{}-{}", view_name, texture_name);
-                self.render_graph_execute_order.push(barrier_name.to_string());
+            let barrier_name = format!("barrier_resolve-{}-{}", view_name, texture_name);
+            if let Some(tex) = self.get_texture(texture_name) {
+                // prevent resolving non msaa surfaces
+                if !tex.is_resolvable() {
+                    return Err(super::Error {
+                        msg: format!("hotline_rs::pmfx:: texture: {} is not resolvable", texture_name),
+                    });
+                }
 
-                if let Some(tex) = self.get_texture(texture_name) {
+                // transition main resource into resolve src
+                let mut cmd_buf = device.create_cmd_buf(1);
+                cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                    texture: Some(self.get_texture(texture_name).unwrap()),
+                    buffer: None,
+                    state_before: state,
+                    state_after: ResourceState::ResolveSrc,
+                });
 
-                    // prevent resolving non msaa surfaces
-                    if !tex.is_resolvable() {
-                        return Err(super::Error {
-                            msg: format!("hotline_rs::pmfx:: texture: {} is not resolvable", texture_name),
-                        });
-                    }
-
-                    // transition main resource into resolve src
-                    let mut cmd_buf = device.create_cmd_buf(1);
-                    cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                // transition resolve resource into resolve dst
+                cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
                         texture: Some(self.get_texture(texture_name).unwrap()),
                         buffer: None,
-                        state_before: state,
-                        state_after: ResourceState::ResolveSrc,
-                    });
+                        state_before: target_state,
+                        state_after: ResourceState::ResolveDst,
+                    },
+                    Subresource::ResolveResource
+                );
+                
+                // perform the resolve
+                cmd_buf.resolve_texture_subresource(tex, 0)?;
 
-                    // transition resolve resource into resolve dst
-                    cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
-                            texture: Some(self.get_texture(texture_name).unwrap()),
-                            buffer: None,
-                            state_before: target_state,
-                            state_after: ResourceState::ResolveDst,
-                        },
-                        Subresource::ResolveResource
-                    );
-                    
-                    // perform the resolve
-                    cmd_buf.resolve_texture_subresource(tex, 0)?;
+                // transition the resolve to shader resource for sampling
+                cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
+                        texture: Some(self.get_texture(texture_name).unwrap()),
+                        buffer: None,
+                        state_before: ResourceState::ResolveDst,
+                        state_after: target_state,
+                    },
+                    Subresource::ResolveResource
+                );
 
-                    // transition the resolve to shader resource for sampling
-                    cmd_buf.transition_barrier_subresource(&gfx::TransitionBarrier {
-                            texture: Some(self.get_texture(texture_name).unwrap()),
-                            buffer: None,
-                            state_before: ResourceState::ResolveDst,
-                            state_after: target_state,
-                        },
-                        Subresource::ResolveResource
-                    );
+                // insert barrier
+                cmd_buf.close()?;
+                self.barriers.insert(barrier_name.to_string(), cmd_buf);
 
-                    // insert barrier
-                    cmd_buf.close()?;
-                    self.barriers.insert(barrier_name, cmd_buf);
-
-                    // update track state
-                    texture_barriers.remove(texture_name);
-                    texture_barriers.insert(texture_name.to_string(), ResourceState::ResolveSrc);
-                }
+                // update track state
+                texture_barriers.remove(texture_name);
+                texture_barriers.insert(texture_name.to_string(), ResourceState::ResolveSrc);
             }
+
+            // add barrier placeholder in the execute order
+            self.render_graph_execute_order.push(barrier_name);
         }
         Ok(())
     }
@@ -798,20 +786,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // currently we just have 1 single execute graph and barrier set
             self.barriers.clear();
             self.render_graph_execute_order.clear();
-
-            // TODO: collect pattern
-            // gather up all render targets and check which ones want to be both written to and also uses as shader resources
-            /*
-            let mut barriers = HashMap::new();
-            for (name, texture) in &self.pmfx.textures {
-                if texture.usage.contains(&ResourceState::ShaderResource) {
-                    if texture.usage.contains(&ResourceState::RenderTarget) || 
-                        texture.usage.contains(&ResourceState::DepthStencil) {
-                            barriers.insert(name.to_string(), ResourceState::ShaderResource);
-                    }
-                }
-            }
-            */
 
             let mut barriers = self.pmfx.textures.iter().filter(|tex|{
                 tex.1.usage.contains(&ResourceState::ShaderResource) || 
@@ -1323,15 +1297,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
         else {
             0
         }
-
-        // todo collect
-        /*
-        let mut hasher = DefaultHasher::new();
-        for graph_view_name in self.pmfx.render_graphs[render_graph].keys() {
-            graph_view_name.hash(&mut hasher)
-        }
-        hasher.finish()
-        */
     }
 
     pub fn get_render_graph_execute_order(&self) -> &Vec<String> {

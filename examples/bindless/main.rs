@@ -324,7 +324,6 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // must wait for the final frame to be completed
     swap_chain.wait_for_last_frame();
-    cmdbuffer.reset(&swap_chain);
 
     Ok(())
 }
