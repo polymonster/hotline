@@ -21,7 +21,8 @@ pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -
             "update_cameras",
             "update_main_camera_config"
         ],
-        render_graph: "mesh_debug".to_string()
+        render_graph: "mesh_debug".to_string(),
+        ..Default::default()
     }
 }
 
@@ -85,7 +86,12 @@ pub fn setup_primitives(
                 let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
                 commands.spawn((
                     MeshComponent(meshes[i].clone()),
-                    WorldMatrix(Mat4f::from_translation(iter_pos) * Mat4f::from_scale(splat3f(10.0))),
+                    Position(iter_pos),
+                    Rotation(Vec3f::zero()),
+                    Scale(splat3f(10.0)),
+                    WorldMatrix(Mat4f::identity())
+                    
+                    // WorldMatrix(Mat4f::from_translation(iter_pos) * Mat4f::from_scale(splat3f(10.0))),
                 ));
             }
             i = i + 1;

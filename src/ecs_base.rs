@@ -7,12 +7,25 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use maths_rs::{Vec3f, Mat4f};
 
+/// Information to describe a system and it's dependencies so it can be scheduled appropriately
+pub struct BatchSystemInfo {
+    /// name of the system function to run, registered through `get_system_<lib_name>` to find the function inside a plugin
+    pub function_name: String,
+    /// name of systems which this system needs to run after
+    pub deps: Vec<String>
+}
+
 /// Schedule info can be filled out and passed to the `ecs` plugin to build a schedulre for a running demo
 pub struct ScheduleInfo {
     /// List of setup functions by their name, the function name must be registered in a `get_system_function` 
+    /// all setup systems will run concurrently
     pub setup: Vec<String>,
     /// List of update functions by their name, the function name must be registered in a `get_system_function` 
+    /// all update systems will run concurrently
     pub update: Vec<String>,
+    /// List of batch systems with dependencies, these systems run after update and will be batched in order
+    /// batch systems will be ran in a particular order to syncronise work
+    pub batch: Vec<BatchSystemInfo>,
     /// Name of the render graph to load, buld and make active from pmfx
     pub render_graph: String
 }
@@ -23,6 +36,7 @@ impl Default for ScheduleInfo {
         ScheduleInfo {
             setup: Vec::new(),
             update: Vec::new(),
+            batch: Vec::new(),
             render_graph: String::new(),
         }
     }
@@ -67,6 +81,9 @@ pub struct StageStartup;
 pub struct StageUpdate;
 
 #[derive(StageLabel)]
+pub struct StageBatch;
+
+#[derive(StageLabel)]
 pub struct StageRender;
 
 //
@@ -96,16 +113,25 @@ pub struct UserConfigRes(pub client::UserConfig);
 //
 
 #[derive(Component)]
-pub struct Position(pub Vec3f);
+pub struct Name(pub String);
 
 #[derive(Component)]
 pub struct Velocity(pub Vec3f);
 
 #[derive(Component)]
-pub struct WorldMatrix(pub Mat4f);
+pub struct Position(pub Vec3f);
 
 #[derive(Component)]
 pub struct Rotation(pub Vec3f);
+
+#[derive(Component)]
+pub struct Scale(pub Vec3f);
+
+#[derive(Component)]
+pub struct LocalMatrix(pub Mat4f);
+
+#[derive(Component)]
+pub struct WorldMatrix(pub Mat4f);
 
 #[derive(Component)]
 pub struct ViewProjectionMatrix(pub Mat4f);
@@ -120,7 +146,7 @@ pub struct MainCamera;
 pub struct MeshComponent(pub pmfx::Mesh<gfx_platform::Device>);
 
 #[derive(Component)]
-pub struct Name(pub String);
+pub struct Billboard;
 
 #[macro_export]
 macro_rules! system_func {

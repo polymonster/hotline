@@ -1,18 +1,17 @@
 // TODO:
 
+// - update maths 0.1.9
+
 // primitives
 // - spring
 // - move primitives from ecs to hotline
 
-// ui
-// - view menu + saving state
-// - status bar
-
 // ecs
-// - update matrices ecs
+// - 3x4 matrix
 // - time resource for systems
 // - per demo settings
 // - raster examples
+// - blend examples
 // - draw instanced
 // - draw indirect
 // - 3D texture -> compute
@@ -22,11 +21,6 @@
 // - material
 // - update aabb's
 // - culling
-
-// log / debug / info
-// - timer stats
-// - thread stats
-// - in client terminal / log
 
 // gfx
 // - resolves properly data driven
@@ -39,7 +33,17 @@
 // - Stencil Ref
 // - Texture Formats (BC etc)
 
+// ui
+// - view menu + saving state
+// - status bar
+
+// log / debug / info
+// - timer stats
+// - thread stats
+// - in client terminal / log
+
 // DONE:
+// x update matrices ecs
 // x trapezoid
 // x chamfer cube
 // x quick video

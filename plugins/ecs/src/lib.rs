@@ -32,6 +32,23 @@ struct BevyPlugin {
 type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 type PlatformImgui = imgui::ImGui<gfx_platform::Device, os_platform::App>;
 
+fn update_world_matrices(
+    mut query: Query<(&Position, &Rotation, &Scale, &mut WorldMatrix)>) {
+    // bake a local matrix from position, rotation and scale
+    for (position, rotation, scale, mut world_matrix) in &mut query {
+        let translate = Mat4f::from_translation(position.0);
+        let scale = Mat4f::from_scale(scale.0);
+        world_matrix.0 = translate * scale;
+    }
+}
+
+fn update_billboard_matrices(
+    mut query: Query<(&Position, &Rotation, &mut WorldMatrix), With<Billboard>>) {
+    for (position, rotation, world_matrix) in &mut query {
+
+    }
+}
+
 fn update_main_camera_config(
     main_window: Res<MainWindowRes>,
     mut info: ResMut<SessionInfo>,
@@ -255,7 +272,8 @@ impl BevyPlugin {
                 "update_cameras".to_string(),
                 "update_main_camera_config".to_string()
             ],
-            render_graph: "mesh_debug".to_string()
+            render_graph: "mesh_debug".to_string(),
+            ..Default::default()
         }
     }
 
@@ -437,19 +455,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         let info = &self.schedule_info;
 
-        // hook in render functions
-        let mut render_stage = SystemStage::parallel();
-        for (func_name, view_name) in &render_functions {
-            if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                render_stage = render_stage.with_system(func);
-            }
-            else {
-                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
-            }
-        }
-        self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
-        self.schedule.add_stage(StageRender, render_stage);
-
         // hook in setup funcs
         let mut setup_stage = SystemStage::parallel();
         for func_name in &info.setup {
@@ -473,6 +478,25 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
         }
         self.schedule.add_stage(StageUpdate, update_stage);
+
+        // batch functions do syncronised work to prpare buffers / matrices for drawing
+        let batch_stage = SystemStage::parallel()
+            .with_system(update_world_matrices)
+            .with_system(update_billboard_matrices);
+        self.schedule.add_stage(StageBatch, batch_stage);
+
+        // hook in render functions
+        let mut render_stage = SystemStage::parallel();
+        for (func_name, view_name) in &render_functions {
+            if let Some(func) = self.get_system_function(func_name, view_name, &client) {
+                render_stage = render_stage.with_system(func.after("temp-debug"));
+            }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
+        }
+        self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
+        self.schedule.add_stage(StageRender, render_stage);
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;

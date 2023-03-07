@@ -807,44 +807,99 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
         create_mesh_3d(dev, vertices, indices)
     }
     else {
-        // 2 tris per segment
         let mut triangle_vertices = Vec::new();
-        for i in 0..segments {
-            let bottom = i;
-            let top = i + vertex_segments;
-            let next = i + 1;
-            let top_next = i + 1 + vertex_segments;
+        if taper != 1.0 {
+            // 4-tris per segment, trapezoid
+            for i in 0..segments {
+                let bottom = i;
+                let top = i + vertex_segments;
+                let next = i + 1;
+                let top_next = i + 1 + vertex_segments;
 
-            let face_index = triangle_vertices.len();
-            triangle_vertices.extend(vec![
-                vertices[bottom].clone(),
-                vertices[top].clone(),
-                vertices[next].clone(),
-                vertices[top].clone(),
-                vertices[top_next].clone(),
-                vertices[next].clone()
-            ]);
+                // add a mid vertex to distribute the UV's more nicely
+                let mut mid = vertices[bottom].clone();
+                mid.position = (
+                    vertices[bottom].position +
+                    vertices[top].position + 
+                    vertices[next].position +
+                    vertices[top_next].position
+                 ) * 0.25;
 
-            let v = face_index;
-            let n = get_triangle_normal(
-                triangle_vertices[v].position, 
-                triangle_vertices[v+2].position, 
-                triangle_vertices[v+1].position
-            );
+                mid.texcoord = splat2f(0.5);
 
-            // set hard face normals
-            for v in face_index..triangle_vertices.len() {
-                triangle_vertices[v].normal = n;
-            }
+                let face_index = triangle_vertices.len();
+                triangle_vertices.extend(vec![
+                    vertices[bottom].clone(),
+                    vertices[top].clone(),
+                    mid.clone(),
 
-            // harder uv's for trapezoids
-            if taper != 1.0 {
+                    vertices[top].clone(),
+                    vertices[top_next].clone(),
+                    mid.clone(),
+
+                    vertices[bottom].clone(),
+                    mid.clone(),
+                    vertices[next].clone(),
+
+                    vertices[next].clone(),
+                    mid,
+                    vertices[top_next].clone(),
+                ]);
+
+                let v = face_index;
+                let n = get_triangle_normal(
+                    triangle_vertices[v].position, 
+                    triangle_vertices[v+2].position, 
+                    triangle_vertices[v+1].position
+                );
+
+                // set hard face normals
+                for v in face_index..triangle_vertices.len() {
+                    triangle_vertices[v].normal = n;
+                }
+
+                let top_u = 0.0;
+                let top_next_u = 1.0;
+
                 triangle_vertices[face_index].texcoord.x = 0.0;
-                triangle_vertices[face_index + 1].texcoord.x = 0.0; // top
-                triangle_vertices[face_index + 2].texcoord.x = 1.0;
-                triangle_vertices[face_index + 3].texcoord.x = 0.0; // top
-                triangle_vertices[face_index + 4].texcoord.x = 1.0; // top next
-                triangle_vertices[face_index + 5].texcoord.x = 1.0;
+                triangle_vertices[face_index + 1].texcoord.x = top_u;
+                triangle_vertices[face_index + 3].texcoord.x = top_u;
+                triangle_vertices[face_index + 4].texcoord.x = top_next_u;
+                triangle_vertices[face_index + 6].texcoord.x = 0.0;
+                triangle_vertices[face_index + 8].texcoord.x = 1.0; 
+                triangle_vertices[face_index + 9].texcoord.x = 1.0;
+                triangle_vertices[face_index + 11].texcoord.x = top_next_u;
+            }
+        }
+        else {
+            // 2 tris per segment (prism)
+            for i in 0..segments {
+                let bottom = i;
+                let top = i + vertex_segments;
+                let next = i + 1;
+                let top_next = i + 1 + vertex_segments;
+
+                let face_index = triangle_vertices.len();
+                triangle_vertices.extend(vec![
+                    vertices[bottom].clone(),
+                    vertices[top].clone(),
+                    vertices[next].clone(),
+                    vertices[top].clone(),
+                    vertices[top_next].clone(),
+                    vertices[next].clone()
+                ]);
+
+                let v = face_index;
+                let n = get_triangle_normal(
+                    triangle_vertices[v].position, 
+                    triangle_vertices[v+2].position, 
+                    triangle_vertices[v+1].position
+                );
+
+                // set hard face normals
+                for v in face_index..triangle_vertices.len() {
+                    triangle_vertices[v].normal = n;
+                }
             }
         }
 
@@ -1395,13 +1450,8 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
     create_faceted_mesh_3d(dev, vertices)
 }
 
-pub fn chebyshev_normalize(v: Vec3f) -> Vec3f {
-    v / max(max(abs(v.x), abs(v.y)), abs(v.z))
-}
-
 /// Creates a chamfer cube mesh with curved edges with `radius` size and `segments` subdivisions
 pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segments: usize) -> pmfx::Mesh<D> {
-    
     let inset = 1.0 - radius;
     let edge_uv_scale = radius;
 
