@@ -4,22 +4,16 @@
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
-#[derive(bevy_ecs::prelude::Component)]
-struct Billboard;
-
 /// Init function for primitives demo
 #[no_mangle]
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
-    
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
         ],
         update: systems![
-            "update_cameras",
-            "update_main_camera_config"
+            "rotate_meshes"
         ],
         render_graph: "mesh_debug".to_string(),
         ..Default::default()
@@ -67,6 +61,8 @@ pub fn setup_primitives(
         crate::dev::create_prism_mesh(&mut device.0, 3, false, true, 0.25, 0.7),
         crate::dev::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
         crate::dev::create_prism_mesh(&mut device.0, 5, false, true, 0.25, 0.5),
+
+        crate::dev::create_helix_mesh(&mut device.0, 16, 4)
     ];
 
     // square number of rows and columns
@@ -87,52 +83,12 @@ pub fn setup_primitives(
                 commands.spawn((
                     MeshComponent(meshes[i].clone()),
                     Position(iter_pos),
-                    Rotation(Vec3f::zero()),
+                    Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
                     Scale(splat3f(10.0)),
                     WorldMatrix(Mat4f::identity())
-                    
-                    // WorldMatrix(Mat4f::from_translation(iter_pos) * Mat4f::from_scale(splat3f(10.0))),
                 ));
             }
             i = i + 1;
         }
     }
-}
-
-#[no_mangle]
-pub fn render_meshes(
-    pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx.0;
-
-    let fmt = view.pass.get_format_hash();
-    let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    // setup pass
-    view.cmd_buf.begin_render_pass(&view.pass);
-    view.cmd_buf.set_viewport(&view.viewport);
-    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-    view.cmd_buf.set_render_pipeline(&mesh_debug);
-    view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
-
-    // let inv_rot = Mat3f::from(camera.view_matrix.transpose());
-
-    for (world_matrix, mesh) in &mesh_draw_query {
-
-        //let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
-
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    // end / transition / execute
-    view.cmd_buf.end_render_pass();
-
-    Ok(())
 }

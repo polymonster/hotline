@@ -33,42 +33,36 @@ type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 type PlatformImgui = imgui::ImGui<gfx_platform::Device, os_platform::App>;
 
 fn update_world_matrices(
-    mut query: Query<(&Position, &Rotation, &Scale, &mut WorldMatrix)>) {
+    mut query: Query<(&Position, &mut Rotation, &Scale, &mut WorldMatrix)>) {
     // bake a local matrix from position, rotation and scale
     for (position, rotation, scale, mut world_matrix) in &mut query {
         let translate = Mat4f::from_translation(position.0);
+        let rotate = Mat4f::from(rotation.0);
         let scale = Mat4f::from_scale(scale.0);
-        world_matrix.0 = translate * scale;
-    }
-}
-
-fn update_billboard_matrices(
-    mut query: Query<(&Position, &Rotation, &mut WorldMatrix), With<Billboard>>) {
-    for (position, rotation, world_matrix) in &mut query {
-
+        world_matrix.0 = translate * rotate * scale;
     }
 }
 
 fn update_main_camera_config(
     main_window: Res<MainWindowRes>,
     mut info: ResMut<SessionInfo>,
-    mut query: Query<(&Position, &Rotation), With<MainCamera>>) {
+    mut query: Query<(&Position, &Camera), With<MainCamera>>) {
     let window_rect = main_window.0.get_viewport_rect();
     let aspect = window_rect.width as f32 / window_rect.height as f32;
-    for (position, rotation) in &mut query {
+    for (position, camera) in &mut query {
         info.main_camera = Some(CameraInfo{
             pos: (position.0.x, position.0.y, position.0.z),
-            rot: (rotation.0.x, rotation.0.y, rotation.0.z),
+            rot: (camera.rot.x, camera.rot.y, 0.0),
             fov: 60.0,
             aspect: aspect
         });
     }
 }
 
-pub fn camera_view_proj_from(pos: &Position, rot: &Rotation, aspect: f32, fov_degrees: f32) -> Mat4f {
+pub fn camera_view_proj_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degrees: f32) -> Mat4f {
     // rotational matrix
-    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.0.x));
-    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.0.y));
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.y));
     let mat_rot = mat_rot_y * mat_rot_x;
     // generate proj matrix
     let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
@@ -80,10 +74,10 @@ pub fn camera_view_proj_from(pos: &Position, rot: &Rotation, aspect: f32, fov_de
     proj * view
 }
 
-pub fn camera_constants_from(pos: &Position, rot: &Rotation, aspect: f32, fov_degrees: f32) -> CameraConstants {
+pub fn camera_constants_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degrees: f32) -> CameraConstants {
     // rotational matrix
-    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.0.x));
-    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.0.y));
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.y));
     let mat_rot = mat_rot_y * mat_rot_x;
     // generate proj matrix
     let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
@@ -103,9 +97,9 @@ fn update_cameras(
     app: Res<AppRes>, 
     main_window: Res<MainWindowRes>,
     mut pmfx: ResMut<PmfxRes>,
-    mut query: Query<(&Name, &mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
+    mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {    
     let app = &app.0;
-    for (name, mut position, mut rotation, mut view_proj) in &mut query {
+    for (name, mut position, mut camera, mut view_proj) in &mut query {
 
         let (enable_keyboard, enable_mouse) = app.get_input_enabled();
         if main_window.0.is_focused() {
@@ -139,14 +133,14 @@ fn update_cameras(
             if enable_mouse {
                 if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
                     let mouse_delta = app.get_mouse_pos_delta();
-                    rotation.0.x -= mouse_delta.y as f32;
-                    rotation.0.y -= mouse_delta.x as f32;
+                    camera.rot.x -= mouse_delta.y as f32;
+                    camera.rot.y -= mouse_delta.x as f32;
                 }
             }
 
             // construct rotation matrix
-            let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rotation.0.x));
-            let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rotation.0.y));
+            let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(camera.rot.x));
+            let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(camera.rot.y));
             let mat_rot = mat_rot_y * mat_rot_x;
 
             // move relative to facing directions
@@ -154,13 +148,13 @@ fn update_cameras(
         }
 
         // generate proj matrix
-        let aspect = pmfx.0.get_window_aspect("main_dock");
+        let aspect = pmfx.get_window_aspect("main_dock");
        
         // assign view proj
-        view_proj.0 = camera_view_proj_from(&position, &rotation, aspect, 60.0);
+        view_proj.0 = camera_view_proj_from(&position, &camera.rot, aspect, 60.0);
 
         // update camera in pmfx
-        pmfx.0.update_camera_constants(&name.0, &camera_constants_from(&position, &rotation, aspect, 60.0));
+        pmfx.update_camera_constants(&name.0, &camera_constants_from(&position, &camera.rot, aspect, 60.0));
     }
 }
 
@@ -170,7 +164,6 @@ fn render_grid(
     pmfx: Res<PmfxRes>) {
 
     let imdraw = &mut imdraw.0;
-    let pmfx = &pmfx.0;
 
     let view = pmfx.get_view("grid");
     if view.is_err() {
@@ -267,11 +260,6 @@ impl BevyPlugin {
     // Default_setup, creates a render graph and update functions which are hooked into the scheduler
     fn default_demo_shedule(&self) -> ScheduleInfo {
         ScheduleInfo {
-            setup: Vec::new(),
-            update: vec![
-                "update_cameras".to_string(),
-                "update_main_camera_config".to_string()
-            ],
             render_graph: "mesh_debug".to_string(),
             ..Default::default()
         }
@@ -452,7 +440,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         else {
             client.pmfx.get_render_graph_function_info(&graph)
         };
-
         let info = &self.schedule_info;
 
         // hook in setup funcs
@@ -467,8 +454,12 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
         self.setup_schedule.add_stage(StageStartup, setup_stage);
 
+        // core update
+        let mut update_stage = SystemStage::parallel()
+            .with_system(update_cameras.label("update_cameras"))
+            .with_system(update_main_camera_config.after("update_cameras"));
+
         // hook in updates funcs
-        let mut update_stage = SystemStage::parallel();
         for func_name in &info.update {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
                 update_stage = update_stage.with_system(func);
@@ -482,7 +473,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // batch functions do syncronised work to prpare buffers / matrices for drawing
         let batch_stage = SystemStage::parallel()
             .with_system(update_world_matrices)
-            .with_system(update_billboard_matrices);
+            ;
         self.schedule.add_stage(StageBatch, batch_stage);
 
         // hook in render functions
@@ -521,18 +512,20 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(PmfxRes(client.pmfx));
         self.world.insert_resource(ImDrawRes(client.imdraw));
         self.world.insert_resource(UserConfigRes(client.user_config));
+        self.world.insert_resource(TimeRes(client.time));
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
             let main_camera = self.session_info.main_camera.unwrap_or_default();
             let pos = Position { 0: Vec3f::new(main_camera.pos.0, main_camera.pos.1, main_camera.pos.2) };
-            let rot = Rotation { 0: Vec3f::new(main_camera.rot.0, main_camera.rot.1, main_camera.rot.2) };
+            let rot = vec2f(main_camera.rot.0, main_camera.rot.1);
 
             self.world.spawn((
                 ViewProjectionMatrix(camera_view_proj_from(&pos, &rot, main_camera.aspect, main_camera.fov)),
                 pos,
-                rot,
-                Camera,
+                Camera {
+                    rot: vec2f(main_camera.rot.0, main_camera.rot.1)
+                },
                 MainCamera,
                 Name(String::from("main_camera"))
             ));
@@ -551,6 +544,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.pmfx = self.world.remove_resource::<PmfxRes>().unwrap().0;
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
         client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
+        client.time = self.world.remove_resource::<TimeRes>().unwrap().0;
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
@@ -611,8 +605,6 @@ hotline_plugin![BevyPlugin];
 #[no_mangle]
 pub fn get_system_ecs(name: String, _view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
-        "update_cameras" => system_func![update_cameras],
-        "update_main_camera_config" => system_func![update_main_camera_config],
         "render_grid" => system_func![render_grid],
         _ => None
     }

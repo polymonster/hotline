@@ -188,8 +188,6 @@ pub fn render_meshes(
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
-    let pmfx = &pmfx.0;
-
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;

@@ -178,6 +178,7 @@ pub mod prelude {
         hotline_plugin,
         system_func,
         render_func,
+        render_func_query,
         render_func_closure,
         demos,
         systems

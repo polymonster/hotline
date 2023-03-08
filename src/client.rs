@@ -8,13 +8,9 @@ use crate::primitives;
 use crate::plugin;
 use crate::reloader;
 
-use gfx::SwapChain;
-use gfx::CmdBuf;
-use gfx::Texture;
-use gfx::RenderPass;
+use gfx::{SwapChain, CmdBuf, Texture, RenderPass};
 
 use os::Window;
-
 use imgui::UserInterface;
 use plugin::PluginReloadResponder;
 use reloader::Reloader;
@@ -22,7 +18,7 @@ use reloader::Reloader;
 use serde::{Deserialize, Serialize};
 
 use std::path::PathBuf;
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
 
 /// Information to create a hotline context which will create an app, window, device.
@@ -48,6 +44,18 @@ pub struct HotlineInfo {
     /// Optional user config, the default will be automatically located in the file system, this allows to override the launch configuration
     pub user_config: Option<UserConfig>
 }
+
+/// Time structure to pass around to plugins and systems
+#[derive(Clone)]
+pub struct Time {
+    /// Delta time in seconds since the last frame
+    pub delta: f32,
+    /// Smoothed delta time to reduce spikes
+    pub smooth_delta: f32,
+    /// System time that the last frame started
+    pub frame_start: SystemTime
+}
+const SMOOTH_DELTA_FRAMES : usize = 120;
 
 /// Useful defaults for quick HotlineInfo initialisation
 impl Default for HotlineInfo {
@@ -89,8 +97,10 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub imgui: imgui::ImGui<D, A>,
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
+    pub time: Time,
     pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
     plugins: Vec<PluginCollection>,
+    delta_history: VecDeque<f32>
 }
 
 /// Serialisable plugin
@@ -239,7 +249,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             unit_quad_mesh,
             user_config: user_config.clone(),
             plugins: Vec::new(),
-            libs: HashMap::new()
+            libs: HashMap::new(),
+            time: Time {
+                delta: 0.0,
+                smooth_delta: 0.0,
+                frame_start: SystemTime::now()
+            },
+            delta_history: VecDeque::new()
         };
 
         // automatically load plugins from prev session
@@ -252,8 +268,31 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         Ok(client)
     }
 
+    fn update_time(&mut self) {
+        // sync to new frame time
+        let prev_frame_start = self.time.frame_start;
+        self.time.frame_start = SystemTime::now();
+        let elapsed = prev_frame_start.elapsed();
+        if let Ok(elapsed) = elapsed {
+            // track delta
+            self.time.delta = elapsed.as_secs_f32();
+
+            // record history
+            self.delta_history.push_front(self.time.delta);
+            if self.delta_history.len() > SMOOTH_DELTA_FRAMES {
+                self.delta_history.pop_back();
+            }
+
+            // calculate smooth delta
+            let sum : f32 = self.delta_history.iter().sum();
+            self.time.smooth_delta = sum / self.delta_history.len() as f32;
+        }
+    }
+
     /// Start a new frame syncronised to the swap chain
     pub fn new_frame(&mut self) {
+        self.update_time();
+
         // update window and swap chain for the new frame
         self.main_window.update(&mut self.app);
         self.swap_chain.update::<A>(&mut self.device, &self.main_window, &mut self.cmd_buf);

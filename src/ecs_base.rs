@@ -5,7 +5,10 @@ use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use maths_rs::{Vec3f, Mat4f};
+use maths_rs::{Vec2f, Vec3f, Mat4f, Quatf};
+
+use std::ops::Deref;
+use std::ops::DerefMut;
 
 /// Information to describe a system and it's dependencies so it can be scheduled appropriately
 pub struct BatchSystemInfo {
@@ -86,64 +89,61 @@ pub struct StageBatch;
 #[derive(StageLabel)]
 pub struct StageRender;
 
+/// This macro allows you to create a newtype which will automatically deref and deref_mut
+/// you can use it to create resources or compnents and avoid having to use .0 to access the inner data
+#[macro_export]
+macro_rules! hotline_ecs {
+    ($derive:ty, $name:ident, $inner:ty) => {
+        #[derive($derive)]
+        pub struct $name(pub $inner);
+        impl Deref for $name {
+            type Target = $inner;
+            fn deref(&self) -> &$inner {
+                &self.0
+            }
+        }
+        impl DerefMut for $name {
+            fn deref_mut(&mut self) -> &mut $inner {
+                &mut self.0
+            }
+        }
+    }
+}
+
 //
 // Resources
 //
 
-#[derive(Resource)]
-pub struct DeviceRes(pub gfx_platform::Device);
-
-#[derive(Resource)]
-pub struct AppRes(pub os_platform::App);
-
-#[derive(Resource)]
-pub struct MainWindowRes(pub os_platform::Window);
-
-#[derive(Resource)]
-pub struct PmfxRes(pub pmfx::Pmfx<gfx_platform::Device>);
-
-#[derive(Resource)]
-pub struct ImDrawRes(pub imdraw::ImDraw<gfx_platform::Device>);
-
-#[derive(Resource)]
-pub struct UserConfigRes(pub client::UserConfig);
+hotline_ecs!(Resource, TimeRes, client::Time);
+hotline_ecs!(Resource, PmfxRes, pmfx::Pmfx<gfx_platform::Device>);
+hotline_ecs!(Resource, DeviceRes, gfx_platform::Device);
+hotline_ecs!(Resource, AppRes, os_platform::App);
+hotline_ecs!(Resource, MainWindowRes,os_platform::Window);
+hotline_ecs!(Resource, ImDrawRes, imdraw::ImDraw<gfx_platform::Device>);
+hotline_ecs!(Resource, UserConfigRes, client::UserConfig);
 
 //
 // Components
 //
 
-#[derive(Component)]
-pub struct Name(pub String);
+hotline_ecs!(Component, Name, String);
+hotline_ecs!(Component, Velocity, Vec3f);
+hotline_ecs!(Component, Position, Vec3f);
+hotline_ecs!(Component, Rotation, Quatf);
+hotline_ecs!(Component, Scale, Vec3f);
+hotline_ecs!(Component, LocalMatrix, Mat4f);
+hotline_ecs!(Component, WorldMatrix, Mat4f);
+hotline_ecs!(Component, ViewProjectionMatrix, Mat4f);
+hotline_ecs!(Component, MeshComponent, pmfx::Mesh<gfx_platform::Device>);
+hotline_ecs!(Component, Pipeline, String);
 
 #[derive(Component)]
-pub struct Velocity(pub Vec3f);
-
-#[derive(Component)]
-pub struct Position(pub Vec3f);
-
-#[derive(Component)]
-pub struct Rotation(pub Vec3f);
-
-#[derive(Component)]
-pub struct Scale(pub Vec3f);
-
-#[derive(Component)]
-pub struct LocalMatrix(pub Mat4f);
-
-#[derive(Component)]
-pub struct WorldMatrix(pub Mat4f);
-
-#[derive(Component)]
-pub struct ViewProjectionMatrix(pub Mat4f);
-
-#[derive(Component)]
-pub struct Camera;
+pub struct Camera {
+    pub rot: Vec2f
+}
 
 #[derive(Component)]
 pub struct MainCamera;
-
-#[derive(Component)]
-pub struct MeshComponent(pub pmfx::Mesh<gfx_platform::Device>);
 
 #[derive(Component)]
 pub struct Billboard;
@@ -158,7 +158,14 @@ macro_rules! system_func {
 #[macro_export]
 macro_rules! render_func {
     ($func:expr, $view:expr) => {
-        Some(render_func_closure![$func, $view].into_descriptor())
+        Some(render_func_closure![$func, $view, Query::<(&WorldMatrix, &MeshComponent)>].into_descriptor())
+    }
+}
+
+#[macro_export]
+macro_rules! render_func_query {
+    ($func:expr, $view:expr, $query:ty) => {
+        Some(render_func_closure![$func, $view, $query].into_descriptor())
     }
 }
 
@@ -167,12 +174,11 @@ macro_rules! render_func {
 /// so that a single render function can have different views
 #[macro_export]
 macro_rules! render_func_closure {
-    ($func:expr, $view_name:expr) => {
+    ($func:expr, $view_name:expr, $query:ty) => {
         move |
             pmfx: Res<PmfxRes>,
-            qmesh: Query::<(&WorldMatrix, &MeshComponent)>| {
-
-                let view = pmfx.0.get_view(&$view_name);
+            qmesh: $query | {
+                let view = pmfx.get_view(&$view_name);
 
                 let err = match view {
                     Ok(v) => { 
@@ -192,7 +198,7 @@ macro_rules! render_func_closure {
 
                 // record errors
                 if let Err(err) = err {
-                    pmfx.0.log_error(&$view_name, &err.msg);
+                    pmfx.log_error(&$view_name, &err.msg);
                 }
         }
     }
