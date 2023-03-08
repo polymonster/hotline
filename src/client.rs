@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
 
+const STATUS_BAR_HEIGHT : f32 = 10.0;
+
 /// Information to create a hotline context which will create an app, window, device.
 pub struct HotlineInfo {
     /// Name for the app and window title
@@ -302,6 +304,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // start imgui new frame
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
+        self.imgui.add_main_dock(STATUS_BAR_HEIGHT);
+        self.imgui.add_status_bar(STATUS_BAR_HEIGHT);
+
+        // quick test
+        if self.imgui.begin_window("status_bar") {
+            self.imgui.text("hello status bar!");
+        }
+        self.imgui.end();
 
         let dock_input = self.imgui.main_dock_hovered();
         self.app.set_input_enabled(

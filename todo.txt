@@ -1,20 +1,17 @@
 // TODO:
 
 // - move primitives from ecs to hotline
+
 // - bug with merging pmfx, with shared keys. the old ones are not recirsively merged / overwritten
 // - bug with pmfx inherit (test.pmfx cannot inherit and extend pipelines)
 // - store hotline-rs commit hash for crates.io
 // - pmfx docs for v1 and v2
-
-// primitives
-
 
 // ecs
 // - blend examples
 // - stencil examples
 // - billboard?
 // - 3x4 matrix
-// - time resource for systems
 
 // - per demo settings
 // - batch vertex instance buffer
@@ -49,6 +46,7 @@
 // - in client terminal / log
 
 // DONE:
+// x time resource for systems
 // x spring
 // x move rotate system out of ecs into ecs_demos
 // x core update (cams, configs)
