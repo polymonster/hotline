@@ -2,18 +2,17 @@
 #![cfg(target_os = "windows")]
 
 use hotline_rs::prelude::*;
+use maths_rs::prelude::*;
 
 /// Tests missing setup and updates are handled gracefully and notified to the user
 #[no_mangle]
 pub fn test_missing_systems(_: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {   
     ScheduleInfo {
-        setup: vec![
-            "missing".to_string()
+        setup: systems![
+            "missing"
         ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string(),
-            "missing".to_string()
+        update: systems![
+            "missing"
         ],
         render_graph: "mesh_debug".to_string(),
         ..Default::default()
@@ -24,12 +23,8 @@ pub fn test_missing_systems(_: &mut Client<gfx_platform::Device, os_platform::Ap
 #[no_mangle]
 pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     ScheduleInfo {
-        setup: vec![
-            "setup_cube".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_cube"
         ],
         render_graph: "missing".to_string(),
         ..Default::default()
@@ -41,12 +36,8 @@ pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platfor
 pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
         render_graph: "missing_view".to_string(),
         ..Default::default()
@@ -58,12 +49,8 @@ pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::
 pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
         render_graph: "missing_pipeline".to_string(),
         ..Default::default()
@@ -75,12 +62,8 @@ pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
         render_graph: "missing_pipeline".to_string(),
         ..Default::default()
@@ -92,12 +75,8 @@ pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
         render_graph: "missing_camera".to_string(),
         ..Default::default()
@@ -109,12 +88,8 @@ pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform
 pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_primitives".to_string()
-        ],
-        update: vec![
-            "update_cameras".to_string(),
-            "update_main_camera_config".to_string()
+        setup: systems![
+            "setup_primitives"
         ],
         render_graph: "missing_function".to_string(),
         ..Default::default()
@@ -126,10 +101,7 @@ pub fn render_missing_camera(
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     _: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx.0;
     pmfx.get_camera_constants("missing")?;
-
     Ok(())
 }
 
@@ -138,10 +110,80 @@ pub fn render_missing_pipeline(
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx.0;
     let fmt = view.pass.get_format_hash();
     pmfx.get_render_pipeline_for_format("missing", fmt)?;
-
     Ok(())
 }
+
+/// Test various combinations of different rasterizer states
+#[no_mangle]
+pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_raster_test"
+        ],
+        update: systems![
+            "rotate_meshes"
+        ],
+        render_graph: "raster_test".to_string(),
+        ..Default::default()
+    }
+}
+
+/// Sets up a few primitives with designated pipelines to verify raster state conformance
+#[no_mangle]
+pub fn setup_raster_test(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    // tuple (pipeline name, mesh)
+    let meshes = vec![
+        ("cull_none", hotline_rs::primitives::create_billboard_mesh(&mut device.0)),
+        ("cull_back", hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0)),
+        ("cull_front", hotline_rs::primitives::create_cube_mesh(&mut device.0)),
+        ("wireframe_overlay", hotline_rs::primitives::create_octahedron_mesh(&mut device.0)),
+        // TODO: alpha to coverage
+    ];
+
+    // square number of rows and columns
+    let rc = ceil(sqrt(meshes.len() as f32));
+    let irc = (rc + 0.5) as i32; 
+    let size = 10.0;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
+    let half_extent = rc * half_size;
+    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
+
+    let mut i = 0;
+    for y in 0..irc {
+        for x in 0..irc {
+            if i < meshes.len() {
+                let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+                commands.spawn((
+                    MeshComponent(meshes[i].1.clone()),
+                    Position(iter_pos),
+                    Rotation(Quatf::from_euler_angles(0.0, 0.0, 0.0)),
+                    Scale(splat3f(10.0)),
+                    WorldMatrix(Mat4f::identity()),
+                    Pipeline(meshes[i].0.to_string())
+                ));
+            }
+            i = i + 1;
+        }
+    }
+}
+
+/// Test various combinations of different blend states
+#[no_mangle]
+pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    ScheduleInfo {
+        setup: vec![
+            "setup_blend_test".to_string()
+        ],
+        render_graph: "blend_test".to_string(),
+        ..Default::default()
+    }
+}
+

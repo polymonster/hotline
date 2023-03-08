@@ -1450,6 +1450,176 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
     create_faceted_mesh_3d(dev, vertices)
 }
 
+/// Create a unit smooth hekix mesh 
+pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: usize) -> pmfx::Mesh<D> {
+    let mut segment_vertices = Vec::new();
+    let mut vertices = Vec::new();
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+    let radius = 0.5;
+
+    let mid = segments / 2;
+
+    // rotate around up axis and extract some data we can lookup to build vb and ib
+    let mut hangle = -f32::pi();
+    let angle_step = f32::two_pi() / segments as f32;
+    let height_step = 1.5 / segments as f32;
+    let scale = 2.0 / coils as f32;
+
+    let mut h = 0.0;
+    for k in 0..coils {
+        for i in 0..vertex_segments + 1 {
+            let x = cos(hangle);
+            let y = -sin(hangle);
+            
+            hangle += angle_step;
+            let x2 = cos(hangle);
+            let y2 = -sin(hangle);
+            
+            let x3 = -sin(hangle + angle_step);
+            let y3 = cos(hangle + angle_step);
+            
+            let p = vec3f(x, h, y);
+            let np = vec3f(x2, h + angle_step, y2);
+            let nnp = vec3f(x3, h + angle_step, y3);
+            
+            let at = normalize(np - p);
+            let up = Vec3f::unit_y();
+            let right = cross(up, at);
+            
+            let nat = normalize(nnp - np);
+            let nright = cross(up, nat);
+    
+            let mut vangle = -f32::pi();
+            for j in 0..vertex_segments {
+                let vx = cos(vangle) * radius;
+                let vy = -sin(vangle) * radius;
+                let vv = p + vx * up + vy * right;
+                  
+                let n = normalize(vx * up + vy * right);
+                let t = right;
+                let bt = up;
+    
+                let mut u = 0.5 + atan2(y, x) / f32::two_pi();
+                let mut v = 0.5 + atan2(vy, vx) / f32::two_pi();
+    
+                let u = if i == 0 { 1.0 } else { u };
+                let v = if j == 0 { 1.0 } else { v };
+
+                let u = if i == segments { 0.0 } else { u };
+    
+                segment_vertices.extend(vec![
+                    Vertex3D {
+                        position: vv * scale,
+                        normal: n,
+                        tangent: t,
+                        bitangent: bt,
+                        texcoord: vec2f(u, v) * 3.0
+                    }
+                ]);
+    
+                vangle += angle_step;
+            }
+
+            h += height_step;
+        }
+    }
+    
+    for k in 0..coils {
+        for i in 0..segments {
+            for j in 0..segments {
+                let coil_base = vertex_segments * segments * k;
+                let base = coil_base + (i * vertex_segments) + j;
+                let next_loop = base + 1;
+                let next_base = coil_base + ((i + 1) * vertex_segments) + j;
+                let next_next_loop = next_base + 1;
+                vertices.extend(vec![
+                    segment_vertices[base].clone(),
+                    segment_vertices[next_base].clone(),
+                    segment_vertices[next_loop].clone(),
+                    segment_vertices[next_base].clone(),
+                    segment_vertices[next_next_loop].clone(),
+                    segment_vertices[next_loop].clone(),
+                ]);
+            }
+        }
+    }
+
+    // start cap
+    let mut mid_pos = Vec3f::zero();
+    for j in 0..segments {
+        mid_pos += segment_vertices[j].position;
+    }
+    mid_pos /= segments as f32;
+
+    for j in 0..segments {
+        let p0 = segment_vertices[j + 1].position;
+        let p1 = segment_vertices[j].position;
+        vertices.extend(vec![
+            Vertex3D {
+                position: p0,
+                normal: -Vec3f::unit_z(),
+                texcoord: normalize(mid_pos.xy() - p0.xy()) * 0.5 + 0.5,
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            },
+            Vertex3D {
+                position: mid_pos,
+                normal: -Vec3f::unit_z(),
+                texcoord: vec2f(0.5, 0.5),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            },
+            Vertex3D {
+                position: p1,
+                normal: -Vec3f::unit_z(),
+                texcoord: normalize(mid_pos.xy() - p1.xy()) * 0.5 + 0.5,
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            }
+        ]);
+    }
+
+    // end cap
+    let offset = vertex_segments * segments * coils;
+    let mut mid_pos = Vec3f::zero();
+    for j in 0..segments {
+        mid_pos += segment_vertices[offset + j].position;
+    }
+    mid_pos /= segments as f32;
+
+    for j in 0..segments {
+        let p0 = segment_vertices[offset + j].position;
+        let p1 = segment_vertices[offset + j + 1].position;
+        vertices.extend(vec![
+            Vertex3D {
+                position: p0,
+                normal: Vec3f::unit_z(),
+                texcoord: normalize(mid_pos.xy() - p0.xy()) * 0.5 + 0.5,
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            },
+            Vertex3D {
+                position: mid_pos,
+                normal: Vec3f::unit_z(),
+                texcoord: vec2f(0.5, 0.5),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            },
+            Vertex3D {
+                position: p1,
+                normal: Vec3f::unit_z(),
+                texcoord: normalize(mid_pos.xy() - p1.xy()) * 0.5 + 0.5,
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_y()
+            }
+        ]);
+    }
+
+    create_faceted_mesh_3d(dev, vertices)
+}
+
 /// Creates a chamfer cube mesh with curved edges with `radius` size and `segments` subdivisions
 pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segments: usize) -> pmfx::Mesh<D> {
     let inset = 1.0 - radius;

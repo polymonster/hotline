@@ -12,10 +12,6 @@ pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_
         setup: systems![
             "setup_draw_indexed_push_constants"
         ],
-        update: systems![
-            "update_cameras",
-            "update_main_camera_config"
-        ],
         render_graph: "mesh_debug".to_string(),
         ..Default::default()
     }
@@ -63,14 +59,9 @@ pub fn setup_draw_indexed_push_constants(
 #[no_mangle]
 pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
-
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed"
-        ],
-        update: systems![
-            "update_cameras",
-            "update_main_camera_config"
         ],
         render_graph: "mesh_debug".to_string(),
         ..Default::default()
