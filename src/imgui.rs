@@ -37,6 +37,7 @@ const MAIN_DOCKSPACE_FLAGS : u32 = ImGuiWindowFlags_NoTitleBar |
 
 const IMVEC2_ZERO : ImVec2 = ImVec2 {x: 0.0, y: 0.0 };
 const MAIN_DOCK_NAME : *const i8 = "main_dock\0".as_ptr() as *const i8;
+const STATUS_BAR_NAME : *const i8 = "status_bar\0".as_ptr() as *const i8;
 
 /// Info to supply fonts from .ttf files for use with imgui
 pub struct FontInfo {
@@ -865,13 +866,25 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             igNewFrame();
 
+            io.UserData = std::ptr::null_mut();
+        }
+    }
+
+    /// Adds a dockspace to the main window starting at 0,0 running to width, height-status_bar_height
+    /// if status bar height is 0.0 then the whole window will be filled
+    pub fn add_main_dock(&mut self, status_bar_height: f32) {
+        unsafe {
             // set main window as dockspace
-            let main_viewport = igGetMainViewport();
+            let main_viewport = &*igGetMainViewport();
 
-            igSetNextWindowPos((*main_viewport).Pos, 0, IMVEC2_ZERO);
-            igSetNextWindowSize((*main_viewport).Size, 0);
+            let size = ImVec2 {
+                x: main_viewport.Size.x,
+                y: main_viewport.Size.y - status_bar_height
+            };
 
-            igSetNextWindowViewport((*main_viewport).ID);
+            igSetNextWindowPos(main_viewport.Pos, 0, IMVEC2_ZERO);
+            igSetNextWindowSize(size, 0);
+            igSetNextWindowViewport(main_viewport.ID);
 
             igPushStyleVarFloat(ImGuiStyleVar_WindowRounding as i32, 0.0);
             igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
@@ -881,11 +894,11 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             let mut open = true;
             igBegin(dockspace_name, &mut open, MAIN_DOCKSPACE_FLAGS as i32);
-            
+
             let id = igGetIDStr(dockspace_name);
 
             igDockSpace(id, ImVec2{x: 0.0, y: 0.0}, ImGuiDockNodeFlags_PassthruCentralNode as i32, std::ptr::null_mut());
-            
+
             igPopStyleVar(3);
             igEnd();
 
@@ -904,15 +917,61 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             igSetNextWindowClass(&window_class);
 
             igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
-            
+
             let mut avail = IMVEC2_ZERO;
             igGetContentRegionAvail(&mut avail);
-    
+
             igEnd();
             igPopStyleVar(5);
-
-            io.UserData = std::ptr::null_mut();
         }
+    }
+
+    pub fn add_status_bar(&mut self, height: f32) {
+        unsafe {
+            let status_bar_flags = ImGuiWindowFlags_NoDocking | 
+                ImGuiWindowFlags_NoResize | 
+                ImGuiWindowFlags_NoTitleBar |
+                ImGuiWindowFlags_NoMove | 
+                ImGuiWindowFlags_NoScrollbar | 
+                ImGuiWindowFlags_NoSavedSettings;
+
+            let vp = &*igGetMainViewport();
+            let style = &*igGetStyle();
+
+            igSetNextWindowPos(ImVec2 {x: vp.Pos.x, y: vp.Size.y}, 0, IMVEC2_ZERO);
+            igSetNextWindowSize(ImVec2 {x: vp.Size.x, y: height}, 0);
+            igPushStyleVarFloat(ImGuiStyleVar_WindowRounding as i32, 0.0);
+            igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
+            igPushStyleColorVec4(ImGuiCol_WindowBg as i32, style.Colors[ImGuiCol_MenuBarBg as usize]);
+
+            igBegin(STATUS_BAR_NAME, std::ptr::null_mut(), status_bar_flags as i32);
+            igPopStyleColor(1);
+            igPopStyleVar(2);
+            igEnd();
+        }
+        
+        /*
+        if(m_currentMode == EditorMode::editor)
+        {
+            static f32 s_offsetWidth = 0.0f;
+
+            // Left-aligned content.
+            {
+                updateSaveStatus();
+                ImGui::SameLine();
+            }
+
+            // Right-aligned content.
+            {
+                ImGui::SetCursorPosX(ImGui::GetWindowSize().x - s_offsetWidth);
+                f32 offsetStart = ImGui::GetCursorPosX();
+                updateRootStatus();
+                updateOnlineStatus();
+                ImGui::SameLine();
+                s_offsetWidth = ImGui::GetCursorPosX() - offsetStart;
+            }
+        }
+        */
     }
 
     /// Return the size of the main dockspace viewport which is the background of the main window
@@ -1081,6 +1140,18 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 null_title.as_ptr() as *const i8,
                 open as *mut bool,
                 i32::from(flags),
+            )
+        }
+    }
+
+    /// Begin a window with no settings, you can use this to re-use existing and setup windows
+    pub fn begin_window(&mut self, name: &str) -> bool {
+        unsafe {
+            let null_name = CString::new(name).unwrap();
+            igBegin(
+                null_name.as_ptr() as *const i8,
+                std::ptr::null_mut(),
+                0
             )
         }
     }
