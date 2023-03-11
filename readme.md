@@ -8,9 +8,9 @@
 
 Hotline is a live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render pipelines can be edited and hot reloaded through `pmfx` files.
 
-[<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom_final.gif" width="100%"/>]  
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom_final.gif" width="100%"/>  
 
-There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages.
+There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages and an example workflow demonstration of how the geometry primitives were created.
 
 ## Prerequisites
 
