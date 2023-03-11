@@ -566,7 +566,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
             // refresh button
-            if client.imgui.button("\u{f021}") {
+            if client.imgui.button(font_awesome::strs::SYNC) {
                 resetup = true;
             }
             client.imgui.same_line();

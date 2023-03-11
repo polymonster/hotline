@@ -444,8 +444,6 @@ fn render_draw_data<D: Device>(
             [(r + l) / (l - r), (t + b) / (b - t), 0.0, 1.0],
         ];
 
-        cmd.set_marker(0xff00ffff, "ImGui");
-
         let viewport = gfx::Viewport {
             x: 0.0,
             y: 0.0,
@@ -455,6 +453,7 @@ fn render_draw_data<D: Device>(
             max_depth: 1.0,
         };
 
+        cmd.begin_event(0xff1fb6c4, "imgui");
         cmd.set_viewport(&viewport);
         cmd.set_vertex_buffer(&buffers.vb, 0);
         cmd.set_index_buffer(&buffers.ib);
@@ -505,6 +504,7 @@ fn render_draw_data<D: Device>(
             global_idx_offset += draw_index.Size as u32;
             global_vtx_offset += draw_vert.Size as u32;
         }
+        cmd.end_event();
         Ok(())
     }
 }

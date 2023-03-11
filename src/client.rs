@@ -230,7 +230,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         pmfx.create_pipeline(&device, "imdraw_blit", swap_chain.get_backbuffer_pass())?;
 
         let size = main_window.get_size();
-        pmfx.update_window(&mut device, (size.x as f32, size.y as f32), "main_window");
+        pmfx.update_window(&mut device, (size.x as f32, size.y as f32), "main_window")?;
 
         // blit pmfx
         let unit_quad_mesh = primitives::create_unit_quad_mesh(&mut device);
@@ -292,7 +292,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     }
 
     /// Start a new frame syncronised to the swap chain
-    pub fn new_frame(&mut self) {
+    pub fn new_frame(&mut self) -> Result<(), super::Error> {
         self.update_time();
 
         // update window and swap chain for the new frame
@@ -319,16 +319,18 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             !self.imgui.want_capture_mouse() || dock_input);
 
         let size = self.main_window.get_size();
-        self.pmfx.update_window(&mut self.device, (size.x as f32, size.y as f32), "main_window");
+        self.pmfx.update_window(&mut self.device, (size.x as f32, size.y as f32), "main_window")?;
 
         let size = self.imgui.get_main_dock_size();
-        self.pmfx.update_window(&mut self.device, size, "main_dock");
+        self.pmfx.update_window(&mut self.device, size, "main_dock")?;
 
         // start new pmfx frame
-        self.pmfx.new_frame(&mut self.device, &self.swap_chain);
+        self.pmfx.new_frame(&mut self.device, &self.swap_chain)?;
 
         // user config changes
         self.update_user_config_windows();
+
+        Ok(())
     }
 
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
@@ -401,14 +403,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // blit
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
        
-        // blit to main window
-        let vp_rect = self.main_window.get_viewport_rect();
-        self.cmd_buf.begin_event(0xff0000ff, "Blit Pmfx");
-        self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
-        self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
-        
         // get srv index of the pmfx target to blit to the window, if the target exists
         if let Some(tex) = self.pmfx.get_texture(blit_view_name) {
+            // blit to main window
+            let vp_rect = self.main_window.get_viewport_rect();
+            self.cmd_buf.begin_event(0xff65cf82, "blit_pmfx");
+            self.cmd_buf.set_viewport(&gfx::Viewport::from(vp_rect));
+            self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
             let srv = tex.get_srv_index().unwrap();
             let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
             self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
@@ -417,12 +418,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
             self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+            self.cmd_buf.end_event();
         }
 
-        self.cmd_buf.end_event();
-
         // render imgui
-        self.cmd_buf.begin_event(0xff0000ff, "ImGui");
+        self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
         self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
         self.cmd_buf.end_event();
 
@@ -751,7 +751,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run(mut self) {
         while self.app.run() {
-            self.new_frame();
+            // TODO: handle errors
+            self.new_frame().unwrap();
 
             self.core_ui();
             self.pmfx.show_ui(&mut self.imgui, true);
@@ -774,7 +775,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run_once(mut self) {
-        self.new_frame();
+        // TODO: handle errors
+        self.new_frame().unwrap();
         self.core_ui();
         self.pmfx.show_ui(&mut self.imgui, true);
         self = self.update_plugins();

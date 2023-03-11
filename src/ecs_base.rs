@@ -182,12 +182,19 @@ macro_rules! render_func_closure {
 
                 let err = match view {
                     Ok(v) => { 
-                        let view = v.lock().unwrap();
-                        $func(
+                        let mut view = v.lock().unwrap();
+                        
+                        let col = view.colour_hash;
+                        view.cmd_buf.begin_event(col, &$view_name);
+
+                        let result = $func(
                             &pmfx,
                             &view,
                             qmesh
-                        )
+                        );
+
+                        view.cmd_buf.end_event();
+                        result
                     }
                     Err(v) => {
                         Err(hotline_rs::Error {

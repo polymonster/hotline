@@ -82,6 +82,7 @@ pub enum Format {
     RGBA8u,
     RGBA8i,
     BGRA8n,
+    BGRX8n,
     RGBA16u,
     RGBA16i,
     RGBA16f,
@@ -216,6 +217,7 @@ bitflags! {
     }
 
     /// Render target write mask flags.
+    #[derive(Serialize, Deserialize)]
     pub struct WriteMask : u8 {
         const RED = 1<<0;
         const GREEN = 1<<1;
@@ -508,6 +510,7 @@ pub struct BlendInfo {
 }
 
 /// Blending operations for a single render target
+#[derive(Clone, Serialize, Deserialize)]
 pub struct RenderTargetBlendInfo {
     pub blend_enabled: bool,
     pub logic_op_enabled: bool,
@@ -522,6 +525,7 @@ pub struct RenderTargetBlendInfo {
 }
 
 /// Controls how the source and destination terms in blend equation are derrived
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum BlendFactor {
     Zero,
     One,
@@ -543,6 +547,7 @@ pub enum BlendFactor {
 }
 
 /// Controls how the source and destination terms are combined: final = src (op) dest
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum BlendOp {
     Add,
     Subtract,
@@ -552,6 +557,7 @@ pub enum BlendOp {
 }
 
 /// The logical operation to configure for a render target blend with logic op enabled
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum LogicOp {
     Clear,
     Set,
@@ -663,7 +669,7 @@ pub struct TransitionBarrier<'stack, D: Device> {
 }
 
 /// All possible resource states, some for buffers and some for textures
-#[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Copy, Clone, Serialize, Deserialize, PartialEq, Debug)]
 pub enum ResourceState {
     /// Used for texture only to be written to from fragment shaders
     RenderTarget,
@@ -935,6 +941,7 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::RGBA8u => 4,
         Format::RGBA8i => 4,
         Format::BGRA8n => 4,
+        Format::BGRX8n => 4,
         Format::RGB32u => 12,
         Format::RGB32i => 12,
         Format::RGB32f => 12,
@@ -1122,5 +1129,11 @@ impl Default for RenderTargetBlendInfo {
             logic_op: LogicOp::Clear,
             write_mask: WriteMask::ALL,
         }
+    }
+}
+
+impl std::fmt::Display for ResourceState {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{:?}", self)
     }
 }

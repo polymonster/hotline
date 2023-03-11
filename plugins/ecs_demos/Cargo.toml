@@ -10,3 +10,4 @@ crate-type = ["rlib", "dylib"]
 hotline-rs = { path = "../.." }
 maths-rs = "0.1.10"
 bevy_ecs = "0.9.1"
+rand = "0.8.5"

@@ -38,6 +38,10 @@ pub struct View<D: gfx::Device> {
     pub graph_view_name: String,
     /// name of the pmfx view, this is the source view (camera, render targets)
     pub pmfx_view_name: String,
+    /// hash of the view name
+    pub name_hash: PmfxHash,
+    /// colour hash (for debug markers, derribe from name)
+    pub colour_hash: u32,
     /// A pre-built render pass: multiple colour targets and depth possible
     pub pass: D::RenderPass,
     /// Pre-calculated viewport based on the output dimensions of the render target adjusted for user data from .pmfx
@@ -131,6 +135,8 @@ struct File {
     pipelines: HashMap<String, PipelinePermutations>,
     depth_stencil_states: HashMap<String, gfx::DepthStencilInfo>,
     raster_states: HashMap<String, gfx::RasterInfo>,
+    blend_states: HashMap<String, BlendInfo>,
+    render_target_blend_states: HashMap<String, gfx::RenderTargetBlendInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
     render_graphs: HashMap<String, HashMap<String, GraphViewInfo>>,
@@ -146,10 +152,12 @@ impl File {
             pipelines: HashMap::new(),
             depth_stencil_states: HashMap::new(),
             raster_states: HashMap::new(),
+            blend_states: HashMap::new(),
+            render_target_blend_states: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
             render_graphs: HashMap::new(),
-            dependencies: Vec::new()
+            dependencies: Vec::new(),
         }
     }
 }
@@ -179,6 +187,14 @@ struct TextureInfo {
     hash: u64
 }
 
+/// Pmfx texture serialisation layout, this data is emitted from pmfx-shader compiler
+#[derive(Serialize, Deserialize)]
+struct BlendInfo {
+    alpha_to_coverage_enabled: bool,
+    independent_blend_enabled: bool,
+    render_target: Vec<String>,
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
@@ -187,9 +203,9 @@ struct Pipeline {
     cs: Option<String>,
     vertex_layout: Option<gfx::InputLayout>,
     descriptor_layout: gfx::DescriptorLayout,
-    blend_state: Option<String>,
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
+    blend_state: Option<String>,
     topology: Option<gfx::Topology>,
     hash: PmfxHash
 }
@@ -241,10 +257,10 @@ fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Opti
 }
 
 /// get gfx info from a pmfx state, returning default if it does not exist
-fn info_from_state<T: Default + Copy>(name: &Option<String>, map: &HashMap<String, T>) -> T {
+fn info_from_state<T: Default + Clone>(name: &Option<String>, map: &HashMap<String, T>) -> T {
     if let Some(name) = &name {
         if map.contains_key(name) {
-            map[name]
+            map[name].clone()
         }
         else {
             T::default()
@@ -252,6 +268,40 @@ fn info_from_state<T: Default + Copy>(name: &Option<String>, map: &HashMap<Strin
     }
     else {
         T::default()
+    }
+}
+
+/// get a gfx::BlendState from the pmfx description which unpacks blend states by name and then
+/// array of render target blend states by name
+fn blend_info_from_state(
+    name: &Option<String>,
+    blend_states: &HashMap<String, BlendInfo>,
+    render_target_blend_states: &HashMap<String, gfx::RenderTargetBlendInfo>) -> gfx::BlendInfo {
+    if let Some(name) = &name {
+        if blend_states.contains_key(name) {
+            let rt = blend_states[name].render_target.iter().map(|n| 
+                info_from_state(&Some(n.to_string()), render_target_blend_states)
+            ).collect::<Vec<gfx::RenderTargetBlendInfo>>();
+            gfx::BlendInfo {
+                alpha_to_coverage_enabled: blend_states[name].alpha_to_coverage_enabled,
+                independent_blend_enabled: blend_states[name].independent_blend_enabled,
+                render_target: rt
+            }
+        }
+        else {
+            gfx::BlendInfo {
+                alpha_to_coverage_enabled: false,
+                independent_blend_enabled: false,
+                render_target: vec![gfx::RenderTargetBlendInfo::default()],
+            }
+        }
+    }
+    else {
+        gfx::BlendInfo {
+            alpha_to_coverage_enabled: false,
+            independent_blend_enabled: false,
+            render_target: vec![gfx::RenderTargetBlendInfo::default()],
+        }
     }
 }
 
@@ -416,17 +466,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
              //  deserialise pmfx pipelines from file
              let info_filepath = folder.join(format!("{}.json", pmfx_name));
              let pmfx_data = fs::read(&info_filepath)?;
-             let file : File = serde_json::from_slice(&pmfx_data).unwrap();
+             let file : File = serde_json::from_slice(&pmfx_data)?;
  
              // prepend the pmfx name to the shaders so we can avoid collisions
              for name in file.pipelines.keys() {
                  // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
                  self.pmfx_folders.insert(name.to_string(), String::from(filepath));
              }
- 
+
              // create tracking info to check if the pmfx has been rebuilt
+             let file_metadata = fs::metadata(&info_filepath)?;
              e.insert(PmfxTrackingInfo {
-                 modified_time: fs::metadata(&info_filepath).unwrap().modified().unwrap(),
+                 modified_time: file_metadata.modified()?,
                  filepath: info_filepath
              });
  
@@ -448,6 +499,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.pmfx.pipelines.extend(other.pipelines);
         self.pmfx.depth_stencil_states.extend(other.depth_stencil_states);
         self.pmfx.raster_states.extend(other.raster_states);
+        self.pmfx.blend_states.extend(other.blend_states);
+        self.pmfx.render_target_blend_states.extend(other.render_target_blend_states);
         self.pmfx.textures.extend(other.textures);
         self.pmfx.views.extend(other.views);
         self.pmfx.render_graphs.extend(other.render_graphs);
@@ -606,8 +659,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 ds_clear: to_gfx_clear_depth_stencil(pmfx_view.clear_depth, pmfx_view.clear_stencil),
                 resolve: false,
                 discard: false,
-            })
-            .unwrap();
+            })?;
 
             // assing a view pipleine (if we supply 1 pipeline) for all draw calls in the view, otherwise leave it emptu
             let view_pipeline = if let Some(pipelines) = &info.pipelines {
@@ -622,9 +674,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 String::new()
             };
 
+            // hashes
+            let mut hash = DefaultHasher::new();
+            graph_view_name.hash(&mut hash);
+            let name_hash : PmfxHash = hash.finish();
+
+            // colour hash
+            let mut hash = DefaultHasher::new();
+            view_name.hash(&mut hash);
+            let colour_hash : u32 = hash.finish() as u32 | 0xff000000; 
+
             let view = View::<D> {
                 graph_view_name: graph_view_name.to_string(),
                 pmfx_view_name: view_name.to_string(),
+                name_hash,
+                colour_hash,
                 pass: render_target_pass,
                 viewport: gfx::Viewport {
                     x: 0.0,
@@ -697,6 +761,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                 // transition main resource into resolve src
                 let mut cmd_buf = device.create_cmd_buf(1);
+                cmd_buf.begin_event(0xffdc789a, &format!("resolve: {}", &texture_name));
+
                 cmd_buf.transition_barrier(&gfx::TransitionBarrier {
                     texture: Some(self.get_texture(texture_name).unwrap()),
                     buffer: None,
@@ -726,6 +792,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     },
                     Subresource::ResolveResource
                 );
+                cmd_buf.end_event();
 
                 // insert barrier
                 cmd_buf.close()?;
@@ -734,6 +801,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // update track state
                 texture_barriers.remove(texture_name);
                 texture_barriers.insert(texture_name.to_string(), ResourceState::ResolveSrc);
+
+                
             }
 
             // add barrier placeholder in the execute order
@@ -758,12 +827,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
+                cmd_buf.begin_event(
+                    0xfff1b023, 
+                    &format!("transition_barrier: {} ({} -> {})", &texture_name, state, target_state)
+                );
                 cmd_buf.transition_barrier(&gfx::TransitionBarrier {
                     texture: Some(self.get_texture(texture_name).unwrap()),
                     buffer: None,
                     state_before: state,
                     state_after: target_state,
                 });
+                cmd_buf.end_event();
                 cmd_buf.close()?;
                 self.barriers.insert(barrier_name, cmd_buf);
     
@@ -864,7 +938,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             let view = view.lock().unwrap();
                             self.create_pipeline(device, pipeline, &view.pass)?;
                         }
-    
                     }
     
                     // push a view on
@@ -943,12 +1016,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             descriptor_layout: pipeline.descriptor_layout.clone(),
                             raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states),
                             depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
-                            blend_info: gfx::BlendInfo {
-                                alpha_to_coverage_enabled: false,
-                                independent_blend_enabled: false,
-                                render_target: vec![gfx::RenderTargetBlendInfo::default()],
-                            },
-                            topology: 
+                            blend_info: blend_info_from_state(
+                                &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states),
+                            topology:
                                 if let Some(topology) = pipeline.topology {
                                     topology
                                 }
@@ -1013,24 +1083,23 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Start a new frame and syncronise command buffers to the designated swap chain
-    pub fn new_frame(&mut self, device: &mut D, swap_chain: &D::SwapChain) {
+    pub fn new_frame(&mut self, device: &mut D, swap_chain: &D::SwapChain) -> Result<(), super::Error> {
         // check if we have any reloads available
         if self.reloader.check_for_reload() == ReloadState::Available {
             // wait for last GPU frame so we can drop the resources
             swap_chain.wait_for_last_frame();
-            self.reload(device);
+            self.reload(device)?;
             self.reloader.complete_reload();
         }
 
         // reset command buffers
         self.reset(swap_chain);
-        
-        // reset errors
-        // self.view_errors.lock().unwrap().clear();
+
+        Ok(())
     }
 
     /// Reload all active resources based on hashes
-    pub fn reload(&mut self, device: &mut D) {        
+    pub fn reload(&mut self, device: &mut D) -> Result<(), super::Error> {        
 
         let reload_paths = self.pmfx_tracking.iter_mut().filter(|(_, tracking)| {
             fs::metadata(&tracking.filepath).unwrap().modified().unwrap() > tracking.modified_time
@@ -1038,25 +1107,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
             tracking.1.filepath.to_string_lossy().to_string()
         }).collect::<Vec<String>>();
 
-        // TODO: blog ref, cant move reload_filepath int loop
-        /*
-        let mut og_reload_paths = Vec::new();
-        for (_, tracking) in &mut self.pmfx_tracking {
-            let mtime = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
-            if mtime > tracking.modified_time {
-                tracking.modified_time = fs::metadata(&tracking.filepath).unwrap().modified().unwrap();
-                og_reload_paths.push(tracking.filepath.to_string_lossy().to_string())
-            }
-        }
-        */
-
         let mut rebuild_graph = false;
         for reload_filepath in reload_paths {
             if !reload_filepath.is_empty() {
                 println!("hotline_rs::pmfx:: reload from {}", reload_filepath);
-
                 let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
-                let file : File = serde_json::from_slice(&pmfx_data).unwrap();
+                
+                let file : File = serde_json::from_slice(&pmfx_data)?;
                 self.merge_pmfx(file);
 
                 // find textures that need reloading
@@ -1112,7 +1169,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 }
 
                 // reload textures
-                self.recreate_textures(device, &reload_textures);
+                self.recreate_textures(device, &reload_textures)?;
 
                 // reload views
                 for view in &reload_views {
@@ -1143,9 +1200,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     // create pipeline with the pass from compatible view
                     if let Some(compatiblew_view) = compatiblew_view {
-                        let view = self.get_view(compatiblew_view).unwrap().clone();
+                        let view = self.get_view(compatiblew_view)?.clone();
                         let view = view.lock().unwrap();
-                        self.create_pipeline(device, &pipeline.1, &view.pass).unwrap();
+                        self.create_pipeline(device, &pipeline.1, &view.pass)?;
                     }
                     else {
                         println!("hotline::pmfx:: warning pipeline was not reloaded: {}", pipeline.1);
@@ -1161,21 +1218,25 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // 
             if rebuild_graph {
-                self.create_render_graph(device, &self.active_render_graph.to_string()).unwrap();
+                self.create_render_graph(device, &self.active_render_graph.to_string())?;
             }
         }
+        Ok(())
     }
 
     /// Recreate the textures in `texture_names` call this when you know size / sample count has changed
     /// and the tracking info is updated
-    fn recreate_textures(&mut self, device: &mut D, texture_names: &HashSet<String>) {
+    fn recreate_textures(&mut self, device: &mut D, texture_names: &HashSet<String>) -> Result<(), super::Error> {
         for texture_name in texture_names {
             // remove the old and destroy
-            let tex = self.textures.remove(texture_name).unwrap();
-            device.destroy_texture(tex.1.texture);
-            // create with new dimensions from 'window_sizes'
-            self.create_texture(device, texture_name).unwrap();
+            let tex = self.textures.remove(texture_name);
+            if let Some(tex) = tex {
+                device.destroy_texture(tex.1.texture);
+                // create with new dimensions from 'window_sizes'
+                self.create_texture(device, texture_name)?;
+            }
         }
+        Ok(())
     }
 
     /// Returns `Vec<String>` containing view names associated with the texture name
@@ -1209,7 +1270,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Update render targets or views associated with a window, this will resize textures and rebuild views
     /// which need to be modified if a window size changes
-    pub fn update_window(&mut self, device: &mut D, size: (f32, f32), name: &str) {
+    pub fn update_window(&mut self, device: &mut D, size: (f32, f32), name: &str) -> Result<(), super::Error> {
         let mut rebuild_views = HashSet::new();
         let mut recreate_texture_names = HashSet::new();
         if self.window_sizes.contains_key(name) {
@@ -1236,12 +1297,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.window_sizes.insert(name.to_string(), size);
 
         // recreate textures for the new sizes
-        self.recreate_textures(device, &recreate_texture_names);
+        self.recreate_textures(device, &recreate_texture_names)?;
 
         // recreate the active render graph
         if !rebuild_views.is_empty() {
-            self.create_render_graph(device, &self.active_render_graph.to_string()).unwrap();
+            self.create_render_graph(device, &self.active_render_graph.to_string())?;
         }
+
+        Ok(())
     }
 
     /// Update camera constants for the named camera, will create a new entry if one does not exist
