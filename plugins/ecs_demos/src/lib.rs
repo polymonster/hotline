@@ -104,6 +104,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 
         // tests
         "test_raster_states",
+        "test_blend_states",
         "test_missing_demo",
         "test_missing_systems",
         "test_missing_render_graph",
@@ -123,7 +124,8 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         "setup_draw_indexed" => system_func![setup_draw_indexed],
         "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
         "setup_raster_test" => system_func![setup_raster_test],
-
+        "setup_blend_test" => system_func![setup_blend_test],
+        
         // updates
         "rotate_meshes" => system_func![rotate_meshes],
 

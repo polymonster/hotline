@@ -266,6 +266,7 @@ const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::RGBA8u => DXGI_FORMAT_R8G8B8A8_UINT,
         super::Format::RGBA8i => DXGI_FORMAT_R8G8B8A8_SINT,
         super::Format::BGRA8n => DXGI_FORMAT_B8G8R8A8_UNORM,
+        super::Format::BGRX8n => DXGI_FORMAT_B8G8R8X8_UNORM,
         super::Format::RGBA16u => DXGI_FORMAT_R16G16B16A16_UINT,
         super::Format::RGBA16i => DXGI_FORMAT_R16G16B16A16_SINT,
         super::Format::RGBA16f => DXGI_FORMAT_R16G16B16A16_FLOAT,
@@ -2442,6 +2443,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         if self.pix.is_some() {
             self.pix.unwrap().end_event_on_command_list(cmd);
         }
+        assert_eq!(self.event_stack_count > 0, true, "hotline::gfx::d3d12:: mismatched begin/end event");
         self.event_stack_count -= 1;
     }
 

@@ -70,6 +70,15 @@ impl From<std::io::Error> for Error {
     }
 }
 
+/// serde errors
+impl From<serde_json::Error> for Error {
+    fn from(err: serde_json::Error) -> Error {
+        Error {
+            msg: err.to_string()
+        }
+    }
+}
+
 /// Returns the config name for the current configuration, this is useful to local items in target/debug
 #[cfg(debug_assertions)]
 pub const fn get_config_name() -> &'static str {

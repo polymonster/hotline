@@ -3,6 +3,7 @@
 
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
+use rand::prelude::*;
 
 /// Tests missing setup and updates are handled gracefully and notified to the user
 #[no_mangle]
@@ -174,13 +175,75 @@ pub fn setup_raster_test(
     }
 }
 
+/// Sets up a few primitives with designated pipelines to verify raster state conformance
+#[no_mangle]
+pub fn setup_blend_test(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    // tuple (pipeline name, mesh)
+    let meshes = vec![
+        hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_cube_mesh(&mut device.0),
+        hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
+    ];
+
+    let pipelines = vec![
+        "blend_disabled",
+        "blend_additive", 
+        "blend_alpha", 
+        "blend_subtract",
+    ];
+
+    // square number of rows and columns
+    let rc = ceil(sqrt(pipelines.len() as f32));
+    let irc = (rc + 0.5) as i32; 
+    let size = 10.0;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
+    let half_extent = rc * half_size;
+    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
+
+    let mut rng = rand::thread_rng();
+
+    let mut i = 0;
+    for y in 0..irc {
+        for x in 0..irc {
+            if i < pipelines.len() {
+                let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+                // spawn a bunch vof entites with slightly randomised 
+                for _ in 0..32 {
+                    let mesh : usize = rng.gen::<usize>() % meshes.len();
+                    let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(15.0, 50.0, 15.0) + vec3f(2.0, 0.0, 2.0);
+                    let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
+                    commands.spawn((
+                        MeshComponent(meshes[mesh].clone()),
+                        Position(iter_pos + pos),
+                        Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
+                        Scale(splat3f(2.0)),
+                        WorldMatrix(Mat4f::identity()),
+                        Pipeline(pipelines[i].to_string())
+                    ));
+                }
+            }
+            i = i + 1;
+        }
+    }
+}
+
+
 /// Test various combinations of different blend states
 #[no_mangle]
 pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
     ScheduleInfo {
-        setup: vec![
-            "setup_blend_test".to_string()
+        setup: systems![
+            "setup_blend_test"
+        ],
+        update: systems![
+            "rotate_meshes"
         ],
         render_graph: "blend_test".to_string(),
         ..Default::default()
