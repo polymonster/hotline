@@ -2,7 +2,6 @@
 
 // - pmfx v2 docs (texture and view)
 
-// - markers on ecs render passes
 // - update pmbuild and pmfx (again)
 // - move primitives from ecs to hotline
 
@@ -49,6 +48,7 @@
 // - in client terminal / log
 
 // DONE:
+// x markers on ecs render passes
 // x add gif to the github page, + link to video
 // x handle serde errors when building pipeline
 // x RGBA write issue
