@@ -6,7 +6,7 @@
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 
-Hotline is a live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render pipelines can be edited and hot reloaded through `pmfx` files.
+Hotline is a live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render configs can be edited and hot reloaded through `pmfx` files.
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom_final.gif" width="100%"/>  
 
@@ -14,16 +14,16 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 
 ## Prerequisites
 
-Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux Vulkan and more over time.
+Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan and more over time.
 
 ## Building Data
 
-The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down when running `cargo build` the `hotline-data` repository will be cloned automatically for you.
+The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down. When running `cargo build` the `hotline-data` repository will be cloned automatically for you.
 
 The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure [pmbuild](https://github.com/polymonster/pmbuild) build jobs and tools, if you wanted to manually configure the setup or add new steps.
 
 ```text
-// fetch the data repository and build the library and client
+// fetch the data repository, build the library and client
 cargo build
 
 // build the data to target/data
@@ -35,7 +35,7 @@ cargo build
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the hotline library, and the client, fetch the hotline-data repository
+// build the hotline library and the client, fetch the hotline-data repository
 cargo build
 
 // build the data
@@ -55,6 +55,9 @@ Any code changes made to the plugin libs will cause a rebuild and reload to happ
 To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled `pmbuild` in the `hotline-data` repository and use the following commands which bundle together build steps:
 
 ```text
+// show aavailable build profiles
+.\hotline-data\pmbuild.cmd -help
+
 // build release
 .\hotline-data\pmbuild.cmd win32-release
 
@@ -68,9 +71,9 @@ To make things more convenient during development and keep the `plugins`, `clien
 .\hotline-data\pmbuild.cmd win32-release -all -run
 ```
 
-### Building from VSCode
+### Building from Visual Studio Code
 
-There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from VSCode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.  
+There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from vscode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.  
 
 ## Adding Plugins
 
@@ -91,7 +94,7 @@ crate-type = ["rlib", "dylib"]
 hotline-rs = { path = "../.." }
 ```
 
-You can provide your own plugins implementations using the [Plugin](https://docs.rs/hotline-rs/latest/hotline_rs/plugin/trait.Plugin.html) trait. A basic plugin can hook itself by implementing a few functions:
+You can provide your own plugin implementations using the [Plugin](https://docs.rs/hotline-rs/latest/hotline_rs/plugin/trait.Plugin.html) trait. A basic plugin can hook itself by implementing a few functions:
 
 ```rust
 impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
@@ -183,7 +186,7 @@ pub fn setup_cube(
 
 #### Render Systems
 
-You can specify render graphs in `pmfx` which set up `views` which get dispatched into `render` functions. All render systems run concurrently on the CPU, the command buffers they generate are executed in an order determined by the `pmfx` render graph and it's dependencies.
+You can specify render graphs in `pmfx` that set up `views`, which get dispatched into `render` functions. All render systems run concurrently on the CPU, the command buffers they generate are executed in an order determined by the `pmfx` render graph and it's dependencies.
 
 ```rust
 #[no_mangle]
@@ -237,7 +240,7 @@ fn update_cameras(
 
 Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them.  
 
-You can implement a function called `get_demos_<lib_name>` which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems which can then be looked up by name, the ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
+You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems that can then be looked up by name. The ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
 
 ```rust
 /// Register demo names
@@ -269,7 +272,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
 ```
 ### Serialising Plugin Data
 
-You can supply your own serialisable plugin data which will be serialised with the rest of the `user_config` and can be grouped with your plugin and reloaded between sessions.
+You can supply your own serialisable plugin data that will be serialised with the rest of the `user_config` and can be grouped with your plugin and reloaded between sessions.
 
 ```rust
 /// Seriablisable user info for maintaining state between reloads and sessions
@@ -357,12 +360,8 @@ pub fn main() -> Result<(), hotline_rs::Error> {
         swap_chain.swap(&device);
     }
 
-    // must wait for the final frame to be completed
+    // must wait for the final frame to be completed so it is safe to drop GPU resources.
     swap_chain.wait_for_last_frame();
-
-    /// must reset command buffers on shutdown otherwise they will leak COM objects (win32)
-    cmd.reset(&swap_chain);
-
     Ok(());
 }
 ```
@@ -380,7 +379,6 @@ let info = gfx::BufferInfo {
     stride: std::mem::size_of::<Vertex>(),
     num_elements: 3,
 };
-
 let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
 // create shaders and a pipeline
@@ -483,7 +481,7 @@ Pmfx builds on top of the `gfx` module to make render configuration more ergonom
 
 You can supply [jsn](https://github.com/polymonster/jsnr) config files to specify render pipelines, textures (render targets), views (render pass with cameras) and render graphs. Useful defaults are supplied for all fields and combined with jsn inheritance it can aid creating many different render strategies with minimal repetition.
 
-```pmfx
+```jsonnet
 textures: {
     main_colour: {
         ratio: {
@@ -554,7 +552,7 @@ render_graphs: {
 }
 ```
 
-When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) which contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts can automatically be generated.
+When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) that contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts and vertex layouts are automatically be generated.
 
 ## Examples
 
