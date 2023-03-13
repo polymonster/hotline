@@ -182,14 +182,14 @@ pub fn string_to_wide(string: String) -> Vec<u16> {
             windows::Win32::Globalization::CP_UTF8,
             windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
             null_string.as_bytes(),
-            vx.as_mut_slice(),
+            Some(vx.as_mut_slice()),
         );
         let mut v: Vec<u16> = vec![0; n as usize];
         MultiByteToWideChar(
             windows::Win32::Globalization::CP_UTF8,
             windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
             null_string.as_bytes(),
-            v.as_mut_slice(),
+            Some(v.as_mut_slice()),
         );
         v
     }
@@ -314,7 +314,7 @@ impl App {
                     LRESULT(0)
                 }
                 WM_PAINT => {
-                    ValidateRect(window, std::ptr::null());
+                    ValidateRect(window, None);
                     LRESULT(0)
                 }
                 WM_CHAR => {
@@ -435,12 +435,12 @@ impl super::App for App {
     fn create(info: super::AppInfo) -> Self {
         unsafe {
             // initialise com
-            CoInitialize(std::ptr::null_mut()).unwrap();
+            CoInitialize(None).unwrap();
 
             let window_class = info.name.to_string() + "\0";
             let window_class_imgui = info.name.to_string() + "_imgui\0";
 
-            let instance = GetModuleHandleA(None);
+            let instance = GetModuleHandleA(None).unwrap();
             debug_assert!(instance.0 != 0);
 
             if info.dpi_aware {
@@ -521,10 +521,13 @@ impl super::App for App {
                 self.window_class.clone()
             };
 
+            let null_class = class + "\0";
+            let null_title = info.title.clone() + "\0";
+
             let hwnd = CreateWindowExA(
                 wsex,
-                class,
-                info.title.clone(),
+                PCSTR(null_class.as_ptr() as _),
+                PCSTR(null_title.as_ptr() as _),
                 ws,
                 rect.x,
                 rect.y,
@@ -533,7 +536,7 @@ impl super::App for App {
                 parent_hwnd,
                 None,
                 self.hinstance,
-                std::ptr::null_mut(),
+                None,
             );
             // track window style to send to correct wnd proc
             self.hwnd_flags.insert(hwnd.0, info.style);
@@ -643,7 +646,7 @@ impl super::App for App {
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
             MONITOR_ENUM.clear();
-            EnumDisplayMonitors(HDC(0), std::ptr::null_mut(), Some(enum_func), LPARAM(0));
+            EnumDisplayMonitors(HDC(0), None, Some(enum_func), LPARAM(0));
             let mut monitors: Vec<super::MonitorInfo> = Vec::new();
             for m in &MONITOR_ENUM {
                 monitors.push(m.clone());
