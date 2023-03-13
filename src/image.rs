@@ -68,10 +68,10 @@ pub fn write_to_file(
             }
             _ => {
                 if os_str.to_str().is_some() {
-                    return Err(format!(
+                    Err(format!(
                         "hotline_rs::image: Image format '{}' is not supported",
                         os_str.to_str().unwrap()
-                    ));
+                    ))
                 } else {
                     Err(format!(
                         "hotline_rs::image: Filename '{}' did not specify image format extension!",

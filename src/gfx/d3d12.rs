@@ -1594,14 +1594,14 @@ impl super::Device for Device {
             match info.usage {
                 super::BufferUsage::Vertex => {
                     vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
-                        BufferLocation: buf.clone().GetGPUVirtualAddress(),
+                        BufferLocation: buf.GetGPUVirtualAddress(),
                         StrideInBytes: info.stride as u32,
                         SizeInBytes: size_bytes as u32,
                     });
                 }
                 super::BufferUsage::Index => {
                     ibv = Some(D3D12_INDEX_BUFFER_VIEW {
-                        BufferLocation: buf.clone().GetGPUVirtualAddress(),
+                        BufferLocation: buf.GetGPUVirtualAddress(),
                         SizeInBytes: size_bytes as u32,
                         Format: dxgi_format,
                     })
@@ -1610,7 +1610,7 @@ impl super::Device for Device {
                     let h = self.shader_heap.allocate();
                     self.device.CreateConstantBufferView(
                         Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                            BufferLocation: buf.clone().GetGPUVirtualAddress(),
+                            BufferLocation: buf.GetGPUVirtualAddress(),
                             SizeInBytes: size_bytes as u32,
                         }),
                         h,
@@ -1820,7 +1820,7 @@ impl super::Device for Device {
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateShaderResourceView(
-                    &resource.clone(),
+                    &resource,
                     Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
                         Format: to_dxgi_format_srv(info.format),
                         ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, info.samples),
@@ -1904,7 +1904,7 @@ impl super::Device for Device {
             }
 
             Ok(Texture {
-                resource: resource,
+                resource,
                 resolved_resource,
                 resolved_format,
                 rtv: rtv_handle,
@@ -2444,7 +2444,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         if self.pix.is_some() {
             self.pix.unwrap().end_event_on_command_list(cmd);
         }
-        assert_eq!(self.event_stack_count > 0, true, "hotline::gfx::d3d12:: mismatched begin/end event");
+        assert!(self.event_stack_count > 0, "hotline::gfx::d3d12:: mismatched begin/end event");
         self.event_stack_count -= 1;
     }
 
@@ -2697,7 +2697,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                  Ok(())
             }
             else {
-                return Err(super::Error {
+                Err(super::Error {
                     msg: format!("hotline::gfx::d3d12:: failed to resolve texture subresource {}", subresource)
                 })
             }
