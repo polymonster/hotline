@@ -29,9 +29,8 @@ version = "0.9.0"
 features = ["docking"]
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.35.0"
+version = "0.44.0"
 features = [
-    "alloc",
     "implement",
     "Win32_Foundation",
     "Win32_Globalization",

@@ -37,10 +37,10 @@ struct WinPixEventRuntime {
 impl WinPixEventRuntime {
     pub fn create() -> Option<WinPixEventRuntime> {
         unsafe {
-            let module = LoadLibraryA("WinPixEventRuntime.dll\0");
-            let p_begin_event = GetProcAddress(module, "PIXBeginEventOnCommandList\0");
-            let p_end_event = GetProcAddress(module, "PIXEndEventOnCommandList\0");
-            let p_set_marker = GetProcAddress(module, "PIXSetMarkerOnCommandList\0");
+            let module = LoadLibraryA(PCSTR("WinPixEventRuntime.dll\0".as_ptr() as _)).unwrap();
+            let p_begin_event = GetProcAddress(module, PCSTR("PIXBeginEventOnCommandList\0".as_ptr() as _));
+            let p_end_event = GetProcAddress(module, PCSTR("PIXEndEventOnCommandList\0".as_ptr() as _));
+            let p_set_marker = GetProcAddress(module, PCSTR("PIXSetMarkerOnCommandList\0".as_ptr() as _));
             if let (Some(begin), Some(end), Some(marker)) = (p_begin_event, p_end_event, p_set_marker) {
                 Some(WinPixEventRuntime {
                     begin_event: std::mem::transmute::<*const usize, BeginEventOnCommandList>(
@@ -598,7 +598,7 @@ fn transition_barrier(
     state_after: D3D12_RESOURCE_STATES,
 ) -> D3D12_RESOURCE_BARRIER {
     let trans = std::mem::ManuallyDrop::new(D3D12_RESOURCE_TRANSITION_BARRIER {
-        pResource: Some(resource.clone()),
+        pResource: unsafe { std::mem::transmute_copy(resource) },
         StateBefore: state_before,
         StateAfter: state_after,
         Subresource: D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,
@@ -631,7 +631,9 @@ pub fn get_hardware_adapter(
             if adapter.is_err() {
                 break;
             }
-            let desc = adapter.unwrap().GetDesc1()?;
+
+            let mut desc = Default::default();
+            adapter.unwrap().GetDesc1(&mut desc)?;
 
             // decode utf-16 dfescription
             let decoded1 = decode_utf16(desc.Description)
@@ -664,7 +666,9 @@ pub fn get_hardware_adapter(
         }
 
         let adapter = factory.EnumAdapters1(selected_index as u32)?;
-        let desc = adapter.GetDesc1()?;
+        
+        let mut desc = Default::default();
+        adapter.GetDesc1(&mut desc)?;
 
         if D3D12CreateDevice(
             &adapter,
@@ -712,7 +716,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
                     ..Default::default()
                 },
                 D3D12_RESOURCE_STATE_COPY_DEST,
-                std::ptr::null(),
+                None,
                 &mut readback_buffer,
             )
             .expect("hotline_rs::gfx::d3d12: failed to create readback buffer");
@@ -755,7 +759,7 @@ fn create_swap_chain_rtv(
         for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = device.rtv_heap.allocate();
-            device.device.CreateRenderTargetView(&render_target, std::ptr::null_mut(), h);
+            device.device.CreateRenderTargetView(&render_target, None, h);
             textures.push(Texture {
                 resource: render_target.clone(),
                 resolved_resource: None,
@@ -978,7 +982,7 @@ impl Device {
                 &desc,
                 D3D_ROOT_SIGNATURE_VERSION_1,
                 &mut signature,
-                &mut error,
+                Some(&mut error),
             );
 
             // handle errors
@@ -1085,7 +1089,7 @@ impl super::Device for Device {
 
             // create device
             let mut d3d12_device: Option<ID3D12Device> = None;
-            D3D12CreateDevice(adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
+            D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
                 .expect("hotline_rs::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
@@ -1196,7 +1200,7 @@ impl super::Device for Device {
                     &self.command_queue,
                     hwnd,
                     &swap_chain_desc,
-                    std::ptr::null(),
+                    None,
                     None,
                 )?;
             let swap_chain: IDXGISwapChain3 = swap_chain1.cast()?;
@@ -1226,7 +1230,7 @@ impl super::Device for Device {
                 bb_index: 0,
                 fence: self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?,
                 fence_last_signalled_value: 0,
-                fence_event: CreateEventA(std::ptr::null(), false, false, None)?,
+                fence_event: CreateEventA(None, false, false, None)?,
                 swap_chain,
                 backbuffer_textures: textures,
                 backbuffer_passes: passes,
@@ -1305,7 +1309,7 @@ impl super::Device for Device {
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
-            pRootSignature: Some(root_signature.clone()),
+            pRootSignature: unsafe { std::mem::transmute_copy(&root_signature) },
             VS: if let Some(vs) = &info.vs {
                 D3D12_SHADER_BYTECODE {
                     pShaderBytecode: vs.get_buffer_pointer(),
@@ -1364,7 +1368,7 @@ impl super::Device for Device {
                     StencilFunc: to_d3d12_comparison_func(depth_stencil.back_face.func),
                 },
             },
-            SampleMask: u32::max_value(), // TODO:
+            SampleMask: u32::max_value(), // TODO: supply sample mask
             PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
             NumRenderTargets: info.pass.rt_formats.len() as u32,
             SampleDesc: DXGI_SAMPLE_DESC {
@@ -1406,14 +1410,14 @@ impl super::Device for Device {
                     nullt_data.as_ptr() as *const core::ffi::c_void,
                     src_u8.len(),
                     PCSTR(std::ptr::null_mut() as _),
-                    std::ptr::null(),
+                    None,
                     None,
                     PCSTR(nullt_entry_point.as_ptr() as _),
                     PCSTR(nullt_target.as_ptr() as _),
                     compile_flags,
                     0,
                     &mut shader_blob,
-                    &mut errors,
+                    Some(&mut errors),
                 );
                 if result.is_err() {
                     if let Some(e) = errors {
@@ -1511,9 +1515,10 @@ impl super::Device for Device {
                 else {
                     D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
                 },
-                std::ptr::null(),
+                None,
                 &mut buf,
             )?;
+            let buf = buf.unwrap();
 
             // load buffer with initialised data
             if let Some(data) = &data {
@@ -1540,31 +1545,26 @@ impl super::Device for Device {
                         Flags: D3D12_RESOURCE_FLAG_NONE,
                     },
                     D3D12_RESOURCE_STATE_GENERIC_READ,
-                    std::ptr::null(),
+                    None,
                     &mut upload,
                 )?;
+                let upload = upload.unwrap();
 
                 // copy data to upload buffer
-                let range = D3D12_RANGE {
-                    Begin: 0,
-                    End: size_bytes,
-                };
                 let mut map_data = std::ptr::null_mut();
-                let res = upload.clone().unwrap();
-                res.Map(0, &range, &mut map_data)?;
+                let res = upload.clone();
+                res.Map(0, None, Some(&mut map_data))?;
                 if !map_data.is_null() {
                     let src = data.as_ptr() as *mut u8;
                     std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes);
                 }
-                res.Unmap(0, std::ptr::null());
+                res.Unmap(0, None);
 
                 // copy resource
                 let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
-
-                self.command_list.CopyResource(&buf, upload);
-
+                self.command_list.CopyResource(&buf, &upload);
                 let barrier = transition_barrier(
-                    &buf.clone().unwrap(),
+                    &buf,
                     D3D12_RESOURCE_STATE_COPY_DEST,
                     D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
                 );
@@ -1574,10 +1574,10 @@ impl super::Device for Device {
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(&[Some(cmd)]);
+                self.command_queue.ExecuteCommandLists(&[cmd]);
                 self.command_queue.Signal(&fence, 1)?;
 
-                let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
+                let event = CreateEventA(None, false, false, None)?;
                 fence.SetEventOnCompletion(1, event)?;
                 WaitForSingleObject(event, INFINITE);
 
@@ -1594,14 +1594,14 @@ impl super::Device for Device {
             match info.usage {
                 super::BufferUsage::Vertex => {
                     vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
-                        BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                        BufferLocation: buf.clone().GetGPUVirtualAddress(),
                         StrideInBytes: info.stride as u32,
                         SizeInBytes: size_bytes as u32,
                     });
                 }
                 super::BufferUsage::Index => {
                     ibv = Some(D3D12_INDEX_BUFFER_VIEW {
-                        BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                        BufferLocation: buf.clone().GetGPUVirtualAddress(),
                         SizeInBytes: size_bytes as u32,
                         Format: dxgi_format,
                     })
@@ -1609,10 +1609,10 @@ impl super::Device for Device {
                 super::BufferUsage::ConstantBuffer => {
                     let h = self.shader_heap.allocate();
                     self.device.CreateConstantBufferView(
-                        &D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                            BufferLocation: buf.clone().unwrap().GetGPUVirtualAddress(),
+                        Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                            BufferLocation: buf.clone().GetGPUVirtualAddress(),
                             SizeInBytes: size_bytes as u32,
-                        },
+                        }),
                         h,
                     );
                     srv_index = Some(self.shader_heap.get_handle_index(&h));
@@ -1620,7 +1620,7 @@ impl super::Device for Device {
             }
 
             Ok(Buffer {
-                resource: buf.unwrap(),
+                resource: buf,
                 vbv,
                 ibv,
                 srv_index,
@@ -1672,9 +1672,10 @@ impl super::Device for Device {
                 } else {
                     initial_state
                 },
-                std::ptr::null(),
+                None,
                 &mut resource,
             )?;
+            let resource = resource.unwrap();
 
             // create a resolvable texture if we have samples
             if info.samples > 1 {
@@ -1708,7 +1709,7 @@ impl super::Device for Device {
                     } else {
                         initial_state
                     },
-                    std::ptr::null(),
+                    None,
                     &mut resolved_resource,
                 )?;
             }
@@ -1743,18 +1744,15 @@ impl super::Device for Device {
                         Flags: D3D12_RESOURCE_FLAG_NONE,
                     },
                     D3D12_RESOURCE_STATE_GENERIC_READ,
-                    std::ptr::null(),
+                    None,
                     &mut upload,
                 )?;
+                let upload = upload.unwrap();
 
                 // copy data to upload buffer
-                let range = D3D12_RANGE {
-                    Begin: 0,
-                    End: upload_size as usize,
-                };
                 let mut map_data = std::ptr::null_mut();
-                let res = upload.clone().unwrap();
-                res.Map(0, &range, &mut map_data)?;
+                let res = upload.clone();
+                res.Map(0, None, Some(&mut map_data))?;
                 if !map_data.is_null() {
                     for y in 0..info.height {
                         let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
@@ -1762,13 +1760,13 @@ impl super::Device for Device {
                         std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
                     }
                 }
-                res.Unmap(0, std::ptr::null());
+                res.Unmap(0, None);
 
                 // copy resource
                 let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
 
                 let src = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(upload.unwrap()),
+                    pResource: std::mem::transmute_copy(&upload),
                     Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
@@ -1785,17 +1783,17 @@ impl super::Device for Device {
                 };
 
                 let dst = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: Some(resource.clone().unwrap()),
+                    pResource: std::mem::transmute_copy(&resource),
                     Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                     Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                         SubresourceIndex: 0,
                     },
                 };
 
-                self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
+                self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, None);
 
                 let barrier = transition_barrier(
-                    &resource.clone().unwrap(),
+                    &resource,
                     D3D12_RESOURCE_STATE_COPY_DEST,
                     initial_state,
                 );
@@ -1808,10 +1806,10 @@ impl super::Device for Device {
                 self.command_list.Close()?;
 
                 let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(&[Some(cmd)]);
+                self.command_queue.ExecuteCommandLists(&[cmd]);
                 self.command_queue.Signal(&fence, 1)?;
 
-                let event = CreateEventA(std::ptr::null_mut(), false, false, None)?;
+                let event = CreateEventA(None, false, false, None)?;
                 fence.SetEventOnCompletion(1, event)?;
                 WaitForSingleObject(event, INFINITE);
                 self.command_list.Reset(&self.command_allocator, None)?;
@@ -1822,8 +1820,8 @@ impl super::Device for Device {
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateShaderResourceView(
-                    &resource,
-                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                    &resource.clone(),
+                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
                         Format: to_dxgi_format_srv(info.format),
                         ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, info.samples),
                         Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
@@ -1834,20 +1832,20 @@ impl super::Device for Device {
                             },
                         },
                         Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    },
+                    }),
                     h,
                 );
                 srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
-
+            
             // create a srv for resolve texture for msaa
             let mut resolved_srv_index = None;
             let mut resolved_format = DXGI_FORMAT_UNKNOWN;
             if info.samples > 1 && info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateShaderResourceView(
-                    &resolved_resource,
-                    &D3D12_SHADER_RESOURCE_VIEW_DESC {
+                    &resolved_resource.as_ref().unwrap().clone(),
+                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
                         Format: to_dxgi_format_srv(info.format),
                         ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, 1),
                         Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
@@ -1858,18 +1856,17 @@ impl super::Device for Device {
                             },
                         },
                         Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    },
+                    }),
                     h,
                 );
                 resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
                 resolved_format = to_dxgi_format_srv(info.format);
             }
-
             // create rtv
             let mut rtv_handle = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
                 let h = self.rtv_heap.allocate();
-                self.device.CreateRenderTargetView(&resource.clone().unwrap(), std::ptr::null_mut(), h);
+                self.device.CreateRenderTargetView(&resource, None, h);
                 rtv_handle = Some(h);
             }
 
@@ -1877,7 +1874,7 @@ impl super::Device for Device {
             let mut dsv_handle = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
                 let h = self.dsv_heap.allocate();
-                self.device.CreateDepthStencilView(&resource.clone().unwrap(), std::ptr::null_mut(), h);
+                self.device.CreateDepthStencilView(&resource, None, h);
                 dsv_handle = Some(h);
             }
 
@@ -1886,9 +1883,9 @@ impl super::Device for Device {
             if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
                 let h = self.shader_heap.allocate();
                 self.device.CreateUnorderedAccessView(
-                    &resource.clone().unwrap(),
+                    &resource,
                     None,
-                    std::ptr::null_mut(),
+                    None,
                     h,
                 );
                 uav_index = Some(self.shader_heap.get_handle_index(&h));
@@ -1898,8 +1895,8 @@ impl super::Device for Device {
             let mut shared_handle = None;
             if info.usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
                 let h = self.device.CreateSharedHandle(
-                    &resource.clone().unwrap(),
-                    std::ptr::null(),
+                    &resource,
+                    None,
                     GENERIC_ALL,
                     PCWSTR(std::ptr::null())
                 );
@@ -1907,7 +1904,7 @@ impl super::Device for Device {
             }
 
             Ok(Texture {
-                resource: resource.unwrap(),
+                resource: resource,
                 resolved_resource,
                 resolved_format,
                 rtv: rtv_handle,
@@ -2109,7 +2106,7 @@ impl super::Device for Device {
                 pShaderBytecode: cs.get_buffer_pointer(),
                 BytecodeLength: cs.get_buffer_size(),
             },
-            pRootSignature: Some(root_signature.clone()),
+            pRootSignature: unsafe { std::mem::transmute_copy(&root_signature) },
             ..Default::default()
         };
 
@@ -2124,7 +2121,7 @@ impl super::Device for Device {
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
-            self.command_queue.ExecuteCommandLists(&[Some(command_list)]);
+            self.command_queue.ExecuteCommandLists(&[command_list]);
         }
     }
 
@@ -2313,8 +2310,12 @@ impl super::SwapChain<Device> for SwapChain {
     fn swap(&mut self, device: &Device) {
         unsafe {
             // present
-            self.swap_chain.Present(1, 0).expect("hotline_rs::gfx::d3d12: warning: present failed!");
+            let hr = self.swap_chain.Present(1, 0);
 
+            if hr.is_err() {
+                panic!("hotline_rs::gfx::d3d12: warning: present failed! {}", hr);
+            }
+            
             // signal fence
             let fv = self.fence_last_signalled_value + 1;
             device
@@ -2412,11 +2413,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.BeginRenderPass(
-                render_pass.rt.as_slice(),
+                Some(render_pass.rt.as_slice()), // TODO_WIN .. could be simplified
                 if let Some(ds) = &render_pass.ds {
-                    ds
+                    Some(ds) 
                 } else {
-                    std::ptr::null_mut()
+                    None
                 },
                 D3D12_RENDER_PASS_FLAG_NONE,
             );
@@ -2512,7 +2513,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         let cmd = self.cmd();
         if buffer.vbv.is_some() {
             unsafe {
-                cmd.IASetVertexBuffers(slot, &[buffer.vbv.unwrap()]);
+                cmd.IASetVertexBuffers(slot, Some(&[buffer.vbv.unwrap()]));
             }
         }
     }
@@ -2521,7 +2522,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         let cmd = self.cmd();
         if buffer.ibv.is_some() {
             unsafe {
-                cmd.IASetIndexBuffer(&buffer.ibv.unwrap());
+                cmd.IASetIndexBuffer(Some(&buffer.ibv.unwrap()));
             }
         }
     }
@@ -2545,7 +2546,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_compute_heap(&self, slot: u32, heap: &Heap) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
+            self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
             self.cmd().SetComputeRootDescriptorTable(
                 slot,
                 heap.heap.GetGPUDescriptorHandleForHeapStart(),
@@ -2555,7 +2556,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_render_heap(&self, slot: u32, heap: &Heap, offset: usize) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
+            self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
 
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
@@ -2637,7 +2638,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.in_flight_barriers[bb].push(barrier);
 
             let src = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: Some(resource.clone().unwrap()),
+                pResource: std::mem::transmute_copy(&resource),
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
                 Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                     SubresourceIndex: 0,
@@ -2645,7 +2646,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             };
 
             let dst = D3D12_TEXTURE_COPY_LOCATION {
-                pResource: Some(swap_chain.readback_buffer.clone().unwrap()),
+                pResource: std::mem::transmute_copy(&swap_chain.readback_buffer),
                 Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
                 Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
                     PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
@@ -2661,7 +2662,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 },
             };
 
-            self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, std::ptr::null_mut());
+            self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, None);
 
             let barrier = transition_barrier(
                 r2.unwrap(),
@@ -2685,9 +2686,9 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn resolve_texture_subresource(&self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
         unsafe {
-            if texture.resolved_resource.is_some() {
+            if let Some(resolve) = &texture.resolved_resource {
                 self.cmd().ResolveSubresource(
-                    &texture.resolved_resource,
+                    &resolve.clone(),
                     subresource,
                     &texture.resource,
                     subresource,
@@ -2710,10 +2711,10 @@ impl super::Buffer<Device> for Buffer {
         let range = D3D12_RANGE { Begin: 0, End: 0 };
         let mut map_data = std::ptr::null_mut();
         unsafe {
-            self.resource.Map(0, &range, &mut map_data)?;
+            self.resource.Map(0, Some(&range), Some(&mut map_data))?;
             let dst = (map_data as *mut u8).offset(offset);
             std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
-            self.resource.Unmap(0, std::ptr::null_mut());
+            self.resource.Unmap(0, None);
         }
         Ok(())
     }
@@ -2733,7 +2734,7 @@ impl super::Buffer<Device> for Buffer {
         };
         let mut map_data = std::ptr::null_mut();
         unsafe {
-            self.resource.Map(info.subresource, &range, &mut map_data).unwrap();
+            self.resource.Map(info.subresource, Some(&range), Some(&mut map_data)).unwrap();
         }
         map_data as *mut u8
     }
@@ -2744,7 +2745,7 @@ impl super::Buffer<Device> for Buffer {
             End: info.write_end,
         };
         unsafe {
-            self.resource.Unmap(info.subresource, &range);
+            self.resource.Unmap(info.subresource, Some(&range));
         }
     }
 }
@@ -2797,7 +2798,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
         let mut map_data = std::ptr::null_mut();
         unsafe {
             if let Some(res) = &self.resource {
-                res.Map(0, &range, &mut map_data)?;
+                res.Map(0, Some(&range), Some(&mut map_data))?;
                 if !map_data.is_null() {
                     let slice = std::slice::from_raw_parts(map_data as *const u8, self.size);
                     let rb_data = super::ReadBackData {
@@ -2819,7 +2820,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
     fn unmap(&self) {
         unsafe {
             if let Some(res) = &self.resource {
-                res.Unmap(0, std::ptr::null());
+                res.Unmap(0, None);
             }
         }
     }

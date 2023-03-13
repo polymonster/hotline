@@ -155,15 +155,15 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             // create device
             let mut device : Option<ID3D11Device> = None;
             D3D11CreateDevice(
-                adapter, 
+                &adapter, 
                 D3D_DRIVER_TYPE_UNKNOWN,
                 HINSTANCE(0), 
                 D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
-                &[],
+                None,
                 D3D11_SDK_VERSION,
-                &mut device,
-                std::ptr::null_mut(),
-                std::ptr::null_mut(),
+                Some(&mut device),
+                None,
+                None,
             )?;
             let device = device.unwrap();
 
@@ -183,9 +183,9 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             if let Some(attributes) = &attributes {
                 if let Some(dxgi_manager) = &dxgi_manager {
                     let idevice : IUnknown = device.cast()?;
-                    dxgi_manager.ResetDevice(idevice, reset_token)?;
+                    dxgi_manager.ResetDevice(&idevice, reset_token)?;
                     let idxgi_manager : IUnknown = dxgi_manager.cast()?;
-                    attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, idxgi_manager)?;
+                    attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &idxgi_manager)?;
                 }
 
                 attributes.SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0)?;
@@ -196,7 +196,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     notify
                 };
                 let imn : IMFMediaEngineNotify = mn.into();
-                attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, imn)?;
+                attributes.SetUnknown(&MF_MEDIA_ENGINE_CALLBACK, &imn)?;
     
                 // create media engine
                 let mf_factory : IMFMediaEngineClassFactory = 
@@ -249,7 +249,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
 
             let wp = win32::string_to_wide(filepath);
             let bstr = SysAllocString(PCWSTR(wp.as_ptr() as _));
-            self.media_engine_ex.SetSource(bstr)?;
+            self.media_engine_ex.SetSource(&bstr)?;
             Ok(())
         }
     }
@@ -285,7 +285,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             if self.texture.is_none() && self.is_loaded() {
                 let mut x : u32 = 0;
                 let mut y : u32 = 0;
-                self.media_engine_ex.GetNativeVideoSize(&mut x, &mut y)?;
+                self.media_engine_ex.GetNativeVideoSize(Some(&mut x), Some(&mut y))?;
 
                 let info = gfx::TextureInfo {
                     tex_type: gfx::TextureType::Texture2D,
@@ -313,7 +313,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                         let sh = d3d12::get_texture_shared_handle(tex);
                         if let Some(handle) = sh {
                             let dev1 : ID3D11Device1 = self.device.cast()?;
-                            let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(handle)?;
+                            let media_texture : ID3D11Texture2D = dev1.OpenSharedResource1(*handle)?;
     
                             let mf_rect = MFVideoNormalizedRect {
                                 left: 0.0,
@@ -329,14 +329,8 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                                 bottom: self.height as i32
                             };
     
-                            let bg = MFARGB {
-                                rgbBlue: 0,
-                                rgbGreen: 0,
-                                rgbRed: 0,
-                                rgbAlpha: 0
-                            };
-    
-                            self.media_engine_ex.TransferVideoFrame(media_texture, &mf_rect, &rect, &bg)?;
+                            self.media_engine_ex.TransferVideoFrame(
+                                &media_texture, Some(&mf_rect), &rect, None)?;
                         } 
                     }
                 }
