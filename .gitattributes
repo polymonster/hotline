@@ -1,2 +1,4 @@
 samples/*.png filter=lfs diff=lfs merge=lfs -text
 samples/*.mp4 filter=lfs diff=lfs merge=lfs -text
+*.jsn linguist-language=jsonnet
+*.pmfx linguist-language=jsonnet
