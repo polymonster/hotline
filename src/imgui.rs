@@ -365,6 +365,7 @@ fn create_vertex_buffer<D: Device>(
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVert>(),
             num_elements: size as usize,
+            initial_state: gfx::ResourceState::VertexConstantBuffer
         },
         None,
     )
@@ -381,6 +382,7 @@ fn create_index_buffer<D: Device>(
             format: gfx::Format::R16u,
             stride: std::mem::size_of::<ImDrawIdx>(),
             num_elements: size as usize,
+            initial_state: gfx::ResourceState::IndexBuffer
         },
         None,
     )
@@ -949,29 +951,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             igPopStyleVar(2);
             igEnd();
         }
-        
-        /*
-        if(m_currentMode == EditorMode::editor)
-        {
-            static f32 s_offsetWidth = 0.0f;
-
-            // Left-aligned content.
-            {
-                updateSaveStatus();
-                ImGui::SameLine();
-            }
-
-            // Right-aligned content.
-            {
-                ImGui::SetCursorPosX(ImGui::GetWindowSize().x - s_offsetWidth);
-                f32 offsetStart = ImGui::GetCursorPosX();
-                updateRootStatus();
-                updateOnlineStatus();
-                ImGui::SameLine();
-                s_offsetWidth = ImGui::GetCursorPosX() - offsetStart;
-            }
-        }
-        */
     }
 
     /// Return the size of the main dockspace viewport which is the background of the main window
@@ -1324,6 +1303,23 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 ImVec4 {x: 1.0, y: 1.0, z: 1.0, w: 1.0},
                 ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
             );
+        }
+    }
+
+    pub fn calc_text_size(&self, text: &str) -> (f32, f32) {
+        let null_text = CString::new(text).unwrap();
+        let mut size = IMVEC2_ZERO;
+        unsafe {
+            igCalcTextSize(&mut size, null_text.as_ptr() as *const i8, std::ptr::null(), false, -1.0);
+        }
+        (size.x, size.y)
+    }
+
+    pub fn right_align(&mut self, offset: f32) {
+        unsafe {
+            let mut size = IMVEC2_ZERO;
+            igGetWindowSize(&mut size);
+            igSetCursorPosX(size.x - offset);
         }
     }
 

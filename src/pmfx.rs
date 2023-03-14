@@ -1,19 +1,10 @@
 #![allow(clippy::collapsible_if)] 
 
-use crate::gfx::SwapChain;
-use crate::gfx::Texture;
 use crate::os;
-
 use crate::gfx;
-use crate::gfx::ResourceState;
-use crate::gfx::RenderPass;
-use crate::gfx::CmdBuf;
-use crate::gfx::Subresource;
 
-use crate::reloader::ReloadState;
-use crate::reloader::Reloader;
-use crate::reloader::ReloadResponder;
-
+use crate::gfx::{ResourceState, RenderPass, CmdBuf, Subresource, QueryHeap, SwapChain, Texture};
+use crate::reloader::{ReloadState, Reloader, ReloadResponder};
 use serde::{Deserialize, Serialize};
 
 use std::collections::HashMap;
@@ -24,7 +15,8 @@ use std::sync::Mutex;
 use std::path::Path;
 use std::time::SystemTime;
 
-use maths_rs::max;
+use maths_rs::{max, min};
+use maths_rs::num::{Base};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -34,13 +26,13 @@ use std::hash::{Hash, Hasher};
 
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
-    /// name of the graph view instance, this is the same as the key that is stored in the pmfx `views` map.
+    /// Name of the graph view instance, this is the same as the key that is stored in the pmfx `views` map.
     pub graph_view_name: String,
-    /// name of the pmfx view, this is the source view (camera, render targets)
+    /// Name of the pmfx view, this is the source view (camera, render targets)
     pub pmfx_view_name: String,
-    /// hash of the view name
+    /// Hash of the view name
     pub name_hash: PmfxHash,
-    /// colour hash (for debug markers, derribe from name)
+    /// Colour hash (for debug markers, derived from name)
     pub colour_hash: u32,
     /// A pre-built render pass: multiple colour targets and depth possible
     pub pass: D::RenderPass,
@@ -50,10 +42,10 @@ pub struct View<D: gfx::Device> {
     pub scissor_rect: gfx::ScissorRect,
     /// A command buffer ready to be used to buffer draw / render commands
     pub cmd_buf: D::CmdBuf,
-    /// name of camera this view intends to be used with
+    /// Name of camera this view intends to be used with
     pub camera: String,
-    ///this is the name of a single pipeline used for all draw calls in the view. supplied in data as `pipelines: ["name"]`
-    pub view_pipeline: String
+    /// This is the name of a single pipeline used for all draw calls in the view. supplied in data as `pipelines: ["name"]`
+    pub view_pipeline: String,
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
@@ -112,6 +104,8 @@ pub struct Pmfx<D: gfx::Device> {
     textures: HashMap<String, (PmfxHash, TrackedTexture<D>)>,
     /// Built views that are used in view function dispatches, the source view name which was used to generate the instnace is stored in .2 for hash checking
     views: HashMap<String, TrackedView<D>>,
+    /// View timing and GPU pipeline statistics
+    view_stats: HashMap<String, ViewStats<D>>,
     /// Map of camera constants that can be retrieved by name for use as push constants
     cameras: HashMap<String, CameraConstants>,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
@@ -120,12 +114,76 @@ pub struct Pmfx<D: gfx::Device> {
     render_graph_execute_order: Vec<String>,
     /// Tracking texture references of views
     view_texture_refs: HashMap<String, HashSet<String>>,
+    /// Container to hold overall GPU stats
+    total_stats: TotalStats,
     /// Watches for filestamp changes and will trigger callbacks in the `PmfxReloadResponder`
-    reloader: Reloader,
+    pub reloader: Reloader,
     /// Errors which occur through render systems can be pushed here for feedback to the user
     pub view_errors: Arc<Mutex<HashMap<String, String>>>,
     /// Tracks the currently active render graph name
-    pub active_render_graph: String
+    pub active_render_graph: String,
+}
+
+/// Contains frame statistics from the GPU for all pmfx jobs
+pub struct TotalStats {
+    /// Total GPU time spent in milliseconds
+    pub gpu_time_ms: f64,
+    /// Time of the first submission in seconds
+    pub gpu_start: f64,
+    /// Time of the final submission in seconds
+    pub gpu_end: f64
+}
+
+impl TotalStats {
+    fn new() -> Self {
+        Self {
+            gpu_time_ms: 0.0,
+            gpu_start: 0.0,
+            gpu_end: 0.0
+        }
+    }
+}
+
+struct ViewStats<D: gfx::Device> {
+    write_index: usize,
+    read_index: usize,
+    frame_fence_value: u64,
+    timestamp_heap: D::QueryHeap,
+    timestamp_buffers: Vec<[D::Buffer; 2]>,
+    fences: Vec<u64>,
+    start_timestamp: f64,
+    end_timestamp: f64
+}
+
+impl<D> ViewStats<D> where D: gfx::Device {
+    pub fn new_query_buffer(device: &mut D, elem_size: usize, num_elems: usize) -> D::Buffer {
+        device.create_read_back_buffer(elem_size * num_elems).unwrap()
+    }
+    
+    pub fn new(device: &mut D, num_buffers: usize) -> Self {
+        let mut timestamp_buffers = Vec::new();
+        let mut fences = Vec::new();
+        for _ in 0..num_buffers {
+            timestamp_buffers.push([
+                Self::new_query_buffer(device, 8, 1),
+                Self::new_query_buffer(device, 8, 1)
+            ]);
+            fences.push(0)
+        }
+        Self {
+            timestamp_heap: device.create_query_heap(&gfx::QueryHeapInfo {
+                heap_type: gfx::QueryHeapType::Timestamp,
+                num_queries: 2,
+            }),
+            timestamp_buffers,
+            frame_fence_value: 0,
+            write_index: 0,
+            read_index: 0,
+            fences,
+            start_timestamp: 0.0,
+            end_timestamp: 0.0
+        }
+    }
 }
 
 /// Serialisation layout for contents inside .pmfx file
@@ -436,6 +494,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             shaders: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
+            view_stats: HashMap::new(),
             cameras: HashMap::new(),
             barriers: HashMap::new(),
             render_graph_execute_order: Vec::new(),
@@ -443,7 +502,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             window_sizes: HashMap::new(),
             active_render_graph: String::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
-            reloader: Reloader::create(Box::new(PmfxReloadResponder::new()))
+            reloader: Reloader::create(Box::new(PmfxReloadResponder::new())),
+            total_stats: TotalStats::new()
         }
     }
 
@@ -711,6 +771,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             self.views.insert(graph_view_name.to_string(), 
                 (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
+
+            // create stats
+            self.view_stats.insert(graph_view_name.to_string(), ViewStats::new(device, 2));
         }
 
         Ok(())
@@ -1092,6 +1155,31 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.reloader.complete_reload();
         }
 
+        // gather stats
+        let mut min_frame_timestamp = f64::max_value();
+        let mut max_frame_timestamp = f64::zero();
+        for (_, stats) in &mut self.view_stats {
+            stats.frame_fence_value = swap_chain.get_frame_fence_value();
+            let i = stats.read_index;
+            let write_fence = stats.fences[i];
+            if write_fence < swap_chain.get_frame_fence_value() {
+                let timestamps = device.read_timestamps(swap_chain,  &stats.timestamp_buffers[i][0], 8, write_fence);
+                if !timestamps.is_empty() {
+                    stats.start_timestamp = timestamps[0];
+                    min_frame_timestamp = min(stats.start_timestamp, min_frame_timestamp);
+
+                }
+                let timestamps = device.read_timestamps(swap_chain,  &stats.timestamp_buffers[i][1], 8, write_fence);
+                if !timestamps.is_empty() {
+                    stats.end_timestamp = timestamps[0];
+                    max_frame_timestamp = max(stats.end_timestamp, max_frame_timestamp);
+                }
+            }
+        }
+        self.total_stats.gpu_start = min_frame_timestamp;
+        self.total_stats.gpu_end = max_frame_timestamp;
+        self.total_stats.gpu_time_ms = (max_frame_timestamp - min_frame_timestamp) * 1000.0;
+
         // reset command buffers
         self.reset(swap_chain);
 
@@ -1175,6 +1263,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 for view in &reload_views {
                     println!("hotline::pmfx:: reloading view: {}", view.1);
                     self.views.remove(&view.1);
+                    self.view_stats.remove(&view.1);
                     rebuild_graph = true;
                 }
 
@@ -1283,6 +1372,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             if self.view_texture_refs.contains_key(texture_name) {
                                 for view_name in &self.view_texture_refs[texture_name] {
                                     self.views.remove(view_name);
+                                    self.view_stats.remove(view_name);
                                     rebuild_views.insert(view_name.to_string());
                                 }
                             }
@@ -1324,13 +1414,31 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    fn stats_start(view: &mut View<D>, view_stats: &mut ViewStats<D>) {
+        view_stats.timestamp_heap.reset();
+        view_stats.fences[view_stats.write_index] = view_stats.frame_fence_value;
+        let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][0];
+        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+    }
+
+    fn stats_end(view: &mut View<D>, view_stats: &mut ViewStats<D>) {
+        let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][1];
+        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+    }
+
     /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for (name, view) in &self.views {
             // rest only command buffers that are in use
             if self.render_graph_execute_order.contains(name) {
                 let view = view.clone();
-                view.1.lock().unwrap().cmd_buf.reset(swap_chain);
+                let mut view = view.1.lock().unwrap();
+                view.cmd_buf.reset(swap_chain);
+
+                // inserts markers for timing and tracking pipeline stats
+                let mut stats = self.view_stats.remove(name).unwrap();
+                Self::stats_start(&mut view, &mut stats);
+                self.view_stats.insert(name.to_string(), stats);
             }
         }
     }
@@ -1378,7 +1486,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
             else if self.views.contains_key(node) {
                 // dispatch a view
                 let view = self.views[node].clone();
-                let view = &mut view.1.lock().unwrap();
+                let mut view = &mut view.1.lock().unwrap();
+
+                // inserts markers for timing and tracking pipeline stats
+                let mut stats = self.view_stats.remove(node).unwrap();
+                Self::stats_end(&mut view, &mut stats);
+                self.view_stats.insert(node.to_string(), stats);
+
                 view.cmd_buf.close().unwrap();
                 device.execute(&view.cmd_buf);
             }
@@ -1389,6 +1503,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn log_error(&self, view_name: &str, msg: &str) {
         let mut errors = self.view_errors.lock().unwrap();
         errors.entry(view_name.to_string()).or_insert(msg.to_string());
+    }
+
+    /// Return the total statistics for the previous frame
+    pub fn get_total_stats(&self) -> &TotalStats {
+        &self.total_stats
     }
 }
 

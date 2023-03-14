@@ -4,6 +4,7 @@ use crate::os::Window;
 use crate::os::NativeHandle;
 
 use super::Device as SuperDevice;
+use super::ReadBackRequest as SuperReadBackRequest;
 use super::*;
 
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
@@ -23,6 +24,15 @@ use windows::{
     Win32::System::SystemServices::GENERIC_ALL
 };
 
+#[macro_export]
+macro_rules! d3d12_debug_name {
+    ($object:expr, $name:expr) => {
+        let obj : ID3D12Object = $object.cast().unwrap();
+        let wstr = os::win32::string_to_wide($name.to_string());
+        obj.SetName(PCWSTR(wstr.as_ptr() as _)).unwrap();
+    }
+}
+
 type BeginEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
 type EndEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void) -> i32;
 type SetMarkerOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
@@ -37,22 +47,27 @@ struct WinPixEventRuntime {
 impl WinPixEventRuntime {
     pub fn create() -> Option<WinPixEventRuntime> {
         unsafe {
-            let module = LoadLibraryA(PCSTR("WinPixEventRuntime.dll\0".as_ptr() as _)).unwrap();
-            let p_begin_event = GetProcAddress(module, PCSTR("PIXBeginEventOnCommandList\0".as_ptr() as _));
-            let p_end_event = GetProcAddress(module, PCSTR("PIXEndEventOnCommandList\0".as_ptr() as _));
-            let p_set_marker = GetProcAddress(module, PCSTR("PIXSetMarkerOnCommandList\0".as_ptr() as _));
-            if let (Some(begin), Some(end), Some(marker)) = (p_begin_event, p_end_event, p_set_marker) {
-                Some(WinPixEventRuntime {
-                    begin_event: std::mem::transmute::<*const usize, BeginEventOnCommandList>(
-                        begin as *const usize,
-                    ),
-                    end_event: std::mem::transmute::<*const usize, EndEventOnCommandList>(
-                        end as *const usize,
-                    ),
-                    set_marker: std::mem::transmute::<*const usize, SetMarkerOnCommandList>(
-                        marker as *const usize,
-                    ),
-                })
+            let module = LoadLibraryA(PCSTR("WinPixEventRuntime.dll\0".as_ptr() as _));
+            if let Ok(module) = module {
+                let p_begin_event = GetProcAddress(module, PCSTR("PIXBeginEventOnCommandList\0".as_ptr() as _));
+                let p_end_event = GetProcAddress(module, PCSTR("PIXEndEventOnCommandList\0".as_ptr() as _));
+                let p_set_marker = GetProcAddress(module, PCSTR("PIXSetMarkerOnCommandList\0".as_ptr() as _));
+                if let (Some(begin), Some(end), Some(marker)) = (p_begin_event, p_end_event, p_set_marker) {
+                    Some(WinPixEventRuntime {
+                        begin_event: std::mem::transmute::<*const usize, BeginEventOnCommandList>(
+                            begin as *const usize,
+                        ),
+                        end_event: std::mem::transmute::<*const usize, EndEventOnCommandList>(
+                            end as *const usize,
+                        ),
+                        set_marker: std::mem::transmute::<*const usize, SetMarkerOnCommandList>(
+                            marker as *const usize,
+                        ),
+                    })
+                }
+                else {
+                    None
+                }
             }
             else {
                 None
@@ -118,6 +133,7 @@ pub struct Device {
     shader_heap: Heap,
     rtv_heap: Heap,
     dsv_heap: Heap,
+    timestamp_frequency: f64,
     cleanup_textures: Vec<(u32, Texture)>
 }
 
@@ -141,6 +157,8 @@ unsafe impl Send for Texture {}
 unsafe impl Sync for Texture {}
 unsafe impl Send for Heap {}
 unsafe impl Sync for Heap {}
+unsafe impl Send for QueryHeap {}
+unsafe impl Sync for QueryHeap {}
 
 #[derive(Clone)]
 pub struct SwapChain {
@@ -238,6 +256,13 @@ pub struct Heap {
     capacity: usize,
     offset: usize,
     free_list: Vec<usize>,
+}
+
+#[derive(Clone)]
+pub struct QueryHeap {
+    heap: ID3D12QueryHeap,
+    alloc_index: usize,
+    capacity: usize
 }
 
 #[derive(Clone)]
@@ -372,6 +397,9 @@ const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_
         super::ResourceState::DepthStencilReadOnly => D3D12_RESOURCE_STATE_DEPTH_READ,
         super::ResourceState::ResolveSrc => D3D12_RESOURCE_STATE_RESOLVE_SOURCE,
         super::ResourceState::ResolveDst => D3D12_RESOURCE_STATE_RESOLVE_DEST,
+        super::ResourceState::CopySrc => D3D12_RESOURCE_STATE_COPY_SOURCE,
+        super::ResourceState::CopyDst => D3D12_RESOURCE_STATE_COPY_DEST,
+        super::ResourceState::GenericRead => D3D12_RESOURCE_STATE_GENERIC_READ,
     }
 }
 
@@ -381,6 +409,16 @@ const fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESC
         super::HeapType::RenderTarget => D3D12_DESCRIPTOR_HEAP_TYPE_RTV,
         super::HeapType::DepthStencil => D3D12_DESCRIPTOR_HEAP_TYPE_DSV,
         super::HeapType::Sampler => D3D12_DESCRIPTOR_HEAP_TYPE_SAMPLER,
+    }
+}
+
+const fn to_d3d12_query_heap_type(heap_type: super::QueryHeapType) -> D3D12_QUERY_HEAP_TYPE {
+    match heap_type {
+        super::QueryHeapType::Occlusion => D3D12_QUERY_HEAP_TYPE_OCCLUSION,
+        super::QueryHeapType::Timestamp => D3D12_QUERY_HEAP_TYPE_TIMESTAMP,
+        super::QueryHeapType::PipelineStatistics => D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS,
+        super::QueryHeapType::VideoDecodeStatistics => D3D12_QUERY_HEAP_TYPE_VIDEO_DECODE_STATISTICS,
+        super::QueryHeapType::StreamOutStatistics => D3D12_QUERY_HEAP_TYPE_SO_STATISTICS,
     }
 }
 
@@ -748,6 +786,21 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
     }
 }
 
+fn create_query_heap(device: &ID3D12Device, info: &QueryHeapInfo) -> QueryHeap {    
+    let mut heap = None;
+    let desc = D3D12_QUERY_HEAP_DESC {
+        Type: to_d3d12_query_heap_type(info.heap_type),
+        Count: info.num_queries as u32,
+        NodeMask: 0
+    };
+    unsafe { device.CreateQueryHeap(&desc, &mut heap).unwrap(); }
+    QueryHeap {
+        heap: heap.unwrap(),
+        alloc_index: 0,
+        capacity: info.num_queries
+    }
+}
+
 fn create_swap_chain_rtv(
     swap_chain: &IDXGISwapChain3,
     device: &mut Device,
@@ -771,6 +824,7 @@ fn create_swap_chain_rtv(
                 uav_index: None,
                 shared_handle: None
             });
+            d3d12_debug_name!(render_target, format!("swap_chain_texture"));
         }
         textures
     }
@@ -805,7 +859,6 @@ fn validate_data_size<T: Sized>(
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
-
 
 impl super::RenderPass<Device> for RenderPass {
     fn get_format_hash(&self) -> u64 {
@@ -847,6 +900,22 @@ impl super::Heap<Device> for Heap {
         let ptr = self.base_address + self.increment_size * index;
         let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
         self.deallocate_internal(&handle);
+    }
+}
+
+impl QueryHeap {
+    fn allocate(&mut self) -> usize {
+        let alloc = self.alloc_index;
+        assert!(self.alloc_index < self.capacity, 
+            "hotline::gfx::d3d12:: overflowed query heap with {} queries", self.alloc_index);
+        self.alloc_index += 1;
+        alloc
+    }
+}
+
+impl super::QueryHeap<Device> for QueryHeap {
+    fn reset(&mut self) {
+        self.alloc_index = 0;
     }
 }
 
@@ -1064,8 +1133,9 @@ impl super::Device for Device {
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
-    type Heap = Heap;
     type ComputePipeline = ComputePipeline;
+    type Heap = Heap;
+    type QueryHeap = QueryHeap;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -1109,9 +1179,13 @@ impl super::Device for Device {
                 NodeMask: 1,
                 ..Default::default()
             };
-            let command_queue = device
+            let command_queue : ID3D12CommandQueue = device
                 .CreateCommandQueue(&desc)
                 .expect("hotline_rs::gfx::d3d12: failed to create command queue");
+
+            let timestamp_frequency = command_queue
+                .GetTimestampFrequency()
+                .expect("hotline_rs::gfx::d3d12: failed to obtain timestamp frquency") as f64;
 
             // default heaps
 
@@ -1123,6 +1197,7 @@ impl super::Device for Device {
                     num_descriptors: info.shader_heap_size,
                 },
             );
+            d3d12_debug_name!(shader_heap.heap, "device_shader_heap");
 
             // rtv
             let rtv_heap = create_heap(
@@ -1132,6 +1207,7 @@ impl super::Device for Device {
                     num_descriptors: info.render_target_heap_size,
                 },
             );
+            d3d12_debug_name!(rtv_heap.heap, "device_render_target_heap");
 
             // dsv
             let dsv_heap = create_heap(
@@ -1141,9 +1217,11 @@ impl super::Device for Device {
                     num_descriptors: info.depth_stencil_heap_size,
                 },
             );
+            d3d12_debug_name!(dsv_heap.heap, "device_depth_stencil_heap");
 
             // initialise struct
             Device {
+                timestamp_frequency,
                 adapter_info,
                 device,
                 dxgi_factory,
@@ -1161,6 +1239,10 @@ impl super::Device for Device {
 
     fn create_heap(&self, info: &HeapInfo) -> Heap {
         create_heap(&self.device, info)
+    }
+
+    fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
+        create_query_heap(&self.device, info)
     }
 
     fn create_swap_chain<A: os::App>(
@@ -1513,7 +1595,7 @@ impl super::Device for Device {
                     D3D12_RESOURCE_STATE_COPY_DEST
                 }
                 else {
-                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE
+                    to_d3d12_resource_state(info.initial_state)
                 },
                 None,
                 &mut buf,
@@ -1566,7 +1648,7 @@ impl super::Device for Device {
                 let barrier = transition_barrier(
                     &buf,
                     D3D12_RESOURCE_STATE_COPY_DEST,
-                    D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+                    to_d3d12_resource_state(info.initial_state),
                 );
 
                 // transition to shader resource
@@ -1617,6 +1699,7 @@ impl super::Device for Device {
                     );
                     srv_index = Some(self.shader_heap.get_handle_index(&h));
                 }
+                _ => {}
             }
 
             Ok(Buffer {
@@ -1625,6 +1708,27 @@ impl super::Device for Device {
                 ibv,
                 srv_index,
                 uav_index: None,
+            })
+        }
+    }
+
+    fn create_read_back_buffer(
+        &mut self,
+        size: usize,
+    ) -> result::Result<Self::Buffer, super::Error> {
+        let buf = create_read_back_buffer(self, size as u64);
+        if let Some(buf) = buf {
+            Ok(Buffer {
+                resource: buf,
+                vbv: None,
+                ibv: None,
+                srv_index: None,
+                uav_index: None,
+            })
+        }
+        else {
+            Err( super::Error {
+                msg: format!("hotline::gfx::d3d12:: failed to create readback buffer!") 
             })
         }
     }
@@ -2185,6 +2289,54 @@ impl super::Device for Device {
     fn as_mut_ptr(&mut self) -> *mut Self {
         self as *mut Self
     }
+
+    fn read_buffer(&self, swap_chain: &SwapChain, buffer: &Buffer, size: usize, frame_written_fence: u64) -> Option<super::ReadBackData> {
+        let rr = ReadBackRequest {
+            resource: Some(buffer.resource.clone()),
+            fence_value: frame_written_fence as u64,
+            size: size,
+            row_pitch: size,
+            slice_pitch: size,
+        };
+    
+        if rr.is_complete(swap_chain) {
+            let map = rr.map(&MapInfo { 
+                subresource: 0, 
+                read_start: 0, 
+                read_end: size 
+            });
+            if let Ok(map) = map {
+                rr.unmap();
+                Some(map)
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        }
+    }
+
+    fn read_timestamps(&self, swap_chain: &SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64> {
+        let data = self.read_buffer(swap_chain, buffer, size_bytes, frame_written_fence);
+        let mut results = Vec::new();
+        if let Some(data) = data {
+            let elem_size = Self::get_timestamp_size_bytes();
+            let count = size_bytes / elem_size;
+            for i in 0..count {
+                let offset = i * elem_size;
+                let value = u64::from_ne_bytes(data.data[offset..elem_size].try_into().unwrap());
+                let timestamp = value as f64 / self.timestamp_frequency;
+                results.push(timestamp);
+            }
+        }
+        results
+    }
+
+    fn get_timestamp_size_bytes() -> usize {
+        8
+    }
 }
 
 impl SwapChain {
@@ -2225,6 +2377,10 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn get_num_buffers(&self) -> u32 {
         self.num_bb
+    }
+
+    fn get_frame_fence_value(&self) -> u64 {
+        self.frame_fence_value[self.bb_index]
     }
 
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
@@ -2448,18 +2604,45 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.event_stack_count -= 1;
     }
 
+    fn timestamp_query(&mut self, heap: &mut QueryHeap, resolve_buffer: &mut Buffer) {
+        // alloc and insert the query
+        let index = heap.allocate();
+        unsafe { 
+            let cmd = &self.command_list[self.bb_index];
+            cmd.EndQuery(&heap.heap, D3D12_QUERY_TYPE_TIMESTAMP, index as u32);
+            let cmd = &self.command_list[self.bb_index];
+            cmd.ResolveQueryData(
+                &heap.heap,
+                D3D12_QUERY_TYPE_TIMESTAMP,
+                index as u32, 1, 
+                &resolve_buffer.resource, 
+                0
+            );
+        }
+    }
+
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {
-        if let Some(tex) = &barrier.texture {
-            let barrier = transition_barrier(
+        let barrier = if let Some(tex) = &barrier.texture {
+            transition_barrier(
                 &tex.resource,
                 to_d3d12_resource_state(barrier.state_before),
                 to_d3d12_resource_state(barrier.state_after),
-            );
-            unsafe {
-                let bb = self.bb_index;
-                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
-                self.in_flight_barriers[bb].push(barrier);
-            }
+            )
+        }
+        else if let Some(buf) = &barrier.buffer {
+            transition_barrier(
+                &buf.resource,
+                to_d3d12_resource_state(barrier.state_before),
+                to_d3d12_resource_state(barrier.state_after),
+            )
+        }
+        else {
+            panic!("hotline::gfx::d3d12:: attempting to insert transition barrier with no attached resources");
+        };
+        unsafe {
+            let bb = self.bb_index;
+            self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+            self.in_flight_barriers[bb].push(barrier);
         }
     }
 
