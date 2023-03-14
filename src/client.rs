@@ -21,6 +21,8 @@ use std::path::PathBuf;
 use std::collections::{HashMap, VecDeque};
 use std::time::SystemTime;
 
+use maths_rs::vec::vec4f;
+
 const STATUS_BAR_HEIGHT : f32 = 10.0;
 
 /// Information to create a hotline context which will create an app, window, device.
@@ -307,12 +309,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.imgui.add_main_dock(STATUS_BAR_HEIGHT);
         self.imgui.add_status_bar(STATUS_BAR_HEIGHT);
 
-        // quick test
-        if self.imgui.begin_window("status_bar") {
-            self.imgui.text("hello status bar!");
-        }
-        self.imgui.end();
-
+        // check for focus on the dock
         let dock_input = self.imgui.main_dock_hovered();
         self.app.set_input_enabled(
             !self.imgui.want_capture_keyboard() || dock_input, 
@@ -578,6 +575,42 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
             self.imgui.end_main_menu_bar();
         }
+        // status bar
+        if self.imgui.begin_window("status_bar") {
+            // fps / cpu / gpu
+            let fps = maths_rs::round(1.0 / self.time.smooth_delta) as u32;
+            let cpu_ms = self.time.smooth_delta * 1000.0;
+            let gpu_ms = self.pmfx.get_total_stats().gpu_time_ms;
+            self.imgui.text(&format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)", fps, cpu_ms, gpu_ms));
+            self.imgui.same_line();
+
+            // hot reloading (plugins)
+            let mut hot_name = String::from("");
+            let mut col = vec4f(1.0, 1.0, 1.0, 1.0);
+            for plugin in &self.plugins {
+                if plugin.reloader.is_hot() {
+                    if !hot_name.is_empty() {
+                        hot_name += " | "
+                    }
+                    hot_name = plugin.name.to_string();
+                    col = vec4f(1.0, 0.0, 0.0, 1.0);
+                }
+            }
+
+            // hot reloading (pmfx)
+            if self.pmfx.reloader.is_hot() {
+                if !hot_name.is_empty() {
+                    hot_name += " | "
+                }
+                hot_name += "pmfx";
+                col = vec4f(1.0, 0.0, 0.0, 1.0);
+            }
+
+            let hot_text = format!("{} {}", hot_name, font_awesome::strs::FIRE);
+            self.imgui.right_align(self.imgui.calc_text_size(&hot_text).0 + 10.0);
+            self.imgui.colour_text(&hot_text, col);
+        }
+        self.imgui.end();
     }
 
     /// Internal plugin yupdate function process reloads, setups and updates of hooked in plugins

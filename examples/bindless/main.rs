@@ -89,6 +89,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
         num_elements: 4,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
     };
 
     let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
@@ -102,6 +103,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         format: gfx::Format::R16u,
         stride: std::mem::size_of::<u16>(),
         num_elements: 6,
+        initial_state: gfx::ResourceState::IndexBuffer
     };
 
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
@@ -158,6 +160,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         format: gfx::Format::Unknown,
         stride: cbuffer.len() * 4,
         num_elements: 1,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
     };
 
     let _constant_buffer = dev.create_buffer(&info, data![gfx::as_u8_slice(&cbuffer)]);

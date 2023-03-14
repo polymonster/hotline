@@ -223,6 +223,7 @@ fn draw_triangle() -> Result<(), hotline_rs::Error> {
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
         num_elements: 3,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
     };
 
     let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
@@ -518,21 +519,21 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
 
 #[test]
 fn client_tests() {
+    return;
+
     // build the plugins
-    //hotline_rs::plugin::build_all();
+    hotline_rs::plugin::build_all();
 
     // run the tests.. they need to run 1 by 1 as we cant have 2 clients running concurrently
-    //boot_empty_client();
-
-    /*
+    boot_empty_client();
     boot_client_empty_plugin();
     boot_client_ecs_plugin();
-    boot_client_missing_plugin();
+    
+    //boot_client_missing_plugin();
     boot_client_ecs_plugin_demo("test_missing_demo");
     boot_client_ecs_plugin_demo("test_missing_systems");
     boot_client_ecs_plugin_demo("primitives");
     boot_client_ecs_plugin_demo("cube");
     boot_client_ecs_plugin_demo("test_missing_systems");
     boot_client_ecs_plugin_demo("test_missing_render_graph");
-    */
 }

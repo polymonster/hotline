@@ -7,11 +7,12 @@ use std::thread;
 
 /// Basic Reloader which can check timestamps on files and then callback functions supplied by the reload responder
 pub struct Reloader {
-    /// Hash map storing files grouped by type (pmfx, code) and then keep a vector of files
-    /// and timestamps for quick checking at run time.
+    /// lock may be written / modified on different threads
     lock: Arc<Mutex<ReloadState>>,
     /// You can implement your own `ReloadResponder` trait to get callback functions to trigger a build
-    responder: Arc<Mutex<Box<dyn ReloadResponder>>>
+    responder: Arc<Mutex<Box<dyn ReloadResponder>>>,
+    /// indicates reloading is available / happening
+    hot: bool
 }
 
 /// Query reload status with a responder:
@@ -20,6 +21,8 @@ pub struct Reloader {
 pub enum ReloadState {
     /// No action needs taking
     None,
+    /// Changes detected build has triggered
+    Building,
     /// There is a reload available, get into a stable state and call `complete_reload` to complete
     Available,
 }
@@ -42,7 +45,13 @@ impl Reloader {
         Self {
             lock: Arc::new(Mutex::new(ReloadState::None)),
             responder: Arc::new(Mutex::new(responder)),
+            hot: false
         }.start()
+    }
+
+    /// if is_hot is true, then reloading is detected and in progress
+    pub fn is_hot(&self) -> bool {
+        self.hot
     }
 
     /// Add files to check in a thread safe manner
@@ -58,8 +67,11 @@ impl Reloader {
     }
 
     /// Call this each frame, if ReloadResult::Reload you must then clean up any data in preperation for a reload
-    pub fn check_for_reload(&self) -> ReloadState {
+    pub fn check_for_reload(&mut self) -> ReloadState {
         let lock = self.lock.lock().unwrap();
+        if *lock != ReloadState::None {
+            self.hot = true
+        }
         *lock
     }
 
@@ -68,6 +80,7 @@ impl Reloader {
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
         *lock = ReloadState::None;
+        self.hot = false;
         drop(lock);
         println!("hotline_rs::reloader: reload complete");
     }
@@ -108,9 +121,14 @@ impl Reloader {
 
                 let mtime = Self::file_watcher_thread_check_mtime(&responder, cur_mtime);
                 if mtime > cur_mtime {
+                    // signal we are building (this might take a while)
+                    let mut a = lock.lock().unwrap();
                     println!("hotline_rs::reloader: changes detected, building");
+                    *a = ReloadState::Building;
+                    drop(a);
                     let mut responder = responder.lock().unwrap();
                     if responder.build().success() {
+                        // signal reload is ready
                         let mut a = lock.lock().unwrap();
                         println!("hotline_rs::reloader: build success, reload available");
                         *a = ReloadState::Available;

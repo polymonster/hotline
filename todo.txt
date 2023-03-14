@@ -1,52 +1,61 @@
 // TODO:
 
+// - pmfx
+// - resolves properly data driven
 // - pmfx v2 docs (texture and view)
-// - propagate msaa sample mask
+// - texture load image
+// - render target fixed size
+// - propagate sample mask??
 
 // - update pmbuild and pmfx (again)
 // - move primitives from ecs to hotline
-// - blend examples
-// - hot reload progress / indicator in status bar
+
+// - set name on resources
 
 // - bug with merging pmfx, with shared keys. the old ones are not recirsively merged / overwritten
 // - bug with pmfx inherit (test.pmfx cannot inherit and extend pipelines)
 // - store hotline-rs commit hash for crates.io
 
 // ecs
+// - batch vertex instance buffer
+// - batch cbuffer instances
+// - draw instanced
+// - execute indirect
+
+// - material
+// - blend examples
+// -    needs material
 // - stencil examples
 // - billboard?
 // - 3x4 matrix
 // - per demo settings
-// - batch vertex instance buffer
-// - draw instanced
-// - draw indirect
 // - light
 // - 3D texture -> compute
 // - texture
 // - shadow
-// - material
 // - update aabb's
 // - culling
 
 // gfx
-// - resolves properly data driven
 // - MRT
 // - Alpha to coverage
-// - GPU Timer Query
+// - GPU Query
 // - Draw Instanced 
-// - Draw Indirect
+// - Execute Indirect
 // - Stencil Ref
 // - Texture Formats (BC etc)
+// - cubemap, 3d texture, texture array
+// - API for fence?
+// - API for copies and clears
 
-// ui
-// - view menu + saving state
-
-// log / debug / info
+// ui / log / debug / info
 // - timer stats
 // - thread stats
-// - in client terminal / log
+// - in client terminal / log (validation layer)
+// - view menu + saving state
 
 // DONE:
+// x hot reload progress / indicator in status bar
 // x markers on ecs render passes
 // x add gif to the github page, + link to video
 // x handle serde errors when building pipeline

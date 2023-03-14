@@ -51,6 +51,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVertex2d>(),
             num_elements,
+            initial_state: gfx::ResourceState::VertexConstantBuffer
         }
     }
 
@@ -61,6 +62,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVertex3d>(),
             num_elements,
+            initial_state: gfx::ResourceState::VertexConstantBuffer
         }
     }
 

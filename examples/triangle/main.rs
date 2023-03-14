@@ -74,6 +74,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
         num_elements: 3,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
     };
 
     let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;   

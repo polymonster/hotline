@@ -136,6 +136,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
             num_elements: indices32.len(),
             format: gfx::Format::R32u,
             stride: 4,
+            initial_state: gfx::ResourceState::IndexBuffer
             },
             Some(indices32.as_slice())
         ).unwrap()
@@ -152,6 +153,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
             num_elements: indices16.len(),
             format: gfx::Format::R16u,
             stride: 2,
+            initial_state: gfx::ResourceState::IndexBuffer
             },
             Some(indices16.as_slice())
         ).unwrap()
@@ -163,7 +165,8 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
                 cpu_access: gfx::CpuAccessFlags::NONE,
                 num_elements: vertices.len(),
                 format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<Vertex3D>() 
+                stride: std::mem::size_of::<Vertex3D>(),
+                initial_state: gfx::ResourceState::VertexConstantBuffer
             }, 
             Some(vertices.as_slice())
         ).unwrap(),

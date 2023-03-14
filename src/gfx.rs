@@ -20,6 +20,14 @@ macro_rules! data {
     }
 }
 
+#[cfg(target_os = "windows")]
+#[macro_export]
+macro_rules! gfx_debug_name {
+    ($object:expr, $name:expr) => {
+        d3d12_debug_name($object, $name);
+    }
+}
+
 /// 3-Dimensional struct for compute shader thread count / thread group size.
 pub struct Size3 {
     pub x: u32,
@@ -131,7 +139,7 @@ pub struct AdapterInfo {
 pub struct HeapInfo {
     /// ie: Shader, RenderTarget, DepthStencil, Sampler.
     pub heap_type: HeapType,
-    /// Totatl size of the heap in number of resources.
+    /// Total size of the heap in number of resources.
     pub num_descriptors: usize,
 }
 
@@ -140,13 +148,36 @@ pub struct HeapInfo {
 pub enum HeapType {
     /// For shader resource view, constant buffer or unordered access.
     Shader,
+    /// For render targets
     RenderTarget,
+    /// For depth stencil targets
     DepthStencil,
+    /// For sampler states
     Sampler,
+}
+
+/// Information to create a query heap... `Device` will contain default heaps, but you can create your own if required.
+pub struct QueryHeapInfo {
+    /// ie: Timestamp, Occlusion, PipelineStatistics
+    pub heap_type: QueryHeapType,
+    /// Total size of the heap in number of queries.
+    pub num_queries: usize,
+}
+
+/// Options for query heap types
+#[derive(Copy, Clone, PartialEq, Eq)]
+pub enum QueryHeapType {
+    Occlusion,
+    Timestamp,
+    PipelineStatistics,
+    VideoDecodeStatistics,
+    StreamOutStatistics,
 }
 
 /// Information to pass to `Device::create_swap_chain`.
 pub struct SwapChainInfo {
+    /// Number of internal buffers to keep behind the scenes, which are swapped between each frame 
+    /// to allow overlapped CPU/GPU command buffer producer / consumer
     pub num_buffers: u32,
     /// Must be BGRA8n, RGBA8n or RGBA16f.
     pub format: Format,
@@ -161,19 +192,26 @@ pub struct BufferInfo {
     pub usage: BufferUsage,
     /// Used to indicate if we want to read or write from the CPU, use NONE if possible for best performance.
     pub cpu_access: CpuAccessFlags,
-    /// Data format of the buffer.
+    /// Data format of the buffer this is is only required for index buffers and can be `gfx::Format::Unknown` otherwise
     pub format: Format,
     /// The stride of a vertex or structure in bytes.
     pub stride: usize,
     /// The number of array elements.
     pub num_elements: usize,
+    /// Initial state to start image transition barriers before state
+    pub initial_state: ResourceState,
 }
 
 /// Describes how a buffer will be used on the GPU.
 #[derive(Copy, Clone)]
 pub enum BufferUsage {
+    /// Used to simply store data (query results, copy buffers etc)
+    None,
+    /// Used as a Vertex buffer binding
     Vertex,
+    /// Used as Index buffer binding
     Index,
+    /// Used as constant buffer for shader data
     ConstantBuffer,
 }
 
@@ -587,14 +625,23 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
 /// Information to create a pipeline through `Device::create_texture`.
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
+    /// Texture type
     pub tex_type: TextureType,
+    /// Texture format
     pub format: Format,
+    /// Width of the image in texels
     pub width: u64,
+    /// Height of the image in texels for `TextureType::Texture2D` and `Texture3D` use 1 for `Texture1D`
     pub height: u64,
+    /// Depth of the image in slices of (`width` x `height`) for `TextureType::Texture3D` only (use 1 other wise)
     pub depth: u32,
+    /// Number of array levels or slices for `Texture1D` or `Texture2D` arrays. use 1 otherwise
     pub array_levels: u32,
+    /// Number of mip levels in the image
     pub mip_levels: u32,
+    /// Number of MSAA samples
     pub samples: u32,
+    /// Indicate how this texture will be used on the GPU
     pub usage: TextureUsage,
     /// Initial state to start image transition barriers before state
     pub initial_state: ResourceState,
@@ -662,9 +709,13 @@ pub struct RenderPassInfo<'stack, D: Device> {
 
 /// Transitions are required to be performed to switch resources from reading to writing or into different formats
 pub struct TransitionBarrier<'stack, D: Device> {
+    /// A texture to perform the transition on, either `texture` xor `buffer` must be `Some`
     pub texture: Option<&'stack D::Texture>,
+    /// A buffer to perform the transition on, either `buffer` xor `texture` must be `Some`
     pub buffer: Option<&'stack D::Buffer>,
+    /// The state of the resource before the transition is made, this must be correct otherwise it will throw validation warnings
     pub state_before: ResourceState,
+    /// The state we want to transition into
     pub state_after: ResourceState,
 }
 
@@ -690,13 +741,21 @@ pub enum ResourceState {
     /// Used as a source msaa texture to resolve into a non-msaa resource
     ResolveSrc,
     /// Used as a destination sngle sample texture to be resolved into by an msaa resource
-    ResolveDst
+    ResolveDst,
+    /// Used as a source for copies from into other resources
+    CopySrc,
+    /// Used as a destination for copies from other resources or queries
+    CopyDst,
+    /// Used as destination to read back data from buffers / queries
+    GenericRead
 }
 
 /// ome resources may contain subresources for resolving
 #[derive(Copy, Clone, Serialize, Deserialize, PartialEq)]
 pub enum Subresource {
+    /// The resource itself for example a multi-sample texture has x number of MSAA samples
     Resource,
+    /// The sub resource for example an MSAA texture will also create a non-MSAA subresource for resolving in to.
     ResolveResource
 }
 
@@ -728,6 +787,8 @@ pub trait RenderPipeline<D: Device>: Send + Sync  {}
 
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: Send + Sync  {
+    /// Returns a hash based on the render target format so that pipelines can be shared amonst compatible passes
+    /// hash is based on render target format, depth stencil format and MSAA sample count
     fn get_format_hash(&self) -> u64;
 }
 /// An opaque compute pipeline type..
@@ -745,9 +806,11 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
     type Heap: Heap<Self>;
+    type QueryHeap: QueryHeap<Self>;
     type ComputePipeline: ComputePipeline<Self>;
     fn create(info: &DeviceInfo) -> Self;
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
+    fn create_query_heap(&self, info: &QueryHeapInfo) -> Self::QueryHeap;
     fn create_swap_chain<A: os::App>(
         &mut self,
         info: &SwapChainInfo,
@@ -759,6 +822,10 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         info: &BufferInfo,
         data: Option<&[T]>,
+    ) -> Result<Self::Buffer, Error>;
+    fn create_read_back_buffer(
+        &mut self,
+        size: usize,
     ) -> Result<Self::Buffer, Error>;
     fn create_texture<T: Sized>(
         &mut self,
@@ -785,6 +852,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn get_adapter_info(&self) -> &AdapterInfo;
     fn as_ptr(&self) -> *const Self;
     fn as_mut_ptr(&mut self) -> *mut Self;
+    /// Read data back from GPU buffer into CPU `ReadBackData` assumes the `Buffer` is created with `create_read_back_buffer`
+    fn read_buffer(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Option<ReadBackData>;
+    /// Read back u64 timestamp values as values in seconds
+    fn read_timestamps(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64>;
+    /// Size of a single timestamp query result in bytes
+    fn get_timestamp_size_bytes() -> usize;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -792,6 +865,8 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn new_frame(&mut self);
     fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
     fn wait_for_last_frame(&self);
+    /// Returns the fence value for the current frame, you can use this to syncronise reads
+    fn get_frame_fence_value(&self) -> u64;
     fn get_num_buffers(&self) -> u32;
     fn get_backbuffer_index(&self) -> u32;
     fn get_backbuffer_texture(&self) -> &D::Texture;
@@ -817,6 +892,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn end_render_pass(&self);
     fn begin_event(&mut self, colour: u32, name: &str);
     fn end_event(&mut self);
+    fn timestamp_query(&mut self, heap: &mut D::QueryHeap, resolve_buffer: &mut D::Buffer);
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
     fn set_viewport(&self, viewport: &Viewport);
@@ -883,6 +959,12 @@ pub trait Heap<D: Device>: Send + Sync {
     fn deallocate(&mut self, index: usize);
 }
 
+/// An opaque query heap type, use to create queries
+pub trait QueryHeap<D: Device>: Send + Sync {
+    /// Reset queries at the start of the frame, each query requested will bump the allocation index
+    fn reset(&mut self);
+}
+
 /// Used to readback data from the GPU, once the request is issued `is_complete` needs to be waited on for completion
 /// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
 /// data can be obtained using `get_data`
@@ -893,6 +975,7 @@ pub trait ReadBackRequest<D: Device> {
 }
 
 /// Results from an issued ReadBackRequest
+#[derive(Clone)]
 pub struct ReadBackData {
     /// Slice of data bytes
     pub data: &'static [u8],
