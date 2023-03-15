@@ -330,8 +330,6 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 max_lod: -1.0,
             }}]),
         },
-        raster_info: gfx::RasterInfo::default(),
-        depth_stencil_info: gfx::DepthStencilInfo::default(),
         blend_info: gfx::BlendInfo {
             independent_blend_enabled: true,
             render_target: vec![gfx::RenderTargetBlendInfo {
@@ -349,8 +347,8 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
             ..Default::default()
         },
         topology: gfx::Topology::TriangleList,
-        patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass(),
+        pass: Some(swap_chain.get_backbuffer_pass()),
+        ..Default::default()
     })
 }
 

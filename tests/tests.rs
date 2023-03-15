@@ -294,17 +294,14 @@ fn draw_triangle() -> Result<(), hotline_rs::Error> {
                 step_rate: 0,
             },
         ],
-        descriptor_layout: gfx::DescriptorLayout::default(),
-        raster_info: gfx::RasterInfo::default(),
-        depth_stencil_info: gfx::DepthStencilInfo::default(),
         blend_info: gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
             independent_blend_enabled: false,
             render_target: vec![gfx::RenderTargetBlendInfo::default()],
         },
         topology: gfx::Topology::TriangleList,
-        patch_index: 0,
-        pass: swap_chain.get_backbuffer_pass(),
+        pass: Some(swap_chain.get_backbuffer_pass()),
+        ..Default::default()
     })?;
 
     while app.run() {

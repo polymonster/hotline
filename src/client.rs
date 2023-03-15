@@ -57,9 +57,23 @@ pub struct Time {
     /// Smoothed delta time to reduce spikes
     pub smooth_delta: f32,
     /// System time that the last frame started
-    pub frame_start: SystemTime
+    pub frame_start: SystemTime,
+    /// Control the run state of the program, pause render / update
+    pub paused: bool
 }
 const SMOOTH_DELTA_FRAMES : usize = 120;
+
+impl Time {
+    fn new() -> Self {
+        Self {
+            delta: 0.0,
+            smooth_delta: 0.0,
+            frame_start: SystemTime::now(),
+            paused: false
+        }
+    }
+}
+
 
 /// Useful defaults for quick HotlineInfo initialisation
 impl Default for HotlineInfo {
@@ -104,7 +118,7 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub time: Time,
     pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
     plugins: Vec<PluginCollection>,
-    delta_history: VecDeque<f32>
+    delta_history: VecDeque<f32>,
 }
 
 /// Serialisable plugin
@@ -254,12 +268,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             user_config: user_config.clone(),
             plugins: Vec::new(),
             libs: HashMap::new(),
-            time: Time {
-                delta: 0.0,
-                smooth_delta: 0.0,
-                frame_start: SystemTime::now()
-            },
-            delta_history: VecDeque::new()
+            time: Time::new(),
+            delta_history: VecDeque::new(),
         };
 
         // automatically load plugins from prev session
@@ -573,6 +583,18 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 }
                 self.imgui.end_menu();
             }
+
+            // playback / toggle pause
+            let icon = if self.time.paused {
+                font_awesome::strs::PLAY_CIRCLE
+            }
+            else {
+                font_awesome::strs::PAUSE_CIRCLE
+            };
+            if self.imgui.button(icon) {
+                self.time.paused = !self.time.paused;
+            }
+
             self.imgui.end_main_menu_bar();
         }
         // status bar
@@ -729,15 +751,17 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         }
         
         // update
-        for plugin in &mut plugins {
-            let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-            unsafe {
-                let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
-                if let Ok(update_fn) = update {
-                    self = update_fn(self, plugin.instance);
+        if !self.time.paused {
+            for plugin in &mut plugins {
+                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+                unsafe {
+                    let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                    if let Ok(update_fn) = update {
+                        self = update_fn(self, plugin.instance);
+                    }
                 }
+                plugin.state = PluginState::None;
             }
-            plugin.state = PluginState::None;
         }
 
         // move plugins back and return self

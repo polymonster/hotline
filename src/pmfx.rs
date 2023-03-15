@@ -144,13 +144,17 @@ impl TotalStats {
     }
 }
 
+/// Resources to track and read back GPU-statistics for individual views
 struct ViewStats<D: gfx::Device> {
     write_index: usize,
     read_index: usize,
     frame_fence_value: u64,
+    fences: Vec<u64>,
     timestamp_heap: D::QueryHeap,
     timestamp_buffers: Vec<[D::Buffer; 2]>,
-    fences: Vec<u64>,
+    pipeline_stats_heap: D::QueryHeap,
+    pipeline_stats_buffers: Vec<D::Buffer>,
+    pipeline_query_index: usize,
     start_timestamp: f64,
     end_timestamp: f64
 }
@@ -163,25 +167,37 @@ impl<D> ViewStats<D> where D: gfx::Device {
     pub fn new(device: &mut D, num_buffers: usize) -> Self {
         let mut timestamp_buffers = Vec::new();
         let mut fences = Vec::new();
+        let mut pipeline_stats_buffers = Vec::new();
+        let timestamp_size_bytes = D::get_timestamp_size_bytes();
+        let pipeline_statistics_size_bytes = D::get_pipeline_statistics_size_bytes();
         for _ in 0..num_buffers {
             timestamp_buffers.push([
-                Self::new_query_buffer(device, 8, 1),
-                Self::new_query_buffer(device, 8, 1)
+                Self::new_query_buffer(device, timestamp_size_bytes, 1),
+                Self::new_query_buffer(device, timestamp_size_bytes, 1)
             ]);
+            pipeline_stats_buffers.push(
+                Self::new_query_buffer(device, pipeline_statistics_size_bytes, 1),
+            );
             fences.push(0)
         }
         Self {
-            timestamp_heap: device.create_query_heap(&gfx::QueryHeapInfo {
-                heap_type: gfx::QueryHeapType::Timestamp,
-                num_queries: 2,
-            }),
-            timestamp_buffers,
             frame_fence_value: 0,
             write_index: 0,
             read_index: 0,
             fences,
             start_timestamp: 0.0,
-            end_timestamp: 0.0
+            end_timestamp: 0.0,
+            timestamp_heap: device.create_query_heap(&gfx::QueryHeapInfo {
+                heap_type: gfx::QueryType::Timestamp,
+                num_queries: 2,
+            }),
+            timestamp_buffers,
+            pipeline_stats_heap: device.create_query_heap(&gfx::QueryHeapInfo {
+                heap_type: gfx::QueryType::PipelineStatistics,
+                num_queries: 1,
+            }),
+            pipeline_stats_buffers,
+            pipeline_query_index: usize::max_value()
         }
     }
 }
@@ -264,7 +280,8 @@ struct Pipeline {
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
     blend_state: Option<String>,
-    topology: Option<gfx::Topology>,
+    topology: gfx::Topology,
+    sample_mask: u32,
     hash: PmfxHash
 }
 type PipelinePermutations = HashMap<String, Pipeline>;
@@ -912,6 +929,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Ok(())
     }
 
+    /// Unloads all views, so that a subsequent call to `create_render_graph` wiill build from clean
+    /// make sure call this after `SwapChain::wait_for_last_fame()` so any dropped resources will
+    /// not be in use on the GPU
+    pub fn unload_views(&mut self) {
+        self.views.clear();
+    }
+
     /// Create a render graph wih automatic resource barrier generation from info specified insie .pmfx file
     pub fn create_render_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {        
         // go through the graph sequentially, as the command lists are executed in order but generated 
@@ -1081,15 +1105,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
                             blend_info: blend_info_from_state(
                                 &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states),
-                            topology:
-                                if let Some(topology) = pipeline.topology {
-                                    topology
-                                }
-                                else {
-                                    gfx::Topology::TriangleList
-                                },
-                            patch_index: 0,
-                            pass,
+                            topology: pipeline.topology,
+                            sample_mask:pipeline.sample_mask,
+                            pass: Some(pass),
+                            ..Default::default()
                         })?;
                         
                         println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
@@ -1158,21 +1177,32 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // gather stats
         let mut min_frame_timestamp = f64::max_value();
         let mut max_frame_timestamp = f64::zero();
+        let timestamp_size_bytes = D::get_timestamp_size_bytes();
         for (_, stats) in &mut self.view_stats {
             stats.frame_fence_value = swap_chain.get_frame_fence_value();
             let i = stats.read_index;
             let write_fence = stats.fences[i];
             if write_fence < swap_chain.get_frame_fence_value() {
-                let timestamps = device.read_timestamps(swap_chain,  &stats.timestamp_buffers[i][0], 8, write_fence);
+                // start timestamp
+                let timestamps = device.read_timestamps(
+                    swap_chain, &stats.timestamp_buffers[i][0], timestamp_size_bytes, write_fence);
                 if !timestamps.is_empty() {
                     stats.start_timestamp = timestamps[0];
                     min_frame_timestamp = min(stats.start_timestamp, min_frame_timestamp);
 
                 }
-                let timestamps = device.read_timestamps(swap_chain,  &stats.timestamp_buffers[i][1], 8, write_fence);
+                // end timestamp
+                let timestamps = device.read_timestamps(
+                    swap_chain, &stats.timestamp_buffers[i][1], timestamp_size_bytes, write_fence);
                 if !timestamps.is_empty() {
                     stats.end_timestamp = timestamps[0];
                     max_frame_timestamp = max(stats.end_timestamp, max_frame_timestamp);
+                }
+                // pipeline stats
+                let pipeline_stats = device.read_pipeline_statistics(
+                    swap_chain, &stats.pipeline_stats_buffers[i], write_fence);
+                if let Some(_pipeline_stats) = pipeline_stats {
+                    //println!("has verts! {}", pipeline_stats.input_assembler_vertices);
                 }
             }
         }
@@ -1391,7 +1421,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         // recreate the active render graph
         if !rebuild_views.is_empty() {
-            self.create_render_graph(device, &self.active_render_graph.to_string())?;
+            if !self.active_render_graph.is_empty() {
+                self.create_render_graph(device, &self.active_render_graph.to_string())?;
+            }
         }
 
         Ok(())
@@ -1415,15 +1447,38 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     fn stats_start(view: &mut View<D>, view_stats: &mut ViewStats<D>) {
-        view_stats.timestamp_heap.reset();
+        // sync to the frame
         view_stats.fences[view_stats.write_index] = view_stats.frame_fence_value;
+
+        // view timestamps
+        view_stats.timestamp_heap.reset();
         let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][0];
         view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+
+        // view pipeline stats
+        view_stats.pipeline_stats_heap.reset();
+        view_stats.pipeline_query_index = view.cmd_buf.begin_query(
+            &mut view_stats.pipeline_stats_heap, 
+            gfx::QueryType::PipelineStatistics
+        );
     }
 
     fn stats_end(view: &mut View<D>, view_stats: &mut ViewStats<D>) {
+        // end timestamp
         let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][1];
         view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+
+        // end pipeline stats query
+        if view_stats.pipeline_query_index != usize::max_value() {
+            let mut buf = &mut view_stats.pipeline_stats_buffers[view_stats.write_index];
+            view.cmd_buf.end_query(
+                &mut view_stats.pipeline_stats_heap, 
+                gfx::QueryType::PipelineStatistics,
+                view_stats.pipeline_query_index,
+                &mut buf,
+            );
+            view_stats.pipeline_query_index = usize::max_value();
+        }
     }
 
     /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame

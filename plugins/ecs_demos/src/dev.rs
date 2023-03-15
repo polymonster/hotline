@@ -1472,9 +1472,14 @@ pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: us
 
     let mut h = 0.0;
     for k in 0..coils {
+        let mut uv_hangle = -f32::pi();
         for i in 0..vertex_segments + 1 {
             let x = cos(hangle);
             let y = -sin(hangle);
+            
+            let uvx = cos(uv_hangle);
+            let uvy = -sin(uv_hangle);
+            uv_hangle += angle_step;
             
             hangle += angle_step;
             let x2 = cos(hangle);
@@ -1504,14 +1509,12 @@ pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: us
                 let t = right;
                 let bt = up;
     
-                let mut u = 0.5 + atan2(y, x) / f32::two_pi();
-                let mut v = 0.5 + atan2(vy, vx) / f32::two_pi();
-    
+                let mut u = 0.5 + atan2(uvy, uvx) / f32::two_pi();
                 let u = if i == 0 { 1.0 } else { u };
+                
+                let mut v = 0.5 + atan2(vy, vx) / f32::two_pi();
                 let v = if j == 0 { 1.0 } else { v };
 
-                let u = if i == segments { 0.0 } else { u };
-    
                 segment_vertices.extend(vec![
                     Vertex3D {
                         position: vv * scale,

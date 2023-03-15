@@ -20,6 +20,7 @@ macro_rules! data {
     }
 }
 
+/// Macro to inject debug names into gpu resources
 #[cfg(target_os = "windows")]
 #[macro_export]
 macro_rules! gfx_debug_name {
@@ -159,19 +160,33 @@ pub enum HeapType {
 /// Information to create a query heap... `Device` will contain default heaps, but you can create your own if required.
 pub struct QueryHeapInfo {
     /// ie: Timestamp, Occlusion, PipelineStatistics
-    pub heap_type: QueryHeapType,
+    pub heap_type: QueryType,
     /// Total size of the heap in number of queries.
     pub num_queries: usize,
 }
 
-/// Options for query heap types
+/// Options for query heap types, and queries
 #[derive(Copy, Clone, PartialEq, Eq)]
-pub enum QueryHeapType {
+pub enum QueryType {
+    /// Used for occlusion query heap or occlusion queries
     Occlusion,
+    /// Can be used in the same heap as occlusion
+    BinaryOcclusion,
+    /// Create a heap to contain timestamp queries
     Timestamp,
+    /// Create a heap to contain a structure of `PipelineStatistics`
     PipelineStatistics,
+    /// Create video decoder statistics query and heap
     VideoDecodeStatistics,
-    StreamOutStatistics,
+}
+
+/// GPU pipeline statistics obtain by using a `PipelineStatistics` query
+pub struct PipelineStatistics {
+    pub input_assembler_vertices: u64,
+    pub input_assembler_primitives: u64,
+    pub vertex_shader_invocations: u64,
+    pub pixel_shader_primitives: u64,
+    pub compute_shader_invocations: u64
 }
 
 /// Information to pass to `Device::create_swap_chain`.
@@ -203,7 +218,7 @@ pub struct BufferInfo {
 }
 
 /// Describes how a buffer will be used on the GPU.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq)]
 pub enum BufferUsage {
     /// Used to simply store data (query results, copy buffers etc)
     None,
@@ -257,10 +272,17 @@ bitflags! {
     /// Render target write mask flags.
     #[derive(Serialize, Deserialize)]
     pub struct WriteMask : u8 {
+        // Write no colour channels
+        const NONE = 0;
+        /// Write the red colour channel
         const RED = 1<<0;
+        /// Write the green colour channel
         const GREEN = 1<<1;
+        /// Write the blue colour channel
         const BLUE = 1<<2;
+        /// Write the alpha channel
         const ALPHA = 1<<3;
+        /// Write (RED|GREEN|BLUE|ALPHA)
         const ALL = (1<<4)-1;
     }
 
@@ -437,11 +459,13 @@ pub struct RenderPipelineInfo<'stack, D: Device> {
     pub blend_info: BlendInfo,
     /// Primitive topolgy oof the input assembler
     pub topology: Topology,
-    /// only required for Topology::PatchList use 0 as default
+    /// Only required for Topology::PatchList use 0 as default
     pub patch_index: u32,
+    /// Sample mask for which MSAA samples to write
+    pub sample_mask: u32,
     /// A valid render pass, you can share pipelines across passes providing the render target
     /// formats and sample count are the same of the passes you wish to use the pipeline on
-    pub pass: &'stack D::RenderPass,
+    pub pass: Option<&'stack D::RenderPass>,
 }
 
 /// Indicates how the pipeline interprets vertex data at the input assembler stage
@@ -795,7 +819,8 @@ pub trait RenderPass<D: Device>: Send + Sync  {
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
-/// to which all command buffers will submitted and executed each frame.
+/// to which all command buffers will submitted and executed each frame. Default heaps for shader resources,
+/// render targets and depth stencils are also provided
 pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type SwapChain: SwapChain<Self>;
     type CmdBuf: CmdBuf<Self>;
@@ -808,62 +833,95 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Heap: Heap<Self>;
     type QueryHeap: QueryHeap<Self>;
     type ComputePipeline: ComputePipeline<Self>;
+    /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
+    /// Create a new resource `Heap` from `HeapInfo`
     fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
+    /// Create a new `QueryHeap` from `QueryHeapInfo`
     fn create_query_heap(&self, info: &QueryHeapInfo) -> Self::QueryHeap;
+    /// Create a new `SwapChain` from `SwapChainInfo` and bind it to the specified `window`
     fn create_swap_chain<A: os::App>(
         &mut self,
         info: &SwapChainInfo,
         window: &A::Window,
     ) -> Result<Self::SwapChain, Error>;
+    /// Create a new `CmdBuf` with `num_buffers` internal buffers, the buffers can be swapped and syncronised
+    /// with a new `SwapChain` to allow in-flight gpu/cpu overlapped prodicer consumers 
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
+    /// Create a new `Shader` from `ShaderInfo`
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
+    /// Create a new `Buffer` from `BufferInfo` with any resource views allocated on the devices `shader_heap`
     fn create_buffer<T: Sized>(
         &mut self,
         info: &BufferInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Buffer, Error>;
+    /// Create a new `Buffer` from `BufferInfo` with any resource views allocated on the specified `Heap` that must be of `HeapType::Shader`
+    fn create_buffer_with_heap<T: Sized>(
+        &mut self,
+        info: &BufferInfo,
+        data: Option<&[T]>,
+        heap: &mut Self::Heap
+    ) -> Result<Self::Buffer, Error>;
+    /// Create a `Buffer` specifically for reading back data from the GPU mainly for `Query` use
     fn create_read_back_buffer(
         &mut self,
         size: usize,
     ) -> Result<Self::Buffer, Error>;
+    /// Create a new texture from `TextureInfo` and initialise it with optional data which can be any slice of a sized `T`
     fn create_texture<T: Sized>(
         &mut self,
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
+    /// Create a new render pipeline state object from the supplied `RenderPipelineInfo`
     fn create_render_pipeline(
         &self,
         info: &RenderPipelineInfo<Self>,
     ) -> Result<Self::RenderPipeline, Error>;
+    /// Create a new render pass from `RenderPassInfo`
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error>;
+    /// Create a new compute pipeline state object from `ComputePipelineInfo`
     fn create_compute_pipeline(
         &self,
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
-    /// device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
+    /// The Device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
     fn destroy_texture(&mut self, texture: Self::Texture);
-    /// check if resources are finished on the gpu and de-allocate from shader heaps
+    /// Check if resources are finished on the gpu and de-allocate from shader heaps
     fn clean_up_resources(&mut self, swap_chain: &Self::SwapChain);
+    /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&self, cmd: &Self::CmdBuf);
+    /// Reorts internal graphics api backend resources
     fn report_live_objects(&self) -> Result<(), Error>;
+    /// Borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap(&self) -> &Self::Heap;
+    /// Mutably borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap_mut(&mut self) -> &mut Self::Heap;
+    /// Returns an `AdapterInfo` struct (info about GPU vendor, and HW statistics)
     fn get_adapter_info(&self) -> &AdapterInfo;
-    fn as_ptr(&self) -> *const Self;
-    fn as_mut_ptr(&mut self) -> *mut Self;
     /// Read data back from GPU buffer into CPU `ReadBackData` assumes the `Buffer` is created with `create_read_back_buffer`
+    /// None is returned if the buffer has yet to br written on the GPU
     fn read_buffer(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Option<ReadBackData>;
-    /// Read back u64 timestamp values as values in seconds
+    /// Read back u64 timestamp values as values in seconds, the vector will be empty if the buffer is yet to be written
+    /// on the GPU
     fn read_timestamps(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64>;
+    /// Read back a single pipeline statistics query, assuming `buffer` was created with `create_read_back_buffer` 
+    /// and is of size `get_pipeline_statistics_size_bytes()`. None is returned if the buffer is not ready
+    fn read_pipeline_statistics(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, frame_written_fence: u64) -> Option<PipelineStatistics>;
     /// Size of a single timestamp query result in bytes
     fn get_timestamp_size_bytes() -> usize;
+    /// Size of a single pipeline statistics query result in bytes
+    fn get_pipeline_statistics_size_bytes() -> usize;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
 pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
+    /// Call to begin a new frame, to synconise with v-sync and internally swap buffers
     fn new_frame(&mut self);
+    /// Update to syncornise with the window, this may require the backbuffer to resize
     fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
+    /// Waits on the CPU for the last frame that was submitted with `swap` to be completed by the GPU
     fn wait_for_last_frame(&self);
     /// Returns the fence value for the current frame, you can use this to syncronise reads
     fn get_frame_fence_value(&self) -> u64;
@@ -885,26 +943,55 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
 /// which buffer we are writing to. At the end of each frame `close` must be called
 /// and finally the `CmdBuf` can be passed to `Device::execute` to be processed on the GPU.
 pub trait CmdBuf<D: Device>: Send + Sync + Clone {
+    /// Reset the `CmdBuf` for use on a new frame, it will be syncronised with the `SwapChain` so that
+    /// in-flight command buffers are not overwritten
     fn reset(&mut self, swap_chain: &D::SwapChain);
+    /// Call close to the command buffer after all commands have been added and before passing to `Device::execute` 
     fn close(&mut self) -> Result<(), Error>;
+    /// Internally the `CmdBuf` contains a set of buffers which it rotates through to allow inflight operations
+    /// to complete, this value indicates the buffer number you should `write` to during the current frame 
     fn get_backbuffer_index(&self) -> u32;
+    /// Begins a render pass, end must be called
     fn begin_render_pass(&self, render_pass: &D::RenderPass);
+    /// End a render pass must be called after `begin_render_pass` has been called
     fn end_render_pass(&self);
+    /// Begin a names marker event which will be visible in tools such as PIX or RenderDoc
     fn begin_event(&mut self, colour: u32, name: &str);
+    /// End an event that was started with `begin_event`
     fn end_event(&mut self);
-    fn timestamp_query(&mut self, heap: &mut D::QueryHeap, resolve_buffer: &mut D::Buffer);
-    fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
-    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
-    fn set_viewport(&self, viewport: &Viewport);
-    fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
-    fn set_index_buffer(&self, buffer: &D::Buffer);
-    fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
-    fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
-    fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
-    fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
-    fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
+    /// Similar to `begin_event/end_event` except it inserts a single marker point instead of a range
     fn set_marker(&self, colour: u32, name: &str);
+    /// Function to specifically insert a timestamp query and request readback into the `Buffer`
+    /// read back the rsult with `Device::read_timestamps`
+    fn timestamp_query(&mut self, heap: &mut D::QueryHeap, resolve_buffer: &mut D::Buffer);
+    /// Begin a new query in the heap, it will allocate an index which is returned as `usize`
+    fn begin_query(&mut self, heap: &mut D::QueryHeap, query_type: QueryType) -> usize;
+    /// End a query that was made on the heap results will be pushed into the `resolve_buffer` 
+    /// the data can be read by `Device::read_buffer` or specialisations such as `read_pipeline_statistics`
+    fn end_query(&mut self, heap: &mut D::QueryHeap, query_type: QueryType, index: usize, resolve_buffer: &mut D::Buffer);
+    /// Add a transition barrier for resources to change states based on info supplied in `TransitionBarrier`
+    fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
+    /// Add a transition barrier for a sub resource (ie. resolve texture)
+    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
+    /// Set the viewport on the rasterizer stage
+    fn set_viewport(&self, viewport: &Viewport);
+    /// Set the scissor rect on the rasterizer stage
+    fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
+    /// Set the index `buffer` to use for draw calls, the buffer should be created with `BufferUsage::Index`
+    fn set_index_buffer(&self, buffer: &D::Buffer);
+    /// Set the index `buffer` on `slot` to use for draw calls, the buffer should be created with `BufferUsage::Vertex`
+    fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
+    /// Set render pipeline for `draw` commands
+    fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
+    /// Set a compute pipeline for `dispatch`
+    fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
+    /// Set the resource heap to be used by the compute pipeline
+    fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
+    /// Set the resource heap to be used on the render pipeline
+    fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
+    /// Push a small amount of data into the command buffer
     fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
         &self,
         vertex_count: u32,
@@ -912,6 +999,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         start_vertex: u32,
         start_instance: u32,
     );
+    /// Make an indexed draw call supplying index and instance counts, an index buffer should be bound
     fn draw_indexed_instanced(
         &self,
         index_count: u32,
@@ -922,7 +1010,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&self, group_count: Size3, thread_count: Size3);
+    /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
+    /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
 }
 
@@ -930,11 +1020,11 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
 pub trait Buffer<D: Device>: Send + Sync {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
-    fn update<T: Sized>(&self, offset: isize, data: &[T]) -> Result<(), Error>;
+    fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> Result<(), Error>; // TODO: should be mut surely?
     /// maps the entire buffer for reading or writing... see MapInfo
-    fn map(&self, info: &MapInfo) -> *mut u8;
+    fn map(&mut self, info: &MapInfo) -> *mut u8;
     /// unmap buffer... see UnmapInfo
-    fn unmap(&self, info: &UnmapInfo);
+    fn unmap(&mut self, info: &UnmapInfo);
     /// Return the index to access in a shader
     fn get_srv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
@@ -1138,6 +1228,7 @@ Available Adapters:
     }
 }
 
+/// Useful defaults for raster state on a pipeline state object, efetively means no culling, solid fill
 impl Default for RasterInfo {
     fn default() -> Self {
         RasterInfo {
@@ -1156,6 +1247,7 @@ impl Default for RasterInfo {
     }
 }
 
+///  Useful defaults for smample states, wrap linear
 impl Default for SamplerInfo {
     fn default() -> Self {
         SamplerInfo {
@@ -1173,6 +1265,7 @@ impl Default for SamplerInfo {
     }
 }
 
+///  Useful defaults for depth stencil state on a pipeline state object, no depth test or write
 impl Default for DepthStencilInfo {
     fn default() -> Self {
         DepthStencilInfo {
@@ -1198,6 +1291,7 @@ impl Default for DepthStencilInfo {
     }
 }
 
+/// Useful defaults for blend state on a pipeline state object, no blending
 impl Default for RenderTargetBlendInfo {
     fn default() -> Self {
         RenderTargetBlendInfo {
@@ -1215,6 +1309,26 @@ impl Default for RenderTargetBlendInfo {
     }
 }
 
+/// Defaults for a render pipline, which would do nothing
+impl<'stack, D> Default for RenderPipelineInfo<'stack, D> where D: Device {
+    fn default() -> Self {
+        Self {
+            vs: None,
+            fs: None,
+            input_layout: Vec::new(),
+            descriptor_layout: DescriptorLayout::default(),
+            raster_info: RasterInfo::default(),
+            depth_stencil_info: DepthStencilInfo::default(),
+            blend_info: BlendInfo::default(),
+            topology: Topology::TriangleList,
+            patch_index: 0,
+            sample_mask: u32::max_value(),
+            pass: None
+        }
+    }
+}
+
+/// Display for resource state enums
 impl std::fmt::Display for ResourceState {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{:?}", self)
