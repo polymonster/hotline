@@ -412,13 +412,23 @@ const fn to_d3d12_descriptor_heap_type(heap_type: super::HeapType) -> D3D12_DESC
     }
 }
 
-const fn to_d3d12_query_heap_type(heap_type: super::QueryHeapType) -> D3D12_QUERY_HEAP_TYPE {
+const fn to_d3d12_query_heap_type(heap_type: super::QueryType) -> D3D12_QUERY_HEAP_TYPE {
     match heap_type {
-        super::QueryHeapType::Occlusion => D3D12_QUERY_HEAP_TYPE_OCCLUSION,
-        super::QueryHeapType::Timestamp => D3D12_QUERY_HEAP_TYPE_TIMESTAMP,
-        super::QueryHeapType::PipelineStatistics => D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS,
-        super::QueryHeapType::VideoDecodeStatistics => D3D12_QUERY_HEAP_TYPE_VIDEO_DECODE_STATISTICS,
-        super::QueryHeapType::StreamOutStatistics => D3D12_QUERY_HEAP_TYPE_SO_STATISTICS,
+        super::QueryType::Occlusion => D3D12_QUERY_HEAP_TYPE_OCCLUSION,
+        super::QueryType::BinaryOcclusion => D3D12_QUERY_HEAP_TYPE_OCCLUSION,
+        super::QueryType::Timestamp => D3D12_QUERY_HEAP_TYPE_TIMESTAMP,
+        super::QueryType::PipelineStatistics => D3D12_QUERY_HEAP_TYPE_PIPELINE_STATISTICS,
+        super::QueryType::VideoDecodeStatistics => D3D12_QUERY_HEAP_TYPE_VIDEO_DECODE_STATISTICS,
+    }
+}
+
+const fn to_d3d12_query_type(heap_type: super::QueryType) -> D3D12_QUERY_TYPE {
+    match heap_type {
+        super::QueryType::Occlusion => D3D12_QUERY_TYPE_OCCLUSION,
+        super::QueryType::BinaryOcclusion => D3D12_QUERY_TYPE_BINARY_OCCLUSION,
+        super::QueryType::Timestamp => D3D12_QUERY_TYPE_TIMESTAMP,
+        super::QueryType::PipelineStatistics => D3D12_QUERY_TYPE_PIPELINE_STATISTICS,
+        super::QueryType::VideoDecodeStatistics => D3D12_QUERY_TYPE_VIDEO_DECODE_STATISTICS,
     }
 }
 
@@ -1387,7 +1397,9 @@ impl super::Device for Device {
             BytecodeLength: 0,
         };
 
-        let msaa_format = info.pass.sample_count > 1;
+        // unwrap pass
+        let pass = info.pass.expect("hotline::gfx::d3d12:: a pass is required when creating a render pipline");
+        let msaa_format = pass.sample_count > 1;
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
@@ -1452,19 +1464,19 @@ impl super::Device for Device {
             },
             SampleMask: u32::max_value(), // TODO: supply sample mask
             PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
-            NumRenderTargets: info.pass.rt_formats.len() as u32,
+            NumRenderTargets: pass.rt_formats.len() as u32,
             SampleDesc: DXGI_SAMPLE_DESC {
-                Count: info.pass.sample_count,
+                Count: pass.sample_count,
                 Quality: 0,
             },
             ..Default::default()
         };
 
         // Set formats from pass
-        for i in 0..info.pass.rt_formats.len() {
-            desc.RTVFormats[i] = info.pass.rt_formats[i];
+        for i in 0..pass.rt_formats.len() {
+            desc.RTVFormats[i] = pass.rt_formats[i];
         }
-        desc.DSVFormat = info.pass.ds_format;
+        desc.DSVFormat = pass.ds_format;
 
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
@@ -1554,15 +1566,25 @@ impl super::Device for Device {
         })
     }
 
-    fn create_buffer<T: Sized>(
+    fn create_buffer_with_heap<T: Sized>(
         &mut self,
-        info: &super::BufferInfo,
+        info: &BufferInfo,
         data: Option<&[T]>,
+        heap: &mut Heap
     ) -> result::Result<Buffer, super::Error> {
         let mut buf: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
         let size_bytes = info.stride * info.num_elements;
         validate_data_size(size_bytes, data)?;
+
+        // TODO: alignment, need to request the alignments from the device
+        let size_bytes = if info.usage == super::BufferUsage::ConstantBuffer {
+            align_pow2(size_bytes as u64, 256) as usize
+        }
+        else {
+            size_bytes
+        };
+
         unsafe {
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -1689,15 +1711,15 @@ impl super::Device for Device {
                     })
                 }
                 super::BufferUsage::ConstantBuffer => {
-                    let h = self.shader_heap.allocate();
+                    let h = heap.allocate();
                     self.device.CreateConstantBufferView(
                         Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
                             BufferLocation: buf.GetGPUVirtualAddress(),
-                            SizeInBytes: size_bytes as u32,
+                            SizeInBytes: size_bytes as u32
                         }),
                         h,
                     );
-                    srv_index = Some(self.shader_heap.get_handle_index(&h));
+                    srv_index = Some(heap.get_handle_index(&h));
                 }
                 _ => {}
             }
@@ -1710,6 +1732,14 @@ impl super::Device for Device {
                 uav_index: None,
             })
         }
+    }
+
+    fn create_buffer<T: Sized>(
+        &mut self,
+        info: &super::BufferInfo,
+        data: Option<&[T]>,
+    ) -> result::Result<Buffer, super::Error> {
+        self.create_buffer_with_heap(info, data, &mut self.shader_heap.clone())
     }
 
     fn create_read_back_buffer(
@@ -2282,14 +2312,6 @@ impl super::Device for Device {
         &self.adapter_info
     }
 
-    fn as_ptr(&self) -> *const Self {
-        self as *const Self
-    }
-
-    fn as_mut_ptr(&mut self) -> *mut Self {
-        self as *mut Self
-    }
-
     fn read_buffer(&self, swap_chain: &SwapChain, buffer: &Buffer, size: usize, frame_written_fence: u64) -> Option<super::ReadBackData> {
         let rr = ReadBackRequest {
             resource: Some(buffer.resource.clone()),
@@ -2334,8 +2356,35 @@ impl super::Device for Device {
         results
     }
 
+    fn read_pipeline_statistics(&self, swap_chain: &SwapChain, buffer: &Self::Buffer, frame_written_fence: u64) -> Option<super::PipelineStatistics> {
+        let size_bytes = Self::get_pipeline_statistics_size_bytes();
+        let data = self.read_buffer(swap_chain, buffer, size_bytes, frame_written_fence);
+        if let Some(data) = data {
+            let mut d3d12_query_stats = D3D12_QUERY_DATA_PIPELINE_STATISTICS {
+                ..Default::default()
+            };
+            unsafe {
+                std::ptr::copy_nonoverlapping(data.data.as_ptr() as *mut _, &mut d3d12_query_stats, size_bytes);
+            }
+            Some(super::PipelineStatistics{
+                input_assembler_vertices: d3d12_query_stats.IAVertices,
+                input_assembler_primitives: d3d12_query_stats.IAPrimitives,
+                vertex_shader_invocations: d3d12_query_stats.VSInvocations,
+                pixel_shader_primitives: d3d12_query_stats.PSInvocations, 
+                compute_shader_invocations: d3d12_query_stats.CSInvocations
+            })
+        }
+        else {
+            None
+        }
+    }
+
     fn get_timestamp_size_bytes() -> usize {
-        8
+        8 // U64 
+    }
+
+    fn get_pipeline_statistics_size_bytes() -> usize {
+        std::mem::size_of::<D3D12_QUERY_DATA_PIPELINE_STATISTICS>()
     }
 }
 
@@ -2621,6 +2670,32 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn begin_query(&mut self, heap: &mut QueryHeap, query_type: QueryType) -> usize {
+        // alloc a new query
+        let index = heap.allocate();
+        unsafe {
+            let cmd = &self.command_list[self.bb_index];
+            cmd.BeginQuery(&heap.heap, to_d3d12_query_type(query_type), index as u32);
+        }
+        // return index for use in end
+        index
+    }
+
+    fn end_query(&mut self, heap: &mut QueryHeap, query_type: QueryType, index: usize, resolve_buffer: &mut Buffer) {
+        unsafe { 
+            let cmd = &self.command_list[self.bb_index];
+            cmd.EndQuery(&heap.heap, to_d3d12_query_type(query_type), index as u32);
+            let cmd = &self.command_list[self.bb_index];
+            cmd.ResolveQueryData(
+                &heap.heap,
+                to_d3d12_query_type(query_type),
+                index as u32, 1, 
+                &resolve_buffer.resource, 
+                0
+            );
+        }
+    }
+
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {
         let barrier = if let Some(tex) = &barrier.texture {
             transition_barrier(
@@ -2889,7 +2964,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 impl super::Buffer<Device> for Buffer {
-    fn update<T: Sized>(&self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+    fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
         let update_bytes = data.len() * std::mem::size_of::<T>();
         let range = D3D12_RANGE { Begin: 0, End: 0 };
         let mut map_data = std::ptr::null_mut();
@@ -2910,7 +2985,7 @@ impl super::Buffer<Device> for Buffer {
         self.uav_index
     }
 
-    fn map(&self, info: &MapInfo) -> *mut u8 {
+    fn map(&mut self, info: &MapInfo) -> *mut u8 {
         let range = D3D12_RANGE {
             Begin: info.read_start,
             End: info.read_end,
@@ -2922,7 +2997,7 @@ impl super::Buffer<Device> for Buffer {
         map_data as *mut u8
     }
 
-    fn unmap(&self, info: &UnmapInfo) {
+    fn unmap(&mut self, info: &UnmapInfo) {
         let range = D3D12_RANGE {
             Begin: info.write_start,
             End: info.write_end,

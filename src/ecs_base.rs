@@ -177,6 +177,7 @@ macro_rules! render_func_closure {
     ($func:expr, $view_name:expr, $query:ty) => {
         move |
             pmfx: Res<PmfxRes>,
+            device: Res<DeviceRes>,
             qmesh: $query | {
                 let view = pmfx.get_view(&$view_name);
 
@@ -186,13 +187,18 @@ macro_rules! render_func_closure {
                         
                         let col = view.colour_hash;
                         view.cmd_buf.begin_event(col, &$view_name);
+                        view.cmd_buf.begin_render_pass(&view.pass);
+                        view.cmd_buf.set_viewport(&view.viewport);
+                        view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
                         let result = $func(
+                            &device,
                             &pmfx,
                             &view,
                             qmesh
                         );
 
+                        view.cmd_buf.end_render_pass();
                         view.cmd_buf.end_event();
                         result
                     }

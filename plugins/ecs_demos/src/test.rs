@@ -99,6 +99,7 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
 
 #[no_mangle]
 pub fn render_missing_camera(
+    _device: &bevy_ecs::prelude::Res<DeviceRes>,
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     _: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
@@ -108,6 +109,7 @@ pub fn render_missing_camera(
 
 #[no_mangle]
 pub fn render_missing_pipeline(
+    _device: &bevy_ecs::prelude::Res<DeviceRes>,
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {

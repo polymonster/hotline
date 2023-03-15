@@ -289,12 +289,13 @@ impl BevyPlugin {
         // unload / setup
         client.swap_chain.wait_for_last_frame();
         client = self.unload(client);
+        client.pmfx.unload_views();
         self.setup(client)
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
     fn check_for_changes(&mut self, client: PlatformClient) -> PlatformClient {
-        // rendere graph itself has chaned
+        // render graph itself has chaned
         if self.render_graph_hash != client.pmfx.get_render_graph_hash(&self.schedule_info.render_graph) {
             self.resetup(client)
         }
@@ -338,6 +339,9 @@ impl BevyPlugin {
 
         self.status_ui_category(&mut client.imgui, "Setup:", &self.schedule_info.setup);
         self.status_ui_category(&mut client.imgui, "Update:", &self.schedule_info.update);
+
+        let batch = self.schedule_info.batch.iter().map(|b| b.function_name.to_string()).collect();
+        self.status_ui_category(&mut client.imgui, "Batch:", &batch);
 
         let graph = &self.schedule_info.render_graph;
 
@@ -471,16 +475,29 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.schedule.add_stage(StageUpdate, update_stage);
 
         // batch functions do syncronised work to prpare buffers / matrices for drawing
-        let batch_stage = SystemStage::parallel()
-            .with_system(update_world_matrices)
-            ;
+        let mut batch_stage = SystemStage::parallel()
+            .with_system(update_world_matrices.label("update_world_matrices"));
+
+        for batch_system in &info.batch {
+            let func_name = &batch_system.function_name;
+            if let Some(mut func) = self.get_system_function(func_name, "", &client) {
+                for dep in &batch_system.deps {
+                    func = func.after("update_world_matrices");
+                }
+                batch_stage = batch_stage.with_system(func);
+            }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
+        }
+
         self.schedule.add_stage(StageBatch, batch_stage);
 
         // hook in render functions
         let mut render_stage = SystemStage::parallel();
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                render_stage = render_stage.with_system(func.after("temp-debug"));
+                render_stage = render_stage.with_system(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());

@@ -8,6 +8,7 @@
         pmfx: {
             help_arg: "-help"
         }
+        pmfx_dev(pmfx): {}
     }
     
     tools_update: {
@@ -75,6 +76,7 @@
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
+                "-num_threads 1"
                 "-source"
             ]
         }

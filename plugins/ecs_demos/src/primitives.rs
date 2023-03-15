@@ -73,7 +73,7 @@ pub fn setup_primitives(
     let half_size = size * 0.5;    
     let step = size * half_size;
     let half_extent = rc * half_size;
-    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
+    let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
 
     let mut i = 0;
     for y in 0..irc {
