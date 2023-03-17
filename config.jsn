@@ -76,8 +76,8 @@
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
-                "-num_threads 1"
-                "-source"
+                "-args"
+                "-Zpr"
             ]
         }
     }

@@ -1542,7 +1542,6 @@ impl super::Device for Device {
             }
 
             // validate DXBC 
-            // TODO: DXIL
             let mut valid = true;
             let validate = [b'D', b'X', b'B', b'C'];
             for i in 0..4 {
@@ -1560,7 +1559,7 @@ impl super::Device for Device {
             }
         }
 
-        // invalid dxil shader bytecode
+        // invalid dxil/dxbc shader bytecode
         Err( super::Error {
             msg: String::from("hotline_rs::gfx::d3d12: shader byte code (src) is not valid"),
         })

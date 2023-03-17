@@ -69,19 +69,21 @@ pub fn render_meshes_pipeline(
     _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &Pipeline)>) -> Result<(), hotline_rs::Error> {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &Pipeline, &Colour)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    for (world_matrix, mesh, pipeline) in &mesh_draw_query {
+    for (world_matrix, mesh, pipeline, colour) in &mesh_draw_query {
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
         view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
         view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_constants(1, 4, 12, &colour.0);
+
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -200,20 +202,24 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
 
         // render functions
         "render_meshes" => render_func_query![
-            render_meshes, view_name,
+            render_meshes, 
+            view_name,
             (Query<(&WorldMatrix, &MeshComponent), Without<Billboard>>,
             Query<(&WorldMatrix, &MeshComponent), With<Billboard>>)
         ],
         "render_meshes_pipeline" => render_func_query![
-            render_meshes_pipeline, view_name, 
-            Query<(&WorldMatrix, &MeshComponent, &Pipeline)>
+            render_meshes_pipeline, 
+            view_name, 
+            Query<(&WorldMatrix, &MeshComponent, &Pipeline, &Colour)>
         ],
         "render_meshes_vertex_buffer_instanced" => render_func_query![
-            render_meshes_vertex_buffer_instanced, view_name, 
+            render_meshes_vertex_buffer_instanced, 
+            view_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
         ],
         "render_meshes_cbuffer_instanced" => render_func_query![
-            render_meshes_cbuffer_instanced, view_name, 
+            render_meshes_cbuffer_instanced, 
+            view_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
         ],
         

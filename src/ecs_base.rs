@@ -5,7 +5,7 @@ use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use maths_rs::{Vec2f, Vec3f, Mat4f, Mat34f, Quatf};
+use maths_rs::{Vec2f, Vec3f, Vec4f, Mat4f, Mat34f, Quatf};
 
 use std::ops::Deref;
 use std::ops::DerefMut;
@@ -131,6 +131,7 @@ hotline_ecs!(Component, Velocity, Vec3f);
 hotline_ecs!(Component, Position, Vec3f);
 hotline_ecs!(Component, Rotation, Quatf);
 hotline_ecs!(Component, Scale, Vec3f);
+hotline_ecs!(Component, Colour, Vec4f);
 hotline_ecs!(Component, LocalMatrix, Mat34f);
 hotline_ecs!(Component, WorldMatrix, Mat34f);
 hotline_ecs!(Component, ViewProjectionMatrix, Mat4f);
