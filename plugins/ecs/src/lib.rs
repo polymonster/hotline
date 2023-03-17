@@ -260,7 +260,7 @@ impl BevyPlugin {
     // Default_setup, creates a render graph and update functions which are hooked into the scheduler
     fn default_demo_shedule(&self) -> ScheduleInfo {
         ScheduleInfo {
-            render_graph: "mesh_debug".to_string(),
+            render_graph: "mesh_debug",
             ..Default::default()
         }
     }
@@ -343,7 +343,7 @@ impl BevyPlugin {
         let batch = self.schedule_info.batch.iter().map(|b| b.function_name.to_string()).collect();
         self.status_ui_category(&mut client.imgui, "Batch:", &batch);
 
-        let graph = &self.schedule_info.render_graph;
+        let graph = self.schedule_info.render_graph;
 
         if self.errors.contains_key(graph) {
             client.imgui.colour_text(
@@ -430,7 +430,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         };
 
         // build render graph
-        let graph = self.schedule_info.render_graph.to_string();
+        let graph = self.schedule_info.render_graph;
         let graph_result = client.pmfx.create_render_graph(&mut client.device, &graph);
 
         let render_functions = if let Err(error) = graph_result {
@@ -438,7 +438,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             self.schedule_info = ScheduleInfo::default();
             let ext_msg = format!("{} (Check GPU Validation Messages For More Info)", error.msg);
             self.errors.entry(graph.to_string()).or_insert(Vec::new()).push(ext_msg);
-            self.schedule_info.render_graph = graph.to_string();
+            self.schedule_info.render_graph = graph;
             Vec::new()
         }
         else {
@@ -474,15 +474,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
         self.schedule.add_stage(StageUpdate, update_stage);
 
-        // batch functions do syncronised work to prpare buffers / matrices for drawing
+        // batch functions do syncronised work to prepare buffers / matrices for drawing
         let mut batch_stage = SystemStage::parallel()
-            .with_system(update_world_matrices.label("update_world_matrices"));
+            .with_system(update_world_matrices);
+
 
         for batch_system in &info.batch {
             let func_name = &batch_system.function_name;
             if let Some(mut func) = self.get_system_function(func_name, "", &client) {
                 for dep in &batch_system.deps {
-                    func = func.after("update_world_matrices");
+                    func = func.after(*dep);
                 }
                 batch_stage = batch_stage.with_system(func);
             }

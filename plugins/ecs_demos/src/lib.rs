@@ -18,8 +18,8 @@ use crate::test::*;
 #[no_mangle]
 fn rotate_meshes(
     time: Res<TimeRes>,
-    mut query: Query<&mut Rotation>) {
-    for mut rotation in &mut query {
+    mut mesh_query: Query<&mut Rotation, Without<Billboard>>) {
+    for mut rotation in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
     }
 }
@@ -29,7 +29,10 @@ pub fn render_meshes(
     _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
+    queries: (
+        Query<(&WorldMatrix, &MeshComponent), Without<Billboard>>,
+        Query<(&WorldMatrix, &MeshComponent), With<Billboard>>
+    )) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
@@ -38,12 +41,20 @@ pub fn render_meshes(
     view.cmd_buf.set_render_pipeline(&mesh_debug);
     view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
-    // billboard
-    // let inv_rot = Mat3f::from(camera.view_matrix.transpose());
-    // let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
+    let (mesh_draw_query, billboard_draw_query) = queries;
 
     for (world_matrix, mesh) in &mesh_draw_query {
         view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    // billboard
+    let inv_rot = Mat3f::from(camera.view_matrix.transpose());
+    for (world_matrix, mesh) in &billboard_draw_query {
+        let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
+        view.cmd_buf.push_constants(1, 16, 0, &bbmat);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -140,13 +151,15 @@ pub fn render_meshes_cbuffer_instanced(
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
     demos![
-        "primitives",
+        // primitive examples
+        "geometry_primitives",
 
         // draw tests
         "draw_indexed",
         "draw_indexed_push_constants",
         "draw_indexed_vertex_buffer_instanced",
         "draw_indexed_cbuffer_instanced",
+        "draw_cbuffer_material",
 
         // render state tests
         "test_raster_states",
@@ -167,14 +180,15 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 #[no_mangle]
 pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
-        // setup functions
-        "setup_primitives" => system_func![setup_primitives],
+        // primitive setup functions
+        "setup_geometry_primitives" => system_func![setup_geometry_primitives],
 
         // draw tests
         "setup_draw_indexed" => system_func![setup_draw_indexed],
         "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
         "setup_draw_indexed_vertex_buffer_instanced" => system_func![setup_draw_indexed_vertex_buffer_instanced],
         "setup_draw_indexed_cbuffer_instanced" => system_func![setup_draw_indexed_cbuffer_instanced],
+        "setup_draw_cbuffer_material" => system_func![setup_draw_cbuffer_material],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
@@ -185,7 +199,11 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         "batch_world_matrix_instances" => system_func![draw::batch_world_matrix_instances],
 
         // render functions
-        "render_meshes" => render_func![render_meshes, view_name],
+        "render_meshes" => render_func_query![
+            render_meshes, view_name,
+            (Query<(&WorldMatrix, &MeshComponent), Without<Billboard>>,
+            Query<(&WorldMatrix, &MeshComponent), With<Billboard>>)
+        ],
         "render_meshes_pipeline" => render_func_query![
             render_meshes_pipeline, view_name, 
             Query<(&WorldMatrix, &MeshComponent, &Pipeline)>

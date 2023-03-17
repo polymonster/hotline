@@ -922,7 +922,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.barriers.insert(barrier_name, cmd_buf);
     
                 // update track state
-                texture_barriers.remove(texture_name);
+                texture_barriers.remove(texture_name    );
                 texture_barriers.insert(texture_name.to_string(), target_state);
             }
         }

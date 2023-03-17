@@ -40,7 +40,7 @@ pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>)
         setup: systems![
             "setup_draw_indexed"
         ],
-        render_graph: "mesh_debug".to_string(),
+        render_graph: "mesh_debug",
         ..Default::default()
     }
 }
@@ -70,7 +70,7 @@ pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_
         setup: systems![
             "setup_draw_indexed_push_constants"
         ],
-        render_graph: "mesh_debug".to_string(),
+        render_graph: "mesh_debug",
         ..Default::default()
     }
 }
@@ -143,11 +143,11 @@ pub fn draw_indexed_vertex_buffer_instanced(client: &mut Client<gfx_platform::De
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "mesh_debug_vertex_buffer_instanced".to_string(),
+        render_graph: "mesh_debug_vertex_buffer_instanced",
         batch: vec![BatchSystemInfo {
-            function_name: "batch_world_matrix_instances".to_string(),
+            function_name: "batch_world_matrix_instances",
             deps: vec![
-                "update_world_matrices".to_string()
+                "update_world_matrices"
             ]
         }]
     }
@@ -220,11 +220,11 @@ pub fn draw_indexed_cbuffer_instanced(client: &mut Client<gfx_platform::Device, 
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "mesh_debug_cbuffer_instanced".to_string(),
+        render_graph: "mesh_debug_cbuffer_instanced",
         batch: vec![BatchSystemInfo {
-            function_name: "batch_world_matrix_instances".to_string(),
+            function_name: "batch_world_matrix_instances",
             deps: vec![
-                "update_world_matrices".to_string()
+                "update_world_matrices"
             ]
         }]
     }
@@ -236,11 +236,15 @@ pub fn setup_draw_indexed_cbuffer_instanced(
     mut commands: bevy_ecs::system::Commands) {
 
     let meshes = vec![
-        hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
-        hotline_rs::primitives::create_cube_mesh(&mut device.0),
-        hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
-        hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
-        hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4),
+        hotline_rs::primitives::create_tourus_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_capsule_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_cone_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 3, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 5, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 4, false, true),
+        hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 5, false, true),
     ];
 
     // square number of rows and columns
@@ -285,6 +289,65 @@ pub fn setup_draw_indexed_cbuffer_instanced(
                     parent: Parent(parent)
                 });
             }
+        }
+    }
+}
+
+/// 
+#[no_mangle]
+pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_draw_cbuffer_material"
+        ],
+        render_graph: "mesh_debug",
+        ..Default::default()
+    }
+}
+
+/// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
+#[no_mangle]
+pub fn setup_draw_cbuffer_material(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let meshes = vec![
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+    ];
+
+    // square number of rows and columns
+    let rc = ceil(sqrt(meshes.len() as f32));
+    let irc = (rc + 0.5) as i32; 
+
+    let size = 10.0;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
+    let half_extent = rc * half_size;
+    let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
+
+    let mut i = 0;
+    for y in 0..irc {
+        for x in 0..irc {
+            if i < meshes.len() {
+                let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+                commands.spawn((
+                    MeshComponent(meshes[i].clone()),
+                    Position(iter_pos),
+                    Rotation(Quatf::identity()),
+                    Scale(splat3f(10.0)),
+                    WorldMatrix(Mat4f::identity())
+                ));
+            }
+            i = i + 1;
         }
     }
 }

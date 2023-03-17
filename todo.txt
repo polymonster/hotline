@@ -1,35 +1,26 @@
 // TODO:
 
-// - corretly obtain cbuffer alignment
-// - update pmbuild and pmfx (again)
-// - move primitives from ecs to hotline (fix)
-
-// - batch dep marker
-
-// - pmfx
-// - resolves properly data driven
+// - material
 // - texture load image
-// - render target fixed size
+// - blend examples
+// -    needs material
+// - 3x4 world matrix
 
+// - resolves properly data driven
+// - render target fixed size
 // - set name on resources
 // - stats read out
 
+// - update docs
 // - store hotline-rs commit hash for crates.io
 
 // ecs
-// - batch cbuffer instances
+// - compute passes
 // - execute indirect
-
 // - reverse depth
-// - material
-// - blend examples
-// -    needs material
 // - stencil examples
-// - billboard?
-// - 3x4 matrix
 // - per demo settings
 // - light
-// - 3D texture -> compute
 // - texture
 // - shadow
 // - update aabb's
@@ -44,14 +35,22 @@
 // - cubemap, 3d texture, texture array
 // - API for fence?
 // - API for copies and clears
+// - corretly obtain cbuffer alignment?
 
 // ui / log / debug / info
+// - imgui colours are not complete
 // - timer stats
 // - thread stats
-// - in client terminal / log (validation layer)
+// - in client terminal / log (validation layer) / info queue
 // - view menu + saving state
 
 // DONE:
+// x billboard?
+// x ecs leaks
+// x batch dep marker
+// x update pmbuild and pmfx (again)
+// x move primitives from ecs to hotline (fix helix uvs and capsule gaps)
+// x batch cbuffer instances
 // x pmfx v2 docs (texture and render graph)
 // x bug with pmfx inherit (test.pmfx cannot inherit and extend pipelines)
 // x bug with merging pmfx, with shared keys. the old ones are not recirsively merged / overwritten

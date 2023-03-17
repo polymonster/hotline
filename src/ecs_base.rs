@@ -13,9 +13,9 @@ use std::ops::DerefMut;
 /// Information to describe a system and it's dependencies so it can be scheduled appropriately
 pub struct BatchSystemInfo {
     /// name of the system function to run, registered through `get_system_<lib_name>` to find the function inside a plugin
-    pub function_name: String,
+    pub function_name: &'static str,
     /// name of systems which this system needs to run after
-    pub deps: Vec<String>
+    pub deps: Vec<&'static str>
 }
 
 /// Schedule info can be filled out and passed to the `ecs` plugin to build a schedulre for a running demo
@@ -30,7 +30,7 @@ pub struct ScheduleInfo {
     /// batch systems will be ran in a particular order to syncronise work
     pub batch: Vec<BatchSystemInfo>,
     /// Name of the render graph to load, buld and make active from pmfx
-    pub render_graph: String
+    pub render_graph: &'static str
 }
 
 /// Empty schedule info
@@ -40,7 +40,7 @@ impl Default for ScheduleInfo {
             setup: Vec::new(),
             update: Vec::new(),
             batch: Vec::new(),
-            render_graph: String::new(),
+            render_graph: "",
         }
     }
 }
