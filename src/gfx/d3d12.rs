@@ -1758,7 +1758,7 @@ impl super::Device for Device {
         }
         else {
             Err( super::Error {
-                msg: format!("hotline::gfx::d3d12:: failed to create readback buffer!") 
+                msg: "hotline::gfx::d3d12:: failed to create readback buffer!".to_string()
             })
         }
     }
@@ -2315,8 +2315,8 @@ impl super::Device for Device {
     fn read_buffer(&self, swap_chain: &SwapChain, buffer: &Buffer, size: usize, frame_written_fence: u64) -> Option<super::ReadBackData> {
         let rr = ReadBackRequest {
             resource: Some(buffer.resource.clone()),
-            fence_value: frame_written_fence as u64,
-            size: size,
+            fence_value: frame_written_fence,
+            size,
             row_pitch: size,
             slice_pitch: size,
         };

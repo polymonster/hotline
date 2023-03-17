@@ -52,8 +52,8 @@ pub fn subdivide_quad(q0: &Vertex3D, q1: &Vertex3D, q2: &Vertex3D, q3: &Vertex3D
     }
     else {
         //  __      ___
-        // |  |    |_|_|
-        // |__| -> |_|_|
+        // |  | -> |_|_|
+        // |__|    |_|_|
         // 
         //  q1  s1  q2w
         //  s0  s4  s2
@@ -76,7 +76,7 @@ pub fn subdivide_quad(q0: &Vertex3D, q1: &Vertex3D, q2: &Vertex3D, q3: &Vertex3D
         let s4 = lerp_half(&s3, &s1);
 
         let mut sub = subdivide_quad(q0, &s0, &s4, &s3, order + 1, max_order);
-        sub.extend(subdivide_quad(&s0, &q1, &s1, &s4, order + 1, max_order));
+        sub.extend(subdivide_quad(&s0, q1, &s1, &s4, order + 1, max_order));
         sub.extend(subdivide_quad(&s4, &s1, q2, &s2, order + 1, max_order));
         sub.extend(subdivide_quad(&s3, &s4, &s2, q3, order + 1, max_order));
         sub
@@ -113,7 +113,7 @@ pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u3
         let mut sub = subdivide_triangle(t0, &s0, &s1, order + 1, max_order);
         sub.extend(subdivide_triangle(&s0,  t1, &s2, order + 1, max_order));
         sub.extend(subdivide_triangle(&s1, &s0, &s2, order + 1, max_order));
-        sub.extend(subdivide_triangle(&s1, &s2, &t2, order + 1, max_order));
+        sub.extend(subdivide_triangle(&s1, &s2, t2, order + 1, max_order));
         sub
     }
 }
@@ -387,24 +387,24 @@ pub fn create_prism_vertices(segments: usize, smooth: bool, cap: bool) -> (Vec<V
     }
         
     // bottom face
-    for i in 0..vertex_segments {
+    for point in bottom_points.iter().take(segments) {
         vertices.push(Vertex3D{
-            position: bottom_points[i],
+            position: *point,
             normal: -Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
         });
     }
 
-    // bottom face
-    for i in 0..vertex_segments {
+    // top face
+    for point in top_points.iter().take(segments) {
         vertices.push(Vertex3D{
-            position: top_points[i],
+            position: *point,
             normal: Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
         });
     }
 
@@ -504,8 +504,8 @@ pub fn create_prism_vertices(segments: usize, smooth: bool, cap: bool) -> (Vec<V
             );
 
             // set hard face normals
-            for v in face_index..triangle_vertices.len() {
-                triangle_vertices[v].normal = n;
+            for vertex in triangle_vertices.iter_mut().skip(face_index) {
+                vertex.normal = n;
             }
         }
 
@@ -1342,24 +1342,24 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
     }
         
     // bottom face
-    for i in 0..vertex_segments {
+    for point in bottom_points.iter().take(vertex_segments) {
         vertices.push(Vertex3D{
-            position: bottom_points[i],
+            position: *point,
             normal: -Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
         });
     }
 
-    // bottom face
-    for i in 0..vertex_segments {
+    // top face
+    for point in top_points.iter().take(vertex_segments) {
         vertices.push(Vertex3D{
-            position: top_points[i],
+            position: *point,
             normal: Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(bottom_points[i].x, bottom_points[i].z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
         });
     }
 
@@ -1480,8 +1480,8 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
                 );
 
                 // set hard face normals
-                for v in face_index..triangle_vertices.len() {
-                    triangle_vertices[v].normal = n;
+                for vertex in triangle_vertices.iter_mut().skip(face_index) {
+                    vertex.normal = n;
                 }
 
                 let top_u = 0.0;
@@ -1523,8 +1523,8 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
                 );
 
                 // set hard face normals
-                for v in face_index..triangle_vertices.len() {
-                    triangle_vertices[v].normal = n;
+                for vertex in triangle_vertices.iter_mut().skip(face_index) {
+                    vertex.normal = n;
                 }
             }
         }
@@ -2180,8 +2180,8 @@ pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: us
 
     // start cap
     let mut mid_pos = Vec3f::zero();
-    for j in 0..segments {
-        mid_pos += segment_vertices[j].position;
+    for vertex in segment_vertices.iter().take(segments) {
+        mid_pos += vertex.position;
     }
     mid_pos /= segments as f32;
 
@@ -2457,8 +2457,8 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         let top_pivot = top_start - vertices[edge_indices[0]].normal * radius;
 
         for i in 0..segments+1 {
-            let cur = (1.0 / fsegments as f32) * i as f32;
-            let next = (1.0 / fsegments as f32) * (i+1) as f32;
+            let cur = (1.0 / fsegments) * i as f32;
+            let next = (1.0 / fsegments) * (i+1) as f32;
             let v = cur * edge_uv_scale;
     
             // linear lerp
@@ -2557,11 +2557,11 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
             let joffset = j * 2;
             let start = vertices[start_loop_start + joffset].position;
             let end = vertices[end_loop_start + 1 + joffset].position;
-            let v = (1.0 / fsegments as f32) * j as f32;
+            let v = (1.0 / fsegments) * j as f32;
     
             for i in 0..segments+1 {
-                let u = (1.0 / fsegments as f32) * i as f32;
-                let next = (1.0 / fsegments as f32) * (i+1) as f32;
+                let u = (1.0 / fsegments) * i as f32;
+                let next = (1.0 / fsegments) * (i+1) as f32;
     
                 let lv0 = lerp(start, end, u);
                 let lv1 = lerp(start, end, next);

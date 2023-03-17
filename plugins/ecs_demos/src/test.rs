@@ -168,7 +168,7 @@ pub fn setup_raster_test(
                     Position(iter_pos),
                     Rotation(Quatf::from_euler_angles(0.0, 0.0, 0.0)),
                     Scale(splat3f(10.0)),
-                    WorldMatrix(Mat4f::identity()),
+                    WorldMatrix(Mat34f::identity()),
                     Pipeline(meshes[i].0.to_string())
                 ));
             }
@@ -225,7 +225,7 @@ pub fn setup_blend_test(
                         Position(iter_pos + pos),
                         Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                         Scale(splat3f(2.0)),
-                        WorldMatrix(Mat4f::identity()),
+                        WorldMatrix(Mat34f::identity()),
                         Pipeline(pipelines[i].to_string())
                     ));
                 }

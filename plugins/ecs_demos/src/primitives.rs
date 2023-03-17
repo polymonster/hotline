@@ -76,7 +76,7 @@ pub fn setup_geometry_primitives(
                         Position(iter_pos),
                         Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
                         Scale(splat3f(10.0)),
-                        WorldMatrix(Mat4f::identity())
+                        WorldMatrix(Mat34f::identity())
                     ));
                 }
                 else {
@@ -85,7 +85,7 @@ pub fn setup_geometry_primitives(
                         Position(iter_pos),
                         Rotation(Quatf::identity()),
                         Scale(splat3f(10.0)),
-                        WorldMatrix(Mat4f::identity()),
+                        WorldMatrix(Mat34f::identity()),
                         Billboard
                     ));
                 }

@@ -1162,6 +1162,10 @@ pub fn align(value: u64, align: u64) -> u64 {
     value
 }
 
+pub fn num_32bit_constants<T: Sized>(_: T) -> u32 {
+    (std::mem::size_of::<T>() / 4) as u32
+} 
+
 impl From<os::Rect<i32>> for Viewport {
     fn from(rect: os::Rect<i32>) -> Viewport {
         Viewport {

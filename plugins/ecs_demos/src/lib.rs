@@ -44,7 +44,7 @@ pub fn render_meshes(
     let (mesh_draw_query, billboard_draw_query) = queries;
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -54,7 +54,7 @@ pub fn render_meshes(
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
     for (world_matrix, mesh) in &billboard_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
-        view.cmd_buf.push_constants(1, 16, 0, &bbmat);
+        view.cmd_buf.push_constants(1, 12, 0, &bbmat);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -81,7 +81,7 @@ pub fn render_meshes_pipeline(
         view.cmd_buf.set_render_pipeline(&pipeline);
         view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
