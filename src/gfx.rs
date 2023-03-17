@@ -157,7 +157,7 @@ pub enum HeapType {
     Sampler,
 }
 
-/// Information to create a query heap... `Device` will contain default heaps, but you can create your own if required.
+/// Information to create a query heap.
 pub struct QueryHeapInfo {
     /// ie: Timestamp, Occlusion, PipelineStatistics
     pub heap_type: QueryType,

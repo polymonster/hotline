@@ -17,6 +17,8 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 
 Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan and more over time.
 
+For the time being it is recommended to use the repository from GitHub if you want to use the example `plugins` or standalone `examples`. If you just want to use the library then `crates.io` is suitable. There are some difficulties with publishing data and plugins which I hope to iron out in time.
+
 ## Building Data
 
 The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down. When running `cargo build` the `hotline-data` repository will be cloned automatically for you.
@@ -157,7 +159,7 @@ pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -
             "update_cameras",
             "update_main_camera_config"
         ],
-        render_graph: "mesh_debug".to_string()
+        render_graph: "mesh_debug"
     }
 }
 ```
@@ -271,6 +273,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
     }
 }
 ```
+
 ### Serialising Plugin Data
 
 You can supply your own serialisable plugin data that will be serialised with the rest of the `user_config` and can be grouped with your plugin and reloaded between sessions.

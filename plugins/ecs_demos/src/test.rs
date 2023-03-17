@@ -15,7 +15,7 @@ pub fn test_missing_systems(_: &mut Client<gfx_platform::Device, os_platform::Ap
         update: systems![
             "missing"
         ],
-        render_graph: "mesh_debug".to_string(),
+        render_graph: "mesh_debug",
         ..Default::default()
     }
 }
@@ -27,7 +27,7 @@ pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platfor
         setup: systems![
             "setup_cube"
         ],
-        render_graph: "missing".to_string(),
+        render_graph: "missing",
         ..Default::default()
     }
 }
@@ -40,7 +40,7 @@ pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::
         setup: systems![
             "setup_primitives"
         ],
-        render_graph: "missing_view".to_string(),
+        render_graph: "missing_view",
         ..Default::default()
     }
 }
@@ -53,7 +53,7 @@ pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
         setup: systems![
             "setup_primitives"
         ],
-        render_graph: "missing_pipeline".to_string(),
+        render_graph: "missing_pipeline",
         ..Default::default()
     }
 }
@@ -66,7 +66,7 @@ pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
         setup: systems![
             "setup_primitives"
         ],
-        render_graph: "missing_pipeline".to_string(),
+        render_graph: "missing_pipeline",
         ..Default::default()
     }
 }
@@ -79,7 +79,7 @@ pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform
         setup: systems![
             "setup_primitives"
         ],
-        render_graph: "missing_camera".to_string(),
+        render_graph: "missing_camera",
         ..Default::default()
     }
 }
@@ -92,7 +92,7 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
         setup: systems![
             "setup_primitives"
         ],
-        render_graph: "missing_function".to_string(),
+        render_graph: "missing_function",
         ..Default::default()
     }
 }
@@ -129,7 +129,7 @@ pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform:
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "raster_test".to_string(),
+        render_graph: "raster_test",
         ..Default::default()
     }
 }
@@ -247,7 +247,7 @@ pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "blend_test".to_string(),
+        render_graph: "blend_test",
         ..Default::default()
     }
 }

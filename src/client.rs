@@ -769,6 +769,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self
     }
 
+    /// Unloads all plugins and drops all mem
+    fn unload(mut self) {
+        let plugins = std::mem::take(&mut self.plugins);
+        for plugin in &plugins {
+            unsafe {
+                let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
+                let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                if let Ok(unload_fn) = unload {
+                    self = unload_fn(self, plugin.instance);
+                }
+            }
+        }
+    }
+
     /// Allows users to pass serializable data which is stored into the `UserConfig` for the app.
     /// Plugin data is arrange as a json object / dictionary hash map as so:
     /// "plugin_data": {
@@ -826,8 +840,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // save out values for next time
         self.save_user_config();
         self.imgui.save_ini_settings();
-
         self.swap_chain.wait_for_last_frame();
+
+        // unloads plugins, dropping all gpu resources
+        self.unload();
     }
 
     /// Very simple run loop which can take control of your application, you could roll your own
