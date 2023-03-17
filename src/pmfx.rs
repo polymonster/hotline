@@ -1178,7 +1178,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let mut min_frame_timestamp = f64::max_value();
         let mut max_frame_timestamp = f64::zero();
         let timestamp_size_bytes = D::get_timestamp_size_bytes();
-        for (_, stats) in &mut self.view_stats {
+        for stats in self.view_stats.values_mut() {
             stats.frame_fence_value = swap_chain.get_frame_fence_value();
             let i = stats.read_index;
             let write_fence = stats.fences[i];
@@ -1452,8 +1452,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         // view timestamps
         view_stats.timestamp_heap.reset();
-        let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][0];
-        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+        let buf = &mut view_stats.timestamp_buffers[view_stats.write_index][0];
+        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, buf);
 
         // view pipeline stats
         view_stats.pipeline_stats_heap.reset();
@@ -1465,17 +1465,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     fn stats_end(view: &mut View<D>, view_stats: &mut ViewStats<D>) {
         // end timestamp
-        let mut buf = &mut view_stats.timestamp_buffers[view_stats.write_index][1];
-        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, &mut buf);
+        let buf = &mut view_stats.timestamp_buffers[view_stats.write_index][1];
+        view.cmd_buf.timestamp_query(&mut view_stats.timestamp_heap, buf);
 
         // end pipeline stats query
         if view_stats.pipeline_query_index != usize::max_value() {
-            let mut buf = &mut view_stats.pipeline_stats_buffers[view_stats.write_index];
+            let buf = &mut view_stats.pipeline_stats_buffers[view_stats.write_index];
             view.cmd_buf.end_query(
                 &mut view_stats.pipeline_stats_heap, 
                 gfx::QueryType::PipelineStatistics,
                 view_stats.pipeline_query_index,
-                &mut buf,
+                buf,
             );
             view_stats.pipeline_query_index = usize::max_value();
         }
@@ -1541,11 +1541,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
             else if self.views.contains_key(node) {
                 // dispatch a view
                 let view = self.views[node].clone();
-                let mut view = &mut view.1.lock().unwrap();
+                let view = &mut view.1.lock().unwrap();
 
                 // inserts markers for timing and tracking pipeline stats
                 let mut stats = self.view_stats.remove(node).unwrap();
-                Self::stats_end(&mut view, &mut stats);
+                Self::stats_end(view, &mut stats);
                 self.view_stats.insert(node.to_string(), stats);
 
                 view.cmd_buf.close().unwrap();

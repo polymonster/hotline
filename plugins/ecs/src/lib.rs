@@ -36,9 +36,9 @@ fn update_world_matrices(
     mut query: Query<(&Position, &mut Rotation, &Scale, &mut WorldMatrix)>) {
     // bake a local matrix from position, rotation and scale
     for (position, rotation, scale, mut world_matrix) in &mut query {
-        let translate = Mat4f::from_translation(position.0);
-        let rotate = Mat4f::from(rotation.0);
-        let scale = Mat4f::from_scale(scale.0);
+        let translate = Mat34f::from_translation(position.0);
+        let rotate = Mat34f::from(rotation.0);
+        let scale = Mat34f::from_scale(scale.0);
         world_matrix.0 = translate * rotate * scale;
     }
 }

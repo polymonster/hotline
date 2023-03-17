@@ -50,8 +50,8 @@ pub fn setup_draw_indexed(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
     mut commands: bevy_ecs::system::Commands) {
 
-    let pos = Mat4f::from_translation(Vec3f::unit_y() * 10.0);
-    let scale = Mat4f::from_scale(splat3f(10.0));
+    let pos = Mat34f::from_translation(Vec3f::unit_y() * 10.0);
+    let scale = Mat34f::from_scale(splat3f(10.0));
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     commands.spawn((
@@ -93,7 +93,7 @@ pub fn setup_draw_indexed_push_constants(
             let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
             let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
 
-            let pos = Mat4f::from_translation(
+            let pos = Mat34f::from_translation(
                 vec3f(
                     x as f32 * cube_size - half_extent, 
                     50.0, 
@@ -101,7 +101,7 @@ pub fn setup_draw_indexed_push_constants(
                 )
             );
 
-            let scale = Mat4::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0));
+            let scale = Mat34::from_scale(vec3f(1.0, wave_x + wave_y + wave_h, 1.0));
 
             commands.spawn((
                 Position(Vec3f::zero()),
@@ -183,7 +183,7 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
                     usage: gfx::BufferUsage::Vertex,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
                     format: gfx::Format::Unknown,
-                    stride: std::mem::size_of::<Mat4f>(),
+                    stride: std::mem::size_of::<Mat34f>(),
                     num_elements: instance_count as usize,
                     initial_state: gfx::ResourceState::VertexConstantBuffer
                 }, hotline_rs::data![]).unwrap(),
@@ -200,7 +200,7 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
                     pos: Position(pos),
                     rot: Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                     scale: Scale(splat3f(size)),
-                    world_matrix: WorldMatrix(Mat4f::identity()),
+                    world_matrix: WorldMatrix(Mat34f::identity()),
                     parent: Parent(parent)
                 });
             }
@@ -268,7 +268,7 @@ pub fn setup_draw_indexed_cbuffer_instanced(
                     usage: gfx::BufferUsage::ConstantBuffer,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
                     format: gfx::Format::Unknown,
-                    stride: std::mem::size_of::<Mat4f>(),
+                    stride: std::mem::size_of::<Mat34f>(),
                     num_elements: instance_count as usize,
                     initial_state: gfx::ResourceState::VertexConstantBuffer
                 }, hotline_rs::data![], &mut heap).unwrap(),
@@ -285,7 +285,7 @@ pub fn setup_draw_indexed_cbuffer_instanced(
                     pos: Position(pos),
                     rot: Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                     scale: Scale(splat3f(size)),
-                    world_matrix: WorldMatrix(Mat4f::identity()),
+                    world_matrix: WorldMatrix(Mat34f::identity()),
                     parent: Parent(parent)
                 });
             }
@@ -344,7 +344,7 @@ pub fn setup_draw_cbuffer_material(
                     Position(iter_pos),
                     Rotation(Quatf::identity()),
                     Scale(splat3f(10.0)),
-                    WorldMatrix(Mat4f::identity())
+                    WorldMatrix(Mat34f::identity())
                 ));
             }
             i = i + 1;

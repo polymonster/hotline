@@ -69,6 +69,7 @@
 
     win32-data(base): {
         pmfx: {
+            type: pmfx_dev
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
