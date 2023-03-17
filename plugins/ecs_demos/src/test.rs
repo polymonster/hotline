@@ -177,6 +177,52 @@ pub fn setup_raster_test(
     }
 }
 
+/// returns an rgb value in 0-1 range converted from `hsv` in 0-1 range
+pub fn _hsv_to_rgb(hsv: Vec3f) -> Vec3f {
+    // from Foley & van Dam p593: http://en.wikipedia.org/wiki/HSL_and_HSV
+    let h = hsv.x;
+    let s = hsv.y;
+    let v = hsv.z;
+        
+    if s == 0.0 {
+        // gray
+        return Vec3 {
+            x: v,
+            y: v,
+            z: v
+        };
+    }
+
+    let h = fmod(h, 1.0) / 0.1666666;
+    let i = floor(h) as i32;
+    let f = h - floor(h);
+    let p = v * (1.0 - s);
+    let q = v * (1.0 - s * f);
+    let t = v * (1.0 - s * (1.0 - f));
+
+    match i {
+        0 => {
+            Vec3::new(v, t, p)
+        }
+        1 => {
+            Vec3::new(q, v, p)
+        }
+        2 => {
+            Vec3::new(p, v, t)
+        }
+        3 => {
+            Vec3::new(p, q, v)
+        }
+        4 => {
+            Vec3::new(t, p, v)
+        }
+        _ => {
+            Vec3::new(v, p, q)
+        }
+    }
+}
+
+
 /// Sets up a few primitives with designated pipelines to verify raster state conformance
 #[no_mangle]
 pub fn setup_blend_test(
@@ -197,6 +243,7 @@ pub fn setup_blend_test(
         "blend_additive", 
         "blend_alpha", 
         "blend_subtract",
+        "blend_rev_subtract",
     ];
 
     // square number of rows and columns
@@ -220,13 +267,29 @@ pub fn setup_blend_test(
                     let mesh : usize = rng.gen::<usize>() % meshes.len();
                     let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(15.0, 50.0, 15.0) + vec3f(2.0, 0.0, 2.0);
                     let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
+                    let h = rng.gen();
+
+                    let alpha = match i {
+                        0 => 0.0, // blend disabled alpha should have no effect
+                        1 => 0.1, // additive, will accumulate
+                        2 => 0.5, // alpha blend, semi-transparent
+                        _ => saturate(0.1 + rng.gen::<f32>())
+                    };
+
+                    let h = match i {
+                        3 => 360.0 / 300.0, // magenta subtract will become green
+                        4 => 360.0 / 150.0, // yellow rev subtract will become ?
+                        _ => h
+                    };
+
                     commands.spawn((
                         MeshComponent(meshes[mesh].clone()),
                         Position(iter_pos + pos),
                         Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                         Scale(splat3f(2.0)),
                         WorldMatrix(Mat34f::identity()),
-                        Pipeline(pipelines[i].to_string())
+                        Pipeline(pipelines[i].to_string()),
+                        Colour(Vec4f::from((_hsv_to_rgb(vec3f(h, 1.0, 1.0)), alpha)))
                     ));
                 }
             }

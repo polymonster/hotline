@@ -1,14 +1,10 @@
 // TODO:
 
 // - maths_rs 3x4 transpose doesnt work, it should return 4x3
-// - pmfx should allow pragmas / copy them into source
-// - pmfx should be able to foward -args to the toolchain
+// - maths_rs hsv to rrgb doesnt work (generics) & has no test
 
-// - DXIL?
-// - 3x4 world matrix
 // - material
 // - texture load image
-// - blend examples (push constants?)
 
 // - resolves properly data driven
 // - render target fixed size
@@ -49,6 +45,10 @@
 // - view menu + saving state
 
 // DONE:
+// x blend examples (push constants?)
+// x 3x4 world matrix
+// x pmfx should allow pragmas / copy them into source
+// x pmfx should be able to foward -args to the toolchain
 // x billboard?
 // x ecs leaks
 // x batch dep marker
