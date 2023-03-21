@@ -556,7 +556,7 @@ render_graphs: {
 }
 ```
 
-When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) that contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts and vertex layouts are automatically be generated.
+When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) that contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts and vertex layouts are automatically generated.
 
 ## Examples
 
