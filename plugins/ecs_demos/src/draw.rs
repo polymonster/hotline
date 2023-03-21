@@ -2,6 +2,9 @@
 #![cfg(target_os = "windows")]
 
 use hotline_rs::{prelude::*, gfx::Buffer};
+use hotline_rs::image;
+use hotline_rs::data;
+
 use maths_rs::prelude::*;
 use rand::prelude::*;
 use bevy_ecs::prelude::*;
@@ -293,6 +296,28 @@ pub fn setup_draw_indexed_cbuffer_instanced(
     }
 }
 
+// draw cbuffer per entity (world matrix and material ID)
+// cbuffer per material (albedo, normal, metalness, roughness id's)
+// load textures in ecs
+
+#[derive(Component)]
+pub struct AlbedoMap(pub gfx_platform::Texture);
+
+#[derive(Component)]
+pub struct NormalMap(pub gfx_platform::Texture);
+
+#[derive(Bundle)]
+pub struct Material {
+    pub albedo: AlbedoMap,
+    pub normal: NormalMap
+}
+
+#[derive(Component)]
+pub struct MaterialInstance {
+    pub albedo: u32,
+    pub normal: u32
+}
+
 /// 
 #[no_mangle]
 pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -301,16 +326,33 @@ pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platfo
         setup: systems![
             "setup_draw_cbuffer_material"
         ],
-        render_graph: "mesh_debug",
+        render_graph: "mesh_push_constant_material",
         ..Default::default()
     }
+}
+
+fn load_texture_from_file(device: &mut gfx_platform::Device, file: &str) -> gfx_platform::Texture {
+    let image = image::load_from_file(file.to_string());
+    let tex_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: image.width,
+        height: image.height,
+        depth: 1,
+        array_levels: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE,
+        initial_state: gfx::ResourceState::ShaderResource,
+    };
+    device.create_texture(&tex_info, data![image.data.as_slice()]).unwrap()
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
 #[no_mangle]
 pub fn setup_draw_cbuffer_material(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
 
     let meshes = vec![
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
@@ -323,6 +365,14 @@ pub fn setup_draw_cbuffer_material(
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
     ];
+
+    let metal_grid = Material {
+        albedo: AlbedoMap(load_texture_from_file(&mut device, 
+            //&hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png"))),
+            &hotline_rs::get_src_data_path("textures/bear_stomp_anim_001.png"))),
+        normal: NormalMap(load_texture_from_file(&mut device, 
+            &hotline_rs::get_src_data_path("textures/metalgrid2_normal.png")))
+    };
 
     // square number of rows and columns
     let rc = ceil(sqrt(meshes.len() as f32));
@@ -344,10 +394,19 @@ pub fn setup_draw_cbuffer_material(
                     Position(iter_pos),
                     Rotation(Quatf::identity()),
                     Scale(splat3f(10.0)),
-                    WorldMatrix(Mat34f::identity())
+                    WorldMatrix(Mat34f::identity()),
+                    MaterialInstance {
+                        albedo: metal_grid.albedo.0.get_srv_index().unwrap() as u32,
+                        normal: metal_grid.normal.0.get_srv_index().unwrap() as u32
+                    }
                 ));
             }
             i = i + 1;
         }
     }
+
+    // spawn entity to keep hold of material
+    commands.spawn(
+        metal_grid
+    );
 }

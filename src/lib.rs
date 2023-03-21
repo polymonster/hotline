@@ -94,20 +94,36 @@ pub const fn get_config_name() -> &'static str {
 /// Return an absolute path for a resource given the relative resource name from the /hotline-data/src_data dir
 pub fn get_src_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap().join("../../../hotline-data/src");
-    let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
-    String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+    // back 2 (client)
+    let asset_path = exe_path.parent().unwrap().join("../../hotline-data/src");
+    if asset_path.join(asset).exists() {
+        let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
+        String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+    }
+    else {
+        // back 3 (examples)
+        let asset_path = exe_path.parent().unwrap().join("../../../hotline-data/src");
+        if asset_path.join(asset).exists() {
+            let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
+            String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+        }
+        else {
+            panic!();
+        }
+    }
 }
 
 /// Return an absolute path for a resource given the relative resource name from the /data dir
 pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
+    // back 1 (target/data)
     let asset_path = exe_path.parent().unwrap().join("..");
     if asset_path.join("data").exists() {
         let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
         String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
     }
     else {
+        // back 2 (examples)
         let asset_path = asset_path.join("..");
         if asset_path.join("data").exists() {
             let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
