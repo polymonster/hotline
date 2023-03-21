@@ -141,8 +141,6 @@ pub fn render_meshes_push_constant_material(
     for (world_matrix, mesh, material) in &mesh_draw_query {
 
         view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-
-        //println!("albedo: {}", material.normal);
         
         view.cmd_buf.push_constants(1, 2, 12, gfx::as_u8_slice(material));
 

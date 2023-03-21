@@ -119,8 +119,11 @@ pub fn get_data_path(asset: &str) -> String {
     // back 1 (target/data)
     let asset_path = exe_path.parent().unwrap().join("..");
     if asset_path.join("data").exists() {
-        let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
-        String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+        let path = std::fs::canonicalize(asset_path.join(asset));
+        if path.is_err() {
+            println!("{}", asset);
+        }
+        String::from(path.unwrap().to_str().unwrap()).replace("\\\\?\\", "")
     }
     else {
         // back 2 (examples)

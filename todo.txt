@@ -6,7 +6,7 @@
 
 // - maths_rs 3x4 transpose doesnt work, it should return 4x3
 
-// - pmfx viewport not hot-reloading
+
 
 // - execute indirect
 // - glft
@@ -46,11 +46,22 @@
 // - imgui colours are not complete
 // - timer stats
 // - thread stats
+
+
+
+
+
+
+
+
+
 // - in client terminal / log (validation layer) / info queue
 // - view menu + saving state
 
 // DONE:
 
+// - pmfx scissor not hot-reloading
+// - pmfx viewport not hot-reloading
 // x pmfx blend state not hot-reloading (hashing blend state)
 
 // x maths_rs hsv to rrgb doesnt work (generics) & has no test
