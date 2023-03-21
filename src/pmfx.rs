@@ -759,7 +759,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // colour hash
             let mut hash = DefaultHasher::new();
             view_name.hash(&mut hash);
-            let colour_hash : u32 = hash.finish() as u32 | 0xff000000; 
+            let colour_hash : u32 = hash.finish() as u32 | 0xff000000;
+
+            // validate viewport f32 count
+            if pmfx_view.viewport.len() != 6 {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::pmfx:: viewport expects array of 6 floats, found {}", pmfx_view.viewport.len())
+                });
+            }
+
+            // validate scissor f32 count
+            if pmfx_view.scissor.len() != 4 {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::pmfx:: scissor expects array of 4 floats, found {}", pmfx_view.viewport.len())
+                });
+            }
 
             let view = View::<D> {
                 graph_view_name: graph_view_name.to_string(),
@@ -768,18 +782,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 colour_hash,
                 pass: render_target_pass,
                 viewport: gfx::Viewport {
-                    x: 0.0,
-                    y: 0.0,
-                    width: size.0 as f32,
-                    height: size.1 as f32,
-                    min_depth: 0.0,
-                    max_depth: 1.0
+                    x: size.0 as f32 * pmfx_view.viewport[0],
+                    y: size.1 as f32 * pmfx_view.viewport[1],
+                    width: size.0 as f32 * pmfx_view.viewport[2],
+                    height: size.1 as f32 * pmfx_view.viewport[3],
+                    min_depth: pmfx_view.viewport[4],
+                    max_depth: pmfx_view.viewport[5],
                 },
                 scissor_rect: gfx::ScissorRect {
-                    left: 0,
-                    top: 0,
-                    right: size.0 as i32,
-                    bottom: size.1 as i32
+                    left: (size.0 as f32 * pmfx_view.scissor[0]) as i32,
+                    top: (size.1 as f32 * pmfx_view.scissor[1]) as i32,
+                    right: (size.0 as f32 * pmfx_view.scissor[2]) as i32,
+                    bottom: (size.1 as f32 * pmfx_view.scissor[3]) as i32
                 },
                 cmd_buf: device.create_cmd_buf(2),
                 camera: pmfx_view.camera.to_string(),

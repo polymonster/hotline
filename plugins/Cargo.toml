@@ -9,6 +9,3 @@ lto = "off"
 [profile.release]
 lto = "off"
 incremental = true
-
-[build]
-rustflags = ["-C", "link-arg=-fuse-ld=lld"]

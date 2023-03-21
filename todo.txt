@@ -1,13 +1,19 @@
 // TODO:
 
-// - maths_rs 3x4 transpose doesnt work, it should return 4x3
-// - maths_rs hsv to rrgb doesnt work (generics) & has no test
-
 // - material
-// - texture load image
+// - transform normals with world matrix
+// - construct tangent space
+
+// - maths_rs 3x4 transpose doesnt work, it should return 4x3
+
+// - pmfx viewport not hot-reloading
+
+// - execute indirect
+// - glft
 
 // - resolves properly data driven
 // - render target fixed size
+// - texture load image from file into pmfx
 // - set name on resources
 // - stats read out
 
@@ -16,7 +22,6 @@
 
 // ecs
 // - compute passes
-// - execute indirect
 // - reverse depth
 // - stencil examples
 // - per demo settings
@@ -45,6 +50,10 @@
 // - view menu + saving state
 
 // DONE:
+
+// x pmfx blend state not hot-reloading (hashing blend state)
+
+// x maths_rs hsv to rrgb doesnt work (generics) & has no test
 // x blend examples (push constants?)
 // x 3x4 world matrix
 // x pmfx should allow pragmas / copy them into source

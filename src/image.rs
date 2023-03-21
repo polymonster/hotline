@@ -111,11 +111,30 @@ pub fn load_from_file(filename: String) -> ImageData {
             stb_image_rust::STBI_rgb_alpha,
         );
 
-        // copy data
-        let data_size_bytes = x * y * comp;
-        data_out.resize(data_size_bytes as usize, 0);
-
-        std::ptr::copy_nonoverlapping(img, data_out.as_mut_ptr(), data_size_bytes as usize);
+        if comp == 3 {
+            let data_size_bytes = x * y * 4;
+            data_out.resize(data_size_bytes as usize, 0);
+            // pad alpha
+            for i in 0..y {
+                for j in 0..x {
+                    let src_linear = (i * y * comp + j * comp) as usize;
+                    let dst_linear = (i * y * 4 + j * 4) as usize;
+                    for k in 0..comp as usize {
+                        data_out[dst_linear + k] = * img.add(src_linear + k);
+                    }
+                    data_out[dst_linear + 3] = 255;
+                }
+            }
+        }
+        else if comp != 4 {
+            panic!("hotline_rs::image: expected component count 4 but got {}", comp);
+        }
+        else {
+            // copy data
+            let data_size_bytes = x * y * comp;
+            data_out.resize(data_size_bytes as usize, 0);
+            std::ptr::copy_nonoverlapping(img, data_out.as_mut_ptr(), data_size_bytes as usize);
+        }
 
         // cleanup
         stb_image_rust::c_runtime::free(img);
