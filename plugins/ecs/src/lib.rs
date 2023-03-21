@@ -437,6 +437,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             // if render graph fails to build, use the default and log errors for the user
             self.schedule_info = ScheduleInfo::default();
             let ext_msg = format!("{} (Check GPU Validation Messages For More Info)", error.msg);
+            println!("{}", error.msg);
             self.errors.entry(graph.to_string()).or_insert(Vec::new()).push(ext_msg);
             self.schedule_info.render_graph = graph;
             Vec::new()

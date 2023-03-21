@@ -355,21 +355,22 @@ pub fn setup_draw_cbuffer_material(
     mut commands: Commands) {
 
     let meshes = vec![
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_cube_mesh(&mut device.0),
+
+        hotline_rs::primitives::create_cylinder_mesh(&mut device.0, 64),
+
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
     ];
 
     let metal_grid = Material {
         albedo: AlbedoMap(load_texture_from_file(&mut device, 
-            //&hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png"))),
-            &hotline_rs::get_src_data_path("textures/bear_stomp_anim_001.png"))),
+            &hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png"))),
         normal: NormalMap(load_texture_from_file(&mut device, 
             &hotline_rs::get_src_data_path("textures/metalgrid2_normal.png")))
     };
