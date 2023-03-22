@@ -1,6 +1,7 @@
 {
     tools<windows>: {
         pmfx: "hotline-data/bin/win32/pmfx/pmfx.exe"
+        texturec: "hotline-data/bin/win32/texturec/texturec.exe"
         pmfx_dev: "../pmfx-shader/pmfx.py"
     }
 
@@ -52,7 +53,6 @@
 
         copy_base: {
             type: copy
-
             files: [
                 // copy fonts to data dir
                 ["${src_data_dir}/fonts", "${data_dir}/fonts"]
@@ -64,6 +64,25 @@
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
             ]
+        }
+
+        texturec: {
+            args: [
+                "-f %{input_file}"
+                "%{export_args}"
+                "-o %{output_file}"
+            ]
+            files: [
+                ["${src_data_dir}/textures", "${data_dir}/textures"]
+            ]
+            excludes: [
+                "*.DS_Store"
+                "export.jsn"
+                "*.txt"
+                "*.dds"
+            ]
+            change_ext: ".dds"
+            dependencies: true
         }
     }
 

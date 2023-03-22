@@ -81,17 +81,23 @@ pub enum Format {
     R32u,
     R32i,
     R32f,
+    RG16f,
+    RG16u,
+    RG16i,
     RG32u,
     RG32i,
     RG32f,
     RGB32u,
     RGB32i,
     RGB32f,
+    RGBA8nSRGB,
     RGBA8n,
     RGBA8u,
     RGBA8i,
     BGRA8n,
     BGRX8n,
+    BGRA8nSRGB,
+    BGRX8nSRGB,
     RGBA16u,
     RGBA16i,
     RGBA16f,
@@ -675,8 +681,12 @@ pub struct TextureInfo {
 #[derive(Copy, Clone)]
 pub enum TextureType {
     Texture1D,
+    Texture1DArray,
     Texture2D,
+    Texture2DArray,
     Texture3D,
+    TextureCube,
+    TextureCubeArray
 }
 
 bitflags! {
@@ -925,16 +935,24 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     fn wait_for_last_frame(&self);
     /// Returns the fence value for the current frame, you can use this to syncronise reads
     fn get_frame_fence_value(&self) -> u64;
+    /// Returns the number of buffers in the swap chain
     fn get_num_buffers(&self) -> u32;
+    /// Returns the current backbuffer index, this is the buffer that will be written during
+    /// the current frame
     fn get_backbuffer_index(&self) -> u32;
+    /// Returns the current backbuffer texture
     fn get_backbuffer_texture(&self) -> &D::Texture;
+    /// Returns the current backbuffer pass this is the one
+    /// we want to render to during the current frame
     fn get_backbuffer_pass(&self) -> &D::RenderPass;
+    /// Returns the current backbuffer pass mutuably
     fn get_backbuffer_pass_mut(&mut self) -> &mut D::RenderPass;
+    /// Returns the current backbuffer pass without a clear
     fn get_backbuffer_pass_no_clear(&self) -> &D::RenderPass;
+    /// Returns the current backbuffer pass without a clear mutably
     fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut D::RenderPass;
+    /// Call swap at the end of the frame to swap the back buffer, we rotate through n-buffers
     fn swap(&mut self, device: &D);
-    fn as_ptr(&self) -> *const Self;
-    fn as_mut_ptr(&mut self) -> *mut Self;
 }
     
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
@@ -1059,8 +1077,11 @@ pub trait QueryHeap<D: Device>: Send + Sync {
 /// you must poll this every frame and not block so the GPU can flush the request. Once the result is ready the
 /// data can be obtained using `get_data`
 pub trait ReadBackRequest<D: Device> {
+    /// Returns true when a reload request has completed and it is safe to call map
     fn is_complete(&self, swap_chain: &D::SwapChain) -> bool;
+    /// Maps the buffer to allow the CPU to read GPU mapped data
     fn map(&self, info: &MapInfo) -> Result<ReadBackData, Error>;
+    /// Balance with a call to map. note: it is possible to leave buffers persitently mapped
     fn unmap(&self);
 }
 
@@ -1107,14 +1128,20 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::R32u => 4,
         Format::R32i => 4,
         Format::R32f => 4,
+        Format::RG16u => 4,
+        Format::RG16i => 4,
+        Format::RG16f => 4,
         Format::RG32u => 8,
         Format::RG32i => 8,
         Format::RG32f => 8,
+        Format::RGBA8nSRGB => 4,
         Format::RGBA8n => 4,
         Format::RGBA8u => 4,
         Format::RGBA8i => 4,
         Format::BGRA8n => 4,
         Format::BGRX8n => 4,
+        Format::BGRA8nSRGB => 4,
+        Format::BGRX8nSRGB => 4,
         Format::RGB32u => 12,
         Format::RGB32i => 12,
         Format::RGB32f => 12,
@@ -1229,6 +1256,24 @@ Available Adapters:
             self.shared_system_memory / 1024 / 1024,
             available
         )
+    }
+}
+
+/// Useful defaults for quick creation of `TextureInfo`
+impl Default for TextureInfo {
+    fn default() -> Self {
+        TextureInfo {
+            tex_type: TextureType::Texture2D,
+            format: Format::RGBA8n,
+            width: 1,
+            height: 1,
+            depth: 1,
+            array_levels: 1,
+            mip_levels: 1,
+            samples: 1,
+            usage: TextureUsage::SHADER_RESOURCE,
+            initial_state: ResourceState::ShaderResource
+        }
     }
 }
 

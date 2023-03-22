@@ -1,12 +1,17 @@
 // TODO:
 
+// - ddsfile
+// - textures with mip_levels
+// - cubemap, 3d texture, texture array
+
 // - material
+// - tidy push constants material
+// - cbuffer material
+// - cbuffer camera?
 // - transform normals with world matrix
 // - construct tangent space
 
 // - maths_rs 3x4 transpose doesnt work, it should return 4x3
-
-
 
 // - execute indirect
 // - glft
@@ -37,7 +42,6 @@
 // - Execute Indirect
 // - Stencil Ref
 // - Texture Formats (BC etc)
-// - cubemap, 3d texture, texture array
 // - API for fence?
 // - API for copies and clears
 // - corretly obtain cbuffer alignment?
