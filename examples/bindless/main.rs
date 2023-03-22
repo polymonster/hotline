@@ -123,24 +123,12 @@ fn main() -> Result<(), hotline_rs::Error> {
     let files = vec![
         hotline_rs::get_src_data_path("textures/redchecker01.png"),
         hotline_rs::get_src_data_path("textures/blend_test_fg.png"),
-        hotline_rs::get_src_data_path("textures/bear_stomp_anim_001.png"),
+        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_001.png"),
         hotline_rs::get_src_data_path("textures/bluechecker01.png"),
     ];
     for file in files {
-        let image = image::load_from_file(file);
-        let tex_info = gfx::TextureInfo {
-            format: gfx::Format::RGBA8n,
-            tex_type: gfx::TextureType::Texture2D,
-            width: image.width,
-            height: image.height,
-            depth: 1,
-            array_levels: 1,
-            mip_levels: 1,
-            samples: 1,
-            usage: gfx::TextureUsage::SHADER_RESOURCE,
-            initial_state: gfx::ResourceState::ShaderResource,
-        };
-        let tex = dev.create_texture(&tex_info, data![image.data.as_slice()]).unwrap();
+        let image = image::load_from_file(&file)?;
+        let tex = dev.create_texture(&image.info, data![image.data.as_slice()]).unwrap();
         textures.push(tex);
     }
 

@@ -63,7 +63,9 @@ pub struct Time {
 }
 const SMOOTH_DELTA_FRAMES : usize = 120;
 
+/// Time trait implementation
 impl Time {
+    /// Instantiates a new time initialised to 0
     fn new() -> Self {
         Self {
             delta: 0.0,

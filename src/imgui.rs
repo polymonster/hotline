@@ -55,6 +55,7 @@ pub struct ImGuiInfo<'stack, D: Device, A: App> {
     pub fonts: Vec<FontInfo>,
 }
 
+/// The concrete `ImGui` instance itself
 pub struct ImGui<D: Device, A: App> {
     _native_handle: A::NativeHandle,
     _font_texture: D::Texture,
@@ -510,6 +511,7 @@ fn render_draw_data<D: Device>(
 }
 
 impl<D, A> ImGui<D, A> where D: Device, A: App {
+    /// Internal utility for styling hotline colours in a hardcoded fashion
     fn style_colours_hotline() {
         unsafe {
             igStyleColorsDark(std::ptr::null_mut());
@@ -563,6 +565,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             colors[ImGuiCol_TitleBgCollapsed as usize] = bg[2];
        }
     }
+
+    /// Create a new `ImGui` instance from `ImGuiInfo`
     pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, super::Error> {
         unsafe {
             igCreateContext(std::ptr::null_mut());
@@ -777,6 +781,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Call this each frame before you want to start making `imgui.` UI calls
     pub fn new_frame(
         &mut self,
         app: &mut A,
@@ -926,6 +931,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Add an optional status bar which appears at the bottom of the main window at fixed size and position
+    /// you push items into the status bar by using `imgui.begin("status_bar")`
     pub fn add_status_bar(&mut self, height: f32) {
         unsafe {
             let status_bar_flags = ImGuiWindowFlags_NoDocking | 
@@ -962,6 +969,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Call this each frame to render the `ImGui` data 
     pub fn render(
         &mut self,
         app: &mut A,
@@ -1000,6 +1008,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// This is the native `ImGui` demo window which showcases all features present in `ImGui`
     pub fn demo(&self) {
         unsafe {
             static mut SHOW_DEMO_WINDOW: bool = true;
@@ -1192,6 +1201,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Begin new menu, populate it with `menu_item`
     pub fn begin_menu(&mut self, label: &str) -> bool {
         let null_term_label = CString::new(label).unwrap();
         unsafe {
@@ -1199,12 +1209,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// End menu on the top of the stack, pairs with `begin_menu`
     pub fn end_menu(&mut self) {
         unsafe {
             igEndMenu()
         }
     }
 
+    /// Begin a combo box, populate it with `selectable`'s
     pub fn begin_combo(&mut self, label: &str, preview_item: &str, flags: ImGuiComboFlags) -> bool {
         unsafe {
             let null_term_label = CString::new(label).unwrap();
@@ -1217,12 +1229,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// End combo box on the top of the stack, pairs with `begin_combo`
     pub fn end_combo(&mut self) {
         unsafe {
             igEndCombo()
         }
     }
 
+    /// A selectable item, can be used in menus, combo boxes, list etc. it highlights on hover
     pub fn selectable(&mut self, label: &str, selected: bool, flags: ImGuiSelectableFlags) -> bool {
         unsafe {
             let null_term_label = CString::new(label).unwrap();
@@ -1230,6 +1244,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Simple combo box generated from a `Vec<String>`
     pub fn combo_list(&mut self, label: &str, items: &Vec<String>, selected: &str) -> (bool, String) {
         let mut result = selected.to_string();
         if self.begin_combo(label, selected, ImGuiComboFlags_None as i32) {
@@ -1246,6 +1261,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Menu items to populate menus between `begin_menu` and `end_menu`
     pub fn menu_item(&mut self, label: &str) -> bool {
         let null_term_label = CString::new(label).unwrap();
         unsafe {
@@ -1257,24 +1273,28 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Adds a horizontal line separating items
     pub fn separator(&mut self) {
         unsafe {
             igSeparator()
         }
     }
 
+    /// Adds horizontal spacing
     pub fn spacing(&mut self) {
         unsafe {
             igSpacing()
         }
     }
 
+    /// The next width will appear on the same line (horizontally) as the previous
     pub fn same_line(&mut self) {
         unsafe { 
             igSameLine(0.0, 0.0);
         };
     }
 
+    /// Button 
     pub fn button(&mut self, label: &str) -> bool {
         unsafe {
             let null_label = CString::new(label).unwrap();
@@ -1282,6 +1302,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Checkbox can be used on bools yes/no will display a tick or check when v is true and appear
+    /// empty otherwise
     pub fn checkbox(&mut self, label: &str, v: &mut bool) -> bool {
         unsafe {    
             let null_label = CString::new(label).unwrap();
@@ -1289,6 +1311,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Dsiaply an image at the supplied width `w` and height `h` in pixels
     pub fn image(&mut self, tex: &D::Texture, w: f32, h: f32) {
         unsafe {
             let id = to_imgui_texture_id::<D>(tex);
@@ -1304,6 +1327,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Calculates the `x`, `y` size of the given text string, it can be used to aid layouts.
     pub fn calc_text_size(&self, text: &str) -> (f32, f32) {
         let null_text = CString::new(text).unwrap();
         let mut size = IMVEC2_ZERO;
@@ -1313,6 +1337,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         (size.x, size.y)
     }
 
+    /// Align the next item to right of the context region subtarcted `offset` toward the left
     pub fn right_align(&mut self, offset: f32) {
         unsafe {
             let mut size = IMVEC2_ZERO;
@@ -1321,6 +1346,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Fills an entire content region identified by `label` with an image. Displ;aying no boarders or padding
     pub fn image_window(&mut self, label: &str, tex: &D::Texture) {
         unsafe {
             let null_label = CString::new(label).unwrap();
@@ -1345,6 +1371,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Returns true if the main dock is hovered fals otherwise
     pub fn main_dock_hovered(&self) -> bool {
         unsafe {
             igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
@@ -1354,6 +1381,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Returns true if `ImGui` wants to intercept keyboard events, so they can be ignored elsewhere
     pub fn want_capture_keyboard(&self) -> bool {
         unsafe {
             let io = &mut *igGetIO();
@@ -1361,6 +1389,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Returns true if `ImGui` wants to intercept mouse events, so they can be ignored elsewhere
     pub fn want_capture_mouse(&self) -> bool {
         unsafe {
             let io = &mut *igGetIO();
@@ -1368,6 +1397,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Saves `imgui.ini` to the executable directory
     pub fn save_ini_settings(&self) {
         unsafe {
             let io = &mut *igGetIO();
@@ -1375,6 +1405,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Saves `imgui.ini` to the specified directory `path`
     pub fn save_ini_settings_to_location(&self, path: &str) {
         unsafe {
             let null_term_filename = CString::new(format!("{}/imgui.ini", path)).unwrap();

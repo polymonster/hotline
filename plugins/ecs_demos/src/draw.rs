@@ -331,21 +331,11 @@ pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platfo
     }
 }
 
-fn load_texture_from_file(device: &mut gfx_platform::Device, file: &str) -> gfx_platform::Texture {
-    let image = image::load_from_file(file.to_string());
-    let tex_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: image.width,
-        height: image.height,
-        depth: 1,
-        array_levels: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    device.create_texture(&tex_info, data![image.data.as_slice()]).unwrap()
+fn load_texture_from_file(
+    device: &mut gfx_platform::Device, 
+    file: &str) -> Result<gfx_platform::Texture, hotline_rs::Error> {
+    let image = image::load_from_file(file)?;
+    device.create_texture(&image.info, data![image.data.as_slice()])
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
@@ -370,9 +360,9 @@ pub fn setup_draw_cbuffer_material(
 
     let metal_grid = Material {
         albedo: AlbedoMap(load_texture_from_file(&mut device, 
-            &hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png"))),
+            &hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png")).unwrap()),
         normal: NormalMap(load_texture_from_file(&mut device, 
-            &hotline_rs::get_src_data_path("textures/metalgrid2_normal.png")))
+            &hotline_rs::get_src_data_path("textures/metalgrid2_normal.png")).unwrap())
     };
 
     // square number of rows and columns

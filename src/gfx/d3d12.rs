@@ -281,17 +281,23 @@ const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::R32u => DXGI_FORMAT_R32_UINT,
         super::Format::R32i => DXGI_FORMAT_R32_SINT,
         super::Format::R32f => DXGI_FORMAT_R32_FLOAT,
+        super::Format::RG16u => DXGI_FORMAT_R16G16_UINT,
+        super::Format::RG16i => DXGI_FORMAT_R16G16_SINT,
+        super::Format::RG16f => DXGI_FORMAT_R16G16_FLOAT,
         super::Format::RG32u => DXGI_FORMAT_R32G32_UINT,
         super::Format::RG32i => DXGI_FORMAT_R32G32_SINT,
         super::Format::RG32f => DXGI_FORMAT_R32G32_FLOAT,
         super::Format::RGB32u => DXGI_FORMAT_R32G32B32_UINT,
         super::Format::RGB32i => DXGI_FORMAT_R32G32B32_SINT,
         super::Format::RGB32f => DXGI_FORMAT_R32G32B32_FLOAT,
+        super::Format::RGBA8nSRGB => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
         super::Format::RGBA8n => DXGI_FORMAT_R8G8B8A8_UNORM,
         super::Format::RGBA8u => DXGI_FORMAT_R8G8B8A8_UINT,
         super::Format::RGBA8i => DXGI_FORMAT_R8G8B8A8_SINT,
         super::Format::BGRA8n => DXGI_FORMAT_B8G8R8A8_UNORM,
         super::Format::BGRX8n => DXGI_FORMAT_B8G8R8X8_UNORM,
+        super::Format::BGRA8nSRGB => DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+        super::Format::BGRX8nSRGB => DXGI_FORMAT_B8G8R8X8_UNORM_SRGB,
         super::Format::RGBA16u => DXGI_FORMAT_R16G16B16A16_UINT,
         super::Format::RGBA16i => DXGI_FORMAT_R16G16B16A16_SINT,
         super::Format::RGBA16f => DXGI_FORMAT_R16G16B16A16_FLOAT,
@@ -619,6 +625,7 @@ fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) ->
             super::TextureType::Texture1D => panic!(),
             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2DMS,
             super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY,
+            _ => panic!()
         }
     }
     else {
@@ -626,6 +633,7 @@ fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) ->
             super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
             super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
+            _ => panic!()
         }
     }
 }
@@ -1786,6 +1794,7 @@ impl super::Device for Device {
                         super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
                         super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                         super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+                        _ => panic!()
                     },
                     Alignment: 0,
                     Width: info.width,
@@ -1823,6 +1832,7 @@ impl super::Device for Device {
                             super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
                             super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
                             super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
+                            _ => panic!()
                         },
                         Alignment: 0,
                         Width: info.width,
@@ -2536,14 +2546,6 @@ impl super::SwapChain<Device> for SwapChain {
             self.frame_index += 1;
             self.bb_index = (self.bb_index + 1) % self.num_bb as usize;
         }
-    }
-
-    fn as_ptr(&self) -> *const Self {
-        self as *const Self
-    }
-
-    fn as_mut_ptr(&mut self) -> *mut Self {
-        self as *mut Self
     }
 }
 
