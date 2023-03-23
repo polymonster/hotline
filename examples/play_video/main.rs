@@ -52,32 +52,17 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap().join("../..");
-
-    let roboto = asset_path
-        .join("data/fonts/roboto_medium.ttf")
-        .to_str()
-        .unwrap()
-        .to_string();
-
-    let font_awesome = asset_path
-        .join("data/fonts/font_awesome.ttf")
-        .to_str()
-        .unwrap()
-        .to_string(); 
-
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
         fonts: vec![
             imgui::FontInfo{
-                filepath: roboto,
+                filepath: hotline_rs::get_data_path("fonts/roboto_medium.ttf"),
                 glyph_ranges: None 
             },
             imgui::FontInfo{
-                filepath: font_awesome,
+                filepath: hotline_rs::get_data_path("fonts/font_awesome.ttf"),
                 glyph_ranges: Some(vec![
                     [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32]
                 ])

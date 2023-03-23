@@ -57,9 +57,6 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
 
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap().join("../..");
-
     // cmd buffer
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
@@ -110,8 +107,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
 
-    let pmfx_bindless = asset_path.join("data/shaders/bindless");
-    pmfx.load(pmfx_bindless.to_str().unwrap())?;
+    pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
     pmfx.create_pipeline(&dev, "compute_rw", swap_chain.get_backbuffer_pass())?;
     pmfx.create_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
     

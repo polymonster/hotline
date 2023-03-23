@@ -38,7 +38,7 @@ pub struct Instance {
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed"
@@ -68,7 +68,7 @@ pub fn setup_draw_indexed(
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
 #[no_mangle]
 pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_push_constants"
@@ -138,7 +138,7 @@ pub fn batch_world_matrix_instances(
 /// it's child (instance) entities. The vertex shader layput steps the instance buffer per instance
 #[no_mangle]
 pub fn draw_indexed_vertex_buffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_vertex_buffer_instanced"
@@ -215,7 +215,7 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
 /// the cbuffer is created in a separate heap and the matrices and indexed into using the instance id system value semantic
 #[no_mangle]
 pub fn draw_indexed_cbuffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_cbuffer_instanced"
@@ -321,7 +321,7 @@ pub struct MaterialInstance {
 /// 
 #[no_mangle]
 pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_cbuffer_material"
@@ -346,8 +346,7 @@ pub fn setup_draw_cbuffer_material(
 
     let meshes = vec![
         hotline_rs::primitives::create_cube_mesh(&mut device.0),
-
-        hotline_rs::primitives::create_cylinder_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_cube_mesh(&mut device.0),
 
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
@@ -360,9 +359,9 @@ pub fn setup_draw_cbuffer_material(
 
     let metal_grid = Material {
         albedo: AlbedoMap(load_texture_from_file(&mut device, 
-            &hotline_rs::get_src_data_path("textures/metalgrid2_albedo.png")).unwrap()),
+            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds")).unwrap()),
         normal: NormalMap(load_texture_from_file(&mut device, 
-            &hotline_rs::get_src_data_path("textures/metalgrid2_normal.png")).unwrap())
+            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds")).unwrap())
     };
 
     // square number of rows and columns

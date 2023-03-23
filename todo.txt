@@ -1,8 +1,10 @@
 // TODO:
 
-// - ddsfile
-// - textures with mip_levels
 // - cubemap, 3d texture, texture array
+// - create texture with heap
+// - pmfx shader heap
+// - render target fixed size
+// - texture load image from file into pmfx
 
 // - material
 // - tidy push constants material
@@ -17,8 +19,6 @@
 // - glft
 
 // - resolves properly data driven
-// - render target fixed size
-// - texture load image from file into pmfx
 // - set name on resources
 // - stats read out
 
@@ -50,24 +50,16 @@
 // - imgui colours are not complete
 // - timer stats
 // - thread stats
-
-
-
-
-
-
-
-
-
 // - in client terminal / log (validation layer) / info queue
 // - view menu + saving state
 
 // DONE:
-
-// - pmfx scissor not hot-reloading
-// - pmfx viewport not hot-reloading
+// x sumbit one commandlist for each texture not mip
+// x ddsfile
+// x textures with mip_levels
+// x pmfx scissor not hot-reloading
+// x pmfx viewport not hot-reloading
 // x pmfx blend state not hot-reloading (hashing blend state)
-
 // x maths_rs hsv to rrgb doesnt work (generics) & has no test
 // x blend examples (push constants?)
 // x 3x4 world matrix

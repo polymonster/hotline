@@ -95,10 +95,9 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     let path = std::path::Path::new(filename);
     println!("{}", path.display());
     let mut f = fs::File::open(path).expect("hotline_rs::image:: File not found");
-
+    // dds file
     if filename.ends_with(".dds") {
-        let dds = DDS::read(f)?;
-        
+        let dds = DDS::read(f)?;        
         Ok(ImageData {
             info: TextureInfo {
                 tex_type: to_gfx_texture_type(&dds),
@@ -136,7 +135,7 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
                 stb_image_rust::STBI_rgb_alpha,
             );
 
-            if img != std::ptr::null_mut() {
+            if !img.is_null() {
                 // copy data
                 let data_size_bytes = x * y * 4;
                 data_out.resize(data_size_bytes as usize, 0);
@@ -177,12 +176,10 @@ fn to_gfx_texture_type(dds: &DDS) -> TextureType {
                 TextureType::TextureCube
             }
         }
-        else {
+        else if dds.get_depth() > 1 {
             TextureType::Texture3D
         }
-    }
-    else {
-        if dds.get_height() == 1 {
+        else if dds.get_height() == 1 {
             if dds.get_num_array_layers() > 1 {
                 TextureType::Texture1DArray
             }
@@ -190,14 +187,26 @@ fn to_gfx_texture_type(dds: &DDS) -> TextureType {
                 TextureType::Texture1D
             }
         }
-        else {
-            if dds.get_num_array_layers() > 1 {
-                TextureType::Texture2DArray
-            }
-            else {
-                TextureType::Texture2D
-            }
+        else if dds.get_num_array_layers() > 1 {
+            TextureType::Texture2DArray
         }
+        else {
+            TextureType::Texture2D
+        }
+    }
+    else if dds.get_height() == 1 {
+        if dds.get_num_array_layers() > 1 {
+            TextureType::Texture1DArray
+        }
+        else {
+            TextureType::Texture1D
+        }
+    }
+    else if dds.get_num_array_layers() > 1 {
+        TextureType::Texture2DArray
+    }
+    else {
+        TextureType::Texture2D
     }
 }
 

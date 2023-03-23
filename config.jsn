@@ -51,6 +51,13 @@
             src_data_dir: "hotline-data/src"
         }
 
+        clean: {
+            directories: [
+                "${data_dir}"
+                "${temp_dir}"
+            ]
+        }
+
         copy_base: {
             type: copy
             files: [

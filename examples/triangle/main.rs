@@ -79,8 +79,8 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;   
 
-    let vsc_filepath = hotline_rs::get_data_path("data/shaders/triangle/vs_main.vsc");
-    let psc_filepath = hotline_rs::get_data_path("data/shaders/triangle/ps_main.psc");
+    let vsc_filepath = hotline_rs::get_data_path("shaders/triangle/vs_main.vsc");
+    let psc_filepath = hotline_rs::get_data_path("shaders/triangle/ps_main.psc");
 
     let vsc_data = fs::read(vsc_filepath)?;
     let psc_data = fs::read(psc_filepath)?;

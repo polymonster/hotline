@@ -2,6 +2,7 @@ use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 use std::hash::{Hash};
+use maths_rs::{max};
 
 /// Implemets this interface with a Direct3D12 backend.
 #[cfg(target_os = "windows")]
@@ -1172,6 +1173,22 @@ pub fn slice_pitch_for_format(format: Format, width: u64, height: u64) -> u64 {
 /// Return the size in bytes of a 3 dimensional resource: width * height * depth block size
 pub fn size_for_format(format: Format, width: u64, height: u64, depth: u32) -> u64 {
     block_size_for_format(format) as u64 * width * height * depth as u64
+}
+
+/// Return the size in bytes of up to dimensional resource: width * height * depth block size
+/// for each mip level
+pub fn size_for_format_mipped(format: Format, width: u64, height: u64, depth: u32, mips: u32) -> u64 {
+    let mut total = 0;
+    let mut mip_width = width;
+    let mut mip_height = height;
+    let mut mip_depth = depth;
+    for _ in 0..mips {
+        total += block_size_for_format(format) as u64 * mip_width * mip_height * mip_depth as u64;
+        mip_width = max(mip_width / 2, 1);
+        mip_height = max(mip_height / 2, 1);
+        mip_depth = max(mip_depth / 2, 1);
+    }
+    total
 }
 
 /// Aligns value to the alignment specified by align. value must be a power of 2
