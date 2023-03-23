@@ -105,16 +105,16 @@ pub const fn get_config_name() -> &'static str {
 pub fn get_src_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     // back 2 (client)
-    let asset_path = exe_path.parent().unwrap().join("../../hotline-data/src");
-    if asset_path.join(asset).exists() {
-        let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
+    let data_path = exe_path.parent().unwrap().join("../../hotline-data/src");
+    if data_path.join(asset).exists() {
+        let path = std::fs::canonicalize(data_path.join(asset)).unwrap();
         String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
     }
     else {
         // back 3 (examples)
-        let asset_path = exe_path.parent().unwrap().join("../../../hotline-data/src");
-        if asset_path.join(asset).exists() {
-            let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
+        let data_path = exe_path.parent().unwrap().join("../../../hotline-data/src");
+        if data_path.join(asset).exists() {
+            let path = std::fs::canonicalize(data_path.join(asset)).unwrap();
             String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
         }
         else {
@@ -127,19 +127,20 @@ pub fn get_src_data_path(asset: &str) -> String {
 pub fn get_data_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
     // back 1 (target/data)
-    let asset_path = exe_path.parent().unwrap().join("..");
-    if asset_path.join("data").exists() {
-        let path = std::fs::canonicalize(asset_path.join(asset));
+    let data_path = exe_path.parent().unwrap().join("../data");
+    if data_path.exists() {
+        let path = std::fs::canonicalize(data_path.join(asset));
         if path.is_err() {
+            println!("{:?}", data_path);
             println!("{}", asset);
         }
         String::from(path.unwrap().to_str().unwrap()).replace("\\\\?\\", "")
     }
     else {
         // back 2 (examples)
-        let asset_path = asset_path.join("..");
-        if asset_path.join("data").exists() {
-            let path = std::fs::canonicalize(asset_path.join(asset)).unwrap();
+        let data_path = data_path.join("../../data");
+        if data_path.exists() {
+            let path = std::fs::canonicalize(data_path.join(asset)).unwrap();
             String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
         }
         else {

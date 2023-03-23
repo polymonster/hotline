@@ -7,7 +7,7 @@ use maths_rs::prelude::*;
 /// Init function for primitives demo
 #[no_mangle]
 pub fn geometry_primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_geometry_primitives"

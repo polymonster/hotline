@@ -35,7 +35,7 @@ pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platfor
 /// Tests missing view specified in the render graph
 #[no_mangle]
 pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -48,7 +48,7 @@ pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::
 /// Tests case where render graph fails, in this case it is missing a pipeline, but the pipeline can also fail to build depending on the src data
 #[no_mangle]
 pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -61,7 +61,7 @@ pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 /// Tests missing pipeline specified in the render graph
 #[no_mangle]
 pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -74,7 +74,7 @@ pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 /// Tests missing camera specified in the render graph
 #[no_mangle]
 pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -87,7 +87,7 @@ pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform
 /// Tests missing view_function (system) specified in the render graph
 #[no_mangle]
 pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -121,7 +121,7 @@ pub fn render_missing_pipeline(
 /// Test various combinations of different rasterizer states
 #[no_mangle]
 pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_raster_test"
@@ -302,7 +302,7 @@ pub fn setup_blend_test(
 /// Test various combinations of different blend states
 #[no_mangle]
 pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_blend_test"

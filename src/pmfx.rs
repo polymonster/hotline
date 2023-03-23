@@ -1668,8 +1668,8 @@ impl ReloadResponder for PmfxReloadResponder {
     }
 
     fn build(&mut self) -> std::process::ExitStatus {
-        let hotline_path = super::get_data_path("..");
-        let pmbuild = super::get_data_path("../hotline-data/pmbuild.cmd");
+        let hotline_path = super::get_data_path("../..");
+        let pmbuild = super::get_data_path("../../hotline-data/pmbuild.cmd");
         let output = std::process::Command::new(pmbuild)
             .current_dir(hotline_path)
             .arg("win32-data")

@@ -148,7 +148,7 @@ You can set up a new ecs demo by providing an initialisation function named afte
 #[no_mangle]
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // load resources we may need
-    client.pmfx.load(&hotline_rs::get_data_path("data/shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     
     // fill out info
     ScheduleInfo {
@@ -386,8 +386,8 @@ let info = gfx::BufferInfo {
 let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
 // create shaders and a pipeline
-let vsc_filepath = hotline_rs::get_data_path("data/shaders/triangle/vs_main.vsc");
-let psc_filepath = hotline_rs::get_data_path("data/shaders/triangle/ps_main.psc");
+let vsc_filepath = hotline_rs::get_data_path("shaders/triangle/vs_main.vsc");
+let psc_filepath = hotline_rs::get_data_path("shaders/triangle/ps_main.psc");
 
 let vsc_data = fs::read(vsc_filepath)?;
 let psc_data = fs::read(psc_filepath)?;

@@ -1109,6 +1109,166 @@ impl Device {
         }
         passes
     }
+
+    fn upload_texture_data_subresource(
+        &mut self, 
+        width: u64,
+        height: u64,
+        depth: u32,
+        subresource: u32,
+        data: *const u8,
+        format: super::Format,
+        dxgi_format: DXGI_FORMAT,
+        resource: &ID3D12Resource,
+        upload_resources: &mut Vec<ID3D12Resource>) -> std::result::Result<(), super::Error> {
+        // create upload buffer
+        let row_pitch = super::row_pitch_for_format(format, width);
+        let slice_pitch = super::slice_pitch_for_format(format, width, height);
+        let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
+        let upload_size = height * upload_pitch;
+        unsafe {
+            let mut upload: Option<ID3D12Resource> = None;
+            self.device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 0,
+                    Width: upload_size,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_GENERIC_READ,
+                None,
+                &mut upload,
+            )?;
+            let back = upload_resources.len();
+            upload_resources.push(upload.unwrap());
+    
+            // copy data to upload buffer
+            let mut map_data = std::ptr::null_mut();
+            upload_resources[back].Map(0, None, Some(&mut map_data))?;
+            
+            if row_pitch == upload_pitch {
+                // copy the entire mip level in 1 go
+                let src = data;
+                let dst = map_data as *mut u8;
+                std::ptr::copy_nonoverlapping(src, dst, slice_pitch as usize);
+            }
+            else {
+                // copy with the upload pitch padded
+                if !map_data.is_null() {
+                    for y in 0..height {
+                        let src = data.offset((y * row_pitch) as isize) as *const u8;
+                        let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
+                        std::ptr::copy_nonoverlapping(src, dst, row_pitch as usize);
+                    }
+                }
+            }
+
+            upload_resources[back].Unmap(0, None);
+    
+            // copy resource
+            let src = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: std::mem::transmute_copy(&upload_resources[back]),
+                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
+                        Offset: 0,
+                        Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
+                            Width: width as u32,
+                            Height: height as u32,
+                            Depth: depth as u32,
+                            Format: dxgi_format,
+                            RowPitch: upload_pitch as u32,
+                        },
+                    },
+                },
+            };
+    
+            let dst = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: std::mem::transmute_copy(resource),
+                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    SubresourceIndex: subresource,
+                },
+            };
+    
+            self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, None);
+        }
+        Ok(())
+    }
+
+    fn upload_texture_data<T>(
+        &mut self, 
+        info: &TextureInfo, 
+        data: &[T], 
+        dxgi_format: DXGI_FORMAT,
+        resource: &ID3D12Resource, 
+        initial_state: D3D12_RESOURCE_STATES) -> std::result::Result<(), super::Error> {
+        let mut data_itr = data.as_ptr() as *const u8;
+        let mut mip_width = info.width;
+        let mut mip_height = info.height;
+        let mut mip_depth = info.depth;
+        let mut upload_resources = Vec::new();
+        for mip in 0..info.mip_levels {
+            self.upload_texture_data_subresource(
+                mip_width,
+                mip_height,
+                mip_depth,
+                mip,
+                data_itr,
+                info.format,
+                dxgi_format,
+                resource,
+                &mut upload_resources
+            )?;
+            let slice_pitch = slice_pitch_for_format(info.format, mip_width, mip_height);
+            data_itr = unsafe { data_itr.add(slice_pitch as usize) };
+            mip_width = max(mip_width / 2, 1);
+            mip_height = max(mip_height / 2, 1);
+            mip_depth = max(mip_depth / 2, 1);
+        }
+
+        unsafe {
+            // transition to requested initial state
+            let barrier = transition_barrier(
+                resource,
+                D3D12_RESOURCE_STATE_COPY_DEST,
+                initial_state,
+            );
+    
+            self.command_list.ResourceBarrier(&[barrier.clone()]);
+            let _: D3D12_RESOURCE_TRANSITION_BARRIER =
+                std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
+
+            self.command_list.Close()?;
+    
+            let cmd = ID3D12CommandList::from(&self.command_list);
+            self.command_queue.ExecuteCommandLists(&[cmd]);
+
+            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
+            self.command_queue.Signal(&fence, 1)?;
+    
+            let event = CreateEventA(None, false, false, None)?;
+            fence.SetEventOnCompletion(1, event)?;
+            WaitForSingleObject(event, INFINITE);
+            self.command_list.Reset(&self.command_allocator, None)?;
+        }
+
+        Ok(())
+    }
 }
 
 // public accessor for device
@@ -1778,7 +1938,7 @@ impl super::Device for Device {
         let mut resource: Option<ID3D12Resource> = None;
         let mut resolved_resource: Option<ID3D12Resource> = None;
         let dxgi_format = to_dxgi_format(info.format);
-        let size_bytes = size_for_format(info.format, info.width, info.height, info.depth) as usize;
+        let size_bytes = size_for_format_mipped(info.format, info.width, info.height, info.depth, info.mip_levels) as usize;
         validate_data_size(size_bytes, data)?;
         let initial_state = to_d3d12_resource_state(info.initial_state);
         unsafe {
@@ -1857,105 +2017,9 @@ impl super::Device for Device {
                 )?;
             }
 
-            if let Some(data) = &data {
-                // create upload buffer
-                let row_pitch = super::row_pitch_for_format(info.format, info.width);
-                let upload_pitch =
-                    super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
-                let upload_size = info.height * upload_pitch;
-
-                let mut upload: Option<ID3D12Resource> = None;
-                self.device.CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_UPLOAD,
-                        ..Default::default()
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 0,
-                        Width: upload_size,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
-                        },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    None,
-                    &mut upload,
-                )?;
-                let upload = upload.unwrap();
-
-                // copy data to upload buffer
-                let mut map_data = std::ptr::null_mut();
-                let res = upload.clone();
-                res.Map(0, None, Some(&mut map_data))?;
-                if !map_data.is_null() {
-                    for y in 0..info.height {
-                        let src = data.as_ptr().offset((y * info.width * 4) as isize) as *const u8;
-                        let dst = (map_data as *mut u8).offset((y * upload_pitch) as isize);
-                        std::ptr::copy_nonoverlapping(src, dst, (info.width * 4) as usize);
-                    }
-                }
-                res.Unmap(0, None);
-
-                // copy resource
-                let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
-
-                let src = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: std::mem::transmute_copy(&upload),
-                    Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
-                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                        PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
-                            Offset: 0,
-                            Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
-                                Width: info.width as u32,
-                                Height: info.height as u32,
-                                Depth: 1,
-                                Format: dxgi_format,
-                                RowPitch: upload_pitch as u32,
-                            },
-                        },
-                    },
-                };
-
-                let dst = D3D12_TEXTURE_COPY_LOCATION {
-                    pResource: std::mem::transmute_copy(&resource),
-                    Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
-                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
-                        SubresourceIndex: 0,
-                    },
-                };
-
-                self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, None);
-
-                let barrier = transition_barrier(
-                    &resource,
-                    D3D12_RESOURCE_STATE_COPY_DEST,
-                    initial_state,
-                );
-
-                // transition to shader resource
-                self.command_list.ResourceBarrier(&[barrier.clone()]);
-                let _: D3D12_RESOURCE_TRANSITION_BARRIER =
-                    std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
-
-                self.command_list.Close()?;
-
-                let cmd = ID3D12CommandList::from(&self.command_list);
-                self.command_queue.ExecuteCommandLists(&[cmd]);
-                self.command_queue.Signal(&fence, 1)?;
-
-                let event = CreateEventA(None, false, false, None)?;
-                fence.SetEventOnCompletion(1, event)?;
-                WaitForSingleObject(event, INFINITE);
-                self.command_list.Reset(&self.command_allocator, None)?;
+            // upload data
+            if let Some(data) = data {
+                self.upload_texture_data(info, data, dxgi_format, &resource, initial_state)?;
             }
 
             // create srv
@@ -2005,6 +2069,7 @@ impl super::Device for Device {
                 resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
                 resolved_format = to_dxgi_format_srv(info.format);
             }
+
             // create rtv
             let mut rtv_handle = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {

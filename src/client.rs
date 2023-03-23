@@ -161,7 +161,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, super::Error> {
         // read user config or get defaults
-        let user_config_path = super::get_data_path("user_config.json");
+        let user_config_path = super::get_data_path("../user_config.json");
         let saved_user_config = if std::path::Path::new(&user_config_path).exists() {
             let user_data = std::fs::read(user_config_path)?;
             serde_json::from_slice(&user_data).unwrap()
@@ -227,11 +227,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             main_window: &main_window,
             fonts: vec![
                 imgui::FontInfo {
-                    filepath: super::get_data_path("data/fonts/cousine_regular.ttf"),
+                    filepath: super::get_data_path("fonts/cousine_regular.ttf"),
                     glyph_ranges: None
                 },
                 imgui::FontInfo {
-                    filepath: super::get_data_path("data/fonts/font_awesome.ttf"),
+                    filepath: super::get_data_path("fonts/font_awesome.ttf"),
                     glyph_ranges: Some(vec![
                         [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32]
                     ])
@@ -244,7 +244,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let mut pmfx = pmfx::Pmfx::<D>::create();
 
         // core pipelines
-        pmfx.load(super::get_data_path("data/shaders/imdraw").as_str())?;
+        pmfx.load(super::get_data_path("shaders/imdraw").as_str())?;
         pmfx.create_pipeline(&device, "imdraw_blit", swap_chain.get_backbuffer_pass())?;
 
         let size = main_window.get_size();
@@ -345,7 +345,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
     fn save_user_config(&mut self) {
         let user_config_file_text = serde_json::to_string_pretty(&self.user_config).unwrap();
-        let user_config_path = super::get_data_path("user_config.json");
+        let user_config_path = super::get_data_path("../user_config.json");
         std::fs::File::create(&user_config_path).unwrap();
         std::fs::write(&user_config_path, user_config_file_text).unwrap();
     }
@@ -457,7 +457,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let abs_path = if path == "/plugins" {
-            super::get_data_path("../plugins")
+            super::get_data_path("../../plugins")
         }
         else {
             String::from(path)
