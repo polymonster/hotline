@@ -149,6 +149,9 @@ pub struct MainCamera;
 #[derive(Component)]
 pub struct Billboard;
 
+#[derive(Component)]
+pub struct CylindricalBillboard;
+
 #[macro_export]
 macro_rules! system_func {
     ($func:expr) => {

@@ -1,4 +1,5 @@
 {
+    // configure build tools
     tools<windows>: {
         pmfx: "hotline-data/bin/win32/pmfx/pmfx.exe"
         texturec: "hotline-data/bin/win32/texturec/texturec.exe"
@@ -25,6 +26,7 @@
         "run"
     ]
 
+    // build client executable and plugin dynamic libs
     hotline: {
         jsn_vars: {
             config_flags: ""
@@ -44,6 +46,7 @@
         }
     }
 
+    // generic build jobs, platform agnostic
     base: {
         jsn_vars: {
             data_dir: "target/data"
@@ -51,6 +54,7 @@
             src_data_dir: "hotline-data/src"
         }
 
+        // clean build and temp dirs
         clean: {
             directories: [
                 "${data_dir}"
@@ -58,6 +62,7 @@
             ]
         }
 
+        // copy generic data
         copy_base: {
             type: copy
             files: [
@@ -70,9 +75,13 @@
 
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
+
+                // copy prebuilt dds-textures
+                ["${src_data_dir}/textures/**.dds", "${data_dir}/textures"]
             ]
         }
 
+        // convert png, jpg, tga, gif to dds and pack cubemaps / arrays
         texturec: {
             args: [
                 "-f %{input_file}"
@@ -93,9 +102,10 @@
         }
     }
 
+    // windows specific data, will also build (base)
     win32-data(base): {
         pmfx: {
-            // type: pmfx_dev
+            type: pmfx_dev
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
@@ -108,6 +118,7 @@
         }
     }
 
+    // win32 debug client, plugins and data
     win32-debug(win32-data, hotline): {
         copy: {
             files: [
@@ -117,6 +128,7 @@
             ]
         }
 
+        // launch client
         run: {
             explicit: true
             type: shell
@@ -126,6 +138,7 @@
         }
     }
 
+    // win32 release client, plugins and data
     win32-release(win32-debug): {
         jsn_vars: {
             config_flags: "--release"

@@ -194,7 +194,7 @@ fn create_fonts_texture<D: Device>(
             width: out_width as u64,
             height: out_height as u64,
             depth: 1,
-            array_levels: 1,
+            array_layers: 1,
             mip_levels: 1,
             samples: 1,
             usage: gfx::TextureUsage::SHADER_RESOURCE,

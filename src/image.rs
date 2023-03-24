@@ -10,9 +10,9 @@ use ddsfile::DxgiFormat;
 use ddsfile::Dds as DDS;
 
 use crate::gfx;
-use gfx::{TextureInfo, TextureType};
+use gfx::{TextureInfo, TextureType, Device};
 
-/// Minimal header to describe image data, with a `TextureInfor` and a `Vec<u8>` of actual image data.
+/// Minimal header to describe image data, with a `TextureInfo` and a `Vec<u8>` of actual image data.
 pub struct ImageData {
     /// gfx::TextureInfo describing the texture
     pub info: TextureInfo,
@@ -105,7 +105,7 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
                 width: dds.get_width() as u64,
                 height: dds.get_height() as u64,
                 depth: dds.get_depth(),
-                array_levels: dds.get_num_array_layers(),
+                array_layers: dds.get_num_array_layers(),
                 mip_levels: dds.get_num_mipmap_levels(),
                 samples: 1,
                 usage: gfx::TextureUsage::SHADER_RESOURCE,
@@ -163,13 +163,21 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     }
 }
 
+/// Loads an image from file and creates a shader resource on the device heap
+pub fn load_texture_from_file(
+    device: &mut crate::gfx_platform::Device, 
+    file: &str) -> Result<crate::gfx_platform::Texture, super::Error> {
+    let image = load_from_file(file)?;
+    device.create_texture(&image.info, crate::data![image.data.as_slice()])
+}
+
 /// convert ddsfile to gfx::TextureType
 fn to_gfx_texture_type(dds: &DDS) -> TextureType {
     if dds.header.caps.contains(ddsfile::Caps::COMPLEX) {
         let all_faces = Caps2::CUBEMAP_POSITIVEX | Caps2::CUBEMAP_NEGATIVEX | Caps2::CUBEMAP_POSITIVEY |
                         Caps2::CUBEMAP_NEGATIVEY | Caps2::CUBEMAP_POSITIVEZ | Caps2::CUBEMAP_NEGATIVEZ;
         if dds.header.caps2.contains(all_faces) {
-            if dds.get_num_array_layers() > 1 {
+            if dds.get_num_array_layers() > 6 {
                 TextureType::TextureCubeArray
             }
             else {

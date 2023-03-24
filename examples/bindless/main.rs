@@ -115,6 +115,8 @@ fn main() -> Result<(), hotline_rs::Error> {
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt).unwrap();
     let pso_compute = pmfx.get_compute_pipeline("compute_rw").unwrap();
 
+    let tex3d = image::load_from_file(&hotline_rs::get_data_path("textures/sdf_shadow_updated.dds"));
+
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
         hotline_rs::get_src_data_path("textures/redchecker01.png"),
@@ -156,7 +158,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         width: 512,
         height: 512,
         depth: 1,
-        array_levels: 1,
+        array_layers: 1,
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
@@ -171,7 +173,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         width: 512,
         height: 512,
         depth: 1,
-        array_levels: 1,
+        array_layers: 1,
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::DEPTH_STENCIL,
@@ -206,7 +208,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         width: 512,
         height: 512,
         depth: 1,
-        array_levels: 1,
+        array_layers: 1,
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,

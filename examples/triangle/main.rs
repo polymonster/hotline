@@ -33,6 +33,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         render_target_heap_size: num_buffers as usize,
         ..Default::default()
     });
+    println!("{}", device.get_adapter_info());
 
     let mut window = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),

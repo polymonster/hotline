@@ -1,29 +1,31 @@
 // TODO:
 
-// - cubemap, 3d texture, texture array
+// - fix get_num_32bit_constants function
+// - cubemaps do not create descriptor layout binding
+// - unify shader code and pmfx code
+
+// - 3d texture, 
+// - uv's need flipping on geom
+
 // - create texture with heap
 // - pmfx shader heap
 // - render target fixed size
 // - texture load image from file into pmfx
 
 // - material
-// - tidy push constants material
 // - cbuffer material
 // - cbuffer camera?
 // - transform normals with world matrix
 // - construct tangent space
 
-// - maths_rs 3x4 transpose doesnt work, it should return 4x3
-
 // - execute indirect
 // - glft
-
 // - resolves properly data driven
 // - set name on resources
 // - stats read out
 
 // - update docs
-// - store hotline-rs commit hash for crates.io
+// - store hotline-data commit hash for crates.io
 
 // ecs
 // - compute passes
@@ -54,6 +56,11 @@
 // - view menu + saving state
 
 // DONE:
+// x pmfx static samplers should be an array - actuall no!
+// x texture array
+// x cubemap
+// x tidy push constants material
+// x maths_rs 3x4 transpose doesnt work, it should return 4x3
 // x sumbit one commandlist for each texture not mip
 // x ddsfile
 // x textures with mip_levels
