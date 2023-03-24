@@ -196,6 +196,7 @@ pub mod prelude {
         plugin,
         pmfx,
         imgui,
+        image,
 
         // platform specific 
         gfx_platform,

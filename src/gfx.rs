@@ -1,8 +1,8 @@
 use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
-use std::hash::{Hash};
-use maths_rs::{max};
+use std::hash::Hash;
+use maths_rs::max;
 
 /// Implemets this interface with a Direct3D12 backend.
 #[cfg(target_os = "windows")]
@@ -667,7 +667,7 @@ pub struct TextureInfo {
     /// Depth of the image in slices of (`width` x `height`) for `TextureType::Texture3D` only (use 1 other wise)
     pub depth: u32,
     /// Number of array levels or slices for `Texture1D` or `Texture2D` arrays. use 1 otherwise
-    pub array_levels: u32,
+    pub array_layers: u32,
     /// Number of mip levels in the image
     pub mip_levels: u32,
     /// Number of MSAA samples
@@ -679,7 +679,7 @@ pub struct TextureInfo {
 }
 
 /// Describes the dimension of a texture
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub enum TextureType {
     Texture1D,
     Texture1DArray,
@@ -1176,14 +1176,14 @@ pub fn size_for_format(format: Format, width: u64, height: u64, depth: u32) -> u
 }
 
 /// Return the size in bytes of up to dimensional resource: width * height * depth block size
-/// for each mip level
-pub fn size_for_format_mipped(format: Format, width: u64, height: u64, depth: u32, mips: u32) -> u64 {
+/// for each mip level and account for array layers
+pub fn size_for_format_mipped(format: Format, width: u64, height: u64, depth: u32, array_layers: u32, mips: u32) -> u64 {
     let mut total = 0;
     let mut mip_width = width;
     let mut mip_height = height;
     let mut mip_depth = depth;
     for _ in 0..mips {
-        total += block_size_for_format(format) as u64 * mip_width * mip_height * mip_depth as u64;
+        total += block_size_for_format(format) as u64 * mip_width * mip_height * mip_depth as u64 * array_layers as u64;
         mip_width = max(mip_width / 2, 1);
         mip_height = max(mip_height / 2, 1);
         mip_depth = max(mip_depth / 2, 1);
@@ -1206,7 +1206,8 @@ pub fn align(value: u64, align: u64) -> u64 {
     value
 }
 
-pub fn num_32bit_constants<T: Sized>(_: T) -> u32 {
+/// For the supplied sized struct `&_` returns the number of 32bit constants required for use as `push_constants`
+pub const fn num_32bit_constants<T: Sized>(_: &T) -> u32 {
     (std::mem::size_of::<T>() / 4) as u32
 } 
 
@@ -1243,12 +1244,22 @@ impl From<std::ffi::NulError> for Error {
     }
 }
 
+/// COnvert from WritMask bit mask to raw u8
 impl From<WriteMask> for u8 {
     fn from(mask: WriteMask) -> u8 {
         mask.bits
     }
 }
 
+/// Display for `AdapterInfo` displays as so:
+/// hotline_rs::d3d12::Device:
+///   NVIDIA GeForce GTX 1060 6GB
+///   Video Memory: 6052(mb)
+///   System Memory: 0(mb)
+///   Shared System Memory: 8159(mb)
+/// Available Adapters:
+///   NVIDIA GeForce GTX 1060 6GB
+///   Microsoft Basic Render Driver
 impl std::fmt::Display for AdapterInfo {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut available = String::from("");
@@ -1285,7 +1296,7 @@ impl Default for TextureInfo {
             width: 1,
             height: 1,
             depth: 1,
-            array_levels: 1,
+            array_layers: 1,
             mip_levels: 1,
             samples: 1,
             usage: TextureUsage::SHADER_RESOURCE,

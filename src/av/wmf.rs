@@ -293,7 +293,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     width: x as u64,
                     height: y as u64,
                     depth: 1,
-                    array_levels: 1,
+                    array_layers: 1,
                     mip_levels: 1,
                     samples: 1,
                     usage: gfx::TextureUsage::VIDEO_DECODE_TARGET | gfx::TextureUsage::SHADER_RESOURCE,

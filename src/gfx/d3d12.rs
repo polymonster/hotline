@@ -622,19 +622,33 @@ const fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
 fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) -> D3D12_SRV_DIMENSION {
     if samples > 1 {
         match tex_type {
-            super::TextureType::Texture1D => panic!(),
             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2DMS,
-            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY,
+            super::TextureType::Texture2DArray => D3D12_SRV_DIMENSION_TEXTURE2DMSARRAY,
             _ => panic!()
         }
     }
     else {
         match tex_type {
             super::TextureType::Texture1D => D3D12_SRV_DIMENSION_TEXTURE1D,
+            super::TextureType::Texture1DArray => D3D12_SRV_DIMENSION_TEXTURE1DARRAY,
             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2D,
-            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D,
-            _ => panic!()
+            super::TextureType::Texture2DArray => D3D12_SRV_DIMENSION_TEXTURE2DARRAY,
+            super::TextureType::TextureCube => D3D12_SRV_DIMENSION_TEXTURECUBE,
+            super::TextureType::TextureCubeArray => D3D12_SRV_DIMENSION_TEXTURECUBEARRAY,
+            super::TextureType::Texture3D => D3D12_SRV_DIMENSION_TEXTURE3D
         }
+    }
+}
+
+fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_DIMENSION {
+    match tex_type {
+        super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
+        super::TextureType::Texture1DArray => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
+        super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        super::TextureType::Texture2DArray => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        super::TextureType::TextureCube => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        super::TextureType::TextureCubeArray => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
+        super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D
     }
 }
 
@@ -1123,9 +1137,10 @@ impl Device {
         upload_resources: &mut Vec<ID3D12Resource>) -> std::result::Result<(), super::Error> {
         // create upload buffer
         let row_pitch = super::row_pitch_for_format(format, width);
-        let slice_pitch = super::slice_pitch_for_format(format, width, height);
         let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
-        let upload_size = height * upload_pitch;
+        let upload_size = height * upload_pitch * depth as u64;
+        let src_size = super::size_for_format(format, width, height, depth);
+
         unsafe {
             let mut upload: Option<ID3D12Resource> = None;
             self.device.CreateCommittedResource(
@@ -1164,7 +1179,7 @@ impl Device {
                 // copy the entire mip level in 1 go
                 let src = data;
                 let dst = map_data as *mut u8;
-                std::ptr::copy_nonoverlapping(src, dst, slice_pitch as usize);
+                std::ptr::copy_nonoverlapping(src, dst, src_size as usize);
             }
             else {
                 // copy with the upload pitch padded
@@ -1217,28 +1232,32 @@ impl Device {
         dxgi_format: DXGI_FORMAT,
         resource: &ID3D12Resource, 
         initial_state: D3D12_RESOURCE_STATES) -> std::result::Result<(), super::Error> {
+
         let mut data_itr = data.as_ptr() as *const u8;
-        let mut mip_width = info.width;
-        let mut mip_height = info.height;
-        let mut mip_depth = info.depth;
-        let mut upload_resources = Vec::new();
-        for mip in 0..info.mip_levels {
-            self.upload_texture_data_subresource(
-                mip_width,
-                mip_height,
-                mip_depth,
-                mip,
-                data_itr,
-                info.format,
-                dxgi_format,
-                resource,
-                &mut upload_resources
-            )?;
-            let slice_pitch = slice_pitch_for_format(info.format, mip_width, mip_height);
-            data_itr = unsafe { data_itr.add(slice_pitch as usize) };
-            mip_width = max(mip_width / 2, 1);
-            mip_height = max(mip_height / 2, 1);
-            mip_depth = max(mip_depth / 2, 1);
+        let mut upload_resources = Vec::new(); 
+
+        for layer in 0..info.array_layers {
+            let mut mip_width = info.width;
+            let mut mip_height = info.height;
+            let mut mip_depth = info.depth;
+            for mip in 0..info.mip_levels {
+                self.upload_texture_data_subresource(
+                    mip_width,
+                    mip_height,
+                    mip_depth,
+                    layer * info.mip_levels + mip,
+                    data_itr,
+                    info.format,
+                    dxgi_format,
+                    resource,
+                    &mut upload_resources
+                )?;
+                let slice_pitch = slice_pitch_for_format(info.format, mip_width, mip_height);
+                data_itr = unsafe { data_itr.add(slice_pitch as usize) };
+                mip_width = max(mip_width / 2, 1);
+                mip_height = max(mip_height / 2, 1);
+                mip_depth = max(mip_depth / 2, 1);
+            }
         }
 
         unsafe {
@@ -1937,10 +1956,15 @@ impl super::Device for Device {
     ) -> result::Result<Texture, super::Error> {
         let mut resource: Option<ID3D12Resource> = None;
         let mut resolved_resource: Option<ID3D12Resource> = None;
+
         let dxgi_format = to_dxgi_format(info.format);
-        let size_bytes = size_for_format_mipped(info.format, info.width, info.height, info.depth, info.mip_levels) as usize;
+        let size_bytes = size_for_format_mipped(
+            info.format, info.width, info.height, info.depth, info.array_layers, info.mip_levels) as usize;
         validate_data_size(size_bytes, data)?;
+
         let initial_state = to_d3d12_resource_state(info.initial_state);
+
+        let depth_or_array_size = max(info.depth, info.array_layers);
         unsafe {
             // create texture resource
             self.device.CreateCommittedResource(
@@ -1950,16 +1974,11 @@ impl super::Device for Device {
                 },
                 to_d3d12_texture_heap_flags(info.usage),
                 &D3D12_RESOURCE_DESC {
-                    Dimension: match info.tex_type {
-                        super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
-                        super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                        super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
-                        _ => panic!()
-                    },
+                    Dimension: to_d3d12_resource_dimension(info.tex_type),
                     Alignment: 0,
                     Width: info.width,
                     Height: info.height as u32,
-                    DepthOrArraySize: info.depth as u16,
+                    DepthOrArraySize: depth_or_array_size as u16,
                     MipLevels: info.mip_levels as u16,
                     Format: dxgi_format,
                     SampleDesc: DXGI_SAMPLE_DESC {
@@ -1988,16 +2007,11 @@ impl super::Device for Device {
                     },
                     to_d3d12_texture_heap_flags(info.usage),
                     &D3D12_RESOURCE_DESC {
-                        Dimension: match info.tex_type {
-                            super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
-                            super::TextureType::Texture2D => D3D12_RESOURCE_DIMENSION_TEXTURE2D,
-                            super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D,
-                            _ => panic!()
-                        },
+                        Dimension: to_d3d12_resource_dimension(info.tex_type),
                         Alignment: 0,
                         Width: info.width,
                         Height: info.height as u32,
-                        DepthOrArraySize: info.depth as u16,
+                        DepthOrArraySize: depth_or_array_size as u16,
                         MipLevels: info.mip_levels as u16,
                         Format: dxgi_format,
                         SampleDesc: DXGI_SAMPLE_DESC {
@@ -2026,22 +2040,55 @@ impl super::Device for Device {
             let mut srv_index = None;
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
                 let h = self.shader_heap.allocate();
-                self.device.CreateShaderResourceView(
-                    &resource,
-                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
-                        Format: to_dxgi_format_srv(info.format),
-                        ViewDimension: to_d3d12_texture_srv_dimension(info.tex_type, info.samples),
-                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                            Texture2D: D3D12_TEX2D_SRV {
-                                MipLevels: info.mip_levels,
-                                MostDetailedMip: 0,
-                                ..Default::default()
-                            },
-                        },
-                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                    }),
-                    h,
-                );
+
+                let dxgi_dormat_srv = to_dxgi_format_srv(info.format);
+                let srv_dimension = to_d3d12_texture_srv_dimension(info.tex_type, info.samples);
+
+                match info.tex_type {
+                    // technically these should use thier own struct, but the members are equivalent within the union
+                    // so we can just minimise code duplocation
+                    super::TextureType::Texture2D | super::TextureType::TextureCube | super::TextureType::Texture3D => {
+                        self.device.CreateShaderResourceView(
+                            &resource,
+                            Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                                Format: dxgi_dormat_srv,
+                                ViewDimension: srv_dimension,
+                                Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                    Texture2D: D3D12_TEX2D_SRV {
+                                        MipLevels: info.mip_levels,
+                                        MostDetailedMip: 0,
+                                        ..Default::default()
+                                    },
+                                },
+                                Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            }),
+                            h,
+                        );
+                    }
+                    super::TextureType::Texture2DArray => {
+                        self.device.CreateShaderResourceView(
+                            &resource,
+                            Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                                Format: dxgi_dormat_srv,
+                                ViewDimension: srv_dimension,
+                                Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                    Texture2DArray: D3D12_TEX2D_ARRAY_SRV {
+                                        MostDetailedMip: 0,
+                                        MipLevels: info.mip_levels,
+                                        FirstArraySlice: 0,
+                                        ArraySize: info.mip_levels,
+                                        PlaneSlice: 0,
+                                        ResourceMinLODClamp: 0.0,
+                                    },
+                                },
+                                Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            }),
+                            h,
+                        );
+                    }
+                    _ => panic!("hotline_rs::gfx::d3d12:: not implemented shader resource view for type {:?}", info.tex_type)
+                }
+
                 srv_index = Some(self.shader_heap.get_handle_index(&h));
             }
             
@@ -2884,7 +2931,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
-
+            
             self.cmd().SetGraphicsRootDescriptorTable(slot, base);
         }
     }

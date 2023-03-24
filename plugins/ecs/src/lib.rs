@@ -88,8 +88,8 @@ pub fn camera_constants_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degre
     let view = view.inverse();
     CameraConstants {
         view_matrix: view,
-        projection_matrix: proj,
-        view_projection_matrix: proj * view
+        view_projection_matrix: proj * view,
+        view_position: Vec4f::from((pos.0, 0.0))
     }
 }
 

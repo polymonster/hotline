@@ -2,8 +2,6 @@
 #![cfg(target_os = "windows")]
 
 use hotline_rs::{prelude::*, gfx::Buffer};
-use hotline_rs::image;
-use hotline_rs::data;
 
 use maths_rs::prelude::*;
 use rand::prelude::*;
@@ -320,27 +318,20 @@ pub struct MaterialInstance {
 
 /// 
 #[no_mangle]
-pub fn draw_cbuffer_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+pub fn draw_push_constants_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
-            "setup_draw_cbuffer_material"
+            "setup_draw_push_constants_material"
         ],
-        render_graph: "mesh_push_constant_material",
+        render_graph: "mesh_push_constants_material",
         ..Default::default()
     }
 }
 
-fn load_texture_from_file(
-    device: &mut gfx_platform::Device, 
-    file: &str) -> Result<gfx_platform::Texture, hotline_rs::Error> {
-    let image = image::load_from_file(file)?;
-    device.create_texture(&image.info, data![image.data.as_slice()])
-}
-
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
 #[no_mangle]
-pub fn setup_draw_cbuffer_material(
+pub fn setup_draw_push_constants_material(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
 
@@ -358,9 +349,9 @@ pub fn setup_draw_cbuffer_material(
     ];
 
     let metal_grid = Material {
-        albedo: AlbedoMap(load_texture_from_file(&mut device, 
+        albedo: AlbedoMap(image::load_texture_from_file(&mut device, 
             &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds")).unwrap()),
-        normal: NormalMap(load_texture_from_file(&mut device, 
+        normal: NormalMap(image::load_texture_from_file(&mut device, 
             &hotline_rs::get_data_path("textures/metalgrid2_normal.dds")).unwrap())
     };
 

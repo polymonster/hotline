@@ -12,11 +12,10 @@ use std::collections::HashSet;
 use std::fs;
 use std::sync::Arc;
 use std::sync::Mutex;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min};
-use maths_rs::num::{Base};
+use maths_rs::{max, min, num::Base};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -254,7 +253,7 @@ struct TextureInfo {
     height: u64,
     depth: u32,
     mip_levels: u32,
-    array_levels: u32,
+    array_layers: u32,
     samples: u32,
     format: gfx::Format,
     usage: Vec<ResourceState>,
@@ -311,8 +310,8 @@ struct GraphViewInfo {
 #[derive(Clone)]
 pub struct CameraConstants {
     pub view_matrix: maths_rs::Mat4f,
-    pub projection_matrix: maths_rs::Mat4f,
-    pub view_projection_matrix:  maths_rs::Mat4f
+    pub view_projection_matrix: maths_rs::Mat4f,
+    pub view_position: maths_rs::Vec4f
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -438,7 +437,7 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo, ratio_size: (u64, u64)) -> gf
         usage,
         depth: pmfx_texture.depth,
         mip_levels: pmfx_texture.mip_levels,
-        array_levels: pmfx_texture.array_levels,
+        array_layers: pmfx_texture.array_layers,
         samples: pmfx_texture.samples,
         format: pmfx_texture.format,
     }
@@ -545,12 +544,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
              let pmfx_data = fs::read(&info_filepath)?;
              let file : File = serde_json::from_slice(&pmfx_data)?;
  
-             // prepend the pmfx name to the shaders so we can avoid collisions
-             for name in file.pipelines.keys() {
-                 // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
-                 self.pmfx_folders.insert(name.to_string(), String::from(filepath));
-             }
-
              // create tracking info to check if the pmfx has been rebuilt
              let file_metadata = fs::metadata(&info_filepath)?;
              e.insert(PmfxTrackingInfo {
@@ -564,14 +557,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
              }
  
              // merge into pmfx
-             self.merge_pmfx(file);
+             self.merge_pmfx(file, filepath);
          }
 
         Ok(())
     }
 
     /// Merges the pmfx file `other` in the current `Pmfx` instance
-    fn merge_pmfx(&mut self, other: File) {
+    fn merge_pmfx(&mut self, other: File, other_filepath: &str) {
+        // prepend the pmfx name to the shaders so we can avoid collisions
+        for name in other.pipelines.keys() {
+            if !self.pmfx_folders.contains_key(name) {
+                // insert lookup path for shaders as they go into a folder: pmfx/shaders.vsc
+                self.pmfx_folders.insert(name.to_string(), String::from(other_filepath));
+            }
+        }
+        // extend the maps
         self.pmfx.shaders.extend(other.shaders);
         self.pmfx.pipelines.extend(other.pipelines);
         self.pmfx.depth_stencil_states.extend(other.depth_stencil_states);
@@ -590,8 +591,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if let Some(file) = file {
             if !self.shaders.contains_key(file) {
                 println!("hotline_rs::pmfx:: compiling shader: {}", file);
-                let shader = create_shader_from_file(device, folder, Some(file.to_string()));
-                if let Some(shader) = shader.unwrap() {
+                let shader = create_shader_from_file(device, folder, Some(file.to_string()))?;
+                if let Some(shader) = shader {
                     println!("hotline_rs::pmfx:: success: {}", file);
                     let hash = self.pmfx.shaders.get(file).unwrap();
                     self.shaders.insert(file.to_string(), (*hash, shader));
@@ -1081,7 +1082,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
-            let folder = self.pmfx_folders[pipeline_name].to_string();
+            let folder = self.pmfx_folders.get(pipeline_name)
+                .expect(&format!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 self.create_shader(device, Path::new(&folder), &pipeline.vs)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
@@ -1246,7 +1248,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
                 
                 let file : File = serde_json::from_slice(&pmfx_data)?;
-                self.merge_pmfx(file);
+                self.merge_pmfx(file, PathBuf::from(&reload_filepath).parent().unwrap().to_str().unwrap());
 
                 // find textures that need reloading
                 let reload_textures = self.textures.iter().filter(|(k, v)| {
