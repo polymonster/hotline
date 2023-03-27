@@ -9,5 +9,5 @@ crate-type = ["rlib", "dylib"]
 [dependencies]
 hotline-rs = { path = "../.." }
 maths-rs = "0.1.12"
-bevy_ecs = "0.9.1"
+bevy_ecs = "0.10.0"
 rand = "0.8.5"

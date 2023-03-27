@@ -706,7 +706,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 break;
             }
         }
-            
+        
         // reload, actual reloading the lib of any libs which had changes
         for plugin in &mut plugins {
             if plugin.state == PluginState::Reload {                        

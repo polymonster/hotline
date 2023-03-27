@@ -6,7 +6,7 @@ use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::SystemDescriptor;
+use bevy_ecs::schedule::SystemConfig;
 
 use std::collections::HashMap;
 
@@ -224,11 +224,11 @@ fn render_grid(
 
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemDescriptor> {
+    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfig> {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemDescriptor>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfig>>(function_name.as_bytes());
                 if hook.is_ok() {
                     let hook_fn = hook.unwrap();
                     let desc = hook_fn(name.to_string(), view_name.to_string());
@@ -448,19 +448,67 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let info = &self.schedule_info;
 
         // hook in setup funcs
-        let mut setup_stage = SystemStage::parallel();
         for func_name in &info.setup {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                setup_stage = setup_stage.with_system(func);
+                self.setup_schedule.add_system(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
             }
         }
-        self.setup_schedule.add_stage(StageStartup, setup_stage);
 
         // core update
-        let mut update_stage = SystemStage::parallel()
+        self.schedule.add_system(update_cameras.in_base_set(SystemSets::Update));
+        self.schedule.add_system(update_main_camera_config.in_base_set(SystemSets::Update));
+
+        // hook in updates funcs
+        for func_name in &info.update {
+            if let Some(func) = self.get_system_function(func_name, "", &client) {
+                self.schedule.add_system(func.in_base_set(SystemSets::Update));
+            }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
+        }
+
+        // batch functions do syncronised work to prepare buffers / matrices for drawing
+        self.schedule.add_system(update_world_matrices.in_base_set(SystemSets::Batch));
+
+        for batch_system in &info.batch {
+            let func_name = &batch_system.function_name;
+            if let Some(mut func) = self.get_system_function(func_name, "", &client) {
+                /*
+                for dep in &batch_system.deps {
+                    func = func.after(*dep);
+                }
+                */
+                self.schedule.add_system(func.in_base_set(SystemSets::Batch));
+
+            }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
+        }
+
+        // hook in render functions
+        for (func_name, view_name) in &render_functions {
+            if let Some(func) = self.get_system_function(func_name, view_name, &client) {
+                //render_stage = render_stage.with_system(func);
+                self.schedule.add_system(func.in_base_set(SystemSets::Render));
+            }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
+        }
+        self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
+
+        self.schedule.configure_sets(
+            (SystemSets::Update, SystemSets::Batch, SystemSets::Render).chain()
+        );
+
+        /*
+        // core update
+        let mut update_stage = SystemSet::parallel()
             .with_system(update_cameras.label("update_cameras"))
             .with_system(update_main_camera_config.after("update_cameras"));
 
@@ -478,7 +526,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // batch functions do syncronised work to prepare buffers / matrices for drawing
         let mut batch_stage = SystemStage::parallel()
             .with_system(update_world_matrices);
-
 
         for batch_system in &info.batch {
             let func_name = &batch_system.function_name;
@@ -507,6 +554,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
         self.schedule.add_stage(StageRender, render_stage);
+        */
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;
@@ -532,6 +580,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(ImDrawRes(client.imdraw));
         self.world.insert_resource(UserConfigRes(client.user_config));
         self.world.insert_resource(TimeRes(client.time));
+
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
@@ -568,7 +617,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // write back session info which will be serialised to disk and reloaded between sessions
         client.serialise_plugin_data("ecs", &self.session_info);
-
         client
     }
 
@@ -576,7 +624,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
-        self.world = World::new();
+        self.world.clear_entities();
         client
     }
 
@@ -597,6 +645,31 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 if selected != self.session_info.active_demo {
                     // update session info
                     self.session_info.active_demo = selected;
+                    resetup = true;
+                }
+            }
+
+            // -/+ to toggle through demos, ignore test missing and test failing demos
+            let wrap_len = demo_list.iter()
+                .filter(|d| !d.contains("test_missing") && !d.contains("test_failing"))
+                .collect::<Vec<_>>().len();
+            
+            //let wrap_len = demo_list.len();
+            
+            let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
+            if let Some(index) = cur_demo_index {
+                let keys = client.app.get_keys_pressed();
+                let toggle = if keys[187] {
+                    index.wrapping_sub(1) % wrap_len
+                }
+                else if keys[189] {
+                     (index + 1) % wrap_len
+                }
+                else {
+                    index
+                };
+                if toggle != index {
+                    self.session_info.active_demo = demo_list[toggle].to_string();
                     resetup = true;
                 }
             }
@@ -622,7 +695,7 @@ hotline_plugin![BevyPlugin];
 
 /// Register plugin systems
 #[no_mangle]
-pub fn get_system_ecs(name: String, _view_name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs(name: String, _view_name: String) -> Option<SystemConfig> {
     match name.as_str() {
         "render_grid" => system_func![render_grid],
         _ => None

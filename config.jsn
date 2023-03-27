@@ -116,6 +116,20 @@
                 "-Zpr"
             ]
         }
+        pmfx_dev: {
+            explicit: true
+            args: [
+                "-shader_platform hlsl"
+                "-shader_version 6_0"
+                "-i ${src_data_dir}/shaders/"
+                "-o ${data_dir}/shaders"
+                "-t ${temp_dir}/shaders"
+                "-num_threads 1"
+                "-f"
+                "-args"
+                "-Zpr"
+            ]
+        }
     }
 
     // win32 debug client, plugins and data

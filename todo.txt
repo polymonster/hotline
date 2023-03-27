@@ -1,10 +1,8 @@
 // TODO:
 
 // - fix get_num_32bit_constants function
-// - cubemaps do not create descriptor layout binding
-// - unify shader code and pmfx code
+// - removing render graph (or possibly any state) from data is not removed from the live client. pmfx
 
-// - 3d texture, 
 // - uv's need flipping on geom
 
 // - create texture with heap
@@ -17,7 +15,6 @@
 // - cbuffer camera?
 // - transform normals with world matrix
 // - construct tangent space
-
 // - execute indirect
 // - glft
 // - resolves properly data driven
@@ -56,6 +53,10 @@
 // - view menu + saving state
 
 // DONE:
+// x unify shader code and pmfx code
+// x cubemaps do not create descriptor layout binding
+// x texture3d do not create descriptor layout binding
+// x 3d texture
 // x pmfx static samplers should be an array - actuall no!
 // x texture array
 // x cubemap
