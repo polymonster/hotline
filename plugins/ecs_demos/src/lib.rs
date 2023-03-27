@@ -4,7 +4,7 @@
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::SystemDescriptor;
+use bevy_ecs::schedule::SystemConfig;
 
 mod primitives;
 mod test;
@@ -17,7 +17,7 @@ use crate::test::*;
 
 #[no_mangle]
 fn rotate_meshes(
-    time: Res<TimeRes>,
+    time: Res<TimeRes>, 
     mut mesh_query: Query<&mut Rotation, Without<Billboard>>) {
     for mut rotation in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
@@ -151,11 +151,11 @@ pub fn render_meshes_pipeline_coloured(
 
 /// Renders all scene meshes with a material instance component, using push constants to push texture ids
 #[no_mangle]
-pub fn render_meshes_push_constants_material(
+pub fn render_meshes_push_constants_texture(
     device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &MaterialInstance)>) -> Result<(), hotline_rs::Error> {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -166,9 +166,9 @@ pub fn render_meshes_push_constants_material(
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
     view.cmd_buf.set_render_heap(2, device.0.get_shader_heap(), 0);
 
-    for (world_matrix, mesh, material) in &mesh_draw_query {
+    for (world_matrix, mesh, texture) in &mesh_draw_query {
         view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_constants(1, 2, 16, gfx::as_u8_slice(material));
+        view.cmd_buf.push_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -345,7 +345,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "draw_indexed_push_constants",
         "draw_indexed_vertex_buffer_instanced",
         "draw_indexed_cbuffer_instanced",
-        "draw_push_constants_material",
+        "draw_push_constants_texture",
 
         // render tests
         "test_raster_states",
@@ -367,7 +367,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 
 /// Register plugin system functions
 #[no_mangle]
-pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemConfig> {
     match name.as_str() {
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
@@ -377,7 +377,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
         "setup_draw_indexed_vertex_buffer_instanced" => system_func![setup_draw_indexed_vertex_buffer_instanced],
         "setup_draw_indexed_cbuffer_instanced" => system_func![setup_draw_indexed_cbuffer_instanced],
-        "setup_draw_push_constants_material" => system_func![setup_draw_push_constants_material],
+        "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
@@ -423,10 +423,10 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
             view_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
         ],
-        "render_meshes_push_constants_material" => render_func_query![
-            render_meshes_push_constants_material, 
+        "render_meshes_push_constants_texture" => render_func_query![
+            render_meshes_push_constants_texture, 
             view_name, 
-            Query<(&WorldMatrix, &MeshComponent, &MaterialInstance)>
+            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
         "render_meshes_cubemap_test" => render_func_query![
             render_meshes_cubemap_test,

@@ -200,8 +200,12 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     fn get_utf16_input(&self) -> Vec<u16>;
     /// Returns an array of bools containing 0-256 keys down (true) or up (false)
     fn get_keys_down(&self) -> [bool; 256];
+    /// Returns an array of bools containing 0-256 of keys pressed, will trigger only once and then require debouce
+    fn get_keys_pressed(&self) -> [bool; 256];
     /// Returns true if the sys key is down and false if the key is up
     fn is_sys_key_down(&self, key: SysKey) -> bool;
+    /// Returns true if the sys key is pressed this frame and requires debounce until it is pressed again
+    fn is_sys_key_pressed(&self, key: SysKey) -> bool;
     /// Get os system virtual key code from Key
     fn get_key_code(key: Key) -> i32;
     /// Set's whethere input from keybpard or mouse is available or not

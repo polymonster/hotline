@@ -294,9 +294,9 @@ pub fn setup_draw_indexed_cbuffer_instanced(
     }
 }
 
-// draw cbuffer per entity (world matrix and material ID)
+// material ID or entity instance ID, material ID in vertex buffer
+// draw cbuffer per entity (world matrix)
 // cbuffer per material (albedo, normal, metalness, roughness id's)
-// load textures in ecs
 
 #[derive(Component)]
 pub struct AlbedoMap(pub gfx_platform::Texture);
@@ -318,46 +318,43 @@ pub struct MaterialInstance {
 
 /// 
 #[no_mangle]
-pub fn draw_push_constants_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
-            "setup_draw_push_constants_material"
+            "setup_draw_push_constants_texture"
         ],
-        render_graph: "mesh_push_constants_material",
+        render_graph: "mesh_push_constants_texture",
         ..Default::default()
     }
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
 #[no_mangle]
-pub fn setup_draw_push_constants_material(
+pub fn setup_draw_push_constants_texture(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
 
-    let meshes = vec![
-        hotline_rs::primitives::create_cube_mesh(&mut device.0),
-        hotline_rs::primitives::create_cube_mesh(&mut device.0),
+    let sphere = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64);
 
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
-        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+    let textures = [
+        TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds")).unwrap()
+        ),
+        TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds")).unwrap()
+        ),
+        TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_data_path("textures/bluechecker01.dds")).unwrap()
+        ),
+        TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_data_path("textures/redchecker01.dds")).unwrap()
+        )
     ];
 
-    let metal_grid = Material {
-        albedo: AlbedoMap(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds")).unwrap()),
-        normal: NormalMap(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds")).unwrap())
-    };
-
     // square number of rows and columns
-    let rc = ceil(sqrt(meshes.len() as f32));
-    let irc = (rc + 0.5) as i32; 
+    let rc = 2.0;
+    let irc = (rc + 0.5) as usize; 
 
     let size = 10.0;
     let half_size = size * 0.5;    
@@ -365,29 +362,24 @@ pub fn setup_draw_push_constants_material(
     let half_extent = rc * half_size;
     let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
 
-    let mut i = 0;
     for y in 0..irc {
         for x in 0..irc {
-            if i < meshes.len() {
-                let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
-                commands.spawn((
-                    MeshComponent(meshes[i].clone()),
-                    Position(iter_pos),
-                    Rotation(Quatf::identity()),
-                    Scale(splat3f(10.0)),
-                    WorldMatrix(Mat34f::identity()),
-                    MaterialInstance {
-                        albedo: metal_grid.albedo.0.get_srv_index().unwrap() as u32,
-                        normal: metal_grid.normal.0.get_srv_index().unwrap() as u32
-                    }
-                ));
-            }
-            i = i + 1;
+            let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+            commands.spawn((
+                MeshComponent(sphere.clone()),
+                Position(iter_pos),
+                Rotation(Quatf::identity()),
+                Scale(splat3f(10.0)),
+                WorldMatrix(Mat34f::identity()),
+                TextureInstance(textures[y * irc + x].get_srv_index().unwrap() as u32),
+            ));
         }
     }
 
     // spawn entity to keep hold of material
-    commands.spawn(
-        metal_grid
-    );
+    for tex in textures {
+        commands.spawn(
+            tex
+        );
+    }
 }

@@ -6,21 +6,6 @@ use maths_rs::prelude::*;
 use rand::prelude::*;
 use bevy_ecs::prelude::*;
 
-#[derive(Component)]
-pub struct TextureInstance(pub u32);
-
-#[derive(Component)]
-pub struct TimeComponent(pub f32);
-
-#[derive(Component)]
-pub struct AnimatedTexture {
-    pub frame : u32,
-    pub frame_count: u32
-}
-
-#[derive(Component)]
-pub struct TextureComponent(pub gfx_platform::Texture);
-
 /// Test various combinations of different rasterizer states
 #[no_mangle]
 pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -305,6 +290,8 @@ pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App
 pub fn setup_texture3d_test(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
+
+    println!("setup_texture3d_test!");
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
 

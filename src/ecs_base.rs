@@ -77,6 +77,7 @@ pub struct SessionInfo {
 // Stages
 //
 
+/*
 #[derive(StageLabel)]
 pub struct StageStartup;
 
@@ -88,6 +89,7 @@ pub struct StageBatch;
 
 #[derive(StageLabel)]
 pub struct StageRender;
+*/
 
 /// This macro allows you to create a newtype which will automatically deref and deref_mut
 /// you can use it to create resources or compnents and avoid having to use .0 to access the inner data
@@ -137,10 +139,19 @@ hotline_ecs!(Component, WorldMatrix, Mat34f);
 hotline_ecs!(Component, ViewProjectionMatrix, Mat4f);
 hotline_ecs!(Component, MeshComponent, pmfx::Mesh<gfx_platform::Device>);
 hotline_ecs!(Component, Pipeline, String);
+hotline_ecs!(Component, TextureComponent, gfx_platform::Texture);
+hotline_ecs!(Component, TextureInstance, u32);
+hotline_ecs!(Component, TimeComponent, f32);
 
 #[derive(Component)]
 pub struct Camera {
     pub rot: Vec2f
+}
+
+#[derive(Component)]
+pub struct AnimatedTexture {
+    pub frame : u32,
+    pub frame_count: u32
 }
 
 #[derive(Component)]
@@ -152,24 +163,33 @@ pub struct Billboard;
 #[derive(Component)]
 pub struct CylindricalBillboard;
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
+#[system_set(base)]
+pub enum SystemSets {
+    Setup,
+    Update,
+    Batch,
+    Render,
+}
+
 #[macro_export]
 macro_rules! system_func {
     ($func:expr) => {
-        Some($func.into_descriptor())
+        Some($func.into_config())
     }
 }
 
 #[macro_export]
 macro_rules! render_func {
     ($func:expr, $view:expr) => {
-        Some(render_func_closure![$func, $view, Query::<(&WorldMatrix, &MeshComponent)>].into_descriptor())
+        Some(render_func_closure![$func, $view, Query::<(&WorldMatrix, &MeshComponent)>].into_config())
     }
 }
 
 #[macro_export]
 macro_rules! render_func_query {
     ($func:expr, $view:expr, $query:ty) => {
-        Some(render_func_closure![$func, $view, $query].into_descriptor())
+        Some(render_func_closure![$func, $view, $query].into_config())
     }
 }
 

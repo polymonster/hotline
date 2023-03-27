@@ -34,6 +34,31 @@ pub struct App {
     mouse_input_enabled: bool,
 }
 
+impl ProcData {
+    fn new() -> Self {
+        ProcData {
+            mouse_hwnd: HWND(0),
+            mouse_tracked: false,
+            mouse_down: [false; 5],
+            mouse_wheel: 0.0,
+            mouse_hwheel: 0.0,
+            utf16_inputs: Vec::new(),
+            key_down: [false; 256],
+            key_press: [false; 256],
+            key_debounce: [false; 256],
+            key_ctrl: false,
+            key_shift: false,
+            key_alt: false,
+            key_press_ctrl: false,
+            key_press_shift: false,
+            key_press_alt: false,
+            key_debounce_ctrl: false,
+            key_debounce_shift: false,
+            key_debounce_alt: false,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Window {
     hwnd: HWND,
@@ -59,9 +84,17 @@ struct ProcData {
     mouse_hwheel: f32,
     utf16_inputs: Vec<u16>,
     key_down: [bool; 256],
+    key_press: [bool; 256],
+    key_debounce: [bool; 256],
     key_ctrl: bool,
     key_shift: bool,
     key_alt: bool,
+    key_press_ctrl: bool,
+    key_press_shift: bool,
+    key_press_alt: bool,
+    key_debounce_ctrl: bool,
+    key_debounce_shift: bool,
+    key_debounce_alt: bool,
 }
 
 impl super::NativeHandle<App> for NativeHandle {
@@ -235,6 +268,24 @@ impl App {
             };
             // set new mouse pos as current
             self.mouse_pos = new_mouse_pos;
+        }
+
+        // update press states
+        for i in 0..256 {
+            // set the key press in the first instance of the frame
+            if self.proc_data.key_down[i] && !self.proc_data.key_press[i] && !self.proc_data.key_debounce[i] {
+                // trigegr press in the first down instance
+                self.proc_data.key_press[i] = true;
+                self.proc_data.key_debounce[i] = true;
+            }
+            else if self.proc_data.key_press[i] {
+                // unset the press
+                self.proc_data.key_press[i] = false;
+            }
+            else if !self.proc_data.key_down[i] {
+                // debounce the press
+                self.proc_data.key_debounce[i] = false;
+            }
         }
     }
 
@@ -482,18 +533,7 @@ impl super::App for App {
                 hinstance: instance,
                 mouse_pos: super::Point::default(),
                 mouse_pos_delta: super::Point::default(),
-                proc_data: ProcData {
-                    mouse_hwnd: HWND(0),
-                    mouse_tracked: false,
-                    mouse_down: [false; 5],
-                    mouse_wheel: 0.0,
-                    mouse_hwheel: 0.0,
-                    utf16_inputs: Vec::new(),
-                    key_down: [false; 256],
-                    key_ctrl: false,
-                    key_shift: false,
-                    key_alt: false,
-                },
+                proc_data: ProcData::new(),
                 events: HashMap::new(),
                 hwnd_flags: HashMap::new(),
                 keyboard_input_enabled: true,
@@ -627,6 +667,18 @@ impl super::App for App {
             super::SysKey::Ctrl => self.proc_data.key_ctrl,
             super::SysKey::Shift => self.proc_data.key_shift,
             super::SysKey::Alt => self.proc_data.key_alt,
+        }
+    }
+
+    fn get_keys_pressed(&self) -> [bool; 256] {
+        self.proc_data.key_press
+    }
+
+    fn is_sys_key_pressed(&self, key: super::SysKey) -> bool {
+        match key {
+            super::SysKey::Ctrl => self.proc_data.key_press_ctrl,
+            super::SysKey::Shift => self.proc_data.key_press_shift,
+            super::SysKey::Alt => self.proc_data.key_press_alt,
         }
     }
 
