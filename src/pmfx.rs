@@ -331,17 +331,21 @@ fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Opti
 }
 
 /// get gfx info from a pmfx state, returning default if it does not exist
-fn info_from_state<T: Default + Clone>(name: &Option<String>, map: &HashMap<String, T>) -> T {
+fn info_from_state<T: Default + Clone>(name: &Option<String>, map: &HashMap<String, T>) -> Result<T, super::Error> {
     if let Some(name) = &name {
         if map.contains_key(name) {
-            map[name].clone()
+            Ok(map[name].clone())
         }
         else {
-            T::default()
+            Err(
+                super::Error {
+                    msg: format!("hotline::pmfx:: missing render state in pmfx config `{}`", name)
+                }
+            )
         }
     }
     else {
-        T::default()
+        Ok(T::default())
     }
 }
 
@@ -350,32 +354,33 @@ fn info_from_state<T: Default + Clone>(name: &Option<String>, map: &HashMap<Stri
 fn blend_info_from_state(
     name: &Option<String>,
     blend_states: &HashMap<String, BlendInfo>,
-    render_target_blend_states: &HashMap<String, gfx::RenderTargetBlendInfo>) -> gfx::BlendInfo {
+    render_target_blend_states: &HashMap<String, gfx::RenderTargetBlendInfo>) -> Result<gfx::BlendInfo, super::Error> {
     if let Some(name) = &name {
         if blend_states.contains_key(name) {
-            let rt = blend_states[name].render_target.iter().map(|n| 
-                info_from_state(&Some(n.to_string()), render_target_blend_states)
-            ).collect::<Vec<gfx::RenderTargetBlendInfo>>();
-            gfx::BlendInfo {
+            let mut rtinfo = Vec::new();
+            for name in &blend_states[name].render_target {
+                rtinfo.push(info_from_state(&Some(name.to_string()), render_target_blend_states)?);
+            }
+            Ok(gfx::BlendInfo {
                 alpha_to_coverage_enabled: blend_states[name].alpha_to_coverage_enabled,
                 independent_blend_enabled: blend_states[name].independent_blend_enabled,
-                render_target: rt
-            }
+                render_target: rtinfo
+            })
         }
         else {
-            gfx::BlendInfo {
-                alpha_to_coverage_enabled: false,
-                independent_blend_enabled: false,
-                render_target: vec![gfx::RenderTargetBlendInfo::default()],
-            }
+            Err(
+                super::Error {
+                    msg: format!("hotline::pmfx:: missing blend state in pmfx config `{}`", name)
+                }
+            )
         }
     }
     else {
-        gfx::BlendInfo {
+        Ok(gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
             independent_blend_enabled: false,
             render_target: vec![gfx::RenderTargetBlendInfo::default()],
-        }
+        })
     }
 }
 
@@ -1117,10 +1122,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             fs: self.get_shader(&pipeline.ps),
                             input_layout: vertex_layout.to_vec(),
                             descriptor_layout: pipeline.descriptor_layout.clone(),
-                            raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states),
-                            depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states),
+                            raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
+                            depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
                             blend_info: blend_info_from_state(
-                                &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states),
+                                &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states)?,
                             topology: pipeline.topology,
                             sample_mask:pipeline.sample_mask,
                             pass: Some(pass),
@@ -1245,7 +1250,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         for reload_filepath in reload_paths {
             if !reload_filepath.is_empty() {
                 println!("hotline_rs::pmfx:: reload from {}", reload_filepath);
-                let pmfx_data = fs::read(&reload_filepath).expect("hotline::pmfx:: failed to read file");
+                let pmfx_data = fs::read(&reload_filepath).expect("hotline_rs::pmfx:: failed to read file");
                 
                 let file : File = serde_json::from_slice(&pmfx_data)?;
                 self.merge_pmfx(file, PathBuf::from(&reload_filepath).parent().unwrap().to_str().unwrap());

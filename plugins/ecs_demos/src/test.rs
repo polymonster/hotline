@@ -98,10 +98,12 @@ pub fn setup_blend_test(
 
     let pipelines = vec![
         "blend_disabled",
-        "blend_additive", 
-        "blend_alpha", 
+        "blend_additive",
+        "blend_alpha",
+        "blend_min",
         "blend_subtract",
         "blend_rev_subtract",
+        "blend_max"
     ];
 
     // square number of rows and columns
@@ -111,7 +113,7 @@ pub fn setup_blend_test(
     let half_size = size * 0.5;    
     let step = size * half_size;
     let half_extent = rc * half_size;
-    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
+    let start_pos = vec3f(-half_extent, size, -half_extent);
 
     let mut rng = rand::thread_rng();
 
@@ -123,7 +125,7 @@ pub fn setup_blend_test(
                 // spawn a bunch vof entites with slightly randomised 
                 for _ in 0..32 {
                     let mesh : usize = rng.gen::<usize>() % meshes.len();
-                    let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(15.0, 50.0, 15.0) + vec3f(2.0, 0.0, 2.0);
+                    let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(10.0, 50.0, 10.0);
                     let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
                     let h = rng.gen();
 
@@ -131,13 +133,13 @@ pub fn setup_blend_test(
                         0 => 0.0, // blend disabled alpha should have no effect
                         1 => 0.1, // additive, will accumulate
                         2 => 0.5, // alpha blend, semi-transparent
+                        3 => 0.0, // min blend semi transparent
                         _ => saturate(0.1 + rng.gen::<f32>())
                     };
 
-                    let h = match i {
-                        3 => 360.0 / 300.0, // magenta subtract will become green
-                        4 => 360.0 / 150.0, // yellow rev subtract will become ?
-                        _ => h
+                    let v = match i {
+                        6 => 0.6, // blend max is darker
+                        _ => 1.0
                     };
 
                     commands.spawn((
@@ -147,7 +149,7 @@ pub fn setup_blend_test(
                         Scale(splat3f(2.0)),
                         WorldMatrix(Mat34f::identity()),
                         Pipeline(pipelines[i].to_string()),
-                        Colour(Vec4f::from((maths_rs::hsv_to_rgb(vec3f(h, 1.0, 1.0)), alpha)))
+                        Colour(Vec4f::from((maths_rs::hsv_to_rgb(vec3f(h, 1.0, v)), alpha)))
                     ));
                 }
             }

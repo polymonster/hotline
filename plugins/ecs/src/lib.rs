@@ -352,7 +352,7 @@ impl BevyPlugin {
 
         if self.errors.contains_key(graph) {
             client.imgui.colour_text(
-                &format!("Render Graph: {}: {}.", "missing", graph), 
+                &format!("Render Graph: {}: {}.", "error", graph), 
                 error_col
             );
 
