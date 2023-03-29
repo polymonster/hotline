@@ -10,6 +10,9 @@
         pmfx: {
             help_arg: "-help"
         }
+        texturec: {
+            help_arg: "-help"
+        }
         pmfx_dev(pmfx): {}
     }
     

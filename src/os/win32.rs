@@ -46,15 +46,9 @@ impl ProcData {
             key_down: [false; 256],
             key_press: [false; 256],
             key_debounce: [false; 256],
-            key_ctrl: false,
-            key_shift: false,
-            key_alt: false,
-            key_press_ctrl: false,
-            key_press_shift: false,
-            key_press_alt: false,
-            key_debounce_ctrl: false,
-            key_debounce_shift: false,
-            key_debounce_alt: false,
+            sys_key_down: [false; super::SysKey::Count as usize],
+            sys_key_press: [false; super::SysKey::Count as usize],
+            sys_key_debounce: [false; super::SysKey::Count as usize],
         }
     }
 }
@@ -86,15 +80,9 @@ struct ProcData {
     key_down: [bool; 256],
     key_press: [bool; 256],
     key_debounce: [bool; 256],
-    key_ctrl: bool,
-    key_shift: bool,
-    key_alt: bool,
-    key_press_ctrl: bool,
-    key_press_shift: bool,
-    key_press_alt: bool,
-    key_debounce_ctrl: bool,
-    key_debounce_shift: bool,
-    key_debounce_alt: bool,
+    sys_key_down: [bool; super::SysKey::Count as usize],
+    sys_key_press: [bool; super::SysKey::Count as usize],
+    sys_key_debounce: [bool; super::SysKey::Count as usize],
 }
 
 impl super::NativeHandle<App> for NativeHandle {
@@ -270,23 +258,41 @@ impl App {
             self.mouse_pos = new_mouse_pos;
         }
 
-        // update press states
-        for i in 0..256 {
-            // set the key press in the first instance of the frame
-            if self.proc_data.key_down[i] && !self.proc_data.key_press[i] && !self.proc_data.key_debounce[i] {
-                // trigegr press in the first down instance
-                self.proc_data.key_press[i] = true;
-                self.proc_data.key_debounce[i] = true;
+        let debounce_keys = |count: usize, down: &mut [bool], press: &mut [bool], debounce: &mut [bool]| {
+            // update press states
+            for i in 0..count {
+                // set the key press in the first instance of the frame
+                if down[i] && !press[i] && !debounce[i] {
+                    // trigegr press in the first down instance
+                    press[i] = true;
+                    debounce[i] = true;
+                }
+                else if press[i] {
+                    // unset the press
+                    press[i] = false;
+                }
+                else if !down[i] {
+                    // debounce the press
+                    debounce[i] = false;
+                }
             }
-            else if self.proc_data.key_press[i] {
-                // unset the press
-                self.proc_data.key_press[i] = false;
-            }
-            else if !self.proc_data.key_down[i] {
-                // debounce the press
-                self.proc_data.key_debounce[i] = false;
-            }
-        }
+        };
+
+        // debounce normal keys
+        debounce_keys(
+            256, 
+            &mut self.proc_data.key_down, 
+            &mut self.proc_data.key_press, 
+            &mut self.proc_data.key_debounce
+        );
+
+        // debounce sys keys
+        debounce_keys(
+            super::SysKey::Count as usize, 
+            &mut self.proc_data.sys_key_down, 
+            &mut self.proc_data.sys_key_press, 
+            &mut self.proc_data.sys_key_debounce
+        );
     }
 
     fn wndproc(&mut self, window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -384,13 +390,13 @@ impl App {
                     let vk = VIRTUAL_KEY(wparam.0 as u16);
                     match vk {
                         VK_CONTROL => {
-                            proc_data.key_ctrl = down;
+                            proc_data.sys_key_down[super::SysKey::Ctrl as usize] = down;
                         }
                         VK_SHIFT => {
-                            proc_data.key_shift = down;
+                            proc_data.sys_key_down[super::SysKey::Shift as usize] = down;
                         }
                         VK_MENU => {
-                            proc_data.key_alt = down;
+                            proc_data.sys_key_down[super::SysKey::Alt as usize] = down;
                         }
                         _ => {}
                     }
@@ -663,11 +669,7 @@ impl super::App for App {
     }
 
     fn is_sys_key_down(&self, key: super::SysKey) -> bool {
-        match key {
-            super::SysKey::Ctrl => self.proc_data.key_ctrl,
-            super::SysKey::Shift => self.proc_data.key_shift,
-            super::SysKey::Alt => self.proc_data.key_alt,
-        }
+        self.proc_data.sys_key_down[key as usize]
     }
 
     fn get_keys_pressed(&self) -> [bool; 256] {
@@ -675,11 +677,7 @@ impl super::App for App {
     }
 
     fn is_sys_key_pressed(&self, key: super::SysKey) -> bool {
-        match key {
-            super::SysKey::Ctrl => self.proc_data.key_press_ctrl,
-            super::SysKey::Shift => self.proc_data.key_press_shift,
-            super::SysKey::Alt => self.proc_data.key_press_alt,
-        }
+        self.proc_data.sys_key_press[key as usize]
     }
 
     fn get_key_code(key: super::Key) -> i32 {

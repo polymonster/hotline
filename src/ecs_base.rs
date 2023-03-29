@@ -10,14 +10,6 @@ use maths_rs::{Vec2f, Vec3f, Vec4f, Mat4f, Mat34f, Quatf};
 use std::ops::Deref;
 use std::ops::DerefMut;
 
-/// Information to describe a system and it's dependencies so it can be scheduled appropriately
-pub struct BatchSystemInfo {
-    /// name of the system function to run, registered through `get_system_<lib_name>` to find the function inside a plugin
-    pub function_name: &'static str,
-    /// name of systems which this system needs to run after
-    pub deps: Vec<&'static str>
-}
-
 /// Schedule info can be filled out and passed to the `ecs` plugin to build a schedulre for a running demo
 pub struct ScheduleInfo {
     /// List of setup functions by their name, the function name must be registered in a `get_system_function` 
@@ -26,9 +18,6 @@ pub struct ScheduleInfo {
     /// List of update functions by their name, the function name must be registered in a `get_system_function` 
     /// all update systems will run concurrently
     pub update: Vec<String>,
-    /// List of batch systems with dependencies, these systems run after update and will be batched in order
-    /// batch systems will be ran in a particular order to syncronise work
-    pub batch: Vec<BatchSystemInfo>,
     /// Name of the render graph to load, buld and make active from pmfx
     pub render_graph: &'static str
 }
@@ -39,7 +28,6 @@ impl Default for ScheduleInfo {
         ScheduleInfo {
             setup: Vec::new(),
             update: Vec::new(),
-            batch: Vec::new(),
             render_graph: "",
         }
     }
@@ -72,24 +60,6 @@ pub struct SessionInfo {
     pub active_demo: String,
     pub main_camera: Option<CameraInfo>
 }
-
-//
-// Stages
-//
-
-/*
-#[derive(StageLabel)]
-pub struct StageStartup;
-
-#[derive(StageLabel)]
-pub struct StageUpdate;
-
-#[derive(StageLabel)]
-pub struct StageBatch;
-
-#[derive(StageLabel)]
-pub struct StageRender;
-*/
 
 /// This macro allows you to create a newtype which will automatically deref and deref_mut
 /// you can use it to create resources or compnents and avoid having to use .0 to access the inner data
