@@ -387,11 +387,17 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         "setup_texture3d_test" => system_func![setup_texture3d_test],
         
         // updates
-        "rotate_meshes" => system_func![rotate_meshes],
-        "animate_textures" => system_func![animate_textures],
+        "rotate_meshes" => system_func![
+            rotate_meshes.in_base_set(SystemSets::Update)
+        ],
+        "animate_textures" => system_func![
+            animate_textures.in_base_set(SystemSets::Update)
+        ],
 
         // batches
-        "batch_world_matrix_instances" => system_func![draw::batch_world_matrix_instances],
+        "batch_world_matrix_instances" => system_func![
+            draw::batch_world_matrix_instances.after(SystemSets::Batch)
+        ],
 
         // render functions
         "render_meshes" => render_func_query![

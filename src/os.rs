@@ -34,6 +34,7 @@ pub enum SysKey {
     Ctrl,
     Shift,
     Alt,
+    Count
 }
 
 /// Enums for vitual keys

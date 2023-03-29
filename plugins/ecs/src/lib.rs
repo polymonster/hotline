@@ -29,6 +29,14 @@ struct BevyPlugin {
     render_graph_hash: pmfx::PmfxHash
 }
 
+#[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
+#[system_set(base)]
+pub enum CoreSystemSets {
+    Update,
+    Batch,
+    Render,
+}
+
 type PlatformClient = Client<gfx_platform::Device, os_platform::App>;
 type PlatformImgui = imgui::ImGui<gfx_platform::Device, os_platform::App>;
 
@@ -340,9 +348,6 @@ impl BevyPlugin {
         self.status_ui_category(&mut client.imgui, "Setup:", &self.schedule_info.setup);
         self.status_ui_category(&mut client.imgui, "Update:", &self.schedule_info.update);
 
-        let batch = self.schedule_info.batch.iter().map(|b| b.function_name.to_string()).collect();
-        self.status_ui_category(&mut client.imgui, "Batch:", &batch);
-
         let graph = self.schedule_info.render_graph;
 
         if self.errors.contains_key(graph) {
@@ -447,6 +452,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         };
         let info = &self.schedule_info;
 
+        // core update
+        self.schedule.add_system(update_cameras.in_base_set(CoreSystemSets::Update));
+        self.schedule.add_system(update_main_camera_config.in_base_set(CoreSystemSets::Update));
+
+        // core batch functions do syncronised work to prepare buffers / matrices for drawing
+        self.schedule.add_system(update_world_matrices.in_base_set(SystemSets::Batch));
+
         // hook in setup funcs
         for func_name in &info.setup {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
@@ -457,33 +469,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
         }
 
-        // core update
-        self.schedule.add_system(update_cameras.in_base_set(SystemSets::Update));
-        self.schedule.add_system(update_main_camera_config.in_base_set(SystemSets::Update));
-
         // hook in updates funcs
         for func_name in &info.update {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                self.schedule.add_system(func.in_base_set(SystemSets::Update));
-            }
-            else {
-                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
-            }
-        }
-
-        // batch functions do syncronised work to prepare buffers / matrices for drawing
-        self.schedule.add_system(update_world_matrices.in_base_set(SystemSets::Batch));
-
-        for batch_system in &info.batch {
-            let func_name = &batch_system.function_name;
-            if let Some(mut func) = self.get_system_function(func_name, "", &client) {
-                /*
-                for dep in &batch_system.deps {
-                    func = func.after(*dep);
-                }
-                */
-                self.schedule.add_system(func.in_base_set(SystemSets::Batch));
-
+                self.schedule.add_system(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -493,8 +482,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in render functions
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                //render_stage = render_stage.with_system(func);
-                self.schedule.add_system(func.in_base_set(SystemSets::Render));
+                self.schedule.add_system(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -502,59 +490,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
 
-        self.schedule.configure_sets(
-            (SystemSets::Update, SystemSets::Batch, SystemSets::Render).chain()
-        );
+        // process sets in fixed order
+        self.schedule.configure_sets((
+            CoreSystemSets::Update,
+            SystemSets::Update,
+            CoreSystemSets::Batch,
+            SystemSets::Batch,
+            CoreSystemSets::Render,
+            SystemSets::Render
 
-        /*
-        // core update
-        let mut update_stage = SystemSet::parallel()
-            .with_system(update_cameras.label("update_cameras"))
-            .with_system(update_main_camera_config.after("update_cameras"));
-
-        // hook in updates funcs
-        for func_name in &info.update {
-            if let Some(func) = self.get_system_function(func_name, "", &client) {
-                update_stage = update_stage.with_system(func);
-            }
-            else {
-                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
-            }
-        }
-        self.schedule.add_stage(StageUpdate, update_stage);
-
-        // batch functions do syncronised work to prepare buffers / matrices for drawing
-        let mut batch_stage = SystemStage::parallel()
-            .with_system(update_world_matrices);
-
-        for batch_system in &info.batch {
-            let func_name = &batch_system.function_name;
-            if let Some(mut func) = self.get_system_function(func_name, "", &client) {
-                for dep in &batch_system.deps {
-                    func = func.after(*dep);
-                }
-                batch_stage = batch_stage.with_system(func);
-            }
-            else {
-                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
-            }
-        }
-
-        self.schedule.add_stage(StageBatch, batch_stage);
-
-        // hook in render functions
-        let mut render_stage = SystemStage::parallel();
-        for (func_name, view_name) in &render_functions {
-            if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                render_stage = render_stage.with_system(func);
-            }
-            else {
-                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
-            }
-        }
-        self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
-        self.schedule.add_stage(StageRender, render_stage);
-        */
+        ).chain());
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;

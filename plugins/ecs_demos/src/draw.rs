@@ -142,15 +142,10 @@ pub fn draw_indexed_vertex_buffer_instanced(client: &mut Client<gfx_platform::De
             "setup_draw_indexed_vertex_buffer_instanced"
         ],
         update: systems![
-            "rotate_meshes"
+            "rotate_meshes",
+            "batch_world_matrix_instances"
         ],
-        render_graph: "mesh_debug_vertex_buffer_instanced",
-        batch: vec![BatchSystemInfo {
-            function_name: "batch_world_matrix_instances",
-            deps: vec![
-                "update_world_matrices"
-            ]
-        }]
+        render_graph: "mesh_debug_vertex_buffer_instanced"
     }
 }
 
@@ -219,15 +214,10 @@ pub fn draw_indexed_cbuffer_instanced(client: &mut Client<gfx_platform::Device, 
             "setup_draw_indexed_cbuffer_instanced"
         ],
         update: systems![
-            "rotate_meshes"
+            "rotate_meshes",
+            "batch_world_matrix_instances"
         ],
-        render_graph: "mesh_debug_cbuffer_instanced",
-        batch: vec![BatchSystemInfo {
-            function_name: "batch_world_matrix_instances",
-            deps: vec![
-                "update_world_matrices"
-            ]
-        }]
+        render_graph: "mesh_debug_cbuffer_instanced"
     }
 }
 
