@@ -46,7 +46,7 @@ pub struct ImDraw<D: gfx::Device> {
 impl<D> ImDraw<D> where D: gfx::Device {
     fn new_buffer_2d_info(num_elements: usize) -> gfx::BufferInfo {
         gfx::BufferInfo {
-            usage: gfx::BufferUsage::Vertex,
+            usage: gfx::BufferUsage::VERTEX,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVertex2d>(),
@@ -57,7 +57,7 @@ impl<D> ImDraw<D> where D: gfx::Device {
 
     fn new_buffer_3d_info(num_elements: usize) -> gfx::BufferInfo {
         gfx::BufferInfo {
-            usage: gfx::BufferUsage::Vertex,
+            usage: gfx::BufferUsage::VERTEX,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVertex3d>(),

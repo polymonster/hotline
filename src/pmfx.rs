@@ -590,6 +590,35 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.pmfx.dependencies.extend(other.dependencies);
     }
 
+    /// Removes items from currently loaded maps (states, pipelines etc), if they do not exist in expected keys (in data).
+    /*
+    fn remove_stale_from_map<T, U>(loaded_map: &mut HashMap<String, T>, expected_keys: &HashMap<String, U>) {
+        let keys = loaded_map.keys().map(|s| s.to_string()).collect::<Vec<String>>();
+        for item in &keys {
+            if !expected_keys.contains_key(item) {
+                loaded_map.remove(item);
+            }
+        }
+    }
+
+    /// Removes stale states, views and pipelines which no longer exist in data
+    fn remove_stale(&mut self) {
+        Self::remove_stale_from_map(&mut self.views, &self.pmfx.views);
+        Self::remove_stale_from_map(&mut self.view_stats, &self.pmfx.views);
+        Self::remove_stale_from_map(&mut self.textures, &self.pmfx.textures);
+        Self::remove_stale_from_map(&mut self.shaders, &self.pmfx.shaders);
+        Self::remove_stale_from_map(&mut self.compute_pipelines, &self.pmfx.pipelines);
+
+        // render pipelines are a bit more compliated beause of pass formats
+        let formats = self.render_pipelines.keys().map(|h| *h).collect::<Vec<PmfxHash>>();
+        for format in &formats {
+            if let Some(pipelines) = self.render_pipelines.get_mut(format) {
+                Self::remove_stale_from_map(pipelines, &self.pmfx.pipelines);
+            }
+        }
+    }
+    */
+
     /// Internal utility which will create a shader from file or `None` if no file is passed, or the shader does not exist
     fn create_shader(&mut self, device: &D, folder: &Path, file: &Option<String>) -> Result<(), super::Error> {
         let folder = folder.parent().unwrap();
@@ -1239,7 +1268,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Reload all active resources based on hashes
     pub fn reload(&mut self, device: &mut D) -> Result<(), super::Error> {        
-
         let reload_paths = self.pmfx_tracking.iter_mut().filter(|(_, tracking)| {
             fs::metadata(&tracking.filepath).unwrap().modified().unwrap() > tracking.modified_time
         }).map(|tracking| {
@@ -1254,6 +1282,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 
                 let file : File = serde_json::from_slice(&pmfx_data)?;
                 self.merge_pmfx(file, PathBuf::from(&reload_filepath).parent().unwrap().to_str().unwrap());
+
+                // remove stale states
+                // self.remove_stale();
 
                 // find textures that need reloading
                 let reload_textures = self.textures.iter().filter(|(k, v)| {
@@ -1564,6 +1595,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 let view = self.views[node].clone();
                 let view = &mut view.1.lock().unwrap();
 
+                // TODO: crashing
                 // inserts markers for timing and tracking pipeline stats
                 let mut stats = self.view_stats.remove(node).unwrap();
                 Self::stats_end(view, &mut stats);

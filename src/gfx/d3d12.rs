@@ -187,6 +187,8 @@ pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
     topology: D3D_PRIMITIVE_TOPOLOGY,
+    /// you can look up Hash(register, space, binding_type) to get the slot in the layout to bind to and the count
+    heap_slot_lookup: HashMap<u64, super::HeapSlotInfo>
 }
 
 #[derive(Clone)]
@@ -206,6 +208,7 @@ pub struct Buffer {
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
     srv_index: Option<usize>,
+    cbv_index: Option<usize>,
     uav_index: Option<usize>,
 }
 
@@ -1015,6 +1018,7 @@ impl Device {
                         super::DescriptorType::UnorderedAccess => D3D12_DESCRIPTOR_RANGE_TYPE_UAV,
                         super::DescriptorType::ConstantBuffer => D3D12_DESCRIPTOR_RANGE_TYPE_CBV,
                         super::DescriptorType::Sampler => D3D12_DESCRIPTOR_RANGE_TYPE_SAMPLER,
+                        super::DescriptorType::PushConstants => panic!("hotline_rs::d3d12:: cannot use push constants as a descriptor binding type")
                     },
                     NumDescriptors: count,
                     BaseShaderRegister: binding.shader_register,
@@ -1665,10 +1669,43 @@ impl super::Device for Device {
         }
         desc.DSVFormat = pass.ds_format;
 
+        // push constants occupy the first slots
+        let mut slot_iter = 0;
+        let mut heap_slot_lookup = HashMap::new();
+        if let Some(push_constants) = &info.descriptor_layout.push_constants {
+            for pc in push_constants {
+                let mut hash = DefaultHasher::new();
+                pc.shader_register.hash(&mut hash);
+                pc.register_space.hash(&mut hash);
+                DescriptorType::PushConstants.hash(&mut hash);
+                heap_slot_lookup.insert(hash.finish(), HeapSlotInfo {
+                    slot: slot_iter,
+                    count: Some(pc.num_values)
+                });
+                slot_iter += 1;
+            }
+        }
+
+        // then we add bindings
+        if let Some(bindings) = &info.descriptor_layout.bindings {
+            for binding in bindings {
+                let mut hash = DefaultHasher::new();
+                binding.shader_register.hash(&mut hash);
+                binding.register_space.hash(&mut hash);
+                binding.binding_type.hash(&mut hash);
+                heap_slot_lookup.insert(hash.finish(), HeapSlotInfo {
+                    slot: slot_iter,
+                    count: binding.num_descriptors
+                });
+                slot_iter += 1;
+            }
+        }
+
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
             root_signature,
             topology: to_d3d12_primitive_topology(info.topology, info.patch_index),
+            heap_slot_lookup
         })
     }
 
@@ -1764,7 +1801,7 @@ impl super::Device for Device {
         validate_data_size(size_bytes, data)?;
 
         // TODO: alignment, need to request the alignments from the device
-        let size_bytes = if info.usage == super::BufferUsage::ConstantBuffer {
+        let size_bytes = if info.usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
             align_pow2(size_bytes as u64, 256) as usize
         }
         else {
@@ -1879,42 +1916,66 @@ impl super::Device for Device {
             // create optional views
             let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
             let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
+            let mut cbv_index = None;
             let mut srv_index = None;
 
-            match info.usage {
-                super::BufferUsage::Vertex => {
-                    vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
-                        BufferLocation: buf.GetGPUVirtualAddress(),
-                        StrideInBytes: info.stride as u32,
-                        SizeInBytes: size_bytes as u32,
-                    });
-                }
-                super::BufferUsage::Index => {
-                    ibv = Some(D3D12_INDEX_BUFFER_VIEW {
-                        BufferLocation: buf.GetGPUVirtualAddress(),
-                        SizeInBytes: size_bytes as u32,
-                        Format: dxgi_format,
-                    })
-                }
-                super::BufferUsage::ConstantBuffer => {
-                    let h = heap.allocate();
-                    self.device.CreateConstantBufferView(
-                        Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                            BufferLocation: buf.GetGPUVirtualAddress(),
-                            SizeInBytes: size_bytes as u32
-                        }),
-                        h,
-                    );
-                    srv_index = Some(heap.get_handle_index(&h));
-                }
-                _ => {}
+            if info.usage.contains(super::BufferUsage::VERTEX) {
+                vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
+                    BufferLocation: buf.GetGPUVirtualAddress(),
+                    StrideInBytes: info.stride as u32,
+                    SizeInBytes: size_bytes as u32,
+                });
             }
+
+            if info.usage.contains(super::BufferUsage::INDEX) {
+                ibv = Some(D3D12_INDEX_BUFFER_VIEW {
+                    BufferLocation: buf.GetGPUVirtualAddress(),
+                    SizeInBytes: size_bytes as u32,
+                    Format: dxgi_format,
+                })
+            }
+
+            if info.usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
+                let h = heap.allocate();
+                self.device.CreateConstantBufferView(
+                    Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                        BufferLocation: buf.GetGPUVirtualAddress(),
+                        SizeInBytes: size_bytes as u32
+                    }),
+                    h,
+                );
+                cbv_index = Some(heap.get_handle_index(&h));
+            }
+
+            if info.usage.contains(super::BufferUsage::SHADER_RESOURCE) {
+                let h = heap.allocate();
+                self.device.CreateShaderResourceView(
+                    &buf,
+                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                        Format: dxgi_format,
+                        ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Buffer: D3D12_BUFFER_SRV {
+                                FirstElement: 0,
+                                NumElements: info.num_elements as u32,
+                                StructureByteStride: info.stride as u32,
+                                Flags: D3D12_BUFFER_SRV_FLAG_NONE
+                            }
+                        }
+                    }),
+                    h,
+                );
+                srv_index = Some(heap.get_handle_index(&h));
+            }
+
 
             Ok(Buffer {
                 resource: buf,
                 vbv,
                 ibv,
                 srv_index,
+                cbv_index,
                 uav_index: None,
             })
         }
@@ -1939,6 +2000,7 @@ impl super::Device for Device {
                 vbv: None,
                 ibv: None,
                 srv_index: None,
+                cbv_index: None,
                 uav_index: None,
             })
         }
@@ -3090,6 +3152,10 @@ impl super::Buffer<Device> for Buffer {
         Ok(())
     }
 
+    fn get_cbv_index(&self) -> Option<usize> {
+        self.cbv_index
+    }
+
     fn get_srv_index(&self) -> Option<usize> {
         self.srv_index
     }
@@ -3146,6 +3212,16 @@ impl super::Texture<Device> for Texture {
 
     fn is_resolvable(&self) -> bool {
         self.resolved_resource.is_some()
+    }
+}
+
+impl super::Pipeline for RenderPipeline {
+    fn get_heap_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
+        let mut hash = DefaultHasher::new();
+        register.hash(&mut hash);
+        space.hash(&mut hash);
+        descriptor_type.hash(&mut hash);
+        self.heap_slot_lookup.get(&hash.finish())
     }
 }
 

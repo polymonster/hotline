@@ -14,10 +14,13 @@ pub struct InstanceBuffer {
     pub instance_count: u32
 }
 
+#[derive(Component)]
+pub struct BufferComponent(pub gfx_platform::Buffer);
+
 #[derive(Bundle)]
 pub struct InstanceBatch {
     mesh: MeshComponent,
-    pipeline: Pipeline,
+    pipeline: PipelineComponent,
     instance_buffer: InstanceBuffer
 }
 
@@ -32,6 +35,21 @@ pub struct Instance {
     world_matrix: WorldMatrix,
     parent: Parent
 }
+
+#[derive(Bundle)]
+pub struct InstanceMaterial {
+    buffer: BufferComponent,
+    entity_id: EntityId,
+    material_id: MaterialInstance
+}
+
+pub struct EntityInstanceData {
+    pub world_matrix: WorldMatrix,
+    pub ids: Vec4u
+}
+
+#[derive(Component)]
+pub struct EntityId(u32);
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
@@ -132,6 +150,23 @@ pub fn batch_world_matrix_instances(
 }
 
 
+#[no_mangle]
+pub fn batch_material_instances(
+    instances_query: Query<(&Parent, &WorldMatrix)>,
+    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+
+    for (entity, mut instance_batch) in &mut instance_batch_query {
+        let mut mats = Vec::new();
+        for (parent, world_matrix) in &instances_query {
+            if parent.0 == entity {
+                mats.push(world_matrix.0);
+            }
+        }
+        instance_batch.buffer.update(0, &mats).unwrap();
+    }
+}
+
+
 /// Creates a instance batch, where the `InstanceBatch` parent will update a vertex buffer containing
 /// it's child (instance) entities. The vertex shader layput steps the instance buffer per instance
 #[no_mangle]
@@ -173,10 +208,10 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
     for mesh in meshes {
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: Pipeline("mesh_debug_vertex_buffer_instanced".to_string()),
+            pipeline: PipelineComponent("mesh_debug_vertex_buffer_instanced".to_string()),
             instance_buffer: InstanceBuffer { 
                 buffer: device.create_buffer(&gfx::BufferInfo{
-                    usage: gfx::BufferUsage::Vertex,
+                    usage: gfx::BufferUsage::VERTEX,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
                     format: gfx::Format::Unknown,
                     stride: std::mem::size_of::<Mat34f>(),
@@ -253,10 +288,10 @@ pub fn setup_draw_indexed_cbuffer_instanced(
         });
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: Pipeline("mesh_debug_cbuffer_instanced".to_string()),
+            pipeline: PipelineComponent("mesh_debug_cbuffer_instanced".to_string()),
             instance_buffer: InstanceBuffer { 
                 buffer: device.create_buffer_with_heap(&gfx::BufferInfo{
-                    usage: gfx::BufferUsage::ConstantBuffer,
+                    usage: gfx::BufferUsage::CONSTANT_BUFFER,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
                     format: gfx::Format::Unknown,
                     stride: std::mem::size_of::<Mat34f>(),
@@ -285,9 +320,11 @@ pub fn setup_draw_indexed_cbuffer_instanced(
 }
 
 // material ID or entity instance ID, material ID in vertex buffer
-// draw cbuffer per entity (world matrix)
-// cbuffer per material (albedo, normal, metalness, roughness id's)
+// draw structured buffer per entity (world matrix)
+// structured buffer per material (albedo, normal, metalness, roughness id's)
+// cbuffer for view constants
 
+/*
 #[derive(Component)]
 pub struct AlbedoMap(pub gfx_platform::Texture);
 
@@ -305,6 +342,7 @@ pub struct MaterialInstance {
     pub albedo: u32,
     pub normal: u32
 }
+*/
 
 /// 
 #[no_mangle]
@@ -371,5 +409,89 @@ pub fn setup_draw_push_constants_texture(
         commands.spawn(
             tex
         );
+    }
+}
+
+/// Creates instance batches for each mesh and makes an instanced draw call per mesh
+/// entity id's for lookups are stored in vertex buffers
+/// instance data is stored in a structured buffer (world matrix, material id?)
+/// material data is stored in a structured buffer  
+#[no_mangle]
+pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_draw_material"
+        ],
+        update: systems![
+            "rotate_meshes"
+        ],
+        render_graph: "mesh_material_instanced"
+    }
+}
+
+#[no_mangle]
+pub fn setup_draw_material(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let meshes = vec![
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
+        hotline_rs::primitives::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
+        hotline_rs::primitives::create_sphere_mesh_truncated(&mut device.0, 16, 8, true)
+    ];
+
+    // square number of rows and columns
+    let mut rng = rand::thread_rng();
+
+    let size = 2.0;
+    let num = 64;
+    let instance_count = (num*num) as u32;
+    let range = size * size * (num as f32);
+
+    for mesh in meshes {
+        let parent = commands.spawn(InstanceBatch {
+            mesh: MeshComponent(mesh.clone()),
+            pipeline: PipelineComponent("mesh_material_instanced".to_string()),
+            instance_buffer: InstanceBuffer { 
+                buffer: device.create_buffer(&gfx::BufferInfo{
+                    usage: gfx::BufferUsage::VERTEX,
+                    cpu_access: gfx::CpuAccessFlags::WRITE,
+                    format: gfx::Format::Unknown,
+                    stride: std::mem::size_of::<Vec4u>(),
+                    num_elements: instance_count as usize,
+                    initial_state: gfx::ResourceState::VertexConstantBuffer
+                }, hotline_rs::data![]).unwrap(),
+                instance_count,
+                heap: None
+            }
+        }).id();
+        for _ in 0..num {
+            for _ in 0..num {
+                // spawn a bunch of entites with slightly randomised 
+                let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
+                let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
+                let buf = device.create_buffer(&gfx::BufferInfo{
+                    usage: gfx::BufferUsage::SHADER_RESOURCE,
+                    cpu_access: gfx::CpuAccessFlags::WRITE,
+                    format: gfx::Format::Unknown,
+                    stride: std::mem::size_of::<EntityInstanceData>(),
+                    num_elements: 1,
+                    initial_state: gfx::ResourceState::ShaderResource
+                }, hotline_rs::data![]).unwrap();
+                let srv_index = buf.get_srv_index().unwrap();
+                commands.spawn((Instance {
+                    pos: Position(pos),
+                    rot: Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
+                    scale: Scale(splat3f(size)),
+                    world_matrix: WorldMatrix(Mat34f::identity()),
+                    parent: Parent(parent)
+                }, InstanceMaterial {
+                    buffer: BufferComponent(buf),
+                    material_id: MaterialInstance(0),
+                    entity_id: EntityId(srv_index as u32),
+                }));
+            }
+        }
     }
 }

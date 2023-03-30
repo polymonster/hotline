@@ -138,7 +138,7 @@ pub fn get_data_path(asset: &str) -> String {
     }
     else {
         // back 2 (examples)
-        let data_path = data_path.join("../../data");
+        let data_path = exe_path.parent().unwrap().join("../../data");
         if data_path.exists() {
             let path = std::fs::canonicalize(data_path.join(asset)).unwrap();
             String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
@@ -153,7 +153,6 @@ pub fn get_data_path(asset: &str) -> String {
 /// Return an absolute path for a resource given the relative path from the /executable dir
 pub fn get_exe_path(asset: &str) -> String {
     let exe_path = std::env::current_exe().ok().unwrap();
-    println!("{}", String::from(exe_path.join(asset).to_str().unwrap()));
     String::from(exe_path.join(asset).to_str().unwrap())
 }
 
@@ -205,7 +204,7 @@ pub mod prelude {
 
         // traits
         ecs_base::*,
-        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,

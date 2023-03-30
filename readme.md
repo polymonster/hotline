@@ -74,6 +74,20 @@ To make things more convenient during development and keep the `plugins`, `clien
 .\hotline-data\pmbuild.cmd win32-release -all -run
 ```
 
+### Building Issues
+
+Because hotline is still in it's infancy things are changing quickly and `pmfx-shader` is rapidly evolving to assist the needs of new graphics features. In order to make this possible I have been swoitching between a pre-built release and a development version. If you see an error message such as this:
+
+```text
+--------------------------------------------------------------------------------
+pmfx ---------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+The system cannot find the path specified.
+[error] processing task pmfx
+```
+
+This means pmfx has been comitted in dev mode, you can edit the [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) to switch the `pmfx` task type from `type: pmfx_dev` back to `type: pmfx` or comment out that line completely. If you do need the `pmfx_dev` unctionality you can clone the [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository so it is adjacent to the hotline directory.
+
 ### Building from Visual Studio Code
 
 There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from vscode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.  
@@ -272,6 +286,31 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDes
         _ => std::hint::black_box(None)
     }
 }
+```
+
+#### System Execute Order
+
+By default all systems in a particular group will be executed asyncronsly and the groups will be executed in-order:
+
+- `SystemSets::Update` - Use this to animate and move entities, perform logic adn so forth.
+- `SystemSets::Batch` - Use this to batch data such as baking world matrices, culling or update buffers ready for rendering.
+- `SystemSets::Render` - Used to render entities and make draw calls.
+
+Any render functions are automatically added to the `Render` system set, but you can choose to create your own sets or add things into the pre-defined `SystemSets`. There are some core oprations which will happen but you can define your own and order execution as follows:
+
+```rust
+// updates
+"rotate_meshes" => system_func![
+    rotate_meshes
+        .in_base_set(CustomSystemSet::Animate)
+        .after(SystemSets::Update)
+],
+
+// batches
+"batch_world_matrix_instances" => system_func![
+    draw::batch_world_matrix_instances
+        .after(SystemSets::Batch)
+],
 ```
 
 ### Serialising Plugin Data

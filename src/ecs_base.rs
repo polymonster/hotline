@@ -108,9 +108,10 @@ hotline_ecs!(Component, LocalMatrix, Mat34f);
 hotline_ecs!(Component, WorldMatrix, Mat34f);
 hotline_ecs!(Component, ViewProjectionMatrix, Mat4f);
 hotline_ecs!(Component, MeshComponent, pmfx::Mesh<gfx_platform::Device>);
-hotline_ecs!(Component, Pipeline, String);
+hotline_ecs!(Component, PipelineComponent, String);
 hotline_ecs!(Component, TextureComponent, gfx_platform::Texture);
 hotline_ecs!(Component, TextureInstance, u32);
+hotline_ecs!(Component, MaterialInstance, u32);
 hotline_ecs!(Component, TimeComponent, f32);
 
 #[derive(Component)]

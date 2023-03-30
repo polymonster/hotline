@@ -75,6 +75,17 @@
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
+        },
+        {
+            "name": "tests (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/deps/tests-faa0b0c14953fde9.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
         }
     ]
 }
