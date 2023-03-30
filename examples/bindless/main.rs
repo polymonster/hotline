@@ -81,7 +81,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ];
 
     let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::Vertex,
+        usage: gfx::BufferUsage::VERTEX,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
@@ -95,7 +95,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
     let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::Index,
+        usage: gfx::BufferUsage::INDEX,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::R16u,
         stride: std::mem::size_of::<u16>(),
@@ -114,8 +114,6 @@ fn main() -> Result<(), hotline_rs::Error> {
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt).unwrap();
     let pso_compute = pmfx.get_compute_pipeline("compute_rw").unwrap();
-
-    let tex3d = image::load_from_file(&hotline_rs::get_data_path("textures/sdf_shadow_updated.dds"));
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
@@ -141,7 +139,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     cbuffer[3] = 1.0;
 
     let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::ConstantBuffer,
+        usage: gfx::BufferUsage::CONSTANT_BUFFER,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: cbuffer.len() * 4,

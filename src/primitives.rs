@@ -128,7 +128,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
         }
 
         dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
+            usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
             num_elements: indices32.len(),
             format: gfx::Format::R32u,
@@ -145,7 +145,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
         }
 
         dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
+            usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
             num_elements: indices16.len(),
             format: gfx::Format::R16u,
@@ -158,7 +158,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
 
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
+                usage: gfx::BufferUsage::VERTEX,
                 cpu_access: gfx::CpuAccessFlags::NONE,
                 num_elements: vertices.len(),
                 format: gfx::Format::Unknown,
@@ -567,7 +567,7 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
 
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
+                usage: gfx::BufferUsage::VERTEX,
                 cpu_access: gfx::CpuAccessFlags::NONE,
                 num_elements: 4,
                 format: gfx::Format::Unknown,
@@ -577,7 +577,7 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(vertices.as_slice())
         ).unwrap(),
         ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
+            usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
             num_elements: 6,
             format: gfx::Format::R16u,
@@ -631,7 +631,7 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
 
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
-                usage: gfx::BufferUsage::Vertex,
+                usage: gfx::BufferUsage::VERTEX,
                 cpu_access: gfx::CpuAccessFlags::NONE,
                 num_elements: 4,
                 format: gfx::Format::Unknown,
@@ -641,7 +641,7 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(vertices.as_slice())
         ).unwrap(),
         ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
+            usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
             num_elements: 6,
             format: gfx::Format::R16u,

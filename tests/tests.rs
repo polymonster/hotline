@@ -218,7 +218,7 @@ fn draw_triangle() -> Result<(), hotline_rs::Error> {
     ];
 
     let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::Vertex,
+        usage: gfx::BufferUsage::VERTEX,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),
@@ -366,6 +366,50 @@ fn align_tests() {
     assert_eq!(val % 21, 0);
 }
 
+// client tests must run 1 at a time, this boots the client with empty user info
+#[test]
+fn pmfx() -> Result<(), hotline_rs::Error> {
+    // create a client
+    let config = client::UserConfig {
+        main_window_rect: HotlineInfo::default().window_rect,
+        console_window_rect: None,
+        plugins: None,
+        plugin_data: Some(HashMap::new())
+    };
+
+    let mut ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "pmfx_test_client".to_string(),
+        user_config: Some(config),
+        ..Default::default()
+    }).unwrap();
+
+    // loads the test shaders
+    ctx.pmfx.load(&hotline_rs::get_data_path("shaders/tests"))?;
+
+    // create pipelines
+    ctx.pmfx.create_pipeline(&ctx.device, "texture2d_array_test", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_pipeline(&ctx.device, "blend_additive", ctx.swap_chain.get_backbuffer_pass())?;
+
+    // test getting pass for format
+    let fmt = ctx.swap_chain.get_backbuffer_pass().get_format_hash();
+    let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array_test", fmt)?;
+    let colour_pipeline = ctx.pmfx.get_render_pipeline_for_format("blend_additive", fmt)?;
+
+    // textures pipeline has 2 sets of push constants, so the resources bind onto 2
+    let slots = texture_pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    assert!(slots.is_some());
+    if let Some(slots) = slots {
+        assert_eq!(slots.slot, 2);
+    }
+
+    let slots = colour_pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    assert!(slots.is_none());
+
+    let slots = colour_pipeline.get_heap_slot(0, 0, gfx::DescriptorType::PushConstants);
+    assert!(slots.is_some());
+
+    Ok(())
+}
 
 // client tests must run 1 at a time, this boots the client with empty user info
 fn boot_empty_client() {
@@ -405,7 +449,7 @@ fn boot_client_empty_plugin() {
     // empty plugin
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("empty".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../../plugins")
         });
     }
 
@@ -433,7 +477,7 @@ fn boot_client_missing_plugin() {
     // empty plugin
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("missing".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../missing")
+            path: "missing".to_string()
         });
     }
 
@@ -461,10 +505,10 @@ fn boot_client_ecs_plugin() {
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("ecs".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../../plugins")
         });
         plugins.insert("ecs_demos".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../../plugins")
         });
     }
 
@@ -481,7 +525,7 @@ fn boot_client_ecs_plugin() {
 
 /// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
 fn boot_client_ecs_plugin_demo(demo_name: &str) {
-    println!("test: boot_client_ecs_plugin");
+    println!("test: boot_demo_{}", demo_name);
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -492,10 +536,10 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
         plugins.insert("ecs".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../../plugins")
         });
         plugins.insert("ecs_demos".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../plugins")
+            path: hotline_rs::get_data_path("../../plugins")
         });
     }
 
@@ -516,21 +560,34 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
 
 #[test]
 fn client_tests() {
-    return;
-
     // build the plugins
     hotline_rs::plugin::build_all();
 
     // run the tests.. they need to run 1 by 1 as we cant have 2 clients running concurrently
+
+    // basic booting
     boot_empty_client();
     boot_client_empty_plugin();
+    boot_client_missing_plugin();
     boot_client_ecs_plugin();
-    
-    //boot_client_missing_plugin();
+
+    // missing tests
     boot_client_ecs_plugin_demo("test_missing_demo");
     boot_client_ecs_plugin_demo("test_missing_systems");
-    boot_client_ecs_plugin_demo("primitives");
-    boot_client_ecs_plugin_demo("cube");
-    boot_client_ecs_plugin_demo("test_missing_systems");
     boot_client_ecs_plugin_demo("test_missing_render_graph");
+    boot_client_ecs_plugin_demo("test_missing_view");
+
+    // gfx feature / unit tests
+    boot_client_ecs_plugin_demo("geometry_primitives");
+    boot_client_ecs_plugin_demo("draw_indexed");
+    boot_client_ecs_plugin_demo("draw_indexed_push_constants");
+    boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced");
+    boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced");
+    boot_client_ecs_plugin_demo("draw_push_constants_texture");
+    //boot_client_ecs_plugin_demo("draw_material");
+    boot_client_ecs_plugin_demo("test_raster_states");
+    boot_client_ecs_plugin_demo("test_blend_states");
+    boot_client_ecs_plugin_demo("test_cubemap");
+    boot_client_ecs_plugin_demo("test_texture3d_array");
+    boot_client_ecs_plugin_demo("test_texture3d");
 }

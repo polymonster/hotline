@@ -425,7 +425,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // dynamically change demos and lookup infos in other libs
         let schedule_info = self.get_demo_schedule_info(&mut client);
         
-        // get schedule or use default and warn the user 
+        // get schedule or use default and warn the user
         self.schedule_info = if let Some(info) = schedule_info {
             info
         }

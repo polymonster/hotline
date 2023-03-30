@@ -224,19 +224,6 @@ pub struct BufferInfo {
     pub initial_state: ResourceState,
 }
 
-/// Describes how a buffer will be used on the GPU.
-#[derive(Copy, Clone, PartialEq)]
-pub enum BufferUsage {
-    /// Used to simply store data (query results, copy buffers etc)
-    None,
-    /// Used as a Vertex buffer binding
-    Vertex,
-    /// Used as Index buffer binding
-    Index,
-    /// Used as constant buffer for shader data
-    ConstantBuffer,
-}
-
 /// Information to create a shader through `Device::create_shader`.
 pub struct ShaderInfo {
     /// Type of the shader (Vertex, Fragment, Compute, etc...).
@@ -299,6 +286,40 @@ bitflags! {
         const READ = 1<<1;
         const WRITE = 1<<2;
     }
+
+    /// Textures can be used in one or more of the following ways
+    #[derive(Serialize, Deserialize)]
+    pub struct TextureUsage: u32 {
+        /// Texture will be only used for data storage and not used on any GPU pipeline stages
+        const NONE = 0;
+        /// Texture will be sampled in a shader
+        const SHADER_RESOURCE = (1 << 0);
+        /// Used as a read-writable resource in compute shaders
+        const UNORDERED_ACCESS = (1 << 1);
+        /// Used as a colour render target
+        const RENDER_TARGET = (1 << 2);
+        /// Used as a depth stencil buffer
+        const DEPTH_STENCIL = (1 << 3);
+        /// Used as a target for hardware assisted video decoding operations
+        const VIDEO_DECODE_TARGET = (1 << 4);
+    }
+
+    /// Describes how a buffer will be used on the GPU.
+    //#[derive(Copy, Clone, PartialEq)]
+    pub struct BufferUsage : u32 {
+        /// Used to simply store data (query results, copy buffers etc)
+        const NONE = 0;
+        /// Used as a Vertex buffer binding
+        const VERTEX = (1 << 0);
+        /// Used as a Vertex buffer binding
+        const INDEX = (1 << 1);
+        /// Used as constant buffer for shader data
+        const CONSTANT_BUFFER = (1 << 2);
+        /// Texture will be sampled in a shader
+        const SHADER_RESOURCE = (1 << 3);
+        /// Used as a read-writable resource in compute shaders
+        const UNORDERED_ACCESS = (1 << 4);
+    }
 }
 
 /// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
@@ -325,7 +346,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Serialize, Deserialize, Hash)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers.
     ShaderResource,
@@ -335,6 +356,8 @@ pub enum DescriptorType {
     UnorderedAccess,
     /// Used for texture samplers.
     Sampler,
+    /// Used for push constants
+    PushConstants
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
@@ -357,6 +380,16 @@ pub struct PushConstantInfo {
     pub register_space: u32,
     /// Number of 32-bit values to push.
     pub num_values: u32,
+}
+
+/// You can request this based on resource type, register and space (as specified in shader). To identify the slot to bind to
+/// when using `set_render_heap` or `set_compute_heap`
+#[derive(Clone)]
+pub struct HeapSlotInfo {
+    /// The slot in the pipelines descriptor layout to bind to
+    pub slot: u32,
+    /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
+    pub count: Option<u32>
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
@@ -690,25 +723,6 @@ pub enum TextureType {
     TextureCubeArray
 }
 
-bitflags! {
-    /// Textures can be used in one or more of the following ways
-    #[derive(Serialize, Deserialize)]
-    pub struct TextureUsage: u32 {
-        /// Texture will be only used for data storage and not used on any GPU pipeline stages
-        const NONE = 0;
-        /// Texture will be sampled in a shader
-        const SHADER_RESOURCE = (1 << 0);
-        /// Used as a read-writable resource in compute shaders
-        const UNORDERED_ACCESS = (1 << 1);
-        /// Used as a colour render target
-        const RENDER_TARGET = (1 << 2);
-        /// Used as a depth stencil buffer
-        const DEPTH_STENCIL = (1 << 3);
-        /// Used as a target for hardware assisted video decoding operations
-        const VIDEO_DECODE_TARGET = (1 << 4);
-    }
-}
-
 /// Values to clear colour render targets at the start of a `RenderPass`
 #[derive(Copy, Clone)]
 pub struct ClearColour {
@@ -817,6 +831,7 @@ pub struct UnmapInfo {
 
 /// An opaque Shader type
 pub trait Shader<D: Device>: Send + Sync {}
+
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait RenderPipeline<D: Device>: Send + Sync  {}
 
@@ -828,6 +843,14 @@ pub trait RenderPass<D: Device>: Send + Sync  {
 }
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
+
+/// A pipeline trait for shared functionality between Compute and Render pipelines
+pub trait Pipeline {
+    /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register`, `space` and `descriptor_type`
+    /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
+    /// if `None` is returned the pipeline does not contain bindings for the requested information
+    fn get_heap_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
+}
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame. Default heaps for shader resources,
@@ -996,9 +1019,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_viewport(&self, viewport: &Viewport);
     /// Set the scissor rect on the rasterizer stage
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
-    /// Set the index `buffer` to use for draw calls, the buffer should be created with `BufferUsage::Index`
+    /// Set the index `buffer` to use for draw calls, the buffer should be created with `BufferUsage::INDEX`
     fn set_index_buffer(&self, buffer: &D::Buffer);
-    /// Set the index `buffer` on `slot` to use for draw calls, the buffer should be created with `BufferUsage::Vertex`
+    /// Set the index `buffer` on `slot` to use for draw calls, the buffer should be created with `BufferUsage::VERTEX`
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     /// Set render pipeline for `draw` commands
     fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
@@ -1044,8 +1067,10 @@ pub trait Buffer<D: Device>: Send + Sync {
     fn map(&mut self, info: &MapInfo) -> *mut u8;
     /// unmap buffer... see UnmapInfo
     fn unmap(&mut self, info: &UnmapInfo);
-    /// Return the index to access in a shader
+    /// Return the index to access in a shader as a structured buffer
     fn get_srv_index(&self) -> Option<usize>;
+    /// Return the index to access in a shader as a cbuffer
+    fn get_cbv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
 }

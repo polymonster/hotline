@@ -57,7 +57,7 @@ pub fn setup_raster_test(
                     Rotation(Quatf::from_euler_angles(0.0, 0.0, 0.0)),
                     Scale(splat3f(10.0)),
                     WorldMatrix(Mat34f::identity()),
-                    Pipeline(meshes[i].0.to_string())
+                    PipelineComponent(meshes[i].0.to_string())
                 ));
             }
             i = i + 1;
@@ -148,7 +148,7 @@ pub fn setup_blend_test(
                         Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                         Scale(splat3f(2.0)),
                         WorldMatrix(Mat34f::identity()),
-                        Pipeline(pipelines[i].to_string()),
+                        PipelineComponent(pipelines[i].to_string()),
                         Colour(Vec4f::from((maths_rs::hsv_to_rgb(vec3f(h, 1.0, v)), alpha)))
                     ));
                 }
@@ -292,8 +292,6 @@ pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App
 pub fn setup_texture3d_test(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
-
-    println!("setup_texture3d_test!");
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
 

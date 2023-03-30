@@ -55,6 +55,7 @@ pub fn render_meshes(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
+
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;
@@ -100,7 +101,7 @@ pub fn render_meshes_pipeline(
     _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &Pipeline)>) -> Result<(), hotline_rs::Error> {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -127,7 +128,7 @@ pub fn render_meshes_pipeline_coloured(
     _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &Pipeline, &Colour)>) -> Result<(), hotline_rs::Error> {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -164,7 +165,11 @@ pub fn render_meshes_push_constants_texture(
 
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.set_render_heap(2, device.0.get_shader_heap(), 0);
+
+    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
 
     for (world_matrix, mesh, texture) in &mesh_draw_query {
         view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
@@ -181,10 +186,10 @@ pub fn render_meshes_push_constants_texture(
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
 pub fn render_meshes_vertex_buffer_instanced(
-    _device: &Res<DeviceRes>,
+    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
+    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
 ) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
@@ -196,6 +201,12 @@ pub fn render_meshes_vertex_buffer_instanced(
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
         view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        
+        // bind the shader resource heap for t0 (if exists)
+        let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+        if let Some(slot) = slot {
+            view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        }
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -212,7 +223,7 @@ pub fn render_meshes_cbuffer_instanced(
     _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
+    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
 ) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
@@ -249,7 +260,11 @@ pub fn render_meshes_texture2d_array_test(
 
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.set_render_heap(2, device.0.get_shader_heap(), 0);
+
+    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
 
     // spherical billboard
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
@@ -287,7 +302,10 @@ pub fn render_meshes_cubemap_test(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    view.cmd_buf.set_render_heap(2, device.0.get_shader_heap(), 0);
+    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
 
     let mut mip = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
@@ -313,14 +331,17 @@ pub fn render_meshes_texture3d_test(
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
-    let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&mesh_debug);
+    view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
     view.cmd_buf.push_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    view.cmd_buf.set_render_heap(2, device.0.get_shader_heap(), 0);
+    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
 
     for (world_matrix, mesh, tex) in &mesh_draw_query {
         view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
@@ -346,6 +367,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "draw_indexed_vertex_buffer_instanced",
         "draw_indexed_cbuffer_instanced",
         "draw_push_constants_texture",
+        "draw_material",
 
         // render tests
         "test_raster_states",
@@ -378,6 +400,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         "setup_draw_indexed_vertex_buffer_instanced" => system_func![setup_draw_indexed_vertex_buffer_instanced],
         "setup_draw_indexed_cbuffer_instanced" => system_func![setup_draw_indexed_cbuffer_instanced],
         "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
+        "setup_draw_material" => system_func![setup_draw_material],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
@@ -412,22 +435,22 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         "render_meshes_pipeline" => render_func_query![
             render_meshes_pipeline, 
             view_name, 
-            Query<(&WorldMatrix, &MeshComponent, &Pipeline)>
+            Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_pipeline_coloured" => render_func_query![
             render_meshes_pipeline_coloured, 
             view_name, 
-            Query<(&WorldMatrix, &MeshComponent, &Pipeline, &Colour)>
+            Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>
         ],
         "render_meshes_vertex_buffer_instanced" => render_func_query![
             render_meshes_vertex_buffer_instanced, 
             view_name, 
-            Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
+            Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_cbuffer_instanced" => render_func_query![
             render_meshes_cbuffer_instanced, 
             view_name, 
-            Query<(&draw::InstanceBuffer, &MeshComponent, &Pipeline)>
+            Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_push_constants_texture" => render_func_query![
             render_meshes_push_constants_texture, 

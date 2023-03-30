@@ -70,7 +70,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ];
 
     let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::Vertex,
+        usage: gfx::BufferUsage::VERTEX,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<Vertex>(),

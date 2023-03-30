@@ -1,18 +1,21 @@
 // TODO:
 
-// - fix get_num_32bit_constants function
-// - removing render graph (or possibly any state) from data is not removed from the live client. pmfx
-
-// - uv's need flipping on geom
-
+// - structured buffer instances
+// - material
+// - cbuffer camera?
+// - persistent mapped buffers
 // - create texture with heap
 // - pmfx shader heap
+
+// - fix get_num_32bit_constants function
+// - removing render graph (or possibly any state) from data is not removed from the live client. pmfx
+// - fix gpu time inconsistency
+// - uv's need flipping on geom
+// - find offsets to bind heaps to from register bindings in shader
+
 // - render target fixed size
 // - texture load image from file into pmfx
 
-// - material
-// - cbuffer material
-// - cbuffer camera?
 // - transform normals with world matrix
 // - construct tangent space
 // - execute indirect
@@ -53,11 +56,15 @@
 // - view menu + saving state
 
 // DONE:
+
+
+
+
 // x unify shader code and pmfx code
 // x cubemaps do not create descriptor layout binding
 // x texture3d do not create descriptor layout binding
 // x 3d texture
-// x pmfx static samplers should be an array - actuall no!
+// x pmfx static samplers should be an array - actually no!
 // x texture array
 // x cubemap
 // x tidy push constants material

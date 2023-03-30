@@ -25,6 +25,7 @@ fn to_im_vec4(v: Vec4f) -> ImVec4 {
 
 const DEFAULT_VB_SIZE: i32 = 5000;
 const DEFAULT_IB_SIZE: i32 = 10000;
+const MAX_RANGES: usize = 32;
 
 const MAIN_DOCKSPACE_FLAGS : u32 = ImGuiWindowFlags_NoTitleBar |
     ImGuiWindowFlags_NoCollapse |
@@ -59,6 +60,7 @@ pub struct ImGuiInfo<'stack, D: Device, A: App> {
 pub struct ImGui<D: Device, A: App> {
     _native_handle: A::NativeHandle,
     _font_texture: D::Texture,
+
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
     last_cursor: os::Cursor
@@ -159,6 +161,14 @@ fn new_monitors(monitors: &Vec<ImGuiPlatformMonitor>) -> *mut ImGuiPlatformMonit
         ptr
     }
 }
+
+fn new_ranges() -> *mut [u32; (MAX_RANGES * 2) + 1] {
+    unsafe {
+        let layout = std::alloc::Layout::from_size_align(std::mem::size_of::<[u32; (MAX_RANGES * 2) + 1]>(), 8).unwrap();
+        std::alloc::alloc_zeroed(layout) as *mut [u32; (MAX_RANGES * 2) + 1]
+    }
+}
+
 
 fn to_imgui_texture_id<D: Device>(tex: &D::Texture) -> ImTextureID {
     unsafe {
@@ -359,7 +369,7 @@ fn create_vertex_buffer<D: Device>(
 ) -> Result<D::Buffer, super::Error> {
     device.create_buffer::<u8>(
         &gfx::BufferInfo {
-            usage: gfx::BufferUsage::Vertex,
+            usage: gfx::BufferUsage::VERTEX,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::Unknown,
             stride: std::mem::size_of::<ImDrawVert>(),
@@ -376,7 +386,7 @@ fn create_index_buffer<D: Device>(
 ) -> Result<D::Buffer, super::Error> {
     device.create_buffer::<u8>(
         &gfx::BufferInfo {
-            usage: gfx::BufferUsage::Index,
+            usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::WRITE,
             format: gfx::Format::R16u,
             stride: std::mem::size_of::<ImDrawIdx>(),
@@ -587,9 +597,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 }
             };
         
-            //igStyleColorsLight(std::ptr::null_mut());
-            //igStyleColorsDark(std::ptr::null_mut());
-
             Self::style_colours_hotline();
 
             let mut style = &mut *igGetStyle();
@@ -598,36 +605,49 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             // add fonts
             let mut merge = false;
+
+            let mut font_ranges = Vec::new();
+            let mut _pfont_ranges = Vec::new();
+            let mut font_names = Vec::new();
+
             for font in &info.fonts {
-                let null_font_name = CString::new(font.filepath.clone()).unwrap();
+                let names_back = font_names.len();
+                font_names.push(CString::new(font.filepath.clone()).unwrap());
 
                 let config = ImFontConfig_ImFontConfig();
                 (*config).MergeMode = merge;
 
-                // copy over the font ranges
-                let mut null_term_ranges : Vec<u32> = Vec::new();
+                // copy over the font ranges          
+                let null_term_ranges = new_ranges();
+                let mut itr = 0;
+                
                 if let Some(ranges) = &font.glyph_ranges {
+                    // we alloc a fixed sized array on the heap for imgui glyph ranges
+                    // if you have more ranges that size will need increasing
+                    assert!(ranges.len() < MAX_RANGES);
                     for range in ranges {
-                        null_term_ranges.push(range[0]);
-                        null_term_ranges.push(range[1]);
+                        (*null_term_ranges)[itr] = range[0];
+                        (*null_term_ranges)[itr+1] = range[1];
+                        itr += 2;
                     }
                 }
-                null_term_ranges.push(0); // null terminate
-
+                font_ranges.push(null_term_ranges);
+                
                 // pass ranges or null
-                let p_ranges = if null_term_ranges.len() > 1 {
-                    null_term_ranges.as_mut_ptr()
+                let p_ranges = if font.glyph_ranges.is_some() {
+                    null_term_ranges as *mut u32
                 }
                 else {
                     std::ptr::null_mut()
                 };
+                _pfont_ranges.push(p_ranges);
 
                 ImFontAtlas_AddFontFromFileTTF(
                     io.Fonts,
-                    null_font_name.as_ptr() as *const i8,
+                    font_names[names_back].as_ptr() as *const i8,
                     16.0,
                     config,
-                    p_ranges,
+                    p_ranges
                 );
 
                 // subsequent fonts are merged
