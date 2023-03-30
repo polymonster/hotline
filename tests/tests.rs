@@ -584,7 +584,7 @@ fn client_tests() {
     boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced");
     boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced");
     boot_client_ecs_plugin_demo("draw_push_constants_texture");
-    //boot_client_ecs_plugin_demo("draw_material");
+    boot_client_ecs_plugin_demo("draw_material");
     boot_client_ecs_plugin_demo("test_raster_states");
     boot_client_ecs_plugin_demo("test_blend_states");
     boot_client_ecs_plugin_demo("test_cubemap");
