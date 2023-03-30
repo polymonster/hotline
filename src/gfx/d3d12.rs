@@ -130,7 +130,7 @@ pub struct Device {
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
     pix: Option<WinPixEventRuntime>,
-    shader_heap: Heap,
+    shader_heap: Option<Heap>,
     rtv_heap: Heap,
     dsv_heap: Heap,
     timestamp_frequency: f64,
@@ -1430,7 +1430,7 @@ impl super::Device for Device {
                 command_list,
                 command_queue,
                 pix: WinPixEventRuntime::create(),
-                shader_heap,
+                shader_heap: Some(shader_heap),
                 rtv_heap,
                 dsv_heap,
                 cleanup_textures: Vec::new()
@@ -1969,7 +1969,6 @@ impl super::Device for Device {
                 srv_index = Some(heap.get_handle_index(&h));
             }
 
-
             Ok(Buffer {
                 resource: buf,
                 vbv,
@@ -1986,7 +1985,10 @@ impl super::Device for Device {
         info: &super::BufferInfo,
         data: Option<&[T]>,
     ) -> result::Result<Buffer, super::Error> {
-        self.create_buffer_with_heap(info, data, &mut self.shader_heap.clone())
+        let mut heap = std::mem::take(&mut self.shader_heap).unwrap();
+        let result = self.create_buffer_with_heap(info, data, &mut heap);
+        self.shader_heap = Some(heap);
+        result
     }
 
     fn create_read_back_buffer(
@@ -2098,10 +2100,12 @@ impl super::Device for Device {
                 self.upload_texture_data(info, data, dxgi_format, &resource, initial_state)?;
             }
 
+            let shader_heap = self.shader_heap.as_mut().unwrap();
+
             // create srv
             let mut srv_index = None;
             if info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
-                let h = self.shader_heap.allocate();
+                let h = shader_heap.allocate();
 
                 let dxgi_dormat_srv = to_dxgi_format_srv(info.format);
                 let srv_dimension = to_d3d12_texture_srv_dimension(info.tex_type, info.samples);
@@ -2151,14 +2155,14 @@ impl super::Device for Device {
                     _ => panic!("hotline_rs::gfx::d3d12:: not implemented shader resource view for type {:?}", info.tex_type)
                 }
 
-                srv_index = Some(self.shader_heap.get_handle_index(&h));
+                srv_index = Some(shader_heap.get_handle_index(&h));
             }
             
             // create a srv for resolve texture for msaa
             let mut resolved_srv_index = None;
             let mut resolved_format = DXGI_FORMAT_UNKNOWN;
             if info.samples > 1 && info.usage.contains(super::TextureUsage::SHADER_RESOURCE) {
-                let h = self.shader_heap.allocate();
+                let h = shader_heap.allocate();
                 self.device.CreateShaderResourceView(
                     &resolved_resource.as_ref().unwrap().clone(),
                     Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
@@ -2175,7 +2179,7 @@ impl super::Device for Device {
                     }),
                     h,
                 );
-                resolved_srv_index = Some(self.shader_heap.get_handle_index(&h));
+                resolved_srv_index = Some(shader_heap.get_handle_index(&h));
                 resolved_format = to_dxgi_format_srv(info.format);
             }
 
@@ -2198,14 +2202,14 @@ impl super::Device for Device {
             // create uav
             let mut uav_index = None;
             if info.usage.contains(super::TextureUsage::UNORDERED_ACCESS) {
-                let h = self.shader_heap.allocate();
+                let h = shader_heap.allocate();
                 self.device.CreateUnorderedAccessView(
                     &resource,
                     None,
                     None,
                     h,
                 );
-                uav_index = Some(self.shader_heap.get_handle_index(&h));
+                uav_index = Some(shader_heap.get_handle_index(&h));
             }
 
             // create shared handle for video decode targets
@@ -2455,6 +2459,7 @@ impl super::Device for Device {
         let num_bb = swap_chain.num_bb;
         let mut todo = true;
         let mut cur = 0;
+        let shader_heap = self.shader_heap.as_mut().unwrap();
         while todo {
             todo = false;
             for i in cur..self.cleanup_textures.len() {
@@ -2464,10 +2469,10 @@ impl super::Device for Device {
                     // if we have waited longer than the swap chain length we can cleanup
                     let (_, tex) = self.cleanup_textures.remove(i);
                     if let Some(srv) = tex.srv_index {
-                        self.shader_heap.deallocate(srv);
+                        shader_heap.deallocate(srv);
                     }
                     if let Some(uav) = tex.uav_index {
-                        self.shader_heap.deallocate(uav);
+                        shader_heap.deallocate(uav);
                     }
                     if let Some(rtv) = &tex.rtv {
                         self.rtv_heap.deallocate_internal(rtv);
@@ -2484,11 +2489,11 @@ impl super::Device for Device {
     }
 
     fn get_shader_heap(&self) -> &Self::Heap {
-        &self.shader_heap
+        self.shader_heap.as_ref().unwrap()
     }
 
     fn get_shader_heap_mut(&mut self) -> &mut Self::Heap {
-        &mut self.shader_heap
+        self.shader_heap.as_mut().unwrap()
     }
 
     fn get_adapter_info(&self) -> &AdapterInfo {

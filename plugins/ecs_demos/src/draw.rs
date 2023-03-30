@@ -7,6 +7,8 @@ use maths_rs::prelude::*;
 use rand::prelude::*;
 use bevy_ecs::prelude::*;
 
+use maths_rs::Vec4u;
+
 #[derive(Component)]
 pub struct InstanceBuffer {
     pub heap: Option<gfx_platform::Heap>,
@@ -44,7 +46,7 @@ pub struct InstanceMaterial {
 }
 
 pub struct EntityInstanceData {
-    pub world_matrix: WorldMatrix,
+    pub world_matrix: Mat34f,
     pub ids: Vec4u
 }
 
@@ -149,23 +151,27 @@ pub fn batch_world_matrix_instances(
     }
 }
 
-
 #[no_mangle]
 pub fn batch_material_instances(
-    instances_query: Query<(&Parent, &WorldMatrix)>,
+    mut instances_query: Query<(&Parent, &WorldMatrix, &EntityId, &mut BufferComponent)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
 
     for (entity, mut instance_batch) in &mut instance_batch_query {
-        let mut mats = Vec::new();
-        for (parent, world_matrix) in &instances_query {
+        let mut indices = Vec::new();
+        for (parent, world_matrix, id, mut buffer) in &mut instances_query {
             if parent.0 == entity {
-                mats.push(world_matrix.0);
+                indices.push(vec4u(id.0, 0, 0, 0));
+                let data = EntityInstanceData {
+                    world_matrix: world_matrix.0,
+                    ids: vec4u(0, 0, 0, 0)
+                };
+                buffer.0.update(0, gfx::as_u8_slice(&data)).unwrap();
             }
         }
-        instance_batch.buffer.update(0, &mats).unwrap();
+
+        instance_batch.buffer.update(0, &indices).unwrap();
     }
 }
-
 
 /// Creates a instance batch, where the `InstanceBatch` parent will update a vertex buffer containing
 /// it's child (instance) entities. The vertex shader layput steps the instance buffer per instance
@@ -424,7 +430,8 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
             "setup_draw_material"
         ],
         update: systems![
-            "rotate_meshes"
+            "rotate_meshes",
+            "batch_material_instances"
         ],
         render_graph: "mesh_material_instanced"
     }
@@ -445,7 +452,7 @@ pub fn setup_draw_material(
     let mut rng = rand::thread_rng();
 
     let size = 2.0;
-    let num = 64;
+    let num = 16;
     let instance_count = (num*num) as u32;
     let range = size * size * (num as f32);
 

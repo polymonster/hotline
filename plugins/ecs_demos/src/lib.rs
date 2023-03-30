@@ -422,6 +422,10 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
             draw::batch_world_matrix_instances.after(SystemSets::Batch)
         ],
 
+        "batch_material_instances" => system_func![
+            draw::batch_material_instances.after(SystemSets::Batch)
+        ],
+
         // render functions
         "render_meshes" => render_func_query![
             render_meshes, 

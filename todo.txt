@@ -1,5 +1,7 @@
 // TODO:
 
+// - minimise shader duplication cause via pmfx includes.
+
 // - structured buffer instances
 // - material
 // - cbuffer camera?
@@ -11,8 +13,6 @@
 // - removing render graph (or possibly any state) from data is not removed from the live client. pmfx
 // - fix gpu time inconsistency
 // - uv's need flipping on geom
-// - find offsets to bind heaps to from register bindings in shader
-
 // - render target fixed size
 // - texture load image from file into pmfx
 
@@ -56,10 +56,7 @@
 // - view menu + saving state
 
 // DONE:
-
-
-
-
+// x find offsets to bind heaps to from register bindings in shader
 // x unify shader code and pmfx code
 // x cubemaps do not create descriptor layout binding
 // x texture3d do not create descriptor layout binding

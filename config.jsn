@@ -162,4 +162,14 @@
             config: "release"
         }
     }
+
+    // runs cargo test single threaded to make it more firendly for using d3d devices and client instances
+    test: {
+        cargo_test: {
+            type: shell
+            commands: [
+                "cargo test -- --test-threads 1 --nocapture"
+            ]
+        }
+    }
 }
