@@ -6,5 +6,5 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       - run: |
-        ./hotline-data/pmbuild.cmd win32-debug -all
+        .\hotline-data\pmbuild.cmd win32-debug -all
         cargo test -- --test-threads 1
