@@ -4,7 +4,10 @@ jobs:
   win32:
     runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v2
-      - run: |
-        .\\hotline-data\\pmbuild.cmd win32-debug -all
+    - uses: actions/checkout@v2
+    - name: build-data
+      run: |
+        hotline-data\\pmbuild.cmd win32-debug -all
+    - name: tests
+      run: |
         cargo test -- --test-threads 1
