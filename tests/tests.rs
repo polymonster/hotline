@@ -414,7 +414,6 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
 #[test]
 // client tests must run 1 at a time, this boots the client with empty user info
 fn boot_empty_client() -> Result<(), hotline_rs::Error> {
-    println!("test: boot_empty_client");
     let config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -436,7 +435,6 @@ fn boot_empty_client() -> Result<(), hotline_rs::Error> {
 #[test]
 /// Load the basic empty plugin, should print and close gracefully
 fn boot_client_empty_plugin() -> Result<(), hotline_rs::Error> {
-    println!("test: boot_client_empty_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -465,7 +463,6 @@ fn boot_client_empty_plugin() -> Result<(), hotline_rs::Error> {
 #[test]
 /// Boots the client with a plugin that does not exist, should load gracefully and notify the missing plugin
 fn boot_client_missing_plugin() -> Result<(), hotline_rs::Error> {
-    println!("test: boot_client_missing_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -494,7 +491,6 @@ fn boot_client_missing_plugin() -> Result<(), hotline_rs::Error> {
 #[test]
 /// Boots the client with the ecs plugin and ecs_demos plugin but with no `PluginData`
 fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
-    println!("test: boot_client_ecs_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -525,7 +521,6 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
 
 /// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
 fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error> {
-    println!("test: boot_demo_{}", demo_name);
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
         console_window_rect: None,
@@ -624,8 +619,8 @@ fn test_cubemap() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
-fn test_texture3d_array() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_texture3d_array")
+fn test_texture2d_array() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_texture2d_array")
 }
 
 #[test]

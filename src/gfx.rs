@@ -72,7 +72,7 @@ pub struct ScissorRect {
 /// u = unsigned integer,
 /// i = signed integer,
 /// f = float
-#[derive(Copy, Clone, Serialize, Deserialize, Hash)]
+#[derive(Copy, Clone, Serialize, Deserialize, Hash, PartialEq)]
 pub enum Format {
     Unknown,
     R16n,
@@ -1055,7 +1055,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
-    fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> D::ReadBackRequest;
+    fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
@@ -1181,6 +1181,47 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::D32f => 16,
         Format::D24nS8u => 32,
         Format::D16n => 2,
+    }
+}
+
+/// Returns the number of components for a given format. ie RGBA = 4 and RGB = 3
+pub fn components_for_format(format: Format) -> u32 {
+    match format {
+        Format::Unknown => 0,
+        Format::R16n => 1,
+        Format::R16u => 1,
+        Format::R16i => 1,
+        Format::R16f => 1,
+        Format::R32u => 1,
+        Format::R32i => 1,
+        Format::R32f => 1,
+        Format::RG16u => 2,
+        Format::RG16i => 2,
+        Format::RG16f => 2,
+        Format::RG32u => 2,
+        Format::RG32i => 2,
+        Format::RG32f => 2,
+        Format::RGBA8nSRGB => 4,
+        Format::RGBA8n => 4,
+        Format::RGBA8u => 4,
+        Format::RGBA8i => 4,
+        Format::BGRA8n => 4,
+        Format::BGRX8n => 4,
+        Format::BGRA8nSRGB => 4,
+        Format::BGRX8nSRGB => 4,
+        Format::RGB32u => 3,
+        Format::RGB32i => 3,
+        Format::RGB32f => 3,
+        Format::RGBA16u => 4,
+        Format::RGBA16i => 4,
+        Format::RGBA16f => 4,
+        Format::RGBA32u => 4,
+        Format::RGBA32i => 4,
+        Format::RGBA32f => 4,
+        Format::D32fS8X24u => 2,
+        Format::D32f => 1,
+        Format::D24nS8u => 2,
+        Format::D16n => 1,
     }
 }
 

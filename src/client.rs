@@ -1,4 +1,5 @@
 use crate::gfx;
+use crate::gfx::ReadBackRequest;
 use crate::os;
 use crate::imgui;
 use crate::plugin::PluginInstance;
@@ -7,6 +8,7 @@ use crate::imdraw;
 use crate::primitives;
 use crate::plugin;
 use crate::reloader;
+use crate::image;
 
 use gfx::{SwapChain, CmdBuf, Texture, RenderPass};
 
@@ -76,17 +78,16 @@ impl Time {
     }
 }
 
-
 /// Useful defaults for quick HotlineInfo initialisation
 impl Default for HotlineInfo {
     fn default() -> Self {
         HotlineInfo {
             name: "hotline".to_string(),
             window_rect: os::Rect {
-                x: 100,
-                y: 100,
+                x: 0,
+                y: 0,
                 width: 1280,
-                height: 720
+                height: 1300
             },
             dpi_aware: true,
             clear_colour: Some(gfx::ClearColour {
@@ -121,6 +122,8 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
     plugins: Vec<PluginCollection>,
     delta_history: VecDeque<f32>,
+    instance_name: String,
+    status_bar_height: f32
 }
 
 /// Serialisable plugin
@@ -272,6 +275,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             libs: HashMap::new(),
             time: Time::new(),
             delta_history: VecDeque::new(),
+            instance_name: info.name.to_string(),
+            status_bar_height: STATUS_BAR_HEIGHT
         };
 
         // automatically load plugins from prev session
@@ -318,8 +323,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // start imgui new frame
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
-        self.imgui.add_main_dock(STATUS_BAR_HEIGHT);
-        self.imgui.add_status_bar(STATUS_BAR_HEIGHT);
+        self.imgui.add_main_dock(self.status_bar_height);
+        self.status_bar_height = self.imgui.add_status_bar(self.status_bar_height);
 
         // check for focus on the dock
         let dock_input = self.imgui.main_dock_hovered();
@@ -851,16 +856,80 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run_once(mut self) -> Result<(), super::Error> {
-        self.new_frame()?;
+        for i in 0..3 {
+            self.new_frame()?;
         
-        self.core_ui();
-        self.pmfx.show_ui(&mut self.imgui, true);
+            self.core_ui();
+            self.pmfx.show_ui(&mut self.imgui, true);
+    
+            self = self.update_plugins();
+    
+            if let Some(tex) = self.pmfx.get_texture("main_colour") {
+                self.imgui.image_window("main_dock", tex);
+            }
+            
+            // execute pmfx command buffers first
+            self.pmfx.execute(&mut self.device);
+    
+            // main pass
+            self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                texture: Some(self.swap_chain.get_backbuffer_texture()),
+                buffer: None,
+                state_before: gfx::ResourceState::Present,
+                state_after: gfx::ResourceState::RenderTarget,
+            });
+    
+            // clear window
+            self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
+            self.cmd_buf.end_render_pass();
+    
+            // blit
+            self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
+    
+            // render imgui
+            self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
+            self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
+            self.cmd_buf.end_event();
+    
+            self.cmd_buf.end_render_pass();
+    
+            // transition to present
+            self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+                texture: Some(self.swap_chain.get_backbuffer_texture()),
+                buffer: None,
+                state_before: gfx::ResourceState::RenderTarget,
+                state_after: gfx::ResourceState::Present,
+            });
+    
+            let readback_request = self.cmd_buf.read_back_backbuffer(&self.swap_chain)?;
+    
+            self.cmd_buf.close().unwrap();
+    
+            // execute the main window command buffer + swap
+            self.device.execute(&self.cmd_buf);
+            self.swap_chain.swap(&self.device);
+            self.device.clean_up_resources(&self.swap_chain);
+
+            self.swap_chain.wait_for_last_frame();
+
+            if i == 2 {
+                let data = readback_request.map(&gfx::MapInfo {
+                    subresource: 0,
+                    read_start: 0,
+                    read_end: usize::MAX
+                })?;
         
-        self = self.update_plugins();
+                let output_dir = "target/test_output";
+                if !std::path::PathBuf::from(output_dir.to_string()).exists() {
+                    std::fs::create_dir(output_dir)?;
+                }
+                
+                let output_filepath = format!("{}/{}.png", output_dir, &self.instance_name);
+                image::write_to_file_from_gpu(&output_filepath, &data)?;
         
-        self.present("");
-       
-        self.swap_chain.wait_for_last_frame();
+                readback_request.unmap();
+            }
+        }
 
         Ok(())
     }

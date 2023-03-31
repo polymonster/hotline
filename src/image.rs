@@ -20,74 +20,6 @@ pub struct ImageData {
     pub data: Vec<u8>,
 }
 
-/// Writes a buffer of image data to a file. The type of image format written is determined by filename ext
-/// supported image formats are (png, bmp, tga and jpg).
-pub fn write_to_file(
-    filename: String,
-    width: u64,
-    height: u64,
-    components: u32,
-    image_data: &[u8],
-) -> Result<(), String> {
-    let path = std::path::Path::new(&filename);
-    let mut writer = ImageWriter::new(&filename);
-    match path.extension() {
-        Some(os_str) => match os_str.to_str() {
-            Some("png") => {
-                writer.write_png(
-                    width as i32,
-                    height as i32,
-                    components as i32,
-                    image_data.as_ptr(),
-                );
-                Ok(())
-            }
-            Some("bmp") => {
-                writer.write_bmp(
-                    width as i32,
-                    height as i32,
-                    components as i32,
-                    image_data.as_ptr(),
-                );
-                Ok(())
-            }
-            Some("tga") => {
-                writer.write_tga(
-                    width as i32,
-                    height as i32,
-                    components as i32,
-                    image_data.as_ptr(),
-                );
-                Ok(())
-            }
-            Some("jpg") => {
-                writer.write_jpg(
-                    width as i32,
-                    height as i32,
-                    components as i32,
-                    image_data.as_ptr(),
-                    90,
-                );
-                Ok(())
-            }
-            _ => {
-                if os_str.to_str().is_some() {
-                    Err(format!(
-                        "hotline_rs::image: Image format '{}' is not supported",
-                        os_str.to_str().unwrap()
-                    ))
-                } else {
-                    Err(format!(
-                        "hotline_rs::image: Filename '{}' did not specify image format extension!",
-                        filename
-                    ))
-                }
-            }
-        },
-        _ => Err(format!("hotline_rs::image: Filename '{}' has no extension!", filename)),
-    }
-}
-
 /// Loads an image from file returning information in the ImageData struct
 /// supported formats are (png, tga, bmp, jpg, gif, dds)
 pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
@@ -171,7 +103,7 @@ pub fn load_texture_from_file(
     device.create_texture(&image.info, crate::data![image.data.as_slice()])
 }
 
-/// convert ddsfile to gfx::TextureType
+/// Convert ddsfile to gfx::TextureType
 fn to_gfx_texture_type(dds: &DDS) -> TextureType {
     if dds.header.caps.contains(ddsfile::Caps::COMPLEX) {
         let all_faces = Caps2::CUBEMAP_POSITIVEX | Caps2::CUBEMAP_NEGATIVEX | Caps2::CUBEMAP_POSITIVEY |
@@ -218,7 +150,83 @@ fn to_gfx_texture_type(dds: &DDS) -> TextureType {
     }
 }
 
-/// convert ddsfile format D3D or DXGI to gfx::Format.. gfx does not expose all formats. this may grow over time.
+/// Writes a buffer of image data to a file. The type of image format written is determined by filename ext
+/// supported image formats are (png, bmp, tga and jpg).
+pub fn write_to_file(filename: &str, width: u64, height: u64, components: u32, image_data: &[u8]) -> Result<(), super::Error> {
+    let path = std::path::Path::new(&filename);
+    let mut writer = ImageWriter::new(&filename);
+    match path.extension() {
+        Some(os_str) => match os_str.to_str() {
+            Some("png") => {
+                writer.write_png(
+                    width as i32,
+                    height as i32,
+                    components as i32,
+                    image_data.as_ptr(),
+                );
+                Ok(())
+            }
+            Some("bmp") => {
+                writer.write_bmp(
+                    width as i32,
+                    height as i32,
+                    components as i32,
+                    image_data.as_ptr(),
+                );
+                Ok(())
+            }
+            Some("tga") => {
+                writer.write_tga(
+                    width as i32,
+                    height as i32,
+                    components as i32,
+                    image_data.as_ptr(),
+                );
+                Ok(())
+            }
+            Some("jpg") => {
+                writer.write_jpg(
+                    width as i32,
+                    height as i32,
+                    components as i32,
+                    image_data.as_ptr(),
+                    90,
+                );
+                Ok(())
+            }
+            _ => {
+                if os_str.to_str().is_some() {
+                    Err(super::Error {
+                            msg: format!("hotline_rs::image: Image format '{}' is not supported", os_str.to_str().unwrap())
+                    })
+                } else {
+                    Err(super::Error {
+                        msg: format!("hotline_rs::image: Filename '{}' did not specify image format extension!",filename)
+                    })
+                }
+            }
+        },
+        _ => Err(super::Error {
+                msg: format!("hotline_rs::image: Filename '{}' has no extension!", filename)
+             }),
+    }
+}
+
+/// Writes an image from file which is formed of data read back from the GPU. This will account for alignment and padding
+pub fn write_to_file_from_gpu(filename: &str, data: &gfx::ReadBackData) -> Result<(), super::Error> {
+    let fmt = if data.format == gfx::Format::Unknown {
+        gfx::Format::RGBA8n
+    }
+    else {
+        data.format
+    };
+    let w = data.row_pitch / gfx::block_size_for_format(fmt) as usize;
+    let h = data.slice_pitch / data.row_pitch;
+    let c = gfx::components_for_format(fmt);
+    write_to_file(filename, w as u64, h as u64, c, data.data)
+}
+
+/// Convert ddsfile format D3D or DXGI to gfx::Format.. gfx does not expose all formats. this may grow over time.
 fn to_gfx_format(dds: &DDS) -> gfx::Format {
     if let Some(fmt) = dds.get_d3d_format() {
         match fmt {

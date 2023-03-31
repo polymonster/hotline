@@ -847,9 +847,11 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             for vp in viewports {
                 let p_vp = *vp;
                 let vp_ref = &*p_vp;
-                let win = get_viewport_window::<D, A>(p_vp);
-                if win.is_mouse_hovered() && (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
-                    io.MouseHoveredViewport = vp_ref.ID;
+                if vp_ref.PlatformUserData != std::ptr::null_mut() {
+                    let win = get_viewport_window::<D, A>(p_vp);
+                    if win.is_mouse_hovered() && (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
+                        io.MouseHoveredViewport = vp_ref.ID;
+                    }
                 }
             }
 
@@ -952,8 +954,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     }
 
     /// Add an optional status bar which appears at the bottom of the main window at fixed size and position
-    /// you push items into the status bar by using `imgui.begin("status_bar")`
-    pub fn add_status_bar(&mut self, height: f32) {
+    /// you push items into the status bar by using `imgui.begin("status_bar")` 
+    /// when passing `height` the true size may actually differ, the actual size is returned from this function
+    pub fn add_status_bar(&mut self, height: f32) -> f32 {
         unsafe {
             let status_bar_flags = ImGuiWindowFlags_NoDocking | 
                 ImGuiWindowFlags_NoResize | 
@@ -965,7 +968,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             let vp = &*igGetMainViewport();
             let style = &*igGetStyle();
 
-            igSetNextWindowPos(ImVec2 {x: vp.Pos.x, y: vp.Size.y}, 0, IMVEC2_ZERO);
+            igSetNextWindowPos(ImVec2 {x: vp.Pos.x, y: vp.Pos.y + vp.Size.y - height}, 0, IMVEC2_ZERO);
             igSetNextWindowSize(ImVec2 {x: vp.Size.x, y: height}, 0);
             igPushStyleVarFloat(ImGuiStyleVar_WindowRounding as i32, 0.0);
             igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
@@ -974,7 +977,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             igBegin(STATUS_BAR_NAME, std::ptr::null_mut(), status_bar_flags as i32);
             igPopStyleColor(1);
             igPopStyleVar(2);
+
+            let mut actual_size = IMVEC2_ZERO;
+            igGetWindowSize(&mut actual_size);
+            let actual_height = actual_size.y;
+
             igEnd();
+
+            actual_height
         }
     }
 

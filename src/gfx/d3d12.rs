@@ -3059,17 +3059,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> ReadBackRequest {
+    fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> result::Result<ReadBackRequest, super::Error> {
         let bb = self.bb_index;
         let bbz = self.bb_index as u32;
         unsafe {
-            let resource = swap_chain.swap_chain.GetBuffer(bbz);
-            let r2 = resource.as_ref();
+            let resource : ID3D12Resource = swap_chain.swap_chain.GetBuffer(bbz)?;
 
             // transition to copy source
             let barrier = transition_barrier(
-                r2.unwrap(),
-                D3D12_RESOURCE_STATE_RENDER_TARGET,
+                &resource,
+                D3D12_RESOURCE_STATE_PRESENT,
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
             );
             self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
@@ -3103,7 +3102,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, None);
 
             let barrier = transition_barrier(
-                r2.unwrap(),
+                &resource,
                 D3D12_RESOURCE_STATE_COPY_SOURCE,
                 D3D12_RESOURCE_STATE_RENDER_TARGET,
             );
@@ -3112,13 +3111,13 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
             self.in_flight_barriers[bb].push(barrier);
 
-            ReadBackRequest {
+            Ok(ReadBackRequest {
                 resource: Some(swap_chain.readback_buffer.clone().unwrap()),
                 fence_value: swap_chain.frame_index as u64,
                 size: (swap_chain.width * swap_chain.height * 4) as usize,
                 row_pitch: (swap_chain.width * 4) as usize,
                 slice_pitch: (swap_chain.width * swap_chain.height * 4) as usize,
-            }
+            })
         }
     }
 
