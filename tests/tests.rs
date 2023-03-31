@@ -413,7 +413,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
 
 #[test]
 // client tests must run 1 at a time, this boots the client with empty user info
-fn boot_empty_client() {
+fn boot_empty_client() -> Result<(), hotline_rs::Error> {
     println!("test: boot_empty_client");
     let config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -430,12 +430,12 @@ fn boot_empty_client() {
     }).unwrap();
     
     // run
-    ctx.run_once();
+    ctx.run_once()
 }
 
 #[test]
 /// Load the basic empty plugin, should print and close gracefully
-fn boot_client_empty_plugin() {
+fn boot_client_empty_plugin() -> Result<(), hotline_rs::Error> {
     println!("test: boot_client_empty_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -459,12 +459,12 @@ fn boot_client_empty_plugin() {
     }).unwrap();
     
     // run
-    ctx.run_once();
+    ctx.run_once()
 }
 
 #[test]
 /// Boots the client with a plugin that does not exist, should load gracefully and notify the missing plugin
-fn boot_client_missing_plugin() {
+fn boot_client_missing_plugin() -> Result<(), hotline_rs::Error> {
     println!("test: boot_client_missing_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -488,12 +488,12 @@ fn boot_client_missing_plugin() {
     }).unwrap();
     
     // run
-    ctx.run_once();
+    ctx.run_once()
 }
 
 #[test]
 /// Boots the client with the ecs plugin and ecs_demos plugin but with no `PluginData`
-fn boot_client_ecs_plugin() {
+fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
     println!("test: boot_client_ecs_plugin");
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -520,11 +520,11 @@ fn boot_client_ecs_plugin() {
     }).unwrap();
     
     // run
-    ctx.run_once();
+    ctx.run_once()
 }
 
 /// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
-fn boot_client_ecs_plugin_demo(demo_name: &str) {
+fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error> {
     println!("test: boot_demo_{}", demo_name);
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -555,80 +555,80 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
     }).unwrap();
     
     // run
-    ctx.run_once();
+    ctx.run_once()
 }
 
 #[test]
-fn missing_demo() {
-    boot_client_ecs_plugin_demo("test_missing_demo");
+fn missing_demo() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_demo")
 }
 
 #[test]
-fn missing_render_graph() {
-    boot_client_ecs_plugin_demo("test_missing_render_graph");
+fn missing_render_graph() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_render_graph")
 }
 
 #[test]
-fn missing_render_view() {
-    boot_client_ecs_plugin_demo("test_missing_view");
+fn missing_render_view() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_view")
 }
 
 #[test]
-fn geometry_primitives() {
-    boot_client_ecs_plugin_demo("geometry_primitives");
+fn geometry_primitives() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("geometry_primitives")
 }
 
 #[test]
-fn draw_indexed() {
-    boot_client_ecs_plugin_demo("draw_indexed");
+fn draw_indexed() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_indexed")
 }
 
 #[test]
-fn draw_indexed_push_constants() {
-    boot_client_ecs_plugin_demo("draw_indexed_push_constants");
+fn draw_indexed_push_constants() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_indexed_push_constants")
 }
 
 #[test]
-fn draw_indexed_vertex_buffer_instanced() {
-    boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced");
+fn draw_indexed_vertex_buffer_instanced() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced")
 }
 
 #[test]
-fn draw_indexed_cbuffer_instanced() {
-    boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced");
+fn draw_indexed_cbuffer_instanced() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced")
 }
 
 #[test]
-fn draw_push_constants_texture() {
-    boot_client_ecs_plugin_demo("draw_push_constants_texture");
+fn draw_push_constants_texture() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_push_constants_texture")
 }
 
 #[test]
-fn draw_material() {
-    boot_client_ecs_plugin_demo("draw_material");
+fn draw_material() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_material")
 }
 
 #[test]
-fn test_raster_states() {
-    boot_client_ecs_plugin_demo("test_raster_states");
+fn test_raster_states() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_raster_states")
 }
 
 #[test]
-fn test_blend_states() {
-    boot_client_ecs_plugin_demo("test_blend_states");
+fn test_blend_states() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_blend_states")
 }
 
 #[test]
-fn test_cubemap() {
-    boot_client_ecs_plugin_demo("test_cubemap");
+fn test_cubemap() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_cubemap")
 }
 
 #[test]
-fn test_texture3d_array() {
-    boot_client_ecs_plugin_demo("test_texture3d_array");
+fn test_texture3d_array() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_texture3d_array")
 }
 
 #[test]
-fn test_texture3d() {
-    boot_client_ecs_plugin_demo("test_texture3d");
+fn test_texture3d() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_texture3d")
 }

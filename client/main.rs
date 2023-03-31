@@ -13,8 +13,5 @@ fn main() -> Result<(), hotline_rs::Error> {
     })?;
     
     // run
-    ctx.run();
-
-    // exited with code 0
-    Ok(())
+    ctx.run()
 }

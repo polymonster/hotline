@@ -822,10 +822,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     }
     
     /// Very simple run loop which can take control of your application, you could roll your own
-    pub fn run(mut self) {
+    pub fn run(mut self) -> Result<(), super::Error> {
         while self.app.run() {
-            // TODO: handle errors
-            self.new_frame().unwrap();
+            self.new_frame()?;
 
             self.core_ui();
             self.pmfx.show_ui(&mut self.imgui, true);
@@ -846,17 +845,23 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // unloads plugins, dropping all gpu resources
         self.unload();
+
+        Ok(())
     }
 
     /// Very simple run loop which can take control of your application, you could roll your own
-    pub fn run_once(mut self) {
-        // TODO: handle errors
-        self.new_frame().unwrap();
+    pub fn run_once(mut self) -> Result<(), super::Error> {
+        self.new_frame()?;
+        
         self.core_ui();
         self.pmfx.show_ui(&mut self.imgui, true);
+        
         self = self.update_plugins();
-        self.present("main_colour");
+        
+        self.present("");
        
         self.swap_chain.wait_for_last_frame();
+
+        Ok(())
     }
 }
