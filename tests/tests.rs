@@ -411,6 +411,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     Ok(())
 }
 
+#[test]
 // client tests must run 1 at a time, this boots the client with empty user info
 fn boot_empty_client() {
     println!("test: boot_empty_client");
@@ -432,11 +433,8 @@ fn boot_empty_client() {
     ctx.run_once();
 }
 
+#[test]
 /// Load the basic empty plugin, should print and close gracefully
-/// plugin ui
-/// plugin unload
-/// plugin setup
-/// plugin update
 fn boot_client_empty_plugin() {
     println!("test: boot_client_empty_plugin");
     let mut config = client::UserConfig {
@@ -464,6 +462,7 @@ fn boot_client_empty_plugin() {
     ctx.run_once();
 }
 
+#[test]
 /// Boots the client with a plugin that does not exist, should load gracefully and notify the missing plugin
 fn boot_client_missing_plugin() {
     println!("test: boot_client_missing_plugin");
@@ -492,6 +491,7 @@ fn boot_client_missing_plugin() {
     ctx.run_once();
 }
 
+#[test]
 /// Boots the client with the ecs plugin and ecs_demos plugin but with no `PluginData`
 fn boot_client_ecs_plugin() {
     println!("test: boot_client_ecs_plugin");
@@ -559,35 +559,76 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) {
 }
 
 #[test]
-fn client_tests() {
-    // build the plugins
-    hotline_rs::plugin::build_all();
-
-    // run the tests.. they need to run 1 by 1 as we cant have 2 clients running concurrently
-
-    // basic booting
-    boot_empty_client();
-    boot_client_empty_plugin();
-    boot_client_missing_plugin();
-    boot_client_ecs_plugin();
-
-    // missing tests
+fn missing_demo() {
     boot_client_ecs_plugin_demo("test_missing_demo");
-    boot_client_ecs_plugin_demo("test_missing_systems");
-    boot_client_ecs_plugin_demo("test_missing_render_graph");
-    boot_client_ecs_plugin_demo("test_missing_view");
+}
 
-    // gfx feature / unit tests
+#[test]
+fn missing_render_graph() {
+    boot_client_ecs_plugin_demo("test_missing_render_graph");
+}
+
+#[test]
+fn missing_render_view() {
+    boot_client_ecs_plugin_demo("test_missing_view");
+}
+
+#[test]
+fn geometry_primitives() {
     boot_client_ecs_plugin_demo("geometry_primitives");
+}
+
+#[test]
+fn draw_indexed() {
     boot_client_ecs_plugin_demo("draw_indexed");
+}
+
+#[test]
+fn draw_indexed_push_constants() {
     boot_client_ecs_plugin_demo("draw_indexed_push_constants");
+}
+
+#[test]
+fn draw_indexed_vertex_buffer_instanced() {
     boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced");
+}
+
+#[test]
+fn draw_indexed_cbuffer_instanced() {
     boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced");
+}
+
+#[test]
+fn draw_push_constants_texture() {
     boot_client_ecs_plugin_demo("draw_push_constants_texture");
+}
+
+#[test]
+fn draw_material() {
     boot_client_ecs_plugin_demo("draw_material");
+}
+
+#[test]
+fn test_raster_states() {
     boot_client_ecs_plugin_demo("test_raster_states");
+}
+
+#[test]
+fn test_blend_states() {
     boot_client_ecs_plugin_demo("test_blend_states");
+}
+
+#[test]
+fn test_cubemap() {
     boot_client_ecs_plugin_demo("test_cubemap");
+}
+
+#[test]
+fn test_texture3d_array() {
     boot_client_ecs_plugin_demo("test_texture3d_array");
+}
+
+#[test]
+fn test_texture3d() {
     boot_client_ecs_plugin_demo("test_texture3d");
 }
