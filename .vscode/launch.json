@@ -81,7 +81,7 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/deps/tests-faa0b0c14953fde9.exe",
-            "args": [],
+            "args": ["--test-threads=1"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],

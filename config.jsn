@@ -74,7 +74,8 @@
 
                 // default imgui layouts form the client.. todo. move to target
                 ["plugins/imgui.ini", "target/debug/imgui.ini"]
-                ["plugins/imgui.ini", "target/release/imgui.ini"]
+                ["plugins/imgui.ini", "target/debug/imgui.ini"]
+                ["plugins/imgui.ini", "target/debug/deps/imgui.ini"]
 
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
@@ -167,7 +168,7 @@
         cargo_test: {
             type: shell
             commands: [
-                "cargo test -- --test-threads 1 --nocapture"
+                "cargo test -- --test-threads=1 --nocapture"
             ]
         }
     }

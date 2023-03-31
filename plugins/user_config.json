@@ -13,13 +13,13 @@
   },
   "plugins": {
     "ecs": {
-      "path": "/plugins"
+      "path": "C:/Users/alex_/dev/hotline/plugins"
     },
     "ecs_demos": {
-      "path": "/plugins"
+      "path": "C:/Users/alex_/dev/hotline/plugins"
     }
   },
   "plugin_data": {
-    "ecs": "{\n  \"active_demo\": \"primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      126.63127,\n      159.8664,\n      155.08224\n    ],\n    \"rot\": [\n      -761.0,\n      6153.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
+    "ecs": "{\n  \"active_demo\": \"geometry_primitives\",\n  \"main_camera\": {\n    \"pos\": [\n      126.63127,\n      159.8664,\n      155.08224\n    ],\n    \"rot\": [\n      -761.0,\n      6153.0,\n      0.0\n    ],\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
   }
 }

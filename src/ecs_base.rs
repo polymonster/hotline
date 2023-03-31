@@ -46,7 +46,7 @@ pub struct CameraInfo {
 impl Default for CameraInfo {
     fn default() -> CameraInfo {
         CameraInfo {
-            pos: (0.0, 100.0, 0.0),
+            pos: (0.0, 150.0, 150.0),
             rot: (-45.0, 0.0, 0.0),
             aspect: 16.0/9.0,
             fov: 60.0
