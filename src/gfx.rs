@@ -926,8 +926,6 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn clean_up_resources(&mut self, swap_chain: &Self::SwapChain);
     /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&self, cmd: &Self::CmdBuf);
-    /// Reorts internal graphics api backend resources
-    fn report_live_objects(&self) -> Result<(), Error>;
     /// Borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap(&self) -> &Self::Heap;
     /// Mutably borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
@@ -943,6 +941,10 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Read back a single pipeline statistics query, assuming `buffer` was created with `create_read_back_buffer` 
     /// and is of size `get_pipeline_statistics_size_bytes()`. None is returned if the buffer is not ready
     fn read_pipeline_statistics(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, frame_written_fence: u64) -> Option<PipelineStatistics>;
+    /// Reorts internal graphics api backend resources
+    fn report_live_objects(&self) -> Result<(), Error>;
+    /// Retrieve messages in the info queue since they were last drained
+    fn get_info_queue_messages(&self) -> Result<Vec<String>, Error>;
     /// Size of a single timestamp query result in bytes
     fn get_timestamp_size_bytes() -> usize;
     /// Size of a single pipeline statistics query result in bytes
@@ -1301,16 +1303,7 @@ impl From<os::Rect<i32>> for ScissorRect {
     }
 }
 
-impl From<std::ffi::NulError> for Error {
-    fn from(err: std::ffi::NulError) -> Error {
-        let v = err.into_vec();
-        Error {
-            msg: String::from_utf8(v).unwrap(),
-        }
-    }
-}
-
-/// COnvert from WritMask bit mask to raw u8
+/// Convert from WritMask bit mask to raw u8
 impl From<WriteMask> for u8 {
     fn from(mask: WriteMask) -> u8 {
         mask.bits
@@ -1468,6 +1461,44 @@ impl<'stack, D> Default for RenderPipelineInfo<'stack, D> where D: Device {
             sample_mask: u32::max_value(),
             pass: None
         }
+    }
+}
+
+/// Pipeline stats initialised to zero
+impl Default for PipelineStatistics {
+    fn default() -> Self {
+        PipelineStatistics {
+            input_assembler_vertices: 0,
+            input_assembler_primitives: 0,
+            vertex_shader_invocations: 0,
+            pixel_shader_primitives: 0,
+            compute_shader_invocations: 0
+        }
+    }
+}
+
+/// Ability to add 2 pipeline stats to accumulate
+impl std::ops::Add for PipelineStatistics {
+    type Output = Self;
+    fn add(self, other: Self) -> Self {
+        Self {
+            input_assembler_vertices: self.input_assembler_vertices + other.input_assembler_vertices,
+            input_assembler_primitives: self.input_assembler_primitives + other.input_assembler_primitives,
+            vertex_shader_invocations: self.vertex_shader_invocations + other.vertex_shader_invocations,
+            pixel_shader_primitives: self.pixel_shader_primitives + other.pixel_shader_primitives,
+            compute_shader_invocations: self.compute_shader_invocations + other.compute_shader_invocations,
+        }
+    }
+}
+
+/// Ability to add_assign 2 pipeline stats to accumulate
+impl std::ops::AddAssign for PipelineStatistics {
+    fn add_assign(&mut self, other: Self) {
+        self.input_assembler_vertices += other.input_assembler_vertices;
+        self.input_assembler_primitives += other.input_assembler_primitives;
+        self.vertex_shader_invocations += other.vertex_shader_invocations;
+        self.pixel_shader_primitives += other.pixel_shader_primitives;
+        self.compute_shader_invocations += other.compute_shader_invocations;
     }
 }
 

@@ -1,6 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use hotline_rs::gfx::Buffer;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
@@ -36,6 +37,65 @@ fn animate_textures(
             animated_texture.frame = (animated_texture.frame + 1) % animated_texture.frame_count;
         }
     }
+}
+
+/// Renders all scene instance batches with vertex instance buffer
+#[no_mangle]
+pub fn render_meshes_bindless_material(
+    device: &Res<DeviceRes>,
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    queries: (
+        Query<(&draw::InstanceBuffer, &MeshComponent)>,
+        Query<&draw::WorldBuffers>
+    )
+) -> Result<(), hotline_rs::Error> {
+    
+    let (instance_draw_query, world_buffers_query) = queries;
+
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    // bind the shader resource heap for t0 (if exists)
+    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
+
+    // set the world buffer ids in push constants
+    let mut set_world_buffers = false;
+    for world_buffers in &world_buffers_query {
+        let buffer_ids = vec4u(
+            world_buffers.draw.get_srv_index().unwrap() as u32,
+            0, 
+            0, 
+            0
+        );
+        view.cmd_buf.push_constants(1, 4, 0, &buffer_ids);
+        set_world_buffers = true;
+        break;
+    }
+
+    if !set_world_buffers {
+        return Err(hotline_rs::Error {
+            msg: "hotline_rs::ecs:: world buffers not set!".to_string()
+        });
+    }
+
+    // instance batch draw calls
+    for (instance_batch, mesh) in &instance_draw_query {
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+    }
+
+    Ok(())
 }
 
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
@@ -380,7 +440,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "test_missing_demo",
         "test_missing_systems",
         "test_missing_render_graph",
-        "test_missing_view",
+        "test_missing_view",    
         "test_missing_pipeline",
         "test_failing_pipeline",
         "test_missing_camera"
@@ -424,6 +484,10 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
 
         "batch_material_instances" => system_func![
             draw::batch_material_instances.after(SystemSets::Batch)
+        ],
+
+        "batch_bindless_world_matrix_instances" => system_func![
+            draw::batch_bindless_world_matrix_instances.after(SystemSets::Batch)
         ],
 
         // render functions
@@ -475,6 +539,14 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
             render_meshes_texture3d_test,
             view_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
+        ],
+        "render_meshes_bindless_material" => render_func_query![
+            render_meshes_bindless_material, 
+            view_name,
+            (
+                Query<(&draw::InstanceBuffer, &MeshComponent)>,
+                Query<&draw::WorldBuffers>
+            )
         ],
         
         // basic tests

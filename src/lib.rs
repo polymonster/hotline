@@ -51,43 +51,13 @@ impl std::fmt::Debug for Error {
     }
 }
 
-/// Conversion for windows-rs win32 errors
-#[cfg(target_os = "windows")]
-impl From<windows::core::Error> for Error {
-    fn from(err: windows::core::Error) -> Error {
-        Error {
-            msg: err.message().to_string_lossy(),
-        }
-    }
-}
-
-/// std errors
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Error {
+impl<T> From<T> for Error where T: ToString {
+    fn from(err: T) -> Error {
         Error {
             msg: err.to_string()
         }
     }
 }
-
-/// serde errors
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Error {
-        Error {
-            msg: err.to_string()
-        }
-    }
-}
-
-/// ddsfile errors
-impl From<ddsfile::Error> for Error {
-    fn from(err: ddsfile::Error) -> Error {
-        Error {
-            msg: err.to_string()
-        }
-    }
-}
-
 
 /// Returns the config name for the current configuration, this is useful to local items in target/debug
 #[cfg(debug_assertions)]

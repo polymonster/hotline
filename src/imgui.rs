@@ -1341,6 +1341,56 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
+    /// Modify float via keyboard input
+    pub fn input_float(&mut self, label: &str, v: &mut f32) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            let fmt = CString::new("%.3f").unwrap();
+            igInputFloat(
+                null_label.as_ptr() as *const i8, v, 0.0, 0.0, fmt.as_ptr() as *const i8, 0)
+        }
+    }
+
+    /// Modify int via keyboard input
+    pub fn input_int(&mut self, label: &str, v: &mut i32) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            igInputInt(
+                null_label.as_ptr() as *const i8, v, 0, 0, 0)
+        }
+    }
+
+    /// Modify float via slider input
+    pub fn slider_float(&mut self, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            let fmt = CString::new("%.3f").unwrap();
+            igSliderFloat(
+                null_label.as_ptr() as *const i8, v, min, max, fmt.as_ptr() as *const i8, 0)
+        }
+    }
+
+    /// Adds a dummy widget for custom padding
+    pub fn dummy(&mut self, w: f32, h: f32) {
+        unsafe {
+            igDummy(ImVec2 {x: w, y: h})
+        }
+    }
+
+    /// Adds a dummy widget for custom padding horizontally
+    pub fn hdummy(&mut self, size: f32) {
+        unsafe {
+            igDummy(ImVec2 {x: size, y: 0.0})
+        }
+    }
+
+    /// Adds a dummy widget for custom padding vertically
+    pub fn vdummy(&mut self, size: f32) {
+        unsafe {
+            igDummy(ImVec2 {x: 0.0, y: size})
+        }
+    }
+
     /// Dsiaply an image at the supplied width `w` and height `h` in pixels
     pub fn image(&mut self, tex: &D::Texture, w: f32, h: f32) {
         unsafe {

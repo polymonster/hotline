@@ -43,8 +43,9 @@ pub fn setup_raster_test(
     let size = 10.0;
     let half_size = size * 0.5;    
     let step = size * half_size;
-    let half_extent = rc * half_size;
-    let start_pos = vec3f(-half_extent * 4.0, size, -half_extent * 4.0);
+
+    let half_extent = (rc-1.0) * step * 0.5;
+    let start_pos = vec3f(-half_extent, size, -half_extent);
 
     let mut i = 0;
     for y in 0..irc {
@@ -112,7 +113,7 @@ pub fn setup_blend_test(
     let size = 10.0;
     let half_size = size * 0.5;    
     let step = size * half_size;
-    let half_extent = rc * half_size;
+    let half_extent = (rc-1.0) * step * 0.5;
     let start_pos = vec3f(-half_extent, size, -half_extent);
 
     let mut rng = rand::thread_rng();
@@ -125,7 +126,7 @@ pub fn setup_blend_test(
                 // spawn a bunch vof entites with slightly randomised 
                 for _ in 0..32 {
                     let mesh : usize = rng.gen::<usize>() % meshes.len();
-                    let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(10.0, 50.0, 10.0);
+                    let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * vec3f(size, 50.0, size) - vec3f(half_size, 0.0, half_size);
                     let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
                     let h = rng.gen();
 
@@ -186,8 +187,8 @@ pub fn setup_cubemap_test(
     let size = 10.0;
     let half_size = size * 0.5;    
     let step = size * half_size;
-    let half_extent = rc * half_size;
-    let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
+    let half_extent = (rc-1.0) * step * 0.5;
+    let start_pos = vec3f(-half_extent, size, -half_extent);
 
     let cubemap_filepath = hotline_rs::get_data_path("textures/cubemap.dds");
     let cubemap = image::load_texture_from_file(&mut device.0, &cubemap_filepath).unwrap();
@@ -199,7 +200,7 @@ pub fn setup_cubemap_test(
                 MeshComponent(sphere_mesh.clone()),
                 Position(iter_pos),
                 Rotation(Quatf::identity()),
-                Scale(splat3f(10.0)),
+                Scale(splat3f(size)),
                 WorldMatrix(Mat34f::identity()),
                 TextureInstance(cubemap.get_srv_index().unwrap() as u32)
             ));
@@ -243,13 +244,18 @@ pub fn setup_texture2d_array_test(
     let aspect = (texture_array_info.info.width / texture_array_info.info.height) as f32;
     let size = vec2f(20.0 * aspect, 20.0);
 
-    let num_instances = 32;
-    let range = vec3f(200.0, 0.0, 200.0);
+    let num_instances = 64;
+
     let mut rng = rand::thread_rng();
+    let dist = rand::distributions::Uniform::from(-200..200);
 
     // randomly spawn some cylindrical billboards
     for _ in 0..num_instances {
-        let mut pos = (vec3f(rng.gen(), rng.gen(), rng.gen()) * (range * 2.0)) - range;
+        let mut pos = vec3f(
+            dist.sample(&mut rng) as f32, 
+            dist.sample(&mut rng) as f32, 
+            dist.sample(&mut rng) as f32
+        ) * vec3f(1.0, 0.0, 1.0);
         pos.y = size.y * 0.7;
         commands.spawn((
             MeshComponent(billboard_mesh.clone()),
@@ -302,7 +308,7 @@ pub fn setup_texture3d_test(
 
     commands.spawn((
         MeshComponent(cube_mesh.clone()),
-        Position(vec3f(0.0, dim, 0.0)),
+        Position(vec3f(0.0, dim * 0.5, 0.0)),
         Rotation(Quatf::identity()),
         Scale(splat3f(dim)),
         WorldMatrix(Mat34f::identity()),

@@ -636,6 +636,7 @@ impl super::App for App {
 
     fn exit(&mut self, exit_code: i32) {
         unsafe {
+            println!("hotline_rs::os::win32:: exiting with code ({})", exit_code);
             PostQuitMessage(exit_code);
         }
     }
@@ -1082,6 +1083,7 @@ extern "system" fn main_wndproc(
         WM_DESTROY => {
             unsafe {
                 // PostQuitMessage must happen here, not in the member wnd proc function
+                println!("hotline_rs::os::win32:: WM_DESTROY with code ({})", 0);
                 PostQuitMessage(0);
                 LRESULT(0)
             }

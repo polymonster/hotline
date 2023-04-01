@@ -10,14 +10,27 @@ use bevy_ecs::prelude::*;
 use maths_rs::Vec4u;
 
 #[derive(Component)]
+pub struct Parent(Entity);
+
+#[derive(Component)]
+pub struct BufferComponent(pub gfx_platform::Buffer);
+
+#[derive(Component)]
+pub struct WorldBuffers {
+    /// Structured buffer containing bindless draw call information for entities (world matrix)
+    pub draw: gfx_platform::Buffer,
+    // Structured buffer containing texture ids and material parameters
+    // pub material: gfx_platform::Buffer
+    // Structured buffer containing light data
+    // pub light: gfx_platform::Buffer
+}
+
+#[derive(Component)]
 pub struct InstanceBuffer {
     pub heap: Option<gfx_platform::Heap>,
     pub buffer: gfx_platform::Buffer,
     pub instance_count: u32
 }
-
-#[derive(Component)]
-pub struct BufferComponent(pub gfx_platform::Buffer);
 
 #[derive(Bundle)]
 pub struct InstanceBatch {
@@ -25,9 +38,6 @@ pub struct InstanceBatch {
     pipeline: PipelineComponent,
     instance_buffer: InstanceBuffer
 }
-
-#[derive(Component)]
-pub struct Parent(Entity);
 
 #[derive(Bundle)]
 pub struct Instance {
@@ -38,20 +48,15 @@ pub struct Instance {
     parent: Parent
 }
 
-#[derive(Bundle)]
-pub struct InstanceMaterial {
-    buffer: BufferComponent,
-    entity_id: EntityId,
-    material_id: MaterialInstance
+#[derive(Component)]
+pub struct InstanceIds {
+    entity_id: u32,
+    material_id: u32
 }
 
 pub struct EntityInstanceData {
     pub world_matrix: Mat34f,
-    pub ids: Vec4u
 }
-
-#[derive(Component)]
-pub struct EntityId(u32);
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
@@ -153,23 +158,39 @@ pub fn batch_world_matrix_instances(
 
 #[no_mangle]
 pub fn batch_material_instances(
-    mut instances_query: Query<(&Parent, &WorldMatrix, &EntityId, &mut BufferComponent)>,
+    mut instances_query: Query<(&Parent, &InstanceIds)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
 
     for (entity, mut instance_batch) in &mut instance_batch_query {
         let mut indices = Vec::new();
-        for (parent, world_matrix, id, mut buffer) in &mut instances_query {
+        for (parent, ids) in &mut instances_query {
             if parent.0 == entity {
-                indices.push(vec4u(id.0, 0, 0, 0));
-                let data = EntityInstanceData {
-                    world_matrix: world_matrix.0,
-                    ids: vec4u(0, 0, 0, 0)
-                };
-                buffer.0.update(0, gfx::as_u8_slice(&data)).unwrap();
+                indices.push(vec4u(ids.entity_id, ids.material_id, 0, 0));
             }
         }
-
         instance_batch.buffer.update(0, &indices).unwrap();
+    }
+}
+
+#[no_mangle]
+pub fn batch_bindless_world_matrix_instances(
+    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>,
+    mut world_buffers_query: Query<&mut WorldBuffers>) {
+
+    let mut instance_data = Vec::new();
+    let mut count = 0;
+    for (ids, _) in &instances_query {
+        count = max(count, ids.entity_id);
+    }
+    instance_data.resize((count+1) as usize, Mat34f::zero());
+
+    for (ids, world_matrix) in &instances_query {
+        let i = ids.entity_id as usize;
+        instance_data[i] = world_matrix.0;
+    }
+
+    for mut buf in &mut world_buffers_query {
+        buf.draw.update(0, &instance_data).unwrap();
     }
 }
 
@@ -325,31 +346,6 @@ pub fn setup_draw_indexed_cbuffer_instanced(
     }
 }
 
-// material ID or entity instance ID, material ID in vertex buffer
-// draw structured buffer per entity (world matrix)
-// structured buffer per material (albedo, normal, metalness, roughness id's)
-// cbuffer for view constants
-
-/*
-#[derive(Component)]
-pub struct AlbedoMap(pub gfx_platform::Texture);
-
-#[derive(Component)]
-pub struct NormalMap(pub gfx_platform::Texture);
-
-#[derive(Bundle)]
-pub struct Material {
-    pub albedo: AlbedoMap,
-    pub normal: NormalMap
-}
-
-#[derive(Component)]
-pub struct MaterialInstance {
-    pub albedo: u32,
-    pub normal: u32
-}
-*/
-
 /// 
 #[no_mangle]
 pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -363,7 +359,7 @@ pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_
     }
 }
 
-/// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
+///
 #[no_mangle]
 pub fn setup_draw_push_constants_texture(
     mut device: ResMut<DeviceRes>,
@@ -387,14 +383,14 @@ pub fn setup_draw_push_constants_texture(
     ];
 
     // square number of rows and columns
-    let rc = 2.0;
+    let rc = sqrt(textures.len() as f32);
     let irc = (rc + 0.5) as usize; 
 
     let size = 10.0;
     let half_size = size * 0.5;    
     let step = size * half_size;
-    let half_extent = rc * half_size;
-    let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
+    let half_extent = (rc-1.0) * step * 0.5;
+    let start_pos = vec3f(-half_extent, size, -half_extent);
 
     for y in 0..irc {
         for x in 0..irc {
@@ -403,7 +399,7 @@ pub fn setup_draw_push_constants_texture(
                 MeshComponent(sphere.clone()),
                 Position(iter_pos),
                 Rotation(Quatf::identity()),
-                Scale(splat3f(10.0)),
+                Scale(splat3f(size)),
                 WorldMatrix(Mat34f::identity()),
                 TextureInstance(textures[y * irc + x].get_srv_index().unwrap() as u32),
             ));
@@ -431,7 +427,8 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
         ],
         update: systems![
             "rotate_meshes",
-            "batch_material_instances"
+            "batch_material_instances",
+            "batch_bindless_world_matrix_instances"
         ],
         render_graph: "mesh_material_instanced"
     }
@@ -452,14 +449,15 @@ pub fn setup_draw_material(
     let mut rng = rand::thread_rng();
 
     let size = 2.0;
-    let num = 16;
-    let instance_count = (num*num) as u32;
+    let num = 64;
     let range = size * size * (num as f32);
+    let mut entity_itr = 0;
 
     for mesh in meshes {
+        let instance_count = (num*num) as u32;
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: PipelineComponent("mesh_material_instanced".to_string()),
+            pipeline: PipelineComponent(String::new()),
             instance_buffer: InstanceBuffer { 
                 buffer: device.create_buffer(&gfx::BufferInfo{
                     usage: gfx::BufferUsage::VERTEX,
@@ -471,34 +469,42 @@ pub fn setup_draw_material(
                 }, hotline_rs::data![]).unwrap(),
                 instance_count,
                 heap: None
-            }
-        }).id();
+        }}).id();
         for _ in 0..num {
             for _ in 0..num {
-                // spawn a bunch of entites with slightly randomised 
+                // spawn a bunch of entites with slightly randomised
                 let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
                 let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
-                let buf = device.create_buffer(&gfx::BufferInfo{
-                    usage: gfx::BufferUsage::SHADER_RESOURCE,
-                    cpu_access: gfx::CpuAccessFlags::WRITE,
-                    format: gfx::Format::Unknown,
-                    stride: std::mem::size_of::<EntityInstanceData>(),
-                    num_elements: 1,
-                    initial_state: gfx::ResourceState::ShaderResource
-                }, hotline_rs::data![]).unwrap();
-                let srv_index = buf.get_srv_index().unwrap();
                 commands.spawn((Instance {
                     pos: Position(pos),
                     rot: Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
                     scale: Scale(splat3f(size)),
                     world_matrix: WorldMatrix(Mat34f::identity()),
                     parent: Parent(parent)
-                }, InstanceMaterial {
-                    buffer: BufferComponent(buf),
-                    material_id: MaterialInstance(0),
-                    entity_id: EntityId(srv_index as u32),
+                },
+                InstanceIds {
+                    entity_id: entity_itr,
+                    material_id: 0
                 }));
+
+                // increment
+                entity_itr += 1;
             }
         }
     }
+
+    let draw_buf = device.create_buffer(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::WRITE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<EntityInstanceData>(),
+        num_elements: entity_itr as usize,
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![]).unwrap();
+
+
+    // Spaw the world buffer entity
+    commands.spawn(WorldBuffers {
+        draw: draw_buf
+    });
 }

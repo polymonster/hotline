@@ -1,18 +1,19 @@
 // TODO:
 
-// - minimise shader duplication cause via pmfx includes.
+// - minimise shader duplication caused via pmfx includes
+
+// - lazy init print function
+// - uv's need flipping on geom
 
 // - structured buffer instances
 // - material
-// - cbuffer camera?
 // - persistent mapped buffers
 // - create texture with heap
 // - pmfx shader heap
+// - cbuffer camera?
 
 // - fix get_num_32bit_constants function
-// - removing render graph (or possibly any state) from data is not removed from the live client. pmfx
-// - fix gpu time inconsistency
-// - uv's need flipping on geom
+
 // - render target fixed size
 // - texture load image from file into pmfx
 
@@ -46,16 +47,19 @@
 // - Texture Formats (BC etc)
 // - API for fence?
 // - API for copies and clears
-// - corretly obtain cbuffer alignment?
 
 // ui / log / debug / info
 // - imgui colours are not complete
 // - timer stats
 // - thread stats
-// - in client terminal / log (validation layer) / info queue
 // - view menu + saving state
 
 // DONE:
+// x validate states exist in pmfx
+// x crash on reload
+// x corretly obtain cbuffer alignment?
+// x fix gpu time inconsistency
+// x in client terminal / log (validation layer) / info queue
 // x find offsets to bind heaps to from register bindings in shader
 // x unify shader code and pmfx code
 // x cubemaps do not create descriptor layout binding
