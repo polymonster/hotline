@@ -121,11 +121,14 @@ impl WinPixEventRuntime {
     }
 }
 
+type D3D12DeviceVersion = ID3D12Device;
+type D3D12DebugVersion = ID3D12Debug;
+
 #[derive(Clone)]
 pub struct Device {
     adapter_info: super::AdapterInfo,
     dxgi_factory: IDXGIFactory4,
-    device: ID3D12Device,
+    device: D3D12DeviceVersion,
     command_allocator: ID3D12CommandAllocator,
     command_list: ID3D12GraphicsCommandList,
     command_queue: ID3D12CommandQueue,
@@ -746,7 +749,7 @@ pub fn get_hardware_adapter(
         if D3D12CreateDevice(
             &adapter,
             D3D_FEATURE_LEVEL_12_1,
-            std::ptr::null_mut::<Option<ID3D12Device>>(),
+            std::ptr::null_mut::<Option<D3D12DeviceVersion>>(),
         )
         .is_ok()
         {
@@ -797,7 +800,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
     readback_buffer
 }
 
-fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
+fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo) -> Heap {
     unsafe {
         let d3d12_type = to_d3d12_descriptor_heap_type(info.heap_type);
         let heap: ID3D12DescriptorHeap = device
@@ -821,7 +824,7 @@ fn create_heap(device: &ID3D12Device, info: &HeapInfo) -> Heap {
     }
 }
 
-fn create_query_heap(device: &ID3D12Device, info: &QueryHeapInfo) -> QueryHeap {    
+fn create_query_heap(device: &D3D12DeviceVersion, info: &QueryHeapInfo) -> QueryHeap {    
     let mut heap = None;
     let desc = D3D12_QUERY_HEAP_DESC {
         Type: to_d3d12_query_heap_type(info.heap_type),
@@ -892,6 +895,15 @@ fn validate_data_size<T: Sized>(
     Ok(())
 }
 
+fn align_buffer_data_size(size_bytes: usize, usage: super::BufferUsage) -> usize {
+    if usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
+        align_pow2(size_bytes as u64, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT as u64) as usize
+    }
+    else {
+        size_bytes
+    }
+}
+
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
@@ -907,7 +919,8 @@ impl Heap {
             if self.free_list.is_empty() {
                 // allocates a new handle
                 if self.offset >= self.capacity {
-                    panic!("hotline_rs::gfx::d3d12: heap is full!");
+                    println!("hotline_rs::gfx::d3d12: heap is full!");
+                    panic!();
                 }
                 let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
                 self.offset += self.increment_size;
@@ -1342,7 +1355,7 @@ impl super::Device for Device {
             // enable debug layer
             let mut dxgi_factory_flags: u32 = 0;
             if cfg!(debug_assertions) {
-                let mut debug: Option<ID3D12Debug> = None;
+                let mut debug: Option<D3D12DebugVersion> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                     debug.EnableDebugLayer();
                     println!("hotline_rs::gfx::d3d12: enabling debug layer");
@@ -1359,8 +1372,8 @@ impl super::Device for Device {
                 .expect("hotline_rs::gfx::d3d12: failed to get hardware adapter");
 
             // create device
-            let mut d3d12_device: Option<ID3D12Device> = None;
-            D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_11_0, &mut d3d12_device)
+            let mut d3d12_device: Option<D3D12DeviceVersion> = None;
+            D3D12CreateDevice(&adapter, D3D_FEATURE_LEVEL_12_1, &mut d3d12_device)
                 .expect("hotline_rs::gfx::d3d12: failed to create d3d12 device");
             let device = d3d12_device.unwrap();
 
@@ -1800,13 +1813,7 @@ impl super::Device for Device {
         let size_bytes = info.stride * info.num_elements;
         validate_data_size(size_bytes, data)?;
 
-        // TODO: alignment, need to request the alignments from the device
-        let size_bytes = if info.usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
-            align_pow2(size_bytes as u64, 256) as usize
-        }
-        else {
-            size_bytes
-        };
+        let aligned_size = align_buffer_data_size(size_bytes, info.usage);
 
         unsafe {
             self.device.CreateCommittedResource(
@@ -1821,7 +1828,7 @@ impl super::Device for Device {
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC {
                     Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Width: size_bytes as u64,
+                    Width: aligned_size as u64,
                     Height: 1,
                     DepthOrArraySize: 1,
                     MipLevels: 1,
@@ -1859,7 +1866,7 @@ impl super::Device for Device {
                     &D3D12_RESOURCE_DESC {
                         Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
                         Alignment: 0,
-                        Width: size_bytes as u64,
+                        Width: aligned_size as u64,
                         Height: 1,
                         DepthOrArraySize: 1,
                         MipLevels: 1,
@@ -2452,6 +2459,39 @@ impl super::Device for Device {
             debug_device.ReportLiveDeviceObjects(D3D12_RLDO_DETAIL)?;
         }
         Ok(())
+    }
+
+    fn get_info_queue_messages(&self) -> result::Result<Vec<String>, super::Error> {
+        let info_queue : ID3D12InfoQueue = self.device.cast()?;
+        let mut output = Vec::new();
+        unsafe {
+            let count = info_queue.GetNumStoredMessages();
+            for i in 0..count {
+                let mut size = 0;
+                info_queue.GetMessage(i, None, &mut size)?;
+
+                let layout = std::alloc::Layout::from_size_align(size, 4)?;
+                let data = std::alloc::alloc(layout);
+
+                assert!(size <= layout.size(), 
+                    "{} vs {}", size, layout.size());
+
+                info_queue.GetMessage(i, Some(data as *mut D3D12_MESSAGE), &mut size)?;
+
+                let msg = *(data as *mut D3D12_MESSAGE);
+
+                let mut descripton_chars = Vec::new();
+                for c in 0..msg.DescriptionByteLength {
+                    descripton_chars.push(*msg.pDescription.add(c));
+                }
+                let str = std::str::from_utf8(descripton_chars.as_slice())?;
+                output.push(str.to_string());
+
+                std::ptr::drop_in_place(data);
+            }
+            info_queue.ClearStoredMessages();
+        }
+        Ok(output)
     }
 
     fn clean_up_resources(&mut self, swap_chain: &SwapChain) {

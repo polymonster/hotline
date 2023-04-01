@@ -61,7 +61,13 @@ pub struct Time {
     /// System time that the last frame started
     pub frame_start: SystemTime,
     /// Control the run state of the program, pause render / update
-    pub paused: bool
+    pub paused: bool,
+    /// Control whether delta time is time or 0
+    pub delta_paused: bool,
+    /// Control the delta time (speed up or slo-mo)
+    pub time_scale: f32,
+    /// Force fixed time delta
+    fixed_delta: Option<f32>
 }
 const SMOOTH_DELTA_FRAMES : usize = 120;
 
@@ -73,7 +79,10 @@ impl Time {
             delta: 0.0,
             smooth_delta: 0.0,
             frame_start: SystemTime::now(),
-            paused: false
+            paused: false,
+            delta_paused: false,
+            time_scale: 1.0,
+            fixed_delta: None
         }
     }
 }
@@ -296,17 +305,25 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let elapsed = prev_frame_start.elapsed();
         if let Ok(elapsed) = elapsed {
             // track delta
-            self.time.delta = elapsed.as_secs_f32();
+            if !self.time.delta_paused {
+                self.time.delta = elapsed.as_secs_f32() * self.time.time_scale;
 
-            // record history
-            self.delta_history.push_front(self.time.delta);
-            if self.delta_history.len() > SMOOTH_DELTA_FRAMES {
-                self.delta_history.pop_back();
+                // record history
+                self.delta_history.push_front(self.time.delta);
+                if self.delta_history.len() > SMOOTH_DELTA_FRAMES {
+                    self.delta_history.pop_back();
+                }
+    
+                // calculate smooth delta
+                let sum : f32 = self.delta_history.iter().sum();
+                self.time.smooth_delta = sum / self.delta_history.len() as f32;
             }
-
-            // calculate smooth delta
-            let sum : f32 = self.delta_history.iter().sum();
-            self.time.smooth_delta = sum / self.delta_history.len() as f32;
+            else {
+                // paused delta
+                self.time.delta = 0.0;
+                self.time.smooth_delta = 0.0;
+                self.delta_history.clear();
+            }
         }
     }
 
@@ -591,15 +608,59 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 self.imgui.end_menu();
             }
 
-            // playback / toggle pause
-            let icon = if self.time.paused {
-                font_awesome::strs::PLAY_CIRCLE
-            }
-            else {
-                font_awesome::strs::PAUSE_CIRCLE
-            };
-            if self.imgui.button(icon) {
-                self.time.paused = !self.time.paused;
+            if self.imgui.begin_menu("Time") {
+                // pause dt
+                let pause_text = if self.time.delta_paused {
+                    "Resume Delta Time"
+                }
+                else {
+                    "Pause Delta Time"
+                };
+
+                if self.imgui.menu_item(pause_text) {
+                    self.time.delta_paused = !self.time.delta_paused;
+                }
+
+                // pause updates
+                let pause_text = if self.time.paused {
+                    "Resume Updates"
+                }
+                else {
+                    "Pause Updates"
+                };
+
+                if self.imgui.menu_item(pause_text) {
+                    self.time.paused = !self.time.paused;
+                }
+
+                // fixed time step
+                if let Some(mut step) = self.time.fixed_delta {
+                    let mut fixed = true;
+                    if self.imgui.checkbox("##", &mut fixed) {
+                        if !fixed {
+                            self.time.fixed_delta = None;
+                        }
+                    }
+                    self.imgui.same_line();
+                    self.imgui.dummy(5.0, 0.0);
+                    self.imgui.same_line();
+                    if self.imgui.input_float("Fixed Timestep", &mut step) {
+                        self.time.fixed_delta = Some(step)
+                    }
+                }
+                else {
+                    let mut fixed = false;
+                    if self.imgui.checkbox("Fixed Timestep", &mut fixed) {
+                        if fixed {
+                            self.time.fixed_delta = Some(1.0 / 60.0);
+                        }
+                    }
+                }
+
+                // time scaling
+                self.imgui.input_float("Time Scale", &mut self.time.time_scale);
+                
+                self.imgui.end_menu();
             }
 
             self.imgui.end_main_menu_bar();
@@ -841,6 +902,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             }
 
             self.present("");
+
+            // print d3d debug info messages to the console
+            let info_queue = self.device.get_info_queue_messages()?;
+            for msg in info_queue {
+                println!("{}", msg);
+            }
         }
 
         // save out values for next time

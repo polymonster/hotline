@@ -60,6 +60,10 @@ pub fn setup_geometry_primitives(
         (hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4), MeshType::Normal),
         (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::Billboard),
         (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::CylindricalBillboard),
+        
+        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 0.33, 0.66, 0.33), MeshType::Normal),
     ];
 
     // square number of rows and columns

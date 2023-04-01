@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if)] 
 
+use crate::gfx::PipelineStatistics;
 use crate::os;
 use crate::gfx;
 
@@ -110,7 +111,7 @@ pub struct Pmfx<D: gfx::Device> {
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
     barriers: HashMap<String, D::CmdBuf>,
     /// Vector of view names to execute in designated order
-    render_graph_execute_order: Vec<String>,
+    command_queue: Vec<String>,
     /// Tracking texture references of views
     view_texture_refs: HashMap<String, HashSet<String>>,
     /// Container to hold overall GPU stats
@@ -130,7 +131,9 @@ pub struct TotalStats {
     /// Time of the first submission in seconds
     pub gpu_start: f64,
     /// Time of the final submission in seconds
-    pub gpu_end: f64
+    pub gpu_end: f64,
+    /// Total pipeline statistics 
+    pub pipeline_stats: PipelineStatistics
 }
 
 impl TotalStats {
@@ -138,7 +141,8 @@ impl TotalStats {
         Self {
             gpu_time_ms: 0.0,
             gpu_start: 0.0,
-            gpu_end: 0.0
+            gpu_end: 0.0,
+            pipeline_stats: PipelineStatistics::default()
         }
     }
 }
@@ -518,7 +522,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             view_stats: HashMap::new(),
             cameras: HashMap::new(),
             barriers: HashMap::new(),
-            render_graph_execute_order: Vec::new(),
+            command_queue: Vec::new(),
             view_texture_refs: HashMap::new(),
             window_sizes: HashMap::new(),
             active_render_graph: String::new(),
@@ -935,7 +939,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
 
             // add barrier placeholder in the execute order
-            self.render_graph_execute_order.push(barrier_name);
+            self.command_queue.push(barrier_name);
         }
         Ok(())
     }
@@ -952,7 +956,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             if state != target_state {
                 // add barrier placeholder in the execute order
                 let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
-                self.render_graph_execute_order.push(barrier_name.to_string());          
+                self.command_queue.push(barrier_name.to_string());          
 
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
@@ -995,7 +999,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // currently we just have 1 single execute graph and barrier set
             self.barriers.clear();
-            self.render_graph_execute_order.clear();
+            self.command_queue.clear();
 
             let mut barriers = self.pmfx.textures.iter().filter(|tex|{
                 tex.1.usage.contains(&ResourceState::ShaderResource) || 
@@ -1079,7 +1083,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // push a view on
                     added += 1;
                     dependencies.insert(graph_view_name.to_string());
-                    self.render_graph_execute_order.push(graph_view_name.to_string());
+                    self.command_queue.push(graph_view_name.to_string());
                 }
             }
             
@@ -1214,6 +1218,48 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Obtain stats for the current frame and caulcuate time deltas between start / end
+    fn gather_stats(&mut self, device: &mut D, swap_chain: &D::SwapChain) {
+        let mut min_frame_timestamp = f64::max_value();
+        let mut max_frame_timestamp = f64::zero();
+        let mut total_pipeline_stats = PipelineStatistics::default();
+        let timestamp_size_bytes = D::get_timestamp_size_bytes();
+        for (name, stats) in &mut self.view_stats {
+            if self.command_queue.contains(name) {
+                stats.frame_fence_value = swap_chain.get_frame_fence_value();
+                let i = stats.read_index;
+                let write_fence = stats.fences[i];
+                if write_fence < swap_chain.get_frame_fence_value() {
+                    // start timestamp
+                    let timestamps = device.read_timestamps(
+                        swap_chain, &stats.timestamp_buffers[i][0], timestamp_size_bytes, write_fence);
+                    if !timestamps.is_empty() {
+                        stats.start_timestamp = timestamps[0];
+                        min_frame_timestamp = min(stats.start_timestamp, min_frame_timestamp);
+    
+                    }
+                    // end timestamp
+                    let timestamps = device.read_timestamps(
+                        swap_chain, &stats.timestamp_buffers[i][1], timestamp_size_bytes, write_fence);
+                    if !timestamps.is_empty() {
+                        stats.end_timestamp = timestamps[0];
+                        max_frame_timestamp = max(stats.end_timestamp, max_frame_timestamp);
+                    }
+                    // pipeline stats
+                    let pipeline_stats = device.read_pipeline_statistics(
+                        swap_chain, &stats.pipeline_stats_buffers[i], write_fence);
+                    if let Some(pipeline_stats) = pipeline_stats {
+                        total_pipeline_stats += pipeline_stats;
+                    }
+                }
+            }
+        }
+        self.total_stats.gpu_start = min_frame_timestamp;
+        self.total_stats.gpu_end = max_frame_timestamp;
+        self.total_stats.gpu_time_ms = (max_frame_timestamp - min_frame_timestamp) * 1000.0;
+        self.total_stats.pipeline_stats = total_pipeline_stats;
+    }
+
     /// Start a new frame and syncronise command buffers to the designated swap chain
     pub fn new_frame(&mut self, device: &mut D, swap_chain: &D::SwapChain) -> Result<(), super::Error> {
         // check if we have any reloads available
@@ -1224,41 +1270,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.reloader.complete_reload();
         }
 
-        // gather stats
-        let mut min_frame_timestamp = f64::max_value();
-        let mut max_frame_timestamp = f64::zero();
-        let timestamp_size_bytes = D::get_timestamp_size_bytes();
-        for stats in self.view_stats.values_mut() {
-            stats.frame_fence_value = swap_chain.get_frame_fence_value();
-            let i = stats.read_index;
-            let write_fence = stats.fences[i];
-            if write_fence < swap_chain.get_frame_fence_value() {
-                // start timestamp
-                let timestamps = device.read_timestamps(
-                    swap_chain, &stats.timestamp_buffers[i][0], timestamp_size_bytes, write_fence);
-                if !timestamps.is_empty() {
-                    stats.start_timestamp = timestamps[0];
-                    min_frame_timestamp = min(stats.start_timestamp, min_frame_timestamp);
-
-                }
-                // end timestamp
-                let timestamps = device.read_timestamps(
-                    swap_chain, &stats.timestamp_buffers[i][1], timestamp_size_bytes, write_fence);
-                if !timestamps.is_empty() {
-                    stats.end_timestamp = timestamps[0];
-                    max_frame_timestamp = max(stats.end_timestamp, max_frame_timestamp);
-                }
-                // pipeline stats
-                let pipeline_stats = device.read_pipeline_statistics(
-                    swap_chain, &stats.pipeline_stats_buffers[i], write_fence);
-                if let Some(_pipeline_stats) = pipeline_stats {
-                    //println!("has verts! {}", pipeline_stats.input_assembler_vertices);
-                }
-            }
-        }
-        self.total_stats.gpu_start = min_frame_timestamp;
-        self.total_stats.gpu_end = max_frame_timestamp;
-        self.total_stats.gpu_time_ms = (max_frame_timestamp - min_frame_timestamp) * 1000.0;
+        // gather render stats
+        self.gather_stats(device, swap_chain);
 
         // reset command buffers
         self.reset(swap_chain);
@@ -1537,7 +1550,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
         for (name, view) in &self.views {
             // rest only command buffers that are in use
-            if self.render_graph_execute_order.contains(name) {
+            if self.command_queue.contains(name) {
                 let view = view.clone();
                 let mut view = view.1.lock().unwrap();
                 view.cmd_buf.reset(swap_chain);
@@ -1578,14 +1591,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     pub fn get_render_graph_execute_order(&self) -> &Vec<String> {
-        &self.render_graph_execute_order
+        &self.command_queue
     }
 
     /// Execute command buffers in order
     pub fn execute(
         &mut self,
         device: &mut D) {
-        for node in &self.render_graph_execute_order {
+        for node in &self.command_queue {
             if self.barriers.contains_key(node) {
                 // transition barriers
                 device.execute(&self.barriers[node]);
@@ -1595,7 +1608,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 let view = self.views[node].clone();
                 let view = &mut view.1.lock().unwrap();
 
-                // TODO: crashing
                 // inserts markers for timing and tracking pipeline stats
                 let mut stats = self.view_stats.remove(node).unwrap();
                 Self::stats_end(view, &mut stats);
@@ -1671,6 +1683,20 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
                 imgui.separator();
             }
             imgui.end();
+
+            if imgui.begin("perf", &mut imgui_open, imgui::WindowFlags::NONE) {
+                imgui.text(&format!("gpu: {:.2} (ms)", self.total_stats.gpu_time_ms));
+                imgui.separator();
+                imgui.text("pipeline statistics");
+                imgui.separator();
+                imgui.text(&format!("input_assembler_vertices: {}", self.total_stats.pipeline_stats.input_assembler_vertices));
+                imgui.text(&format!("input_assembler_primitives: {}", self.total_stats.pipeline_stats.input_assembler_primitives));
+                imgui.text(&format!("vertex_shader_invocations: {}", self.total_stats.pipeline_stats.vertex_shader_invocations));
+                imgui.text(&format!("pixel_shader_primitives: {}", self.total_stats.pipeline_stats.pixel_shader_primitives));
+                imgui.text(&format!("compute_shader_invocations: {}", self.total_stats.pipeline_stats.compute_shader_invocations));
+            }
+            imgui.end();
+
             imgui_open
         } 
         else {

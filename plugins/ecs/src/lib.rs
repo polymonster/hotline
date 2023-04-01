@@ -422,7 +422,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.errors = HashMap::new();
 
         self.session_info = client.deserialise_plugin_data("ecs");
-        println!("session_info: {}", self.session_info.active_demo);
 
         // dynamically change demos and lookup infos in other libs
         let schedule_info = self.get_demo_schedule_info(&mut client);
@@ -571,7 +570,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
-        self.world.clear_entities();
+        self.world = World::default();
         client
     }
 

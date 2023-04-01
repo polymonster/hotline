@@ -13,5 +13,9 @@ fn main() -> Result<(), hotline_rs::Error> {
     })?;
     
     // run
-    ctx.run()
+    if let Err(e) = ctx.run() {
+        println!("error: {}", e.msg);
+    };
+
+    Ok(())
 }
