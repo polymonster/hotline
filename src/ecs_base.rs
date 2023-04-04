@@ -151,13 +151,6 @@ macro_rules! system_func {
 
 #[macro_export]
 macro_rules! render_func {
-    ($func:expr, $view:expr) => {
-        Some(render_func_closure![$func, $view, Query::<(&WorldMatrix, &MeshComponent)>].into_config())
-    }
-}
-
-#[macro_export]
-macro_rules! render_func_query {
     ($func:expr, $view:expr, $query:ty) => {
         Some(render_func_closure![$func, $view, $query].into_config())
     }
@@ -171,10 +164,8 @@ macro_rules! render_func_closure {
     ($func:expr, $view_name:expr, $query:ty) => {
         move |
             pmfx: Res<PmfxRes>,
-            device: Res<DeviceRes>,
             qmesh: $query | {
                 let view = pmfx.get_view(&$view_name);
-
                 let err = match view {
                     Ok(v) => { 
                         let mut view = v.lock().unwrap();
@@ -186,7 +177,6 @@ macro_rules! render_func_closure {
                         view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
                         let result = $func(
-                            &device,
                             &pmfx,
                             &view,
                             qmesh

@@ -95,12 +95,19 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     }
 }
 
-/// Loads an image from file and creates a shader resource on the device heap
+/// Loads an image from file and creates a shader resource on the specified heap, or on the device heap if `heap.is_none()`
 pub fn load_texture_from_file(
-    device: &mut crate::gfx_platform::Device, 
-    file: &str) -> Result<crate::gfx_platform::Texture, super::Error> {
+    device: &mut crate::gfx_platform::Device,
+    file: &str,
+    heap: Option<&mut crate::gfx_platform::Heap>) -> Result<crate::gfx_platform::Texture, super::Error> {
     let image = load_from_file(file)?;
-    device.create_texture(&image.info, crate::data![image.data.as_slice()])
+    device.create_texture_with_heaps(
+        &image.info, 
+        gfx::TextureHeapInfo {
+            shader: heap,
+            ..Default::default()
+        },
+    crate::data![image.data.as_slice()])
 }
 
 /// Convert ddsfile to gfx::TextureType

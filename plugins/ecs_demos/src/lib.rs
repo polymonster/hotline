@@ -42,7 +42,6 @@ fn animate_textures(
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
 pub fn render_meshes_bindless_material(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
@@ -64,13 +63,13 @@ pub fn render_meshes_bindless_material(
     // bind the shader resource heap for t0 (if exists)
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     // bind the shader resource heap for t1 (if exists)
     let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     // set the world buffer ids in push constants
@@ -107,7 +106,6 @@ pub fn render_meshes_bindless_material(
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
 #[no_mangle]
 pub fn render_meshes(
-    _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
@@ -164,7 +162,6 @@ pub fn render_meshes(
 /// Renders all scene meshes with a pipeline component, binding a new pipeline each draw
 #[no_mangle]
 pub fn render_meshes_pipeline(
-    _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>) -> Result<(), hotline_rs::Error> {
@@ -191,7 +188,6 @@ pub fn render_meshes_pipeline(
 /// Renders all scene meshes with a pipeline component, binding a new pipeline each draw with matrix + colour push constants
 #[no_mangle]
 pub fn render_meshes_pipeline_coloured(
-    _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>) -> Result<(), hotline_rs::Error> {
@@ -219,7 +215,6 @@ pub fn render_meshes_pipeline_coloured(
 /// Renders all scene meshes with a material instance component, using push constants to push texture ids
 #[no_mangle]
 pub fn render_meshes_push_constants_texture(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
@@ -234,7 +229,7 @@ pub fn render_meshes_push_constants_texture(
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     for (world_matrix, mesh, texture) in &mesh_draw_query {
@@ -252,7 +247,6 @@ pub fn render_meshes_push_constants_texture(
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
 pub fn render_meshes_vertex_buffer_instanced(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
@@ -271,7 +265,7 @@ pub fn render_meshes_vertex_buffer_instanced(
         // bind the shader resource heap for t0 (if exists)
         let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
         if let Some(slot) = slot {
-            view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+            view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
         }
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
@@ -286,7 +280,6 @@ pub fn render_meshes_vertex_buffer_instanced(
 /// Renders all scene instance batches with cbuffer instance buffer
 #[no_mangle]
 pub fn render_meshes_cbuffer_instanced(
-    _device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
@@ -315,7 +308,6 @@ pub fn render_meshes_cbuffer_instanced(
 /// Renders a texture2d test passing the texture index and frame index to the shader for sampling along with a world matrix.
 #[no_mangle]
 pub fn render_meshes_texture2d_array_test(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>) -> Result<(), hotline_rs::Error> {
@@ -329,7 +321,7 @@ pub fn render_meshes_texture2d_array_test(
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     // spherical billboard
@@ -356,7 +348,6 @@ pub fn render_meshes_texture2d_array_test(
 /// Renders all scene meshes with a cubemap applied and samples the separate mip levels in the shader per entity
 #[no_mangle]
 pub fn render_meshes_cubemap_test(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
@@ -370,7 +361,7 @@ pub fn render_meshes_cubemap_test(
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     let mut mip = 0;
@@ -391,7 +382,6 @@ pub fn render_meshes_cubemap_test(
 /// Renders a texture3d test from a loaded (pre-generated signed distance field), the shader ray marches the volume
 #[no_mangle]
 pub fn render_meshes_texture3d_test(
-    device: &Res<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
@@ -406,7 +396,7 @@ pub fn render_meshes_texture3d_test(
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     for (world_matrix, mesh, tex) in &mesh_draw_query {
@@ -497,7 +487,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         ],
 
         // render functions
-        "render_meshes" => render_func_query![
+        "render_meshes" => render_func![
             render_meshes, 
             view_name,
             (
@@ -506,47 +496,47 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
                 Query<(&WorldMatrix, &MeshComponent), With<CylindricalBillboard>>,
             )
         ],
-        "render_meshes_pipeline" => render_func_query![
+        "render_meshes_pipeline" => render_func![
             render_meshes_pipeline, 
             view_name, 
             Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>
         ],
-        "render_meshes_pipeline_coloured" => render_func_query![
+        "render_meshes_pipeline_coloured" => render_func![
             render_meshes_pipeline_coloured, 
             view_name, 
             Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>
         ],
-        "render_meshes_vertex_buffer_instanced" => render_func_query![
+        "render_meshes_vertex_buffer_instanced" => render_func![
             render_meshes_vertex_buffer_instanced, 
             view_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
-        "render_meshes_cbuffer_instanced" => render_func_query![
+        "render_meshes_cbuffer_instanced" => render_func![
             render_meshes_cbuffer_instanced, 
             view_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
-        "render_meshes_push_constants_texture" => render_func_query![
+        "render_meshes_push_constants_texture" => render_func![
             render_meshes_push_constants_texture, 
             view_name, 
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
-        "render_meshes_cubemap_test" => render_func_query![
+        "render_meshes_cubemap_test" => render_func![
             render_meshes_cubemap_test,
             view_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
-        "render_meshes_texture2d_array_test" => render_func_query![
+        "render_meshes_texture2d_array_test" => render_func![
             render_meshes_texture2d_array_test,
             view_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>
         ],
-        "render_meshes_texture3d_test" => render_func_query![
+        "render_meshes_texture3d_test" => render_func![
             render_meshes_texture3d_test,
             view_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
-        "render_meshes_bindless_material" => render_func_query![
+        "render_meshes_bindless_material" => render_func![
             render_meshes_bindless_material, 
             view_name,
             (
@@ -556,8 +546,17 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         ],
         
         // basic tests
-        "render_missing_camera" => render_func![render_missing_camera, view_name],
-        "render_missing_pipeline" => render_func![render_missing_pipeline, view_name],
+        "render_missing_camera" => render_func![
+            render_missing_camera, 
+            view_name,
+            Query::<(&WorldMatrix, &MeshComponent)>
+        ],
+
+        "render_missing_pipeline" => render_func![
+            render_missing_pipeline, 
+            view_name,
+            Query::<(&WorldMatrix, &MeshComponent)>
+        ],
         _ => std::hint::black_box(None)
     }
 }

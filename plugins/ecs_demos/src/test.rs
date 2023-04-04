@@ -176,6 +176,7 @@ pub fn test_cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>)
 #[no_mangle]
 pub fn setup_cubemap_test(
     mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
 
     let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64);
@@ -191,7 +192,7 @@ pub fn setup_cubemap_test(
     let start_pos = vec3f(-half_extent, size, -half_extent);
 
     let cubemap_filepath = hotline_rs::get_data_path("textures/cubemap.dds");
-    let cubemap = image::load_texture_from_file(&mut device.0, &cubemap_filepath).unwrap();
+    let cubemap = image::load_texture_from_file(&mut device.0, &cubemap_filepath, Some(&mut pmfx.shader_heap)).unwrap();
 
     for y in 0..irc {
         for x in 0..irc {
@@ -233,6 +234,7 @@ pub fn test_texture2d_array(client: &mut Client<gfx_platform::Device, os_platfor
 #[no_mangle]
 pub fn setup_texture2d_array_test(
     mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
 
     let billboard_mesh = hotline_rs::primitives::create_billboard_mesh(&mut device.0);
@@ -240,7 +242,14 @@ pub fn setup_texture2d_array_test(
     let texture_array_filepath = hotline_rs::get_data_path("textures/bear.dds");
 
     let texture_array_info = image::load_from_file(&texture_array_filepath).unwrap();
-    let texture_array = device.0.create_texture(&texture_array_info.info, Some(texture_array_info.data.as_slice())).unwrap();
+    let texture_array = device.0.create_texture_with_heaps(
+        &texture_array_info.info,
+        gfx::TextureHeapInfo {
+            shader: Some(&mut pmfx.shader_heap),
+            ..Default::default()
+        },
+        Some(texture_array_info.data.as_slice())
+    ).unwrap();
     let aspect = (texture_array_info.info.width / texture_array_info.info.height) as f32;
     let size = vec2f(20.0 * aspect, 20.0);
 
@@ -297,12 +306,20 @@ pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App
 #[no_mangle]
 pub fn setup_texture3d_test(
     mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
 
     let volume_info = image::load_from_file(&hotline_rs::get_data_path("textures/sdf_shadow.dds")).unwrap();
-    let volume = device.0.create_texture(&volume_info.info, Some(volume_info.data.as_slice())).unwrap();
+    let volume = device.0.create_texture_with_heaps(
+        &volume_info.info,
+        gfx::TextureHeapInfo {
+            shader: Some(&mut pmfx.shader_heap),
+            ..Default::default()
+        },
+        Some(volume_info.data.as_slice())
+    ).unwrap();
 
     let dim = 50.0;
 
@@ -415,7 +432,6 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
 
 #[no_mangle]
 pub fn render_missing_camera(
-    _device: &bevy_ecs::prelude::Res<DeviceRes>,
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     _: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
@@ -425,7 +441,6 @@ pub fn render_missing_camera(
 
 #[no_mangle]
 pub fn render_missing_pipeline(
-    _device: &bevy_ecs::prelude::Res<DeviceRes>,
     pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     _: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {

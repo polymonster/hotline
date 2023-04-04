@@ -15,7 +15,6 @@
 // - resolves properly data driven
 // - set name on resources
 
-
 // - fix get_num_32bit_constants function
 // - render target fixed size
 // - texture load image from file into pmfx

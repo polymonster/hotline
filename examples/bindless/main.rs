@@ -105,7 +105,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create();
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
 
     pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
     pmfx.create_pipeline(&dev, "compute_rw", swap_chain.get_backbuffer_pass())?;

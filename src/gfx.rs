@@ -164,6 +164,18 @@ pub enum HeapType {
     Sampler,
 }
 
+/// Allows user specified heaps to be used for creating views when creating textures through `create_texture_with_heap`
+/// you can supply `None` for the heap types are not applicable and if a view is requested for a `None` heap the
+/// default device heaps will be used instead
+pub struct TextureHeapInfo<'stack, D: Device> {
+    /// Heap to allocate shader resource views and un-ordered access views
+    pub shader: Option<&'stack mut D::Heap>,
+    /// Heap to allocate render target views
+    pub render_target: Option<&'stack mut D::Heap>,
+    /// Heap to allocate depth stencil views
+    pub depth_stencil: Option<&'stack mut D::Heap>,
+}
+
 /// Information to create a query heap.
 pub struct QueryHeapInfo {
     /// ie: Timestamp, Occlusion, PipelineStatistics
@@ -908,6 +920,14 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         info: &TextureInfo,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
+    /// Create a new texture from `TextureInfo` and initialise it with optional data which can be any slice of a sized `T`
+    /// allocates requested views into the supplied heaps, if the heaps are `None` this will use the default device heaps.
+    fn create_texture_with_heaps<T: Sized>(
+        &mut self,
+        info: &TextureInfo,
+        heaps: TextureHeapInfo<Self>,
+        data: Option<&[T]>,
+    ) -> Result<Self::Texture, Error>;
     /// Create a new render pipeline state object from the supplied `RenderPipelineInfo`
     fn create_render_pipeline(
         &self,
@@ -1473,6 +1493,18 @@ impl Default for PipelineStatistics {
             vertex_shader_invocations: 0,
             pixel_shader_primitives: 0,
             compute_shader_invocations: 0
+        }
+    }
+}
+
+
+/// Pipeline stats initialised to zero
+impl<'stack, D> Default for TextureHeapInfo<'stack, D> where D: Device {
+    fn default() -> Self {
+        Self {
+            shader: None,
+            render_target: None,
+            depth_stencil: None
         }
     }
 }
