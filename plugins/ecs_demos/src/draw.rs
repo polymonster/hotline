@@ -20,7 +20,7 @@ pub struct WorldBuffers {
     /// Structured buffer containing bindless draw call information for entities (world matrix)
     pub draw: gfx_platform::Buffer,
     // Structured buffer containing texture ids and material parameters
-    // pub material: gfx_platform::Buffer
+    pub material: gfx_platform::Buffer
     // Structured buffer containing light data
     // pub light: gfx_platform::Buffer
 }
@@ -54,8 +54,24 @@ pub struct InstanceIds {
     material_id: u32
 }
 
-pub struct EntityInstanceData {
+#[repr(C)]
+pub struct DrawData {
     pub world_matrix: Mat34f,
+}
+
+#[repr(C)]
+pub struct MaterialData {
+    pub albedo_id: u32,
+    pub normal_id: u32,
+    pub roughness_id: u32,
+    pub padding: u32
+}
+
+#[derive(Component)]
+pub struct MaterialResources {
+    pub albedo: gfx_platform::Texture,
+    pub normal: gfx_platform::Texture,
+    pub roughness: gfx_platform::Texture
 }
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
@@ -406,10 +422,73 @@ pub fn setup_draw_push_constants_texture(
         }
     }
 
-    // spawn entity to keep hold of material
+    
+    // spawn entities to keep hold of textures
     for tex in textures {
         commands.spawn(
             tex
+        );
+    }
+
+    // dbeug prims uvs
+    let debug_uvs = false;
+    if debug_uvs {
+        let meshes = vec![
+            hotline_rs::primitives::create_plane_mesh(&mut device.0, 1),
+            hotline_rs::primitives::create_cube_mesh(&mut device.0),
+            hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+            hotline_rs::primitives::create_sphere_mesh_truncated(&mut device.0, 16, 8, true),
+            hotline_rs::primitives::create_cylinder_mesh(&mut device.0, 16),
+            hotline_rs::primitives::create_billboard_mesh(&mut device.0),
+            hotline_rs::primitives::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
+            hotline_rs::primitives::create_capsule_mesh(&mut device.0, 16),
+            hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0),
+            hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
+            hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
+            hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
+            hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
+            hotline_rs::primitives::create_cube_subdivision_mesh(&mut device.0, 1),
+            hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 1.0, 1.0),
+            hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 4, false, true),
+            hotline_rs::primitives::create_cone_mesh(&mut device.0, 16),
+            hotline_rs::primitives::create_tourus_mesh(&mut device.0, 16),
+            hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
+            hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4),
+        ];
+    
+        let uv_debug_tex = TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_src_data_path("textures/blend_test_fg.png")).unwrap()
+        );
+    
+        let rc = ceil(sqrt(meshes.len() as f32));
+        let irc = (rc + 0.5) as usize; 
+    
+        let size = 10.0;
+        let half_size = size * 0.5;    
+        let step = size * half_size;
+        let half_extent = (rc-1.0) * step * 0.5;
+        let start_pos = vec3f(-half_extent, size, -half_extent);
+    
+        let mut i = 0;
+        for y in 0..irc {
+            for x in 0..irc {
+                if i < meshes.len() {
+                    let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+                    commands.spawn((
+                        MeshComponent(meshes[i].clone()),
+                        Position(iter_pos),
+                        Rotation(Quatf::identity()),
+                        Scale(splat3f(size)),
+                        WorldMatrix(Mat34f::identity()),
+                        TextureInstance(uv_debug_tex.get_srv_index().unwrap() as u32),
+                    ));
+                    i += 1;
+                }
+            }
+        }
+
+        commands.spawn(
+            uv_debug_tex
         );
     }
 }
@@ -434,6 +513,45 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
     }
 }
 
+fn load_material(device: &mut gfx_platform::Device, dir: &str) -> Result<MaterialResources, hotline_rs::Error> {
+    let maps = vec![
+        "_albedo.dds",
+        "_normal.dds",
+        "_roughness.dds"
+    ];
+
+    let mut textures = Vec::new();
+    for map in maps {
+        let paths = std::fs::read_dir(dir).unwrap();
+        let map_path = paths.into_iter()
+            .filter(|p| p.as_ref().unwrap().file_name().to_string_lossy().ends_with(map))
+            .map(|p| String::from(p.as_ref().unwrap().file_name().to_string_lossy()))
+            .collect::<Vec<_>>();
+
+        if !map_path.is_empty() {
+            textures.push(
+                image::load_texture_from_file(device, &format!("{}/{}", dir, map_path[0])).unwrap()
+            );
+        }
+    }
+
+    if textures.len() != 3 {
+        return Err(hotline_rs::Error {
+            msg: format!(
+                "hotline_rs::ecs:: error: material '{}' does not contain enough maps ({}/3)", 
+                dir,
+                textures.len()
+            )
+        });
+    }
+
+    Ok(MaterialResources {
+        albedo: textures.remove(0),
+        normal: textures.remove(0),
+        roughness: textures.remove(0)
+    })
+}
+
 #[no_mangle]
 pub fn setup_draw_material(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -442,8 +560,23 @@ pub fn setup_draw_material(
     let meshes = vec![
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
         hotline_rs::primitives::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
-        hotline_rs::primitives::create_sphere_mesh_truncated(&mut device.0, 16, 8, true)
+        hotline_rs::primitives::create_sphere_mesh_truncated(&mut device.0, 16, 8, true),
+        hotline_rs::primitives::create_teapot_mesh(&mut device.0, 8)
     ];
+
+    let materials = vec![
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/angled-tiled-floor")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/antique-grate1")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/cracking-painted-asphalt")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/dirty-padded-leather")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/green-ceramic-tiles")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/office-carpet-fabric1")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/rusting-lined-metal2")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/simple-basket-weave")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/stone-block-wall")).unwrap(),
+        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/worn-painted-cement")).unwrap()
+    ];
+    let material_dist = rand::distributions::Uniform::from(0..materials.len());
 
     // square number of rows and columns
     let mut rng = rand::thread_rng();
@@ -484,7 +617,7 @@ pub fn setup_draw_material(
                 },
                 InstanceIds {
                     entity_id: entity_itr,
-                    material_id: 0
+                    material_id: material_dist.sample(&mut rng) as u32
                 }));
 
                 // increment
@@ -497,14 +630,39 @@ pub fn setup_draw_material(
         usage: gfx::BufferUsage::SHADER_RESOURCE,
         cpu_access: gfx::CpuAccessFlags::WRITE,
         format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<EntityInstanceData>(),
+        stride: std::mem::size_of::<DrawData>(),
         num_elements: entity_itr as usize,
         initial_state: gfx::ResourceState::ShaderResource
     }, hotline_rs::data![]).unwrap();
 
+    let mut material_data = Vec::new();
+    for material in &materials {
+        material_data.push(
+            MaterialData {
+                albedo_id: material.albedo.get_srv_index().unwrap() as u32,
+                normal_id: material.normal.get_srv_index().unwrap() as u32,
+                roughness_id: material.roughness.get_srv_index().unwrap() as u32,
+                padding: 100
+            }
+        );
+    }
+
+    let material_buf = device.create_buffer(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<MaterialData>(),
+        num_elements: materials.len(),
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![&material_data]).unwrap();
 
     // Spaw the world buffer entity
     commands.spawn(WorldBuffers {
-        draw: draw_buf
+        draw: draw_buf,
+        material: material_buf
     });
+
+    for material in materials {
+        commands.spawn(material);
+    }
 }

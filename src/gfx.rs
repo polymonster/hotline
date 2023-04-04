@@ -846,10 +846,10 @@ pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
-    /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register`, `space` and `descriptor_type`
+    /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
-    fn get_heap_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
+    fn get_heap_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
 }
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue

@@ -1,21 +1,12 @@
 // TODO:
 
 // - minimise shader duplication caused via pmfx includes
-
 // - lazy init print function
-// - uv's need flipping on geom
 
-// - structured buffer instances
 // - material
 // - persistent mapped buffers
 // - create texture with heap
 // - pmfx shader heap
-// - cbuffer camera?
-
-// - fix get_num_32bit_constants function
-
-// - render target fixed size
-// - texture load image from file into pmfx
 
 // - transform normals with world matrix
 // - construct tangent space
@@ -23,7 +14,11 @@
 // - glft
 // - resolves properly data driven
 // - set name on resources
-// - stats read out
+
+
+// - fix get_num_32bit_constants function
+// - render target fixed size
+// - texture load image from file into pmfx
 
 // - update docs
 // - store hotline-data commit hash for crates.io
@@ -48,13 +43,18 @@
 // - API for fence?
 // - API for copies and clears
 
-// ui / log / debug / info
+// ui / 
+// - imgui not tracked within draw call stats
 // - imgui colours are not complete
-// - timer stats
 // - thread stats
 // - view menu + saving state
 
 // DONE:
+// x stats read out
+// x cleaning up srvs in ecs worlds
+// x uv's need flipping on geom
+// x timer stats
+// x structured buffer instances
 // x validate states exist in pmfx
 // x crash on reload
 // x corretly obtain cbuffer alignment?

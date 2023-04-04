@@ -34,6 +34,8 @@ pub fn setup_geometry_primitives(
     mut commands: bevy_ecs::system::Commands) {
 
     let meshes = vec![
+        (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::Billboard),
+        (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::CylindricalBillboard),
         (hotline_rs::primitives::create_plane_mesh(&mut device.0, 1), MeshType::Normal),
         (hotline_rs::primitives::create_tetrahedron_mesh(&mut device.0), MeshType::Normal),
         (hotline_rs::primitives::create_cube_mesh(&mut device.0), MeshType::Normal),
@@ -58,12 +60,13 @@ pub fn setup_geometry_primitives(
         (hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5), MeshType::Normal),
         (hotline_rs::primitives::create_prism_mesh(&mut device.0, 5, false, true, 0.25, 0.5), MeshType::Normal),
         (hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4), MeshType::Normal),
-        (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::Billboard),
-        (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::CylindricalBillboard),
-        
-        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
-        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
-        (crate::dev::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 0.33, 0.66, 0.33), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 0.33, 0.66, 0.33), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 3, 0, 3, false, true, 0.33, 0.66, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 4, 0, 4, false, true, 0.33, 0.9, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_teapot_mesh(&mut device.0, 4), MeshType::Normal),
     ];
 
     // square number of rows and columns

@@ -111,7 +111,6 @@ hotline_ecs!(Component, MeshComponent, pmfx::Mesh<gfx_platform::Device>);
 hotline_ecs!(Component, PipelineComponent, String);
 hotline_ecs!(Component, TextureComponent, gfx_platform::Texture);
 hotline_ecs!(Component, TextureInstance, u32);
-hotline_ecs!(Component, MaterialInstance, u32);
 hotline_ecs!(Component, TimeComponent, f32);
 
 #[derive(Component)]

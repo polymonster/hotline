@@ -7,11 +7,11 @@
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 [![Discord](https://img.shields.io/discord/807665639845789796.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/3yjXwJ8wJC)
 
-Hotline is a live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render configs can be edited and hot reloaded through `pmfx` files.
+Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, render pipelines, render graphs and more without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render configs can be edited and hot reloaded through `pmfx` files.
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom_final.gif" width="100%"/>  
 
-There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages and an example workflow demonstration of how the geometry primitives were created.
+There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages and an example workflow demonstration of how the geometry primitives were created. Some development has been live streamed on [Twitch](https://www.twitch.tv/polymonstr) and archived on [YouTube](https://www.youtube.com/channel/UCQRmui5w4Urz-h4P9CL7rmA).
 
 ## Prerequisites
 

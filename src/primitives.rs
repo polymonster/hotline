@@ -228,7 +228,7 @@ fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, c
                 normal: p,
                 tangent: t,
                 bitangent: bt,
-                texcoord: vec2f(u, v) * 3.0
+                texcoord: vec2f(1.0 - u, 1.0 - v) * 3.0
             });
         }
 
@@ -597,28 +597,28 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // front face
         Vertex3D {
             position: vec3f(-1.0, -1.0, 0.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, 0.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, 0.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
+            position: vec3f(1.0, 1.0, 0.0),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
             position: vec3f(-1.0, 1.0, 0.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -734,21 +734,21 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         vec![
             Vertex3D {
                 position: normalize(tp),
-                texcoord: vec2f(0.5, 1.0),
+                texcoord: vec2f(0.5, 0.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: normalize(np),
-                texcoord: vec2f(1.0, 0.0),
+                texcoord: vec2f(1.0, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
             },
             Vertex3D {
                 position: normalize(p),
-                texcoord: vec2f(0.0, 0.0),
+                texcoord: vec2f(0.0, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: b,
@@ -782,35 +782,33 @@ pub fn create_tetrahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     create_faceted_mesh_3d(dev, vertices)
 }
 
-/// Create an indexed unit cube mesh instance.
-pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
-    // cube veritces
-    let vertices: Vec<Vertex3D> = vec![
+pub fn cube_vertices() -> Vec<Vertex3D> {
+    vec![
         // front face
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0,  1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, 1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
+            position: vec3f(1.0, 1.0, 1.0),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
             position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -818,28 +816,28 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // back face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
+            position: vec3f(-1.0, 1.0, -1.0),
             texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, 1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, -1.0, -1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -847,7 +845,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // right face
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -861,7 +859,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -876,28 +874,28 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // left face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
             texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
+            position: vec3f(-1.0, -1.0, 1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
+            position: vec3f(-1.0, 1.0, 1.0),
             texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, 1.0, -1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -934,34 +932,37 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         // bottom face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0, 1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            position: vec3f(1.0, -1.0, 1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
-    ];
+        Vertex3D {
+            position: vec3f(-1.0, -1.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+    ]
+}
 
+/// Create an indexed unit cube mesh instance.
+pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     let indices: Vec<usize> = vec![
         0,  2,  1,  2,  0,  3,   // front face
         4,  6,  5,  6,  4,  7,   // back face
@@ -971,7 +972,7 @@ pub fn create_cube_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         20, 22, 21, 22, 20, 23   // bottom face
     ];
 
-    create_mesh_3d(dev, vertices, indices)
+    create_mesh_3d(dev, cube_vertices(), indices)
 }
 
 /// Creates a unit octahedron mesh aligned y-up
@@ -1007,9 +1008,9 @@ pub fn create_octahedron_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             let mut t2 = *yextent;
 
             // tex coords
-            let mut tc0 = vec2f(1.0, 0.0);
-            let tc1 = vec2f(0.0, 0.0);
-            let mut tc2 = vec2f(0.5, 1.0); 
+            let mut tc0 = vec2f(1.0, 1.0);
+            let tc1 = vec2f(0.0, 1.0);
+            let mut tc2 = vec2f(0.5, 0.0); 
 
             // flip if we are the top
             if j == 0 {
@@ -1323,7 +1324,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(u * 3.0, 0.0)
+            texcoord: Vec2f::new((1.0 - u) * 3.0, 1.0)
         });
     }
 
@@ -1337,7 +1338,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
             normal: points[i],
             tangent: tangents[i],
             bitangent: bt,
-            texcoord: Vec2f::new(u * 3.0, 1.0)
+            texcoord: Vec2f::new((1.0 - u) * 3.0, 0.0)
         });
     }
         
@@ -1566,183 +1567,7 @@ pub fn create_cylinder_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmf
 
 /// Create an indexed unit cube subdivision mesh instance where the faces are subdivided into 4 smaller quads for `subdivisions` 
 pub fn create_cube_subdivision_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
-    // cube veritces
-    let vertices: Vec<Vertex3D> = vec![
-        // front face
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0,  1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // back face
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // right face
-        Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // left face
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // top face
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // bottom face
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-    ];
+    let vertices = cube_vertices();
 
     let mut subdiv_vertices = Vec::new();
     for i in (0..vertices.len()).step_by(4) {
@@ -1844,7 +1669,7 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
         segment_vertices.push(
             Vertex3D {
                 position: v1 - Vec3f::unit_y(),
-                texcoord: vec2f(u * 3.0, 0.0),
+                texcoord: vec2f((1.0 - u) * 3.0, 1.0),
                 normal: n,
                 tangent: t,
                 bitangent: bt
@@ -1863,7 +1688,7 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
                 segment_vertices[i].clone(),
                 Vertex3D {
                     position: tip,
-                    texcoord: vec2f(mid, 1.0),
+                    texcoord: vec2f(mid, 0.0),
                     normal: segment_vertices[i].normal,
                     tangent: segment_vertices[i].tangent,
                     bitangent: segment_vertices[i].bitangent,
@@ -1883,21 +1708,21 @@ pub fn create_pyramid_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth:
             vertices.extend(vec![
                 Vertex3D {
                     position: t0,
-                    texcoord: Vec2f::zero(),
+                    texcoord: vec2f(0.0, 1.0),
                     normal: n,
                     tangent: segment_vertices[i].tangent,
                     bitangent: segment_vertices[i].bitangent,
                 },
                 Vertex3D {
                     position: t1,
-                    texcoord: vec2f(0.5, 1.0),
+                    texcoord: vec2f(0.5, 0.0),
                     normal: n,
                     tangent: segment_vertices[i].tangent,
                     bitangent: segment_vertices[i].bitangent,
                 },
                 Vertex3D {
                     position: t2,
-                    texcoord: vec2f(1.0, 0.0),
+                    texcoord: vec2f(1.0, 1.0),
                     normal: n,
                     tangent: segment_vertices[i].tangent,
                     bitangent: segment_vertices[i].bitangent,
@@ -1979,6 +1804,7 @@ pub fn create_capsule_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx
     let (mut v2, mut i2) = create_prism_vertices(segments, true, false);   
     for v in &mut v2 {
         v.position *= vec3f(1.0, 0.5, 1.0);
+        v.texcoord.y = 1.0 - v.texcoord.y;
 
         // look in weld positions
         for w in &weld_positions {
@@ -2054,7 +1880,7 @@ pub fn create_tourus_mesh<D: gfx::Device>(dev: &mut D, segments: usize) -> pmfx:
                     normal: n,
                     tangent: t,
                     bitangent: bt,
-                    texcoord: vec2f(u, v) * 3.0
+                    texcoord: vec2f(1.0 - u, 1.0 - v) * 3.0
                 }
             ]);
 
@@ -2097,7 +1923,7 @@ pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: us
     let height_step = 1.5 / segments as f32;
     let scale = 2.0 / coils as f32;
 
-    let mut h = 0.0;
+    let mut h = -height_step * (segments * 2) as f32;
     for _ in 0..coils {
         let mut uv_hangle = -f32::pi();
         for i in 0..vertex_segments {
@@ -2141,7 +1967,7 @@ pub fn create_helix_mesh<D: gfx::Device>(dev: &mut D, segments: usize, coils: us
                         normal: n,
                         tangent: t,
                         bitangent: bt,
-                        texcoord: vec2f(u, v) * 3.0
+                        texcoord: vec2f(u, 1.0 - v) * 3.0
                     }
                 ]);
     
@@ -2257,33 +2083,35 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
     let inset = 1.0 - radius;
     let edge_uv_scale = radius;
 
+    
+
     // cube veritces
     let mut vertices: Vec<Vertex3D> = vec![
         // front face
         Vertex3D {
             position: vec3f(-inset, -inset, 1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(inset, -inset,  1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, inset, 1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
+            position: vec3f(inset, inset, 1.0),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
             position: vec3f(-inset, inset, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2291,28 +2119,28 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         // back face
         Vertex3D {
             position: vec3f(-inset, -inset, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-inset, inset, -1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, inset, -1.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(inset, -inset, -1.0),
+            position: vec3f(-inset, inset, -1.0),
             texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, inset, -1.0),
+            texcoord: vec2f(0.0, 0.0),
+            normal: vec3f(0.0, 0.0, -1.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(inset, -inset, -1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 0.0, -1.0),
             tangent: vec3f(-1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2320,7 +2148,7 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         // right face
         Vertex3D {
             position: vec3f(1.0, -inset, -inset),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2334,7 +2162,7 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         },
         Vertex3D {
             position: vec3f(1.0, inset, inset),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2349,28 +2177,28 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         // left face
         Vertex3D {
             position: vec3f(-1.0, -inset, -inset),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, -inset, inset),
             texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, inset, inset),
+            position: vec3f(-1.0, -inset, inset),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(-1.0, inset, -inset),
+            position: vec3f(-1.0, inset, inset),
             texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(-1.0, 0.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(-1.0, inset, -inset),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2407,28 +2235,28 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         // bottom face
         Vertex3D {
             position: vec3f(-inset, -1.0, -inset),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(inset, -1.0, -inset),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, -1.0, inset),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
+            position: vec3f(inset, -1.0, inset),
+            texcoord: vec2f(1.0, 0.0),
+            normal: vec3f(0.0, -1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
             position: vec3f(-inset, -1.0, inset),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
@@ -2607,6 +2435,807 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
     join_corner(bb_loop_start, rb_loop_start, &mut vertices, &mut indices);
     join_corner(lb_loop_start, bb_loop_start, &mut vertices, &mut indices);
     join_corner(fb_loop_start, lb_loop_start, &mut vertices, &mut indices);
+
+    create_mesh_3d(dev, vertices, indices)
+}
+
+/// Create an `segments` sided prism tude, if `smooth` the prism is a cylinder with smooth normals
+/// convert to a trapezoid using `taper` with a value between 0-1 to taper the top cap inward where 1 is no taper and 0 makes a pyramid
+/// use thickness to control the size of the inner hole 
+pub fn create_tube_prism_mesh<D: gfx::Device>(
+    dev: &mut D, segments: usize, trunc_start: usize, trunc_end: usize, smooth: bool, cap: bool, height: f32, thickness: f32, taper: f32) -> pmfx::Mesh<D> {
+    let axis = Vec3f::unit_y();
+    let right = Vec3f::unit_x();
+    let up = cross(axis, right);
+    let right = cross(axis, up);
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+
+    let prism_vertices = |radius: f32| -> (Vec<Vertex3D>, Vec<Vertex3D>) {
+        let mut vertices = Vec::new();
+        let mut cap_vertices = Vec::new();
+        let mut points = Vec::new();
+        let mut bottom_points = Vec::new();
+        let mut top_points = Vec::new();
+        let mut tangents = Vec::new();
+    
+        // rotate around up axis and extract some data we can lookup to build vb and ib
+        let mut angle = 0.0;
+        let angle_step = f32::two_pi() / segments as f32;
+        for i in 0..vertex_segments {
+            // current
+            let mut x = cos(angle);
+            let mut y = -sin(angle);
+            let v1 = right * x + up * y;
+    
+            // next
+            angle += angle_step;
+            x = cos(angle);
+            y = -sin(angle);
+            let v2 = right * x + up * y;
+    
+            points.push(v1 * radius);
+            tangents.push(v2 - v1);
+    
+            bottom_points.push(points[i] - Vec3f::unit_y() * height);
+            top_points.push(points[i] * taper + Vec3f::unit_y() * height);
+        }
+    
+        // bottom ring
+        for i in 0..vertex_segments {
+            let u = 0.5 + atan2(bottom_points[i].z, bottom_points[i].x) / f32::two_pi();
+            let u = if i == segments { 0.0 } else { u };
+            let bt = cross(tangents[i], points[i]);
+            vertices.push(Vertex3D{
+                position: bottom_points[i],
+                normal: points[i],
+                tangent: tangents[i],
+                bitangent: bt,
+                texcoord: Vec2f::new(u * 3.0, 0.0)
+            });
+        }
+    
+        // top ring
+        for i in 0..vertex_segments {
+            let u = 0.5 + atan2(top_points[i].z, top_points[i].x) / f32::two_pi();
+            let u = if i == segments { 0.0 } else { u };
+            let bt = cross(tangents[i], points[i]);
+            vertices.push(Vertex3D{
+                position: top_points[i],
+                normal: points[i],
+                tangent: tangents[i],
+                bitangent: bt,
+                texcoord: Vec2f::new(u * 3.0, 1.0)
+            });
+        }
+
+        // bottom cap
+        for i in 0..vertex_segments {
+            cap_vertices.push(Vertex3D{
+                position: bottom_points[i],
+                normal: -Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+                texcoord: bottom_points[i].xz() * 0.5 + 0.5
+            });
+        }
+
+        // top cap
+        for i in 0..vertex_segments {
+            cap_vertices.push(Vertex3D{
+                position: top_points[i],
+                normal: Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+                texcoord: top_points[i].xz() * 0.5 + 0.5
+            });
+        }
+
+        (vertices, cap_vertices)
+    };
+
+    let end_cap = |loop_start: usize, v: &Vec<Vertex3D>, inner_offset: usize| -> Vec<Vertex3D> {
+        // start
+        let bottom = loop_start;
+        let top = loop_start + vertex_segments;
+        let inner_bottom = bottom + inner_offset;
+        let inner_top = top + inner_offset;
+
+        let mut verts = vec![
+            v[bottom].clone(),
+            v[top].clone(),
+            v[inner_bottom].clone(),
+            v[inner_top].clone(),
+        ];
+
+        let b = normalize(verts[1].position - verts[0].position);
+        let t = normalize(verts[2].position - verts[0].position);
+        let n = cross(b, t);
+
+        for v in &mut verts {
+            v.normal = n;
+            v.tangent = t;
+            v.bitangent = b;
+        }
+
+        verts[0].texcoord = Vec2f::zero();
+        verts[1].texcoord = vec2f(0.0, 1.0);
+        verts[2].texcoord = vec2f(1.0 - thickness, 0.0);
+        verts[3].texcoord = vec2f(1.0 - thickness, 1.0);
+
+        verts
+    };
+
+    let (outer_vertices, outer_cap_vertices) = prism_vertices(1.0);
+    let (inner_vertices, inner_cap_vertices) = prism_vertices(thickness);
+
+    if smooth {
+        let mut indices = Vec::new();
+        let mut vertices = Vec::new();
+    
+        vertices.extend(outer_vertices);
+    
+        let outer_cap_offset = vertices.len();
+        vertices.extend(outer_cap_vertices);
+    
+        let inner_offset = vertices.len();
+        vertices.extend(inner_vertices);
+    
+        let inner_cap_offset = vertices.len();
+        vertices.extend(inner_cap_vertices);
+
+        // sides
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            // outer
+            indices.extend(vec![
+                bottom,
+                top,
+                next,
+                top,
+                top_next,
+                next
+            ]);
+
+            // inner
+            indices.extend(vec![
+                bottom + inner_offset,
+                next + inner_offset,
+                top + inner_offset,
+                top + inner_offset,
+                next + inner_offset,
+                top_next + inner_offset,
+            ]);
+
+            // caps
+            if cap {
+                let inner_bottom = bottom + inner_cap_offset;
+                let inner_top = top + inner_cap_offset;
+                let inner_top_next = top_next + inner_cap_offset;
+                let inner_bottom_next = next + inner_cap_offset;
+
+                let outer_bottom = bottom + outer_cap_offset;
+                let outer_top = top + outer_cap_offset;
+                let outer_top_next = top_next + outer_cap_offset;
+                let outer_bottom_next = next + outer_cap_offset;
+
+                indices.extend(vec![
+                    outer_top,
+                    inner_top,
+                    inner_top_next,
+                    outer_top,
+                    inner_top_next,
+                    outer_top_next
+                ]);
+
+                indices.extend(vec![
+                    inner_bottom,
+                    outer_bottom,
+                    outer_bottom_next,
+                    inner_bottom,
+                    outer_bottom_next,
+                    inner_bottom_next
+                ]);
+            }
+        }
+
+        // end caps
+        if trunc_start != 0 || trunc_end != segments {
+            let start_verts = end_cap(trunc_start, &vertices, inner_offset);
+            let start_offset = vertices.len();
+            vertices.extend(start_verts);
+
+            indices.extend(vec![
+                start_offset,
+                start_offset + 3,
+                start_offset + 1,
+                start_offset,
+                start_offset + 2,
+                start_offset + 3,
+            ]);
+
+            let end_verts = end_cap(trunc_end, &vertices, inner_offset);
+            let end_offset = vertices.len();
+            vertices.extend(end_verts);
+
+            // end
+            indices.extend(vec![
+                end_offset,
+                end_offset + 1,
+                end_offset + 3,
+                end_offset,
+                end_offset + 3,
+                end_offset + 2,
+            ]);
+        }
+
+        create_mesh_3d(dev, vertices, indices)
+    }
+    else {
+        // 2 tris per segment
+        let mut triangle_vertices = Vec::new();
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            let face_index = triangle_vertices.len();
+            triangle_vertices.extend(vec![
+                outer_vertices[bottom].clone(),
+                outer_vertices[top].clone(),
+                outer_vertices[next].clone(),
+                outer_vertices[top].clone(),
+                outer_vertices[top_next].clone(),
+                outer_vertices[next].clone()
+            ]);
+
+            let v = face_index;
+            let n = get_triangle_normal(
+                triangle_vertices[v].position, 
+                triangle_vertices[v+2].position, 
+                triangle_vertices[v+1].position
+            );
+
+            // set hard face normals
+            for vertex in triangle_vertices.iter_mut().skip(face_index) {
+                vertex.normal = n;
+            }
+        }
+
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            let face_index = triangle_vertices.len();
+            triangle_vertices.extend(vec![
+                inner_vertices[bottom].clone(),
+                inner_vertices[next].clone(),
+                inner_vertices[top].clone(),
+                inner_vertices[top].clone(),
+                inner_vertices[next].clone(),
+                inner_vertices[top_next].clone()
+            ]);
+
+            let v = face_index;
+            let n = get_triangle_normal(
+                triangle_vertices[v].position, 
+                triangle_vertices[v+1].position,
+                triangle_vertices[v+2].position,
+            );
+
+            // set hard face normals
+            for vertex in triangle_vertices.iter_mut().skip(face_index) {
+                vertex.normal = n;
+            }
+        }
+
+        // top / bottom cap
+        if cap {
+            for i in trunc_start..trunc_end {
+                let bottom = i;
+                let top = i + vertex_segments;
+                let next = i + 1;
+                let top_next = i + 1 + vertex_segments;
+
+                triangle_vertices.extend(vec![
+                    outer_cap_vertices[top].clone(),
+                    inner_cap_vertices[top].clone(),
+                    inner_cap_vertices[top_next].clone(),
+                    outer_cap_vertices[top].clone(),
+                    inner_cap_vertices[top_next].clone(),
+                    outer_cap_vertices[top_next].clone()
+                ]);
+
+                triangle_vertices.extend(vec![
+                    inner_cap_vertices[bottom].clone(),
+                    outer_cap_vertices[bottom].clone(),
+                    outer_cap_vertices[next].clone(),
+                    inner_cap_vertices[bottom].clone(),
+                    outer_cap_vertices[next].clone(),
+                    inner_cap_vertices[next].clone()
+                ]);
+            }    
+        }
+
+        // end cap
+        if trunc_start != 0 || trunc_end != segments {
+            let mut vertices = outer_vertices.to_vec();
+            let inner_offset = vertices.len();
+            vertices.extend(inner_vertices);
+
+            let start_verts = end_cap(trunc_start, &vertices, inner_offset);
+            triangle_vertices.extend(vec![
+                start_verts[0].clone(),
+                start_verts[3].clone(),
+                start_verts[1].clone(),
+                start_verts[0].clone(),
+                start_verts[2].clone(),
+                start_verts[3].clone(),
+            ]);
+
+            let end_verts = end_cap(trunc_end, &vertices, inner_offset);
+            triangle_vertices.extend(vec![
+                end_verts[0].clone(),
+                end_verts[1].clone(),
+                end_verts[3].clone(),
+                end_verts[0].clone(),
+                end_verts[3].clone(),
+                end_verts[2].clone(),
+            ]);
+        }
+
+        create_faceted_mesh_3d(dev, triangle_vertices)
+    }
+}
+
+fn cubic_interpolate(p1: Vec3f, p2: Vec3f, p3: Vec3f, p4: Vec3f, t: f32) -> Vec3f {
+    p1 * (1.0 - t) * (1.0 - t) * (1.0 - t) +
+    p2 * 3.0 * t * (1.0 - t) * (1.0 - t) +
+    p3 * 3.0 * t * t * (1.0 - t) +
+    p4 * t * t * t
+}
+
+fn cubic_tangent(p1: Vec3f, p2: Vec3f, p3: Vec3f, p4: Vec3f, t: f32) -> Vec3f {
+    p1 * (-1.0 + 2.0 * t - t * t) +
+    p2 * (1.0 - 4.0 * t + 3.0 * t * t) +
+    p3 * (2.0 * t - 3.0 * t * t) +
+    p4 * (t * t)
+}
+
+/// Create a unit utah teapot mesh
+pub fn create_teapot_mesh<D: gfx::Device>(dev: &mut D, tessellation: usize) -> pmfx::Mesh<D> {
+    // this code was ported from DirectXTK https://github.com/microsoft/DirectXTK
+    struct TeapotPatch {
+        mirror_z: bool,
+        indices: [u32; 16]
+    }
+
+    let patches = vec![
+        // rim
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                102, 103, 104, 105, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15
+            ]
+        },
+
+        // body
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27
+            ]
+        },
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                24, 25, 26, 27, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40
+            ]
+        },
+
+        // lid
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                96, 96, 96, 96, 97, 98, 99, 100, 101, 101, 101, 101, 0, 1, 2, 3
+            ]
+        },
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                0, 1, 2, 3, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117
+            ]
+        },
+
+        // handle 
+        TeapotPatch {
+            mirror_z: false,
+            indices: [
+                41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56
+            ]
+        },
+        TeapotPatch {
+            mirror_z: false,
+            indices: [
+                53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 28, 65, 66, 67
+            ]
+        },
+
+        // spout 
+        TeapotPatch {
+            mirror_z: false,
+            indices: [
+                68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83
+            ]
+        },
+        TeapotPatch {
+            mirror_z: false,
+            indices: [
+                80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95
+            ]
+        },
+
+        // bottom
+        TeapotPatch {
+            mirror_z: true,
+            indices: [
+                118, 118, 118, 118, 124, 122, 119, 121, 123, 126, 125, 120, 40, 39, 38, 37
+            ]
+        }
+    ];
+
+    let control_points = vec![
+        vec3f(0.0, 0.345, -0.05),
+        vec3f(-0.028, 0.345, -0.05),
+        vec3f(-0.05, 0.345, -0.028),
+        vec3f(-0.05, 0.345, -0.0),
+        vec3f(0.0, 0.3028125, -0.334375),
+        vec3f(-0.18725, 0.3028125, -0.334375),
+        vec3f(-0.334375, 0.3028125, -0.18725),
+        vec3f(-0.334375, 0.3028125, -0.0),
+        vec3f(0.0, 0.3028125, -0.359375),
+        vec3f(-0.20125, 0.3028125, -0.359375),
+        vec3f(-0.359375, 0.3028125, -0.20125),
+        vec3f(-0.359375, 0.3028125, -0.0),
+        vec3f(0.0, 0.27, -0.375),
+        vec3f(-0.21, 0.27, -0.375),
+        vec3f(-0.375, 0.27, -0.21),
+        vec3f(-0.375, 0.27, -0.0),
+        vec3f(0.0, 0.13875, -0.4375),
+        vec3f(-0.245, 0.13875, -0.4375),
+        vec3f(-0.4375, 0.13875, -0.245),
+        vec3f(-0.4375, 0.13875, -0.0),
+        vec3f(0.0, 0.007499993, -0.5),
+        vec3f(-0.28, 0.007499993, -0.5),
+        vec3f(-0.5, 0.007499993, -0.28),
+        vec3f(-0.5, 0.007499993, -0.0),
+        vec3f(0.0, -0.105, -0.5),
+        vec3f(-0.28, -0.105, -0.5),
+        vec3f(-0.5, -0.105, -0.28),
+        vec3f(-0.5, -0.105, -0.0),
+        vec3f(0.0, -0.105, 0.5),
+        vec3f(0.0, -0.2175, -0.5),
+        vec3f(-0.28, -0.2175, -0.5),
+        vec3f(-0.5, -0.2175, -0.28),
+        vec3f(-0.5, -0.2175, -0.0),
+        vec3f(0.0, -0.27375, -0.375),
+        vec3f(-0.21, -0.27375, -0.375),
+        vec3f(-0.375, -0.27375, -0.21),
+        vec3f(-0.375, -0.27375, -0.0),
+        vec3f(0.0, -0.2925, -0.375),
+        vec3f(-0.21, -0.2925, -0.375),
+        vec3f(-0.375, -0.2925, -0.21),
+        vec3f(-0.375, -0.2925, -0.0),
+        vec3f(0.0, 0.17625, 0.4),
+        vec3f(-0.075, 0.17625, 0.4),
+        vec3f(-0.075, 0.2325, 0.375),
+        vec3f(0.0, 0.2325, 0.375),
+        vec3f(0.0, 0.17625, 0.575),
+        vec3f(-0.075, 0.17625, 0.575),
+        vec3f(-0.075, 0.2325, 0.625),
+        vec3f(0.0, 0.2325, 0.625),
+        vec3f(0.0, 0.17625, 0.675),
+        vec3f(-0.075, 0.17625, 0.675),
+        vec3f(-0.075, 0.2325, 0.75),
+        vec3f(0.0, 0.2325, 0.75),
+        vec3f(0.0, 0.12, 0.675),
+        vec3f(-0.075, 0.12, 0.675),
+        vec3f(-0.075, 0.12, 0.75),
+        vec3f(0.0, 0.12, 0.75),
+        vec3f(0.0, 0.06375, 0.675),
+        vec3f(-0.075, 0.06375, 0.675),
+        vec3f(-0.075, 0.007499993, 0.75),
+        vec3f(0.0, 0.007499993, 0.75),
+        vec3f(0.0, -0.04875001, 0.625),
+        vec3f(-0.075, -0.04875001, 0.625),
+        vec3f(-0.075, -0.09562501, 0.6625),
+        vec3f(0.0, -0.09562501, 0.6625),
+        vec3f(-0.075, -0.105, 0.5),
+        vec3f(-0.075, -0.18, 0.475),
+        vec3f(0.0, -0.18, 0.475),
+        vec3f(0.0, 0.02624997, -0.425),
+        vec3f(-0.165, 0.02624997, -0.425),
+        vec3f(-0.165, -0.18, -0.425),
+        vec3f(0.0, -0.18, -0.425),
+        vec3f(0.0, 0.02624997, -0.65),
+        vec3f(-0.165, 0.02624997, -0.65),
+        vec3f(-0.165, -0.12375, -0.775),
+        vec3f(0.0, -0.12375, -0.775),
+        vec3f(0.0, 0.195, -0.575),
+        vec3f(-0.0625, 0.195, -0.575),
+        vec3f(-0.0625, 0.17625, -0.6),
+        vec3f(0.0, 0.17625, -0.6),
+        vec3f(0.0, 0.27, -0.675),
+        vec3f(-0.0625, 0.27, -0.675),
+        vec3f(-0.0625, 0.27, -0.825),
+        vec3f(0.0, 0.27, -0.825),
+        vec3f(0.0, 0.28875, -0.7),
+        vec3f(-0.0625, 0.28875, -0.7),
+        vec3f(-0.0625, 0.2934375, -0.88125),
+        vec3f(0.0, 0.2934375, -0.88125),
+        vec3f(0.0, 0.28875, -0.725),
+        vec3f(-0.0375, 0.28875, -0.725),
+        vec3f(-0.0375, 0.298125, -0.8625),
+        vec3f(0.0, 0.298125, -0.8625),
+        vec3f(0.0, 0.27, -0.7),
+        vec3f(-0.0375, 0.27, -0.7),
+        vec3f(-0.0375, 0.27, -0.8),
+        vec3f(0.0, 0.27, -0.8),
+        vec3f(0.0, 0.4575, -0.0),
+        vec3f(0.0, 0.4575, -0.2),
+        vec3f(-0.1125, 0.4575, -0.2),
+        vec3f(-0.2, 0.4575, -0.1125),
+        vec3f(-0.2, 0.4575, -0.0),
+        vec3f(0.0, 0.3825, -0.0),
+        vec3f(0.0, 0.27, -0.35),
+        vec3f(-0.196, 0.27, -0.35),
+        vec3f(-0.35, 0.27, -0.196),
+        vec3f(-0.35, 0.27, -0.0),
+        vec3f(0.0, 0.3075, -0.1),
+        vec3f(-0.056, 0.3075, -0.1),
+        vec3f(-0.1, 0.3075, -0.056),
+        vec3f(-0.1, 0.3075, -0.0),
+        vec3f(0.0, 0.3075, -0.325),
+        vec3f(-0.182, 0.3075, -0.325),
+        vec3f(-0.325, 0.3075, -0.182),
+        vec3f(-0.325, 0.3075, -0.0),
+        vec3f(0.0, 0.27, -0.325),
+        vec3f(-0.182, 0.27, -0.325),
+        vec3f(-0.325, 0.27, -0.182),
+        vec3f(-0.325, 0.27, -0.0),
+        vec3f(0.0, -0.33, -0.0),
+        vec3f(-0.1995, -0.33, -0.35625),
+        vec3f(0.0, -0.31125, -0.375),
+        vec3f(0.0, -0.33, -0.35625),
+        vec3f(-0.35625, -0.33, -0.1995),
+        vec3f(-0.375, -0.31125, -0.0),
+        vec3f(-0.35625, -0.33, -0.0),
+        vec3f(-0.21, -0.31125, -0.375),
+        vec3f(-0.375, -0.31125, -0.21),
+    ];
+
+    let create_patch_indices = |tessellation: usize, is_mirrored: bool,  index_offset: usize| -> Vec<usize> {
+        let stride = tessellation + 1;
+        let mut indices = Vec::new();
+        for i in 0..tessellation {
+            for j in 0..tessellation {
+                let mut arr = [
+                    i * stride + j,
+                    (i + 1) * stride + j,
+                    (i + 1) * stride + j + 1,
+
+                    i * stride + j,
+                    (i + 1) * stride + j + 1,
+                    i * stride + j + 1,
+                ];
+
+                if is_mirrored {
+                    arr.reverse();
+                }
+
+                for ii in arr {
+                    indices.push(ii + index_offset)
+                }
+            }
+        }
+        indices
+    };
+
+    let create_patch_vertices = |patch: Vec<Vec3f>, tessellation: usize, is_mirrored: bool| -> Vec<Vertex3D> {
+        let mut vertices = Vec::new();
+        for i in 0..tessellation+1 {
+            let u = i as f32 / tessellation as f32;
+            for j in 0..tessellation+1 {
+                let v = j as f32 / tessellation as f32;
+
+                // Perform four horizontal bezier interpolations between the control points of this patch.
+                let p1 = cubic_interpolate(patch[0], patch[1], patch[2], patch[3], u);
+                let p2 = cubic_interpolate(patch[4], patch[5], patch[6], patch[7], u);
+                let p3 = cubic_interpolate(patch[8], patch[9], patch[10], patch[11], u);
+                let p4 = cubic_interpolate(patch[12], patch[13], patch[14], patch[15], u);
+
+                // Perform a vertical interpolation between the results of the
+                // previous horizontal interpolations, to compute the position.
+                let pos = cubic_interpolate(p1, p2, p3, p4, v);
+
+                // Perform another four bezier interpolations between the control
+                // points, but this time vertically rather than horizontally.
+                let q1 = cubic_interpolate(patch[0], patch[4], patch[8], patch[12], v);
+                let q2 = cubic_interpolate(patch[1], patch[5], patch[9], patch[13], v);
+                let q3 = cubic_interpolate(patch[2], patch[6], patch[10], patch[14], v);
+                let q4 = cubic_interpolate(patch[3], patch[7], patch[11], patch[15], v);
+
+                let tangent1 = cubic_tangent(p1, p2, p3, p4, v);
+                let tangent2 = cubic_tangent(q1, q2, q3, q4, u);
+
+                let mut normal = cross(tangent1, tangent2);
+                if is_mirrored {
+                    normal = -normal;
+                }
+
+                // this is a hack, because the bezier patches are not very well constructed
+                if approx(normal, Vec3f::zero(), 0.001) {
+                    normal = Vec3f::unit_y();
+                    if pos.y < 0.0 {
+                        normal = -Vec3f::unit_y();
+                    }
+                }
+
+                let uv = Vec2f {
+                    x: if is_mirrored { 1.0 - u } else { u },
+                    y: v
+                };
+
+                vertices.push(Vertex3D { 
+                    position: pos, 
+                    texcoord: uv, 
+                    normal: normalize(normal), 
+                    tangent: tangent1, 
+                    bitangent: tangent2
+                });
+            }
+        }
+        vertices
+    };
+
+    let tessalate_patch = |patch: &TeapotPatch, tesselation: usize, scale: Vec3f, is_mirrored: bool, index_offset: usize| -> (Vec<Vertex3D>, Vec<usize>) {
+
+        let mut patch_verts = Vec::new();
+        for i in 0..16 {
+            patch_verts.push(control_points[patch.indices[i] as usize] * scale * 2.0);
+        } 
+
+        (create_patch_vertices(patch_verts, tesselation, is_mirrored), create_patch_indices(tesselation, is_mirrored, index_offset))
+    };
+
+    let mut vertices = Vec::new();
+    let mut indices = Vec::new();
+
+    let mut lid_index_offset = 0;
+    let mut spout_index_offset = 0;
+    let mut ii = 0;
+
+    for patch in &patches {
+        // grab the offset to the lid to join it later and the spount to fill in the gap
+        if ii == 4 {
+            lid_index_offset = vertices.len();
+        }
+        else if ii == 8 {
+            spout_index_offset = vertices.len();
+        }
+        ii += 1;
+
+        let (patch_vertices, patch_indices) = tessalate_patch(patch, tessellation, Vec3f::one(), false, vertices.len());
+        vertices.extend(patch_vertices);
+        indices.extend(patch_indices);
+
+        let (patch_vertices, patch_indices) = tessalate_patch(patch, tessellation, vec3f(-1.0, 1.0, 1.0), true, vertices.len());
+        vertices.extend(patch_vertices);
+        indices.extend(patch_indices);
+
+        if patch.mirror_z {
+            let (patch_vertices, patch_indices) = tessalate_patch(patch, tessellation, vec3f(1.0, 1.0, -1.0), true, vertices.len());
+            vertices.extend(patch_vertices);
+            indices.extend(patch_indices);
+
+            let (patch_vertices, patch_indices) = tessalate_patch(patch, tessellation, vec3f(-1.0, 1.0, -1.0), false, vertices.len());
+            vertices.extend(patch_vertices);
+            indices.extend(patch_indices);
+        }
+    }
+
+    // join the lid and the rim
+    let stride = tessellation+1;
+    for i in 0..tessellation {
+        // a quad per tesselated patch
+        for q in 0..4 {
+            let v = i + q * stride;
+            let lid = lid_index_offset + tessellation + v * stride;
+            let rim = v * stride;
+            let lid_next = lid_index_offset + tessellation + (v+1) * stride;
+            let rim_next = (v+1) * stride;
+
+            // we need to flip te winding on the second 2 quadrants
+            if q == 0 || q == 3 {
+                indices.extend(vec![
+                    rim,
+                    lid,
+                    lid_next,
+                    rim,
+                    lid_next,
+                    rim_next
+                ]);
+            }
+            else {
+                indices.extend(vec![
+                    rim,
+                    lid_next,
+                    lid,
+                    rim,
+                    rim_next,
+                    lid_next
+                ]);
+            }
+        }
+    }
+
+    // plug a gap in the spout
+    let (mut spout_verts, _) = tessalate_patch(&patches[8], tessellation, Vec3f::one(), false, vertices.len());
+    let (spout_verts2, _) = tessalate_patch(&patches[8], tessellation, vec3f(-1.0, 1.0, 1.0), true, vertices.len());
+    spout_verts.extend(spout_verts2);
+
+    // get a central vertex pos
+    let mut ii = 0;
+    let mut loop_count = 0;
+    let mut spout_centre = Vec3f::zero();
+    for v in spout_verts {
+        ii += 1;
+        if (ii-1) % stride != tessellation {
+            continue;
+        }
+        spout_centre += v.position;
+        loop_count += 1;
+    }
+    spout_centre /= loop_count as f32;
+
+    let spount_centre_index = vertices.len();
+    vertices.push(Vertex3D{
+        position: spout_centre,
+        texcoord: normalize(spout_centre.xz()) * 0.5 + 0.5,
+        normal: Vec3f::unit_y(),
+        tangent: Vec3f::unit_x(),
+        bitangent: Vec3f::unit_z()
+    });
+
+    for i in 0..tessellation {
+        for q in 0..2 {
+            let v = i + q * stride;
+            let vi = spout_index_offset + tessellation + v * stride;
+            let vn = spout_index_offset + tessellation + (v+1) * stride;
+            if q == 1 {
+                indices.extend(vec![
+                    vi,
+                    spount_centre_index,
+                    vn
+                ])
+            }
+            else {
+                indices.extend(vec![
+                    vi,
+                    vn,
+                    spount_centre_index
+                ])
+            }
+        }
+    }
 
     create_mesh_3d(dev, vertices, indices)
 }

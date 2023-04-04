@@ -3,18 +3,17 @@
 use crate::os::Window;
 use crate::os::NativeHandle;
 
+use super::*;
 use super::Device as SuperDevice;
 use super::ReadBackRequest as SuperReadBackRequest;
-use super::*;
 
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
-use std::collections::HashMap;
-use std::ffi::CStr;
-use std::ffi::CString;
+use std::hash::{Hash, Hasher};
+use std::collections::{HashMap, hash_map::DefaultHasher};
+use std::ffi::{CStr, CString};
 use std::result;
 use std::str;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use std::sync::Mutex;
 
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
@@ -213,6 +212,7 @@ pub struct Buffer {
     srv_index: Option<usize>,
     cbv_index: Option<usize>,
     uav_index: Option<usize>,
+    free_list: Option<FreeListRef>
 }
 
 #[derive(Clone)]
@@ -222,16 +222,25 @@ pub struct Shader {
 }
 
 #[derive(Clone)]
+pub struct TextureTarget {
+    ptr: D3D12_CPU_DESCRIPTOR_HANDLE,
+    index: usize,
+    free_list: FreeListRef,
+}
+
+#[derive(Clone)]
 pub struct Texture {
     resource: ID3D12Resource,
     resolved_resource: Option<ID3D12Resource>,
     resolved_format: DXGI_FORMAT,
-    rtv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
-    dsv: Option<D3D12_CPU_DESCRIPTOR_HANDLE>,
+    rtv: Option<TextureTarget>,
+    dsv: Option<TextureTarget>,
     srv_index: Option<usize>,
     resolved_srv_index: Option<usize>,
     uav_index: Option<usize>,
     shared_handle: Option<HANDLE>,
+    // free list for srv, uav and resolved srv
+    free_list: Option<FreeListRef>,
 }
 
 #[derive(Clone)]
@@ -243,7 +252,6 @@ pub struct ReadBackRequest {
     pub slice_pitch: usize,
 }
 
-
 #[derive(Clone)]
 pub struct RenderPass {
     rt: Vec<D3D12_RENDER_PASS_RENDER_TARGET_DESC>,
@@ -254,6 +262,22 @@ pub struct RenderPass {
     format_hash: u64 
 }
 
+/// A free list thread safe with mutex
+struct FreeList {
+    list: Mutex<Vec<usize>>
+}
+
+/// Thread safe ref counted free-list that can be safely used in drop traits 
+type FreeListRef = std::sync::Arc<FreeList>;
+
+impl FreeList {
+    fn new() -> std::sync::Arc<FreeList> {
+        std::sync::Arc::new(FreeList {
+            list: Mutex::new(Vec::new())
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct Heap {
     heap: ID3D12DescriptorHeap,
@@ -261,7 +285,7 @@ pub struct Heap {
     increment_size: usize,
     capacity: usize,
     offset: usize,
-    free_list: Vec<usize>,
+    free_list: FreeListRef
 }
 
 #[derive(Clone)]
@@ -813,13 +837,14 @@ fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo) -> Heap {
             .expect("hotline_rs::gfx::d3d12: failed to create heap");
         let base_address = heap.GetCPUDescriptorHandleForHeapStart().ptr;
         let incr = device.GetDescriptorHandleIncrementSize(d3d12_type) as usize;
+
         Heap {
             heap,
             base_address,
             increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
             capacity: info.num_descriptors * incr,
             offset: 0,
-            free_list: Vec::new(),
+            free_list: FreeList::new()
         }
     }
 }
@@ -850,17 +875,23 @@ fn create_swap_chain_rtv(
         for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = device.rtv_heap.allocate();
+
             device.device.CreateRenderTargetView(&render_target, None, h);
             textures.push(Texture {
                 resource: render_target.clone(),
                 resolved_resource: None,
                 resolved_format: DXGI_FORMAT_UNKNOWN,
-                rtv: Some(h),
+                rtv: Some(TextureTarget{
+                    ptr: h,
+                    index: device.rtv_heap.get_handle_index(&h),
+                    free_list: device.rtv_heap.free_list.clone()
+                }),
                 dsv: None,
                 srv_index: None,
                 resolved_srv_index: None,
                 uav_index: None,
-                shared_handle: None
+                shared_handle: None,
+                free_list: None
             });
             d3d12_debug_name!(render_target, format!("swap_chain_texture"));
         }
@@ -916,7 +947,8 @@ impl super::RenderPass<Device> for RenderPass {
 impl Heap {
     fn allocate(&mut self) -> D3D12_CPU_DESCRIPTOR_HANDLE {
         unsafe {
-            if self.free_list.is_empty() {
+            let mut free_list = self.free_list.list.lock().unwrap();
+            if free_list.is_empty() {
                 // allocates a new handle
                 if self.offset >= self.capacity {
                     println!("hotline_rs::gfx::d3d12: heap is full!");
@@ -926,9 +958,13 @@ impl Heap {
                 self.offset += self.increment_size;
                 return D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
             }
-            // pulls new handle from the free list
-            D3D12_CPU_DESCRIPTOR_HANDLE {
-                ptr: self.free_list.pop().unwrap(),
+            else {
+                 // pulls new handle from the free list
+                let index = free_list.pop().unwrap();
+                let ptr = self.base_address + self.increment_size * index;
+                D3D12_CPU_DESCRIPTOR_HANDLE {
+                    ptr: ptr
+                }
             }
         }
     }
@@ -937,17 +973,12 @@ impl Heap {
         let ptr = handle.ptr - self.base_address;
         ptr / self.increment_size
     }
-
-    fn deallocate_internal(&mut self, handle: &D3D12_CPU_DESCRIPTOR_HANDLE) {
-        self.free_list.push(handle.ptr);
-    }
 }
 
 impl super::Heap<Device> for Heap {
     fn deallocate(&mut self, index: usize) {
-        let ptr = self.base_address + self.increment_size * index;
-        let handle = D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
-        self.deallocate_internal(&handle);
+        let mut free_list = self.free_list.list.lock().unwrap();
+        free_list.push(index);
     }
 }
 
@@ -1401,8 +1432,6 @@ impl super::Device for Device {
                 .GetTimestampFrequency()
                 .expect("hotline_rs::gfx::d3d12: failed to obtain timestamp frquency") as f64;
 
-            // default heaps
-
             // shader (srv, cbv, uav)
             let shader_heap = create_heap(
                 &device,
@@ -1689,7 +1718,6 @@ impl super::Device for Device {
             for pc in push_constants {
                 let mut hash = DefaultHasher::new();
                 pc.shader_register.hash(&mut hash);
-                pc.register_space.hash(&mut hash);
                 DescriptorType::PushConstants.hash(&mut hash);
                 heap_slot_lookup.insert(hash.finish(), HeapSlotInfo {
                     slot: slot_iter,
@@ -1704,13 +1732,15 @@ impl super::Device for Device {
             for binding in bindings {
                 let mut hash = DefaultHasher::new();
                 binding.shader_register.hash(&mut hash);
-                binding.register_space.hash(&mut hash);
                 binding.binding_type.hash(&mut hash);
-                heap_slot_lookup.insert(hash.finish(), HeapSlotInfo {
-                    slot: slot_iter,
-                    count: binding.num_descriptors
-                });
-                slot_iter += 1;
+                let h = hash.finish();
+                if !heap_slot_lookup.contains_key(&h) {
+                    heap_slot_lookup.insert(h, HeapSlotInfo {
+                        slot: slot_iter,
+                        count: binding.num_descriptors
+                    });
+                    slot_iter += 1;
+                }
             }
         }
 
@@ -1983,6 +2013,7 @@ impl super::Device for Device {
                 srv_index,
                 cbv_index,
                 uav_index: None,
+                free_list: Some(heap.free_list.clone())
             })
         }
     }
@@ -2011,6 +2042,7 @@ impl super::Device for Device {
                 srv_index: None,
                 cbv_index: None,
                 uav_index: None,
+                free_list: None
             })
         }
         else {
@@ -2191,19 +2223,27 @@ impl super::Device for Device {
             }
 
             // create rtv
-            let mut rtv_handle = None;
+            let mut rtv = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
                 let h = self.rtv_heap.allocate();
                 self.device.CreateRenderTargetView(&resource, None, h);
-                rtv_handle = Some(h);
+                rtv = Some(TextureTarget{
+                    ptr: h,
+                    index: self.rtv_heap.get_handle_index(&h),
+                    free_list: self.rtv_heap.free_list.clone()
+                })
             }
 
             // create dsv
-            let mut dsv_handle = None;
+            let mut dsv = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
                 let h = self.dsv_heap.allocate();
                 self.device.CreateDepthStencilView(&resource, None, h);
-                dsv_handle = Some(h);
+                dsv = Some(TextureTarget{
+                    ptr: h,
+                    index: self.dsv_heap.get_handle_index(&h),
+                    free_list: self.dsv_heap.free_list.clone()
+                })
             }
 
             // create uav
@@ -2235,12 +2275,13 @@ impl super::Device for Device {
                 resource,
                 resolved_resource,
                 resolved_format,
-                rtv: rtv_handle,
-                dsv: dsv_handle,
+                rtv,
+                dsv,
                 srv_index,
                 resolved_srv_index,
                 uav_index,
-                shared_handle
+                shared_handle,
+                free_list: Some(shader_heap.free_list.clone())
             })
         }
     }
@@ -2305,7 +2346,7 @@ impl super::Device for Device {
             };
             formats.push(dxgi_format);
             rt.push(D3D12_RENDER_PASS_RENDER_TARGET_DESC {
-                cpuDescriptor: target.rtv.unwrap(),
+                cpuDescriptor: target.rtv.as_ref().unwrap().ptr,
                 BeginningAccess: begin,
                 EndingAccess: end,
             })
@@ -2396,7 +2437,7 @@ impl super::Device for Device {
 
             // TODO: if no dsv
             ds = Some(D3D12_RENDER_PASS_DEPTH_STENCIL_DESC {
-                cpuDescriptor: depth_stencil.dsv.unwrap(),
+                cpuDescriptor: depth_stencil.dsv.as_ref().unwrap().ptr,
                 DepthBeginningAccess: depth_begin,
                 StencilBeginningAccess: stencil_begin,
                 DepthEndingAccess: depth_end,
@@ -2495,11 +2536,9 @@ impl super::Device for Device {
     }
 
     fn clean_up_resources(&mut self, swap_chain: &SwapChain) {
-        use crate::gfx::Heap;
         let num_bb = swap_chain.num_bb;
         let mut todo = true;
         let mut cur = 0;
-        let shader_heap = self.shader_heap.as_mut().unwrap();
         while todo {
             todo = false;
             for i in cur..self.cleanup_textures.len() {
@@ -2507,19 +2546,7 @@ impl super::Device for Device {
                 self.cleanup_textures[i].0 += 1;
                 if self.cleanup_textures[i].0 > num_bb {
                     // if we have waited longer than the swap chain length we can cleanup
-                    let (_, tex) = self.cleanup_textures.remove(i);
-                    if let Some(srv) = tex.srv_index {
-                        shader_heap.deallocate(srv);
-                    }
-                    if let Some(uav) = tex.uav_index {
-                        shader_heap.deallocate(uav);
-                    }
-                    if let Some(rtv) = &tex.rtv {
-                        self.rtv_heap.deallocate_internal(rtv);
-                    }
-                    if let Some(dsv) = &tex.dsv {
-                        self.dsv_heap.deallocate_internal(dsv)
-                    }
+                    self.cleanup_textures.remove(i);
                     todo = true;
                     cur = i;
                     break;
@@ -2667,13 +2694,6 @@ impl super::SwapChain<Device> for SwapChain {
                 self.wait_for_frame(self.bb_index);
                 
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
-
-                // clean up rtv handles
-                for bb_tex in &self.backbuffer_textures {
-                    if bb_tex.rtv.is_some() {
-                        device.rtv_heap.deallocate_internal(&bb_tex.rtv.unwrap());
-                    }
-                }
 
                 // clean up texture resource
                 self.backbuffer_textures.clear();
@@ -3260,10 +3280,9 @@ impl super::Texture<Device> for Texture {
 }
 
 impl super::Pipeline for RenderPipeline {
-    fn get_heap_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
+    fn get_heap_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
         let mut hash = DefaultHasher::new();
         register.hash(&mut hash);
-        space.hash(&mut hash);
         descriptor_type.hash(&mut hash);
         self.heap_slot_lookup.get(&hash.finish())
     }
@@ -3322,5 +3341,49 @@ impl super::ComputePipeline<Device> for ComputePipeline {}
 impl From<os::win32::NativeHandle> for HWND {
     fn from(handle: os::win32::NativeHandle) -> HWND {
         handle.hwnd
+    }
+}
+
+impl Drop for Texture {
+    fn drop(&mut self) {
+        // texture resource views
+        if let Some(free_list) = &self.free_list {
+            let mut free_list = free_list.list.lock().unwrap();
+            if let Some(srv_index) = self.srv_index {
+                free_list.push(srv_index);
+            }
+            if let Some(uav_index) = self.uav_index {
+                free_list.push(uav_index);
+            }
+            if let Some(resolved_srv) = self.resolved_srv_index {
+                free_list.push(resolved_srv);
+            }
+        }
+        // texture target views
+        if let Some(rtv) = &self.rtv {
+            let mut free_list = rtv.free_list.list.lock().unwrap();
+            free_list.push(rtv.index);
+        }
+        if let Some(dsv) = &self.dsv {
+            let mut free_list = dsv.free_list.list.lock().unwrap();
+            free_list.push(dsv.index);
+        }
+    }
+}
+
+impl Drop for Buffer {
+    fn drop(&mut self) {
+        if let Some(free_list) = &self.free_list {
+            let mut free_list = free_list.list.lock().unwrap();
+            if let Some(srv_index) = self.srv_index {
+                free_list.push(srv_index);
+            }
+            if let Some(uav_index) = self.uav_index {
+                free_list.push(uav_index);
+            }
+            if let Some(cbv_index) = self.cbv_index {
+                free_list.push(cbv_index);
+            }
+        }
     }
 }
