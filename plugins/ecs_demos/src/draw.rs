@@ -379,23 +379,28 @@ pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_
 #[no_mangle]
 pub fn setup_draw_push_constants_texture(
     mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
 
     let sphere = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64);
 
     let textures = [
         TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds")).unwrap()
-        ),
+            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds"), 
+            Some(&mut pmfx.shader_heap)
+        ).unwrap()),
         TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds")).unwrap()
-        ),
+            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds"), 
+            Some(&mut pmfx.shader_heap)
+        ).unwrap()),
         TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/bluechecker01.dds")).unwrap()
-        ),
+            &hotline_rs::get_data_path("textures/bluechecker01.dds"), 
+            Some(&mut pmfx.shader_heap)
+        ).unwrap()),
         TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/redchecker01.dds")).unwrap()
-        )
+            &hotline_rs::get_data_path("textures/redchecker01.dds"), 
+            Some(&mut pmfx.shader_heap)
+        ).unwrap())
     ];
 
     // square number of rows and columns
@@ -456,9 +461,11 @@ pub fn setup_draw_push_constants_texture(
             hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4),
         ];
     
-        let uv_debug_tex = TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_src_data_path("textures/blend_test_fg.png")).unwrap()
-        );
+        let uv_debug_tex = TextureComponent(image::load_texture_from_file(
+            &mut device, 
+            &hotline_rs::get_src_data_path("textures/blend_test_fg.png"),
+            Some(&mut pmfx.shader_heap)
+        ).unwrap());
     
         let rc = ceil(sqrt(meshes.len() as f32));
         let irc = (rc + 0.5) as usize; 
@@ -513,7 +520,10 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
     }
 }
 
-fn load_material(device: &mut gfx_platform::Device, dir: &str) -> Result<MaterialResources, hotline_rs::Error> {
+fn load_material(
+    device: &mut gfx_platform::Device,
+    pmfx: &mut Pmfx<gfx_platform::Device>,
+    dir: &str) -> Result<MaterialResources, hotline_rs::Error> {
     let maps = vec![
         "_albedo.dds",
         "_normal.dds",
@@ -530,7 +540,11 @@ fn load_material(device: &mut gfx_platform::Device, dir: &str) -> Result<Materia
 
         if !map_path.is_empty() {
             textures.push(
-                image::load_texture_from_file(device, &format!("{}/{}", dir, map_path[0])).unwrap()
+                image::load_texture_from_file(
+                    device, 
+                    &format!("{}/{}", dir, map_path[0]), 
+                    Some(&mut pmfx.shader_heap)
+                ).unwrap()
             );
         }
     }
@@ -554,8 +568,9 @@ fn load_material(device: &mut gfx_platform::Device, dir: &str) -> Result<Materia
 
 #[no_mangle]
 pub fn setup_draw_material(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands) {
 
     let meshes = vec![
         hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64),
@@ -565,16 +580,16 @@ pub fn setup_draw_material(
     ];
 
     let materials = vec![
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/angled-tiled-floor")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/antique-grate1")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/cracking-painted-asphalt")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/dirty-padded-leather")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/green-ceramic-tiles")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/office-carpet-fabric1")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/rusting-lined-metal2")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/simple-basket-weave")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/stone-block-wall")).unwrap(),
-        load_material(&mut device, &hotline_rs::get_data_path("textures/pbr/worn-painted-cement")).unwrap()
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/angled-tiled-floor")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/antique-grate1")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/cracking-painted-asphalt")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/dirty-padded-leather")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/green-ceramic-tiles")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/office-carpet-fabric1")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/rusting-lined-metal2")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/simple-basket-weave")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/stone-block-wall")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/worn-painted-cement")).unwrap()
     ];
     let material_dist = rand::distributions::Uniform::from(0..materials.len());
 
@@ -626,14 +641,14 @@ pub fn setup_draw_material(
         }
     }
 
-    let draw_buf = device.create_buffer(&gfx::BufferInfo{
+    let draw_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
         usage: gfx::BufferUsage::SHADER_RESOURCE,
         cpu_access: gfx::CpuAccessFlags::WRITE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<DrawData>(),
         num_elements: entity_itr as usize,
         initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![]).unwrap();
+    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
 
     let mut material_data = Vec::new();
     for material in &materials {
@@ -647,14 +662,14 @@ pub fn setup_draw_material(
         );
     }
 
-    let material_buf = device.create_buffer(&gfx::BufferInfo{
+    let material_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
         usage: gfx::BufferUsage::SHADER_RESOURCE,
         cpu_access: gfx::CpuAccessFlags::NONE,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<MaterialData>(),
         num_elements: materials.len(),
         initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![&material_data]).unwrap();
+    }, hotline_rs::data![&material_data], &mut pmfx.shader_heap).unwrap();
 
     // Spaw the world buffer entity
     commands.spawn(WorldBuffers {

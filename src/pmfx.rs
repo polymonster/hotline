@@ -116,6 +116,8 @@ pub struct Pmfx<D: gfx::Device> {
     view_texture_refs: HashMap<String, HashSet<String>>,
     /// Container to hold overall GPU stats
     total_stats: TotalStats,
+    /// Heaps for shader resource view allocations
+    pub shader_heap: D::Heap,
     /// Watches for filestamp changes and will trigger callbacks in the `PmfxReloadResponder`
     pub reloader: Reloader,
     /// Errors which occur through render systems can be pushed here for feedback to the user
@@ -509,7 +511,12 @@ fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8
 
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
-    pub fn create() -> Self {        
+    pub fn create(device: &mut D, shader_heap_size: usize) -> Self {
+        // create a heap which pmfx can manage itself
+        let shader_heap = device.create_heap(&gfx::HeapInfo {
+            heap_type: gfx::HeapType::Shader,
+            num_descriptors: shader_heap_size,
+        });
         Pmfx {
             pmfx: File::new(),
             pmfx_tracking: HashMap::new(),
@@ -528,7 +535,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             active_render_graph: String::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
             reloader: Reloader::create(Box::new(PmfxReloadResponder::new())),
-            total_stats: TotalStats::new()
+            total_stats: TotalStats::new(),
+            shader_heap: shader_heap
         }
     }
 

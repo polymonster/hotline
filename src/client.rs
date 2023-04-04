@@ -253,7 +253,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         let imgui = imgui::ImGui::create(&mut imgui_info)?;
 
         // pmfx
-        let mut pmfx = pmfx::Pmfx::<D>::create();
+        let mut pmfx = pmfx::Pmfx::<D>::create(&mut device, info.shader_heap_size);
 
         // core pipelines
         pmfx.load(super::get_data_path("shaders/imdraw").as_str())?;

@@ -1432,6 +1432,7 @@ impl super::Device for Device {
                 .GetTimestampFrequency()
                 .expect("hotline_rs::gfx::d3d12: failed to obtain timestamp frquency") as f64;
 
+            // default heaps
             // shader (srv, cbv, uav)
             let shader_heap = create_heap(
                 &device,
@@ -2057,6 +2058,24 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
+        let result = self.create_texture_with_heaps(
+            info,
+            TextureHeapInfo {
+                shader: None,
+                render_target: None,
+                depth_stencil: None
+            },
+            data
+        );
+        result
+    }
+
+    fn create_texture_with_heaps<T: Sized>(
+        &mut self,
+        info: &TextureInfo,
+        heaps: TextureHeapInfo<Self>,
+        data: Option<&[T]>,
+    ) -> result::Result<Self::Texture, super::Error> {
         let mut resource: Option<ID3D12Resource> = None;
         let mut resolved_resource: Option<ID3D12Resource> = None;
 
@@ -2139,7 +2158,29 @@ impl super::Device for Device {
                 self.upload_texture_data(info, data, dxgi_format, &resource, initial_state)?;
             }
 
-            let shader_heap = self.shader_heap.as_mut().unwrap();
+            // select user specified shader heap or default
+            let shader_heap = if let Some(shader_heap) = heaps.shader {
+                shader_heap
+            }
+            else { 
+                self.shader_heap.as_mut().unwrap()
+            };
+
+            // select user specified render target heap or default
+            let rtv_heap = if let Some(rtv_heap) = heaps.render_target {
+                rtv_heap
+            }
+            else { 
+                &mut self.rtv_heap
+            };      
+
+            // select user specified depth stencil heap or default
+            let dsv_heap = if let Some(dsv_heap) = heaps.depth_stencil {
+                dsv_heap
+            }
+            else { 
+                &mut self.dsv_heap
+            };
 
             // create srv
             let mut srv_index = None;
@@ -2225,7 +2266,7 @@ impl super::Device for Device {
             // create rtv
             let mut rtv = None;
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
-                let h = self.rtv_heap.allocate();
+                let h = rtv_heap.allocate();
                 self.device.CreateRenderTargetView(&resource, None, h);
                 rtv = Some(TextureTarget{
                     ptr: h,
@@ -2237,7 +2278,7 @@ impl super::Device for Device {
             // create dsv
             let mut dsv = None;
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
-                let h = self.dsv_heap.allocate();
+                let h = dsv_heap.allocate();
                 self.device.CreateDepthStencilView(&resource, None, h);
                 dsv = Some(TextureTarget{
                     ptr: h,
