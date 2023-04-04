@@ -25,7 +25,7 @@ pub struct ImageData {
 pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     // read file
     let path = std::path::Path::new(filename);
-    println!("{}", path.display());
+    println!("hotline_rs::image:: loading: {}", path.display());
     let mut f = fs::File::open(path).expect("hotline_rs::image:: File not found");
     // dds file
     if filename.ends_with(".dds") {

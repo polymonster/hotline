@@ -62,7 +62,13 @@ pub fn render_meshes_bindless_material(
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     // bind the shader resource heap for t0 (if exists)
-    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
+    }
+
+    // bind the shader resource heap for t1 (if exists)
+    let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
     }
@@ -72,7 +78,7 @@ pub fn render_meshes_bindless_material(
     for world_buffers in &world_buffers_query {
         let buffer_ids = vec4u(
             world_buffers.draw.get_srv_index().unwrap() as u32,
-            0, 
+            world_buffers.material.get_srv_index().unwrap() as u32, 
             0, 
             0
         );
@@ -226,7 +232,7 @@ pub fn render_meshes_push_constants_texture(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
     }
@@ -263,7 +269,7 @@ pub fn render_meshes_vertex_buffer_instanced(
         view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
         
         // bind the shader resource heap for t0 (if exists)
-        let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+        let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
         if let Some(slot) = slot {
             view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
         }
@@ -321,7 +327,7 @@ pub fn render_meshes_texture2d_array_test(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
     }
@@ -362,7 +368,7 @@ pub fn render_meshes_cubemap_test(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
     }
@@ -398,7 +404,7 @@ pub fn render_meshes_texture3d_test(
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
     view.cmd_buf.push_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    let slot = pipeline.get_heap_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, device.get_shader_heap(), 0);
     }

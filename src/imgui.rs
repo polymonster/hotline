@@ -60,7 +60,6 @@ pub struct ImGuiInfo<'stack, D: Device, A: App> {
 pub struct ImGui<D: Device, A: App> {
     _native_handle: A::NativeHandle,
     _font_texture: D::Texture,
-
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
     last_cursor: os::Cursor
@@ -607,7 +606,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             let mut merge = false;
 
             let mut font_ranges = Vec::new();
-            let mut _pfont_ranges = Vec::new();
+            let mut font_ranges_alloc = Vec::new();
             let mut font_names = Vec::new();
 
             for font in &info.fonts {
@@ -640,7 +639,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 else {
                     std::ptr::null_mut()
                 };
-                _pfont_ranges.push(p_ranges);
+                font_ranges_alloc.push(p_ranges);
 
                 ImFontAtlas_AddFontFromFileTTF(
                     io.Fonts,
@@ -764,7 +763,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 _font_texture: font_tex,
                 pipeline,
                 buffers,
-                last_cursor: os::Cursor::None,
+                last_cursor: os::Cursor::None
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
