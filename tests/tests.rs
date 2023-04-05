@@ -387,8 +387,8 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     ctx.pmfx.load(&hotline_rs::get_data_path("shaders/tests"))?;
 
     // create pipelines
-    ctx.pmfx.create_pipeline(&ctx.device, "texture2d_array_test", ctx.swap_chain.get_backbuffer_pass())?;
-    ctx.pmfx.create_pipeline(&ctx.device, "blend_additive", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_render_pipeline(&ctx.device, "texture2d_array_test", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_render_pipeline(&ctx.device, "blend_additive", ctx.swap_chain.get_backbuffer_pass())?;
 
     // test getting pass for format
     let fmt = ctx.swap_chain.get_backbuffer_pass().get_format_hash();

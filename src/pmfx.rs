@@ -27,7 +27,7 @@ use std::hash::{Hash, Hasher};
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
     /// Name of the graph view instance, this is the same as the key that is stored in the pmfx `views` map.
-    pub graph_view_name: String,
+    pub graph_pass_name: String,
     /// Name of the pmfx view, this is the source view (camera, render targets)
     pub pmfx_view_name: String,
     /// Hash of the view name
@@ -48,6 +48,12 @@ pub struct View<D: gfx::Device> {
     pub view_pipeline: String,
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
+
+/// Equivalent to a `View` this is a graph node which only requires compute
+pub struct ComputePass<D: gfx::Device> {
+    /// A command buffer ready to be used to buffer compute cmmands
+    pub cmd_buf: D::CmdBuf,
+}
 
 /// Compact mesh representation referincing and index buffer, vertex buffer and num index count
 #[derive(Clone)]
@@ -218,7 +224,7 @@ struct File {
     render_target_blend_states: HashMap<String, gfx::RenderTargetBlendInfo>,
     textures: HashMap<String, TextureInfo>,
     views: HashMap<String, ViewInfo>,
-    render_graphs: HashMap<String, HashMap<String, GraphViewInfo>>,
+    render_graphs: HashMap<String, HashMap<String, GraphPassInfo>>,
     dependencies: Vec<String>
 }
 
@@ -305,8 +311,8 @@ struct ViewInfo {
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-struct GraphViewInfo {
-    view: String,
+struct GraphPassInfo {
+    view: Option<String>,
     pipelines: Option<Vec<String>>,
     function: String,
     depends_on: Option<Vec<String>>,
@@ -731,11 +737,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Create a view from information specified in pmfx file
-    fn create_view(&mut self, device: &mut D, view_name: &str, graph_view_name: &str, info: &GraphViewInfo) -> Result<(), super::Error> {
-        if !self.views.contains_key(graph_view_name) && self.pmfx.views.contains_key(view_name) {
+    /// Create a view pass from information specified in pmfx file
+    fn create_view_pass(&mut self, device: &mut D, view_name: &str, graph_pass_name: &str, info: &GraphPassInfo) -> Result<(), super::Error> {
+        if !self.views.contains_key(graph_pass_name) && self.pmfx.views.contains_key(view_name) {
 
-            println!("hotline_rs::pmfx:: creating graph view: {} for {}", graph_view_name, view_name);
+            println!("hotline_rs::pmfx:: creating graph view: {} for {}", graph_pass_name, view_name);
 
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
@@ -745,7 +751,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
                 self.view_texture_refs.entry(name.to_string())
-                    .or_insert(HashSet::new()).insert(graph_view_name.to_string());
+                    .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
             }
 
             // create textures for depth stencils
@@ -753,7 +759,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_texture(device, name)?;
 
                 self.view_texture_refs.entry(name.to_string())
-                .or_insert(HashSet::new()).insert(graph_view_name.to_string());
+                .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
             }
 
             let mut size = (0, 0);
@@ -800,7 +806,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
             // hashes
             let mut hash = DefaultHasher::new();
-            graph_view_name.hash(&mut hash);
+            graph_pass_name.hash(&mut hash);
             let name_hash : PmfxHash = hash.finish();
 
             // colour hash
@@ -823,7 +829,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
 
             let view = View::<D> {
-                graph_view_name: graph_view_name.to_string(),
+                graph_pass_name: graph_pass_name.to_string(),
                 pmfx_view_name: view_name.to_string(),
                 name_hash,
                 colour_hash,
@@ -847,11 +853,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 view_pipeline
             };
 
-            self.views.insert(graph_view_name.to_string(), 
+            self.views.insert(graph_pass_name.to_string(), 
                 (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
 
             // create stats
-            self.view_stats.insert(graph_view_name.to_string(), ViewStats::new(device, 2));
+            self.view_stats.insert(graph_pass_name.to_string(), ViewStats::new(device, 2));
         }
 
         Ok(())
@@ -874,9 +880,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // create views for all of the nodes
         if self.pmfx.render_graphs.contains_key(graph_name) {
             let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
-            for (graph_view_name, node) in &pmfx_graph {
-                // create view for each node
-                self.create_view(device, &node.view, graph_view_name, node)?;
+            for (graph_pass_name, node) in &pmfx_graph {
+                if let Some(view) = &node.view {
+                    // create view pass for each view node
+                    self.create_view_pass(device, view, graph_pass_name, node)?;
+                }
+                else {
+                    // TODO: compute
+                }
             }
         }
         Ok(())
@@ -1024,16 +1035,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let mut dependencies = HashSet::new();
             while added < to_add {
                 let pmfx_graph = self.pmfx.render_graphs[graph_name].clone();
-                for (graph_view_name, instance) in &pmfx_graph {
-                    // allow missing views to be safely handled
-                    if !self.pmfx.views.contains_key(&instance.view) {
-                        println!("hotline_rs::pmfx:: [warning] missing view {}", instance.view);
-                        to_add -= 1;
-                        continue;
+                for (graph_pass_name, instance) in &pmfx_graph {
+
+                    if let Some(view) = &instance.view {
+                        // allow missing views to be safely handled
+                        if !self.pmfx.views.contains_key(view) {
+                            println!("hotline_rs::pmfx:: [warning] missing view {}", view);
+                            to_add -= 1;
+                            continue;
+                        }
                     }
     
-                    // already added this view
-                    if dependencies.contains(graph_view_name) {
+                    // already added this pass
+                    if dependencies.contains(graph_pass_name) {
                         continue;
                     }
     
@@ -1044,8 +1058,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             for d in depends_on {
                                 if !pmfx_graph.contains_key(d) {
                                     passes = true;
-                                    println!("hotline_rs::pmfx:: [warning] view {} missing dependency {}. ignoring", 
-                                        instance.view, d);
+                                    println!("hotline_rs::pmfx:: [warning] graph pass {} missing dependency {}. ignoring", 
+                                        graph_pass_name, d);
                                 }
                                 else if dependencies.contains(d) {
                                     passes = true;
@@ -1061,37 +1075,46 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         }
                     }
                     
-                    // create transitions by inspecting view info
-                    let pmfx_view = self.pmfx.views[&instance.view].clone();
-    
-                    // if we need to write to a target we must make sure it is transitioned into render target state
-                    for rt_name in pmfx_view.render_target {
-                        self.create_texture_transition_barrier(
-                            device, &mut barriers, &instance.view, &rt_name, ResourceState::RenderTarget)?;
-    
-                    }
-    
-                    // same for depth stencils
-                    for ds_name in pmfx_view.depth_stencil {
-                        self.create_texture_transition_barrier(
-                            device, &mut barriers, &instance.view, &ds_name, ResourceState::DepthStencil)?;
-    
-                    }
-    
-                    // create pipelines requested for this view instance with the pass format
-                    if let Some(view_pipelines) = &instance.pipelines {
-                        for pipeline in view_pipelines {
-                            let view = self.get_view(graph_view_name)?;
-                            let view = view.clone();
-                            let view = view.lock().unwrap();
-                            self.create_pipeline(device, pipeline, &view.pass)?;
+                    if let Some(view) = &instance.view {
+                        // create transitions by inspecting view info
+                        let pmfx_view = self.pmfx.views[view].clone();
+        
+                        // if we need to write to a target we must make sure it is transitioned into render target state
+                        for rt_name in pmfx_view.render_target {
+                            self.create_texture_transition_barrier(
+                                device, &mut barriers, view, &rt_name, ResourceState::RenderTarget)?;
+        
+                        }
+        
+                        // same for depth stencils
+                        for ds_name in pmfx_view.depth_stencil {
+                            self.create_texture_transition_barrier(
+                                device, &mut barriers, view, &ds_name, ResourceState::DepthStencil)?;
+        
+                        }
+
+                        // create pipelines requested for this view instance with the pass format
+                        if let Some(pipelines) = &instance.pipelines {
+                            for pipeline in pipelines {
+                                let view = self.get_view(graph_pass_name)?;
+                                let view = view.clone();
+                                let view = view.lock().unwrap();
+                                self.create_render_pipeline(device, pipeline, &view.pass)?;
+                            }
                         }
                     }
-    
+                    else {
+                        if let Some(pipelines) = &instance.pipelines {
+                            for pipeline in pipelines {
+                                self.create_compute_pipeline(device, pipeline)?;
+                            }
+                        }
+                    }
+
                     // push a view on
                     added += 1;
-                    dependencies.insert(graph_view_name.to_string());
-                    self.command_queue.push(graph_view_name.to_string());
+                    dependencies.insert(graph_pass_name.to_string());
+                    self.command_queue.push(graph_pass_name.to_string());
                 }
             }
             
@@ -1124,8 +1147,44 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Create a ComputePipeline instance for the combination of pmfx_pipeline settings
+    pub fn create_compute_pipeline(&mut self, device: &D, pipeline_name: &str) -> Result<(), super::Error> {              
+        if self.pmfx.pipelines.contains_key(pipeline_name) {
+            // first create shaders if necessary
+            let folder = self.pmfx_folders.get(pipeline_name)
+                .expect(&format!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
+                self.create_shader(device, Path::new(&folder), &pipeline.cs)?;
+            }
+
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                let cs = self.get_shader(&pipeline.cs);
+                if let Some(cs) = cs {
+                    let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
+                        cs,
+                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                    })?;
+                    println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
+
+                    // TODO: permutations
+                    //let mask = permutation.parse().unwrap();
+                    //permutations.insert(mask, (pipeline.hash, pso));
+                    
+                    self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
+                }
+            }
+
+            Ok(())
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+            })
+        }
+    }
+
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
-    pub fn create_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
+    pub fn create_render_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
@@ -1133,7 +1192,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 self.create_shader(device, Path::new(&folder), &pipeline.vs)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.cs)?;
             }
             
             // create entry for this format if it does not exist
@@ -1146,40 +1204,28 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 format_pipeline.insert(pipeline_name.to_string(), HashMap::new());
                 // we create a pipeline per-permutation
                 for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
-                    // TODO: infer compute or graphics pipeline from pmfx
-                    let cs = self.get_shader(&pipeline.cs);
-                    if let Some(cs) = cs {
-                        let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
-                            cs,
-                            descriptor_layout: pipeline.descriptor_layout.clone(),
-                        })?;
-                        println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
-                        self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
-                    }
-                    else {
-                        let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
-                        let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
-                            vs: self.get_shader(&pipeline.vs),
-                            fs: self.get_shader(&pipeline.ps),
-                            input_layout: vertex_layout.to_vec(),
-                            descriptor_layout: pipeline.descriptor_layout.clone(),
-                            raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
-                            depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
-                            blend_info: blend_info_from_state(
-                                &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states)?,
-                            topology: pipeline.topology,
-                            sample_mask:pipeline.sample_mask,
-                            pass: Some(pass),
-                            ..Default::default()
-                        })?;
-                        
-                        println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
-                        let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
-                        let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
+                    let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
+                    let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
+                        vs: self.get_shader(&pipeline.vs),
+                        fs: self.get_shader(&pipeline.ps),
+                        input_layout: vertex_layout.to_vec(),
+                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                        raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
+                        depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
+                        blend_info: blend_info_from_state(
+                            &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states)?,
+                        topology: pipeline.topology,
+                        sample_mask:pipeline.sample_mask,
+                        pass: Some(pass),
+                        ..Default::default()
+                    })?;
+                    
+                    println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
+                    let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
+                    let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
 
-                        let mask = permutation.parse().unwrap();
-                        permutations.insert(mask, (pipeline.hash, pso));
-                    }
+                    let mask = permutation.parse().unwrap();
+                    permutations.insert(mask, (pipeline.hash, pso));
                 }
             }
 
@@ -1394,7 +1440,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     if let Some(compatiblew_view) = compatiblew_view {
                         let view = self.get_view(compatiblew_view)?.clone();
                         let view = view.lock().unwrap();
-                        self.create_pipeline(device, &pipeline.1, &view.pass)?;
+                        self.create_render_pipeline(device, &pipeline.1, &view.pass)?;
                     }
                     else {
                         println!("hotline::pmfx:: warning pipeline was not reloaded: {}", pipeline.1);

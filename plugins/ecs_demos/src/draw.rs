@@ -10,20 +10,20 @@ use bevy_ecs::prelude::*;
 use maths_rs::Vec4u;
 
 #[derive(Component)]
-pub struct Parent(Entity);
-
-#[derive(Component)]
-pub struct BufferComponent(pub gfx_platform::Buffer);
-
-#[derive(Component)]
 pub struct WorldBuffers {
     /// Structured buffer containing bindless draw call information for entities (world matrix)
     pub draw: gfx_platform::Buffer,
     // Structured buffer containing texture ids and material parameters
-    pub material: gfx_platform::Buffer
+    pub material: gfx_platform::Buffer,
     // Structured buffer containing light data
-    // pub light: gfx_platform::Buffer
+    pub light: gfx_platform::Buffer
 }
+
+#[derive(Component)]
+pub struct Parent(Entity);
+
+#[derive(Component)]
+pub struct BufferComponent(pub gfx_platform::Buffer);
 
 #[derive(Component)]
 pub struct InstanceBuffer {
@@ -65,6 +65,13 @@ pub struct MaterialData {
     pub normal_id: u32,
     pub roughness_id: u32,
     pub padding: u32
+}
+
+#[repr(C)]
+pub struct LightData {
+    pub pos: Vec3f,
+    pub radius: f32,
+    pub colour: Vec4f
 }
 
 #[derive(Component)]
@@ -516,7 +523,7 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
             "batch_material_instances",
             "batch_bindless_world_matrix_instances"
         ],
-        render_graph: "mesh_material_instanced"
+        render_graph: "mesh_material"
     }
 }
 
@@ -671,10 +678,20 @@ pub fn setup_draw_material(
         initial_state: gfx::ResourceState::ShaderResource
     }, hotline_rs::data![&material_data], &mut pmfx.shader_heap).unwrap();
 
+    let light_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<LightData>(),
+        num_elements: 1,
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
+
     // Spaw the world buffer entity
     commands.spawn(WorldBuffers {
         draw: draw_buf,
-        material: material_buf
+        material: material_buf,
+        light: light_buf
     });
 
     for material in materials {
