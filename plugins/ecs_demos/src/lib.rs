@@ -1,11 +1,12 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::gfx::Buffer;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
+
+use hotline_rs::gfx::Buffer;
 
 mod primitives;
 mod test;
@@ -46,11 +47,12 @@ pub fn render_meshes_bindless_material(
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
         Query<(&draw::InstanceBuffer, &MeshComponent)>,
+        Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>,
         Query<&draw::WorldBuffers>
     )
 ) -> Result<(), hotline_rs::Error> {
     
-    let (instance_draw_query, world_buffers_query) = queries;
+    let (instance_draw_query, single_draw_query, world_buffers_query) = queries;
 
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -78,10 +80,16 @@ pub fn render_meshes_bindless_material(
         let buffer_ids = vec4u(
             world_buffers.draw.get_srv_index().unwrap() as u32,
             world_buffers.material.get_srv_index().unwrap() as u32, 
-            0, 
+            world_buffers.light.get_srv_index().unwrap() as u32,
             0
         );
-        view.cmd_buf.push_constants(1, 4, 0, &buffer_ids);
+
+        // set the buffer ids push constants
+        let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
+        if let Some(slot) = slot {
+            view.cmd_buf.push_constants(slot.slot, 4, 0, &buffer_ids);
+        }
+
         set_world_buffers = true;
         break;
     }
@@ -98,6 +106,19 @@ pub fn render_meshes_bindless_material(
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+    }
+
+    // single draw calls
+    for (mesh, world_matrix) in &single_draw_query {
+        // set the world matrix push constants
+        let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::PushConstants);
+        if let Some(slot) = slot {
+            view.cmd_buf.push_constants(slot.slot, 12, 0, &world_matrix.0);
+        }
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
@@ -410,12 +431,29 @@ pub fn render_meshes_texture3d_test(
     Ok(())
 }
 
+// TODO:
+#[no_mangle]
+pub fn dispatch_compute_test(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
+) -> Result<(), hotline_rs::Error> {
+        
+    let pipeline = pmfx.get_compute_pipeline(&view.view_pipeline);
+    view.cmd_buf.set_compute_heap(0, &pmfx.shader_heap);
+
+    println!("calling!");
+
+    Ok(())
+}
+
 /// Register demos
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
     demos![
         // primitive examples
         "geometry_primitives",
+        "light_primitives",
 
         // draw tests
         "draw_indexed",
@@ -431,6 +469,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "test_cubemap",
         "test_texture2d_array",
         "test_texture3d",
+        "test_compute",
 
         // basic tests
         "test_missing_demo",
@@ -449,6 +488,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
     match name.as_str() {
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
+        "setup_light_primitives" => system_func![setup_light_primitives],
 
         // draw tests
         "setup_draw_indexed" => system_func![setup_draw_indexed],
@@ -464,6 +504,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         "setup_cubemap_test" => system_func![setup_cubemap_test],
         "setup_texture2d_array_test" => system_func![setup_texture2d_array_test],
         "setup_texture3d_test" => system_func![setup_texture3d_test],
+        "setup_compute_test" => system_func![setup_compute_test],
         
         // updates
         "rotate_meshes" => system_func![
@@ -487,6 +528,15 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         ],
 
         // render functions
+        "render_meshes_bindless_material" => render_func![
+            render_meshes_bindless_material, 
+            view_name,
+            (
+                Query<(&draw::InstanceBuffer, &MeshComponent)>,
+                Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>,
+                Query<&draw::WorldBuffers>
+            )
+        ],
         "render_meshes" => render_func![
             render_meshes, 
             view_name,
@@ -536,13 +586,10 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
             view_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
-        "render_meshes_bindless_material" => render_func![
-            render_meshes_bindless_material, 
+        "dispatch_compute_test" => render_func![
+            dispatch_compute_test,
             view_name,
-            (
-                Query<(&draw::InstanceBuffer, &MeshComponent)>,
-                Query<&draw::WorldBuffers>
-            )
+            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
         
         // basic tests
@@ -551,7 +598,6 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
             view_name,
             Query::<(&WorldMatrix, &MeshComponent)>
         ],
-
         "render_missing_pipeline" => render_func![
             render_missing_pipeline, 
             view_name,

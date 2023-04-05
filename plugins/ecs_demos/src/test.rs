@@ -289,7 +289,7 @@ pub fn setup_texture2d_array_test(
     );
 }
 
-/// Test cubemap loading (including mip-maps) and rendering
+/// Test 3d texture loading and rendering using a pre-built sdf texture
 #[no_mangle]
 pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
@@ -305,6 +305,55 @@ pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App
 /// Sets up a few spheres, to render cubemap mip-levels
 #[no_mangle]
 pub fn setup_texture3d_test(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands) {
+
+    let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+
+    let volume_info = image::load_from_file(&hotline_rs::get_data_path("textures/sdf_shadow.dds")).unwrap();
+    let volume = device.0.create_texture_with_heaps(
+        &volume_info.info,
+        gfx::TextureHeapInfo {
+            shader: Some(&mut pmfx.shader_heap),
+            ..Default::default()
+        },
+        Some(volume_info.data.as_slice())
+    ).unwrap();
+
+    let dim = 50.0;
+
+    commands.spawn((
+        MeshComponent(cube_mesh.clone()),
+        Position(vec3f(0.0, dim * 0.5, 0.0)),
+        Rotation(Quatf::identity()),
+        Scale(splat3f(dim)),
+        WorldMatrix(Mat34f::identity()),
+        TextureInstance(volume.get_srv_index().unwrap() as u32)
+    ));
+
+    // spawn entity to keep hold of the texture
+    commands.spawn(
+        TextureComponent(volume)
+    );
+}
+
+/// Test compute shader by reading and writing from a 3d texture un-ordered access
+#[no_mangle]
+pub fn test_compute(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_compute_test"
+        ],
+        render_graph: "compute_test",
+        ..Default::default()
+    }
+}
+
+/// Sets up a few spheres, to render cubemap mip-levels
+#[no_mangle]
+pub fn setup_compute_test(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {

@@ -3,6 +3,17 @@
 
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
+use bevy_ecs::prelude::*;
+use rand::prelude::*;
+
+use crate::draw::{self, LightData};
+
+#[derive(Clone, Copy)]
+enum MeshType {
+    Normal,
+    Billboard,
+    CylindricalBillboard
+}
 
 /// Init function for primitives demo
 #[no_mangle]
@@ -18,13 +29,6 @@ pub fn geometry_primitives(client: &mut Client<gfx_platform::Device, os_platform
         render_graph: "mesh_debug",
         ..Default::default()
     }
-}
-
-#[derive(Clone, Copy)]
-enum MeshType {
-    Normal,
-    Billboard,
-    CylindricalBillboard
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
@@ -121,4 +125,91 @@ pub fn setup_geometry_primitives(
             i = i + 1;
         }
     }
+}
+
+/// Init function for primitives demo
+#[no_mangle]
+pub fn light_primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_light_primitives"
+        ],
+        render_graph: "mesh_lit",
+        ..Default::default()
+    }
+}
+
+/// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
+#[no_mangle]
+pub fn setup_light_primitives(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands) {
+    let plane = hotline_rs::primitives::create_plane_mesh(&mut device.0, 1);
+
+    // randomise lights
+    let num_lights = 64;
+    let range = vec3f(2000.0, 0.0, 2000.0);
+    let mut rng = rand::thread_rng();
+    let mut light_data = Vec::new();
+    for _ in 0..num_lights {
+        let pos = (vec3f(rng.gen(), 32.0, rng.gen()) * range) - range * 0.5;
+        let h = rng.gen();
+        let col = Vec4f::from((maths_rs::hsv_to_rgb(vec3f(h, 1.0, 1.0)), 1.0));
+        commands.spawn((
+            Position(pos),
+            Colour(col),
+            LightType::Point
+        ));
+
+        light_data.push(LightData{
+            pos: pos,
+            radius: 64.0,
+            colour: col
+        });
+    }
+
+    let draw_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::WRITE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<draw::DrawData>(),
+        num_elements: 1,
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
+
+    let material_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<draw::MaterialData>(),
+        num_elements: 1,
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
+
+    let light_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::SHADER_RESOURCE,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<draw::LightData>(),
+        num_elements: light_data.len(),
+        initial_state: gfx::ResourceState::ShaderResource
+    }, hotline_rs::data![&light_data], &mut pmfx.shader_heap).unwrap();
+
+    // spawn the world buffer entity
+    commands.spawn(draw::WorldBuffers {
+        draw: draw_buf,
+        material: material_buf,
+        light: light_buf
+    });
+
+    // ground plane
+    commands.spawn((
+        MeshComponent(plane.clone()),
+        Position(Vec3f::zero()),
+        Rotation(Quatf::identity()),
+        Scale(splat3f(1000.0)),
+        WorldMatrix(Mat34f::identity())
+    ));
 }

@@ -133,6 +133,13 @@ pub struct Billboard;
 #[derive(Component)]
 pub struct CylindricalBillboard;
 
+#[derive(Component)]
+pub enum LightType {
+    Point,
+    Spot,
+    Directional
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
 #[system_set(base)]
 pub enum SystemSets {
@@ -156,6 +163,13 @@ macro_rules! render_func {
     }
 }
 
+#[macro_export]
+macro_rules! compute_func {
+    ($func:expr, $view:expr, $query:ty) => {
+        Some(render_func_closure![$func, $view, $query].into_config())
+    }
+}
+
 /// This macro can be used to export a system render function for bevy ecs. You can pass a compatible 
 /// system function with a `view` name which can be looked up when the function is called
 /// so that a single render function can have different views
@@ -164,7 +178,7 @@ macro_rules! render_func_closure {
     ($func:expr, $view_name:expr, $query:ty) => {
         move |
             pmfx: Res<PmfxRes>,
-            qmesh: $query | {
+            q: $query | {
                 let view = pmfx.get_view(&$view_name);
                 let err = match view {
                     Ok(v) => { 
@@ -179,7 +193,7 @@ macro_rules! render_func_closure {
                         let result = $func(
                             &pmfx,
                             &view,
-                            qmesh
+                            q
                         );
 
                         view.cmd_buf.end_render_pass();

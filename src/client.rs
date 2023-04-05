@@ -257,7 +257,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // core pipelines
         pmfx.load(super::get_data_path("shaders/imdraw").as_str())?;
-        pmfx.create_pipeline(&device, "imdraw_blit", swap_chain.get_backbuffer_pass())?;
+        pmfx.create_render_pipeline(&device, "imdraw_blit", swap_chain.get_backbuffer_pass())?;
 
         let size = main_window.get_size();
         pmfx.update_window(&mut device, (size.x as f32, size.y as f32), "main_window")?;
