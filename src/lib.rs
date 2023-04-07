@@ -188,6 +188,8 @@ pub mod prelude {
         system_func,
         render_func,
         render_func_closure,
+        compute_func,
+        compute_func_closure,
         demos,
         systems
     };

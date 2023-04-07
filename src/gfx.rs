@@ -294,9 +294,14 @@ bitflags! {
 
     /// CPU Access flags for buffers or textures.
     pub struct CpuAccessFlags: u8 {
+        /// No CPUT access required, use this for best performance if you do not need to write data to a resource
         const NONE = 1<<0;
+        /// CPU will read data from the resource
         const READ = 1<<1;
+        /// CPU will write data to the resourc
         const WRITE = 1<<2;
+        /// Must be used in conjunction with READ or WRITE, the resource will mapped once and never un-mapped
+        const PERSISTENTLY_MAPPED = 1<<3;
     }
 
     /// Textures can be used in one or more of the following ways
@@ -1084,7 +1089,10 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
 pub trait Buffer<D: Device>: Send + Sync {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
+    /// this function internally will map and unmap
     fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> Result<(), Error>; // TODO: should be mut surely?
+    // write data directly to the buffer, the buffer is required to be persistently mapped
+    fn write<T: Sized>(&mut self, offset: isize, data: &[T]) -> Result<(), Error>; 
     /// maps the entire buffer for reading or writing... see MapInfo
     fn map(&mut self, info: &MapInfo) -> *mut u8;
     /// unmap buffer... see UnmapInfo

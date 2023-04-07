@@ -1,10 +1,9 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::prelude::*;
+use hotline_rs::{prelude::*, gfx::Buffer};
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
-use rand::prelude::*;
 
 use crate::draw::{self, LightData};
 
@@ -135,8 +134,44 @@ pub fn light_primitives(client: &mut Client<gfx_platform::Device, os_platform::A
         setup: systems![
             "setup_light_primitives"
         ],
+        update: systems![
+            "animate_lights",
+            "batch_lights"
+        ],
         render_graph: "mesh_lit",
         ..Default::default()
+    }
+}
+
+#[no_mangle]
+pub fn batch_lights(
+    light_query: Query<(&Position, &Colour), With<LightType>>,
+    mut world_buffers_query: Query<&mut draw::WorldBuffers>) {
+    let data_size = std::mem::size_of::<LightData>();
+    for mut buffers in &mut world_buffers_query {
+        let mut offset = 0;
+        for (pos, colour) in &light_query {
+            buffers.light.write(
+                offset, 
+                gfx::as_u8_slice(&LightData{
+                    pos: pos.0,
+                    radius: 64.0,
+                    colour: colour.0
+            })).unwrap();
+            offset += data_size as isize
+        }
+        break;
+    }
+}
+
+/// returns a vec4 of rgba in 0-1 range from a packed `rgba` which is inside u32 (4 bytes, R8G8B8A8)
+pub fn _rgba8_to_vec4<T: Float + FloatOps<T> + Cast<T>>(rgba: u32) -> Vec4<T> {
+    let one_over_255 = T::from_f32(1.0 / 255.0);
+    Vec4 {
+        x: T::from_u32((rgba >> 24) & 0xff) * one_over_255,
+        y: T::from_u32((rgba >> 16) & 0xff) * one_over_255,
+        z: T::from_u32((rgba >> 8) & 0xff) * one_over_255,
+        w: T::from_u32(rgba & 0xff) * one_over_255
     }
 }
 
@@ -148,15 +183,17 @@ pub fn setup_light_primitives(
     mut commands: Commands) {
     let plane = hotline_rs::primitives::create_plane_mesh(&mut device.0, 1);
 
-    // randomise lights
     let num_lights = 64;
-    let range = vec3f(2000.0, 0.0, 2000.0);
-    let mut rng = rand::thread_rng();
     let mut light_data = Vec::new();
-    for _ in 0..num_lights {
-        let pos = (vec3f(rng.gen(), 32.0, rng.gen()) * range) - range * 0.5;
-        let h = rng.gen();
-        let col = Vec4f::from((maths_rs::hsv_to_rgb(vec3f(h, 1.0, 1.0)), 1.0));
+    for i in 0..num_lights {
+        let pos = vec3f(0.0, 32.0, 0.0);
+        let col = match i {
+            i if i < 16 => _rgba8_to_vec4(0xf89f5bff),
+            i if i < 32 => _rgba8_to_vec4(0xe53f71ff),
+            i if i < 48 => _rgba8_to_vec4(0x9c3587ff),
+            _ => _rgba8_to_vec4(0x66023cff),
+        };
+
         commands.spawn((
             Position(pos),
             Colour(col),
@@ -190,12 +227,12 @@ pub fn setup_light_primitives(
 
     let light_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
         usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::NONE,
+        cpu_access: gfx::CpuAccessFlags::WRITE | gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
         format: gfx::Format::Unknown,
         stride: std::mem::size_of::<draw::LightData>(),
         num_elements: light_data.len(),
         initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![&light_data], &mut pmfx.shader_heap).unwrap();
+    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
 
     // spawn the world buffer entity
     commands.spawn(draw::WorldBuffers {
@@ -204,12 +241,39 @@ pub fn setup_light_primitives(
         light: light_buf
     });
 
+    let meshes = vec![
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 32),
+    ];
+
+    // square number of rows and columns
+    let rc = 100.0;
+    let irc = rc as i32;
+
+    let size = 10.0;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
+    let half_extent = (rc-1.0) * step * 0.5;
+    let start_pos = vec3f(-half_extent, size, -half_extent);
+
+    for y in 0..irc {
+        for x in 0..irc {
+            let iter_pos = start_pos + vec3f(x as f32 * step, 0.0, y as f32 * step);
+            commands.spawn((
+                MeshComponent(meshes[0].clone()),
+                Position(iter_pos),
+                Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
+                Scale(splat3f(10.0)),
+                WorldMatrix(Mat34f::identity())
+            ));
+        }
+    }
+
     // ground plane
     commands.spawn((
         MeshComponent(plane.clone()),
         Position(Vec3f::zero()),
         Rotation(Quatf::identity()),
-        Scale(splat3f(1000.0)),
+        Scale(splat3f(half_extent * 2.0)),
         WorldMatrix(Mat34f::identity())
     ));
 }

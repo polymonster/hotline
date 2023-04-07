@@ -360,18 +360,27 @@ pub fn setup_compute_test(
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
 
-    let volume_info = image::load_from_file(&hotline_rs::get_data_path("textures/sdf_shadow.dds")).unwrap();
     let volume = device.0.create_texture_with_heaps(
-        &volume_info.info,
+        &gfx::TextureInfo {
+            width: 64,
+            height: 64,
+            depth: 64,
+            tex_type: gfx::TextureType::Texture3D,
+            format: gfx::Format::RGBA8n,
+            array_layers: 1,
+            mip_levels: 1,
+            samples: 1,
+            usage: gfx::TextureUsage::UNORDERED_ACCESS | gfx::TextureUsage::SHADER_RESOURCE,
+            initial_state: gfx::ResourceState::ShaderResource
+        },
         gfx::TextureHeapInfo {
             shader: Some(&mut pmfx.shader_heap),
             ..Default::default()
         },
-        Some(volume_info.data.as_slice())
+        hotline_rs::data!()
     ).unwrap();
 
     let dim = 50.0;
-
     commands.spawn((
         MeshComponent(cube_mesh.clone()),
         Position(vec3f(0.0, dim * 0.5, 0.0)),

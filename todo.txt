@@ -1,34 +1,42 @@
 // TODO:
 
+// maths-rs
+// - add vec rotate 2d function
+// - add cubic interpolate function
+// - add cubic tangents function
+// - fix rbga8/vec functions
+
+// pmfx-shader
 // - minimise shader duplication caused via pmfx includes
-// - lazy init print function
+// - allow pipelines to drive the num thread in compute shaders
 
-// - material
-// - persistent mapped buffers
-// - create texture with heap
-// - pmfx shader heap
+// bits
+// - different camera support
+// - fix get_num_32bit_constants function
 
+// material system
+// - need to supply number of lights
+// - cook torrence
+// - oren nayar
+// - spot light
+// - directional light
+// - area light
+// - disney brdf
 // - transform normals with world matrix
 // - construct tangent space
-// - execute indirect
+
+// engine
 // - glft
 // - resolves properly data driven
 // - set name on resources
-
-// - fix get_num_32bit_constants function
+// - lazy init print function
 // - render target fixed size
 // - texture load image from file into pmfx
-
 // - update docs
 // - store hotline-data commit hash for crates.io
-
-// ecs
-// - compute passes
 // - reverse depth
 // - stencil examples
 // - per demo settings
-// - light
-// - texture
 // - shadow
 // - update aabb's
 // - culling
@@ -42,13 +50,21 @@
 // - API for fence?
 // - API for copies and clears
 
-// ui / 
+// ui / debug
+// - render grid not tracked
 // - imgui not tracked within draw call stats
 // - imgui colours are not complete
 // - thread stats
 // - view menu + saving state
 
 // DONE:
+// x persistent mapped buffers
+// x point light
+// x create texture with heap
+// x pmfx shader heap
+// x compute passes
+
+// x ecs texture
 // x stats read out
 // x cleaning up srvs in ecs worlds
 // x uv's need flipping on geom

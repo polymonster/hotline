@@ -5,7 +5,7 @@ use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use maths_rs::{Vec2f, Vec3f, Vec4f, Mat4f, Mat34f, Quatf};
+use maths_rs::{Vec3f, Vec4f, Mat4f, Mat34f, Quatf};
 
 use std::ops::Deref;
 use std::ops::DerefMut;
@@ -36,8 +36,11 @@ impl Default for ScheduleInfo {
 /// Serialisable camera info
 #[derive(Serialize, Deserialize, Clone, Copy)]
 pub struct CameraInfo {
+    pub camera_type: CameraType,
     pub pos: (f32, f32, f32),
     pub rot: (f32, f32, f32),
+    pub focus: (f32, f32, f32),
+    pub zoom: f32,
     pub aspect: f32,
     pub fov: f32,
 }
@@ -46,8 +49,11 @@ pub struct CameraInfo {
 impl Default for CameraInfo {
     fn default() -> CameraInfo {
         CameraInfo {
+            camera_type: CameraType::Fly,
+            zoom: 500.0,
             pos: (0.0, 150.0, 150.0),
             rot: (-45.0, 0.0, 0.0),
+            focus: (0.0, 0.0, 0.0),
             aspect: 16.0/9.0,
             fov: 60.0
         }
@@ -115,7 +121,10 @@ hotline_ecs!(Component, TimeComponent, f32);
 
 #[derive(Component)]
 pub struct Camera {
-    pub rot: Vec2f
+    pub rot: Vec3f,
+    pub focus: Vec3f,
+    pub zoom: f32,
+    pub camera_type: CameraType
 }
 
 #[derive(Component)]
@@ -149,6 +158,13 @@ pub enum SystemSets {
     Render,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CameraType {
+    None,
+    Fly,
+    Orbit,
+}
+
 #[macro_export]
 macro_rules! system_func {
     ($func:expr) => {
@@ -165,8 +181,8 @@ macro_rules! render_func {
 
 #[macro_export]
 macro_rules! compute_func {
-    ($func:expr, $view:expr, $query:ty) => {
-        Some(render_func_closure![$func, $view, $query].into_config())
+    ($pass:expr) => {
+        Some(compute_func_closure![$pass].into_config())
     }
 }
 
@@ -212,6 +228,54 @@ macro_rules! render_func_closure {
                     pmfx.log_error(&$view_name, &err.msg);
                 }
         }
+    }
+}
+
+/// This macro can be used to export a system render function for bevy ecs. You can pass a compatible 
+/// system function with a `view` name which can be looked up when the function is called
+/// so that a single render function can have different views
+#[macro_export]
+macro_rules! compute_func_closure {
+    ($pass_name:expr) => {
+        move | pmfx: Res<PmfxRes> | {
+                let pass = pmfx.get_compute_pass(&$pass_name);
+                let err = match pass {
+                    Ok(p) => {
+                        let mut pass = p.lock().unwrap();
+                        let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline).unwrap();
+
+                        pass.cmd_buf.begin_event(0xffffff, &$pass_name);
+                        pass.cmd_buf.set_compute_pipeline(&pipeline);
+                        pass.cmd_buf.set_compute_heap(0, &pmfx.shader_heap);
+                        pass.cmd_buf.dispatch(
+                            gfx::Size3 {
+                                x: 64 / 8,
+                                y: 64 / 8,
+                                z: 64 / 8,
+                            },
+                            gfx::Size3 {
+                                x: 64,
+                                y: 64,
+                                z: 64,
+                            },
+                        );
+
+                        pass.cmd_buf.end_event();
+
+                        Ok(())
+                    }
+                    Err(p) => {
+                        Err(hotline_rs::Error {
+                            msg: p.msg
+                        })
+                    }
+                };
+
+                // record errors
+                if let Err(err) = err {
+                    pmfx.log_error(&$pass_name, &err.msg);
+                }
+            }
     }
 }
 

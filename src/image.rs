@@ -161,7 +161,7 @@ fn to_gfx_texture_type(dds: &DDS) -> TextureType {
 /// supported image formats are (png, bmp, tga and jpg).
 pub fn write_to_file(filename: &str, width: u64, height: u64, components: u32, image_data: &[u8]) -> Result<(), super::Error> {
     let path = std::path::Path::new(&filename);
-    let mut writer = ImageWriter::new(&filename);
+    let mut writer = ImageWriter::new(filename);
     match path.extension() {
         Some(os_str) => match os_str.to_str() {
             Some("png") => {
