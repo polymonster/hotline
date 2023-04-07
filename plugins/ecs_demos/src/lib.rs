@@ -40,6 +40,63 @@ fn animate_textures(
     }
 }
 
+fn vec_rotate(v: Vec2f, angle: f32) -> Vec2f {
+    let c = cos(angle);
+    let s = sin(angle);
+    return vec2f(c * v.x - s * v.y, s * v.x + c * v.y); // anti-clockwise rotation
+}
+
+#[no_mangle]
+fn animate_lights(
+    time: Res<TimeRes>, 
+    mut light_query: Query<&mut Position, With<LightType>>) {
+    
+    let t = time.accumulated;
+    let r = sin(t);
+    let tau = 6.28318507;
+
+    let rot0 = sin(t);
+    let rot1 = sin(-t);
+    let rot2 = sin(t * 0.5);
+    let rot3 = sin(-t * 0.5);
+    
+    let step = 1.0 / 16.0;
+    let mut f = 0.0;
+    let mut i = 0;
+    for mut position in &mut light_query {
+        if i < 16 {
+            position.x = r * cos(tau * f) * 1000.0;
+            position.z = r * sin(tau * f) * 1000.0;
+            let pr = vec_rotate(position.xz(), rot0);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 32 {
+            position.x = (r + 1.0) * cos(tau * f) * 1000.0;
+            position.z = (r + 1.0) * sin(tau * f) * 1000.0;
+            let pr = vec_rotate(position.xz(), rot2);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 48 {
+            position.x = (r - 1.0) * cos(tau * f) * 1000.0;
+            position.z = (r - 1.0) * sin(tau * f) * 1000.0;
+            let pr = vec_rotate(position.xz(), rot3);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 64 {
+            position.x = r * 2.0 * cos(tau * f) * 1000.0;
+            position.z = r * 2.0 * sin(tau * f) * 1000.0;
+            let pr = vec_rotate(position.xz(), rot1);
+            position.set_xz(pr);
+            f += step;
+        }
+        i += 1;
+    }
+}
+
+
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
 pub fn render_meshes_bindless_material(
@@ -61,6 +118,7 @@ pub fn render_meshes_bindless_material(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind the shader resource heap for t0 (if exists)
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
@@ -431,22 +489,6 @@ pub fn render_meshes_texture3d_test(
     Ok(())
 }
 
-// TODO:
-#[no_mangle]
-pub fn dispatch_compute_test(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
-) -> Result<(), hotline_rs::Error> {
-        
-    let pipeline = pmfx.get_compute_pipeline(&view.view_pipeline);
-    view.cmd_buf.set_compute_heap(0, &pmfx.shader_heap);
-
-    println!("calling!");
-
-    Ok(())
-}
-
 /// Register demos
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
@@ -484,7 +526,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 
 /// Register plugin system functions
 #[no_mangle]
-pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemConfig> {
+pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemConfig> {
     match name.as_str() {
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
@@ -513,24 +555,28 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         "animate_textures" => system_func![
             animate_textures.in_base_set(SystemSets::Update)
         ],
+        "animate_lights" => system_func![
+            animate_lights.in_base_set(SystemSets::Update)
+        ],
 
         // batches
         "batch_world_matrix_instances" => system_func![
             draw::batch_world_matrix_instances.after(SystemSets::Batch)
         ],
-
         "batch_material_instances" => system_func![
             draw::batch_material_instances.after(SystemSets::Batch)
         ],
-
         "batch_bindless_world_matrix_instances" => system_func![
             draw::batch_bindless_world_matrix_instances.after(SystemSets::Batch)
+        ],
+        "batch_lights" => system_func![
+            primitives::batch_lights.after(SystemSets::Batch)
         ],
 
         // render functions
         "render_meshes_bindless_material" => render_func![
             render_meshes_bindless_material, 
-            view_name,
+            pass_name,
             (
                 Query<(&draw::InstanceBuffer, &MeshComponent)>,
                 Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>,
@@ -539,7 +585,7 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         ],
         "render_meshes" => render_func![
             render_meshes, 
-            view_name,
+            pass_name,
             (
                 Query<(&WorldMatrix, &MeshComponent), Without<Billboard>>,
                 Query<(&WorldMatrix, &MeshComponent), (With<Billboard>, Without<CylindricalBillboard>)>,
@@ -548,59 +594,55 @@ pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemCon
         ],
         "render_meshes_pipeline" => render_func![
             render_meshes_pipeline, 
-            view_name, 
+            pass_name, 
             Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_pipeline_coloured" => render_func![
             render_meshes_pipeline_coloured, 
-            view_name, 
+            pass_name, 
             Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>
         ],
         "render_meshes_vertex_buffer_instanced" => render_func![
             render_meshes_vertex_buffer_instanced, 
-            view_name, 
+            pass_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_cbuffer_instanced" => render_func![
             render_meshes_cbuffer_instanced, 
-            view_name, 
+            pass_name, 
             Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_push_constants_texture" => render_func![
             render_meshes_push_constants_texture, 
-            view_name, 
+            pass_name, 
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
         "render_meshes_cubemap_test" => render_func![
             render_meshes_cubemap_test,
-            view_name,
+            pass_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
         "render_meshes_texture2d_array_test" => render_func![
             render_meshes_texture2d_array_test,
-            view_name,
+            pass_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>
         ],
         "render_meshes_texture3d_test" => render_func![
             render_meshes_texture3d_test,
-            view_name,
+            pass_name,
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
-        "dispatch_compute_test" => render_func![
-            dispatch_compute_test,
-            view_name,
-            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
-        ],
+        "dispatch_compute" => compute_func!(pass_name),
         
         // basic tests
         "render_missing_camera" => render_func![
             render_missing_camera, 
-            view_name,
+            pass_name,
             Query::<(&WorldMatrix, &MeshComponent)>
         ],
         "render_missing_pipeline" => render_func![
             render_missing_pipeline, 
-            view_name,
+            pass_name,
             Query::<(&WorldMatrix, &MeshComponent)>
         ],
         _ => std::hint::black_box(None)

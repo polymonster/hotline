@@ -846,7 +846,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             for vp in viewports {
                 let p_vp = *vp;
                 let vp_ref = &*p_vp;
-                if vp_ref.PlatformUserData != std::ptr::null_mut() {
+                if !vp_ref.PlatformUserData.is_null() {
                     let win = get_viewport_window::<D, A>(p_vp);
                     if win.is_mouse_hovered() && (vp_ref.Flags & ImGuiViewportFlags_NoInputs as i32) == 0 {
                         io.MouseHoveredViewport = vp_ref.ID;
@@ -1319,7 +1319,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     /// The next width will appear on the same line (horizontally) as the previous
     pub fn same_line(&mut self) {
         unsafe { 
-            igSameLine(0.0, 0.0);
+            igSameLine(0.0, -1.0);
         };
     }
 

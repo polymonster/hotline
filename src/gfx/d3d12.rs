@@ -10,7 +10,7 @@ use super::ReadBackRequest as SuperReadBackRequest;
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
 use std::hash::{Hash, Hasher};
 use std::collections::{HashMap, hash_map::DefaultHasher};
-use std::ffi::{CStr, CString};
+use std::ffi::{CStr, CString, c_void};
 use std::result;
 use std::str;
 use std::sync::Mutex;
@@ -212,7 +212,8 @@ pub struct Buffer {
     srv_index: Option<usize>,
     cbv_index: Option<usize>,
     uav_index: Option<usize>,
-    free_list: Option<FreeListRef>
+    free_list: Option<FreeListRef>,
+    persistent_mapped_data: *mut c_void
 }
 
 #[derive(Clone)]
@@ -956,15 +957,13 @@ impl Heap {
                 }
                 let ptr = self.heap.GetCPUDescriptorHandleForHeapStart().ptr + self.offset;
                 self.offset += self.increment_size;
-                return D3D12_CPU_DESCRIPTOR_HANDLE { ptr };
+                D3D12_CPU_DESCRIPTOR_HANDLE { ptr }
             }
             else {
                  // pulls new handle from the free list
                 let index = free_list.pop().unwrap();
                 let ptr = self.base_address + self.increment_size * index;
-                D3D12_CPU_DESCRIPTOR_HANDLE {
-                    ptr: ptr
-                }
+                D3D12_CPU_DESCRIPTOR_HANDLE { ptr }
             }
         }
     }
@@ -1252,7 +1251,7 @@ impl Device {
                         Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
                             Width: width as u32,
                             Height: height as u32,
-                            Depth: depth as u32,
+                            Depth: depth,
                             Format: dxgi_format,
                             RowPitch: upload_pitch as u32,
                         },
@@ -2007,6 +2006,11 @@ impl super::Device for Device {
                 srv_index = Some(heap.get_handle_index(&h));
             }
 
+            let mut map_data = std::ptr::null_mut();
+            if info.cpu_access.contains(super::CpuAccessFlags::PERSISTENTLY_MAPPED) {
+                buf.Map(0, None, Some(&mut map_data))?;
+            }
+
             Ok(Buffer {
                 resource: buf,
                 vbv,
@@ -2014,7 +2018,8 @@ impl super::Device for Device {
                 srv_index,
                 cbv_index,
                 uav_index: None,
-                free_list: Some(heap.free_list.clone())
+                free_list: Some(heap.free_list.clone()),
+                persistent_mapped_data: map_data
             })
         }
     }
@@ -2043,7 +2048,8 @@ impl super::Device for Device {
                 srv_index: None,
                 cbv_index: None,
                 uav_index: None,
-                free_list: None
+                free_list: None,
+                persistent_mapped_data: std::ptr::null_mut()
             })
         }
         else {
@@ -2058,7 +2064,7 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
-        let result = self.create_texture_with_heaps(
+        self.create_texture_with_heaps(
             info,
             TextureHeapInfo {
                 shader: None,
@@ -2066,8 +2072,7 @@ impl super::Device for Device {
                 depth_stencil: None
             },
             data
-        );
-        result
+        )
     }
 
     fn create_texture_with_heaps<T: Sized>(
@@ -3245,16 +3250,39 @@ impl super::CmdBuf<Device> for CmdBuf {
 
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
-        let update_bytes = data.len() * std::mem::size_of::<T>();
-        let range = D3D12_RANGE { Begin: 0, End: 0 };
-        let mut map_data = std::ptr::null_mut();
-        unsafe {
-            self.resource.Map(0, Some(&range), Some(&mut map_data))?;
-            let dst = (map_data as *mut u8).offset(offset);
-            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
-            self.resource.Unmap(0, None);
+        if !self.persistent_mapped_data.is_null() {
+            Err(super::Error{
+                msg: "hotline_rs::d3d12:: buffer was created with CpuAccessFlags::PERSISTENTLY_MAPPED use write to update it instead of update".to_string()
+            })
+        } 
+        else {
+            let update_bytes = data.len() * std::mem::size_of::<T>();
+            let range = D3D12_RANGE { Begin: 0, End: 0 };
+            let mut map_data = std::ptr::null_mut();
+            unsafe {
+                self.resource.Map(0, Some(&range), Some(&mut map_data))?;
+                let dst = (map_data as *mut u8).offset(offset);
+                std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
+                self.resource.Unmap(0, None);
+            }
+            Ok(())
         }
-        Ok(())
+    }
+
+    fn write<T: Sized>(&mut self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+        unsafe {
+            if !self.persistent_mapped_data.is_null() {
+                let update_bytes = data.len() * std::mem::size_of::<T>();
+                let dst = (self.persistent_mapped_data as *mut u8).offset(offset);
+                std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
+                Ok(())
+            }
+            else {
+                Err(super::Error{
+                    msg: "hotline_rs::d3d12:: buffer was not created with CpuAccessFlags::PERSISTENTLY_MAPPED".to_string()
+                })
+            }
+        }
     }
 
     fn get_cbv_index(&self) -> Option<usize> {
@@ -3270,24 +3298,31 @@ impl super::Buffer<Device> for Buffer {
     }
 
     fn map(&mut self, info: &MapInfo) -> *mut u8 {
-        let range = D3D12_RANGE {
-            Begin: info.read_start,
-            End: info.read_end,
-        };
-        let mut map_data = std::ptr::null_mut();
-        unsafe {
-            self.resource.Map(info.subresource, Some(&range), Some(&mut map_data)).unwrap();
+        if !self.persistent_mapped_data.is_null() {
+            self.persistent_mapped_data as *mut u8
+        } 
+        else {
+            let range = D3D12_RANGE {
+                Begin: info.read_start,
+                End: info.read_end,
+            };
+            let mut map_data = std::ptr::null_mut();
+            unsafe {
+                self.resource.Map(info.subresource, Some(&range), Some(&mut map_data)).unwrap();
+            }
+            map_data as *mut u8
         }
-        map_data as *mut u8
     }
 
     fn unmap(&mut self, info: &UnmapInfo) {
-        let range = D3D12_RANGE {
-            Begin: info.write_start,
-            End: info.write_end,
-        };
-        unsafe {
-            self.resource.Unmap(info.subresource, Some(&range));
+        if self.persistent_mapped_data.is_null() {
+            let range = D3D12_RANGE {
+                Begin: info.write_start,
+                End: info.write_end,
+            };
+            unsafe {
+                self.resource.Unmap(info.subresource, Some(&range));
+            }
         }
     }
 }

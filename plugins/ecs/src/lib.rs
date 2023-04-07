@@ -59,30 +59,18 @@ fn update_main_camera_config(
     let aspect = window_rect.width as f32 / window_rect.height as f32;
     for (position, camera) in &mut query {
         info.main_camera = Some(CameraInfo{
+            camera_type: camera.camera_type,
+            zoom: camera.zoom,
+            focus: (camera.focus.x, camera.focus.y, camera.focus.z),
             pos: (position.0.x, position.0.y, position.0.z),
-            rot: (camera.rot.x, camera.rot.y, 0.0),
+            rot: (camera.rot.x, camera.rot.y, camera.rot.z),
             fov: 60.0,
             aspect: aspect
         });
     }
 }
 
-pub fn camera_view_proj_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degrees: f32) -> Mat4f {
-    // rotational matrix
-    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
-    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.y));
-    let mat_rot = mat_rot_y * mat_rot_x;
-    // generate proj matrix
-    let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
-    // translation matrix
-    let translate = Mat4f::from_translation(pos.0);
-    // build view / proj matrix
-    let view = translate * mat_rot;
-    let view = view.transpose();
-    proj * view
-}
-
-pub fn camera_constants_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degrees: f32) -> CameraConstants {
+pub fn camera_constants_from_fly(pos: &Position, rot: &Vec3f, aspect: f32, fov_degrees: f32) -> CameraConstants {
     // rotational matrix
     let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
     let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.y));
@@ -101,68 +89,153 @@ pub fn camera_constants_from(pos: &Position, rot: &Vec2f, aspect: f32, fov_degre
     }
 }
 
-fn update_cameras(
-    app: Res<AppRes>, 
-    main_window: Res<MainWindowRes>,
-    mut pmfx: ResMut<PmfxRes>,
-    mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {    
-    let app = &app.0;
-    for (name, mut position, mut camera, mut view_proj) in &mut query {
+pub fn camera_constants_from_orbit(rot: &Vec3f, focus: &Vec3f, zoom: f32, aspect: f32, fov_degrees: f32) -> CameraConstants {
+    // rotational matrix
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(rot.y));
+    let mat_rot = mat_rot_y * mat_rot_x;
+    // generate proj matrix
+    let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
+    // translation matrix
+    let translate_zoom = Mat4f::from_translation(vec3f(0.0, 0.0, zoom));
+    let translate_focus = Mat4f::from_translation(*focus);        
+    // build view / proj matrix
+    let view = translate_focus * mat_rot * translate_zoom;
+    let pos = view.get_column(3);
+    let view = view.inverse();
+    CameraConstants {
+        view_matrix: view,
+        view_projection_matrix: proj * view,
+        view_position: pos
+    }
+}
 
-        let (enable_keyboard, enable_mouse) = app.get_input_enabled();
-        if main_window.0.is_focused() {
+fn update_camera_orbit(
+    app: &AppRes,
+    pmfx: &mut PmfxRes,
+    camera: &mut Camera,
+    position: &mut Position,
+    view_proj: &mut ViewProjectionMatrix,
+    name: &String
+) {
+    let drag = app.get_mouse_pos_delta();
+    let wheel = app.get_mouse_wheel();
+    let buttons = app.get_mouse_buttons();
+    let drag = vec2f(drag.x as f32, drag.y as f32);
 
-            let mut cam_move_delta = Vec3f::zero();
+    let (_, enable_mouse) = app.get_input_enabled();
 
-            if enable_keyboard {
-                // get keyboard position movement
-                let keys = app.get_keys_down();
-                if keys['A' as usize] {
-                    cam_move_delta.x -= 1.0;
-                }
-                if keys['D' as usize] {
-                    cam_move_delta.x += 1.0;
-                }
-                if keys['Q' as usize] {
-                    cam_move_delta.y -= 1.0;
-                }
-                if keys['E' as usize] {
-                    cam_move_delta.y += 1.0;
-                }
-                if keys['W' as usize] {
-                    cam_move_delta.z -= 1.0;
-                }
-                if keys['S' as usize] {
-                    cam_move_delta.z += 1.0;
-                }
-            }
+    if enable_mouse {
+        if buttons[os::MouseButton::Left as usize] {
+            camera.rot -= Vec3f::from((drag.yx(), 0.0));
+        }
+    }
 
-            // get mouse rotation
-            if enable_mouse {
-                if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
-                    let mouse_delta = app.get_mouse_pos_delta();
-                    camera.rot.x -= mouse_delta.y as f32;
-                    camera.rot.y -= mouse_delta.x as f32;
-                }
-            }
+    let scoll_speed = 100.0;
+    camera.zoom += wheel * scoll_speed;
+    camera.zoom = max(camera.zoom, 1.0);
 
-            // construct rotation matrix
-            let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(camera.rot.x));
-            let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(camera.rot.y));
-            let mat_rot = mat_rot_y * mat_rot_x;
+    // generate proj matrix
+    let aspect = pmfx.get_window_aspect("main_dock");
 
-            // move relative to facing directions
-            position.0 += mat_rot * cam_move_delta;
+    let constants = camera_constants_from_orbit(&camera.rot, &camera.focus, camera.zoom, aspect, 60.0);
+    view_proj.0 = constants.view_projection_matrix;
+    position.0 = constants.view_position.xyz();
+
+    // update camera in pmfx
+    pmfx.update_camera_constants(&name, &constants);
+}
+
+fn update_camera_fly(
+    app: &AppRes,
+    time: &TimeRes,
+    pmfx: &mut PmfxRes,
+    camera: &mut Camera,
+    position: &mut Position,
+    view_proj: &mut ViewProjectionMatrix,
+    name: &String
+) {
+    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
+
+    let mut cam_move_delta = Vec3f::zero();
+
+    let speed = 240.0 * (1.0 / time.time_scale);
+    let boost_speed = 2.0;
+
+    if enable_keyboard {
+        // get keyboard position movement
+        let keys = app.get_keys_down();
+        if keys['A' as usize] {
+            cam_move_delta.x -= speed;
+        }
+        if keys['D' as usize] {
+            cam_move_delta.x += speed;
+        }
+        if keys['Q' as usize] {
+            cam_move_delta.y -= speed;
+        }
+        if keys['E' as usize] {
+            cam_move_delta.y += speed;
+        }
+        if keys['W' as usize] {
+            cam_move_delta.z -= speed;
+        }
+        if keys['S' as usize] {
+            cam_move_delta.z += speed;
         }
 
-        // generate proj matrix
-        let aspect = pmfx.get_window_aspect("main_dock");
-       
-        // assign view proj
-        view_proj.0 = camera_view_proj_from(&position, &camera.rot, aspect, 60.0);
+        // speed boost
+        if app.is_sys_key_down(os::SysKey::Shift) {
+            cam_move_delta *= boost_speed;
+        }
 
-        // update camera in pmfx
-        pmfx.update_camera_constants(&name.0, &camera_constants_from(&position, &camera.rot, aspect, 60.0));
+        // scale by delta time, consistencies, but we ignore time scaling
+        cam_move_delta *= time.smooth_delta;
+    }
+
+    // get mouse rotation
+    if enable_mouse {
+        if app.get_mouse_buttons()[os::MouseButton::Left as usize] {
+            let mouse_delta = app.get_mouse_pos_delta();
+            camera.rot.x -= mouse_delta.y as f32;
+            camera.rot.y -= mouse_delta.x as f32;
+        }
+    }
+
+    // construct rotation matrix
+    let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(camera.rot.x));
+    let mat_rot_y = Mat4f::from_y_rotation(f32::deg_to_rad(camera.rot.y));
+    let mat_rot = mat_rot_y * mat_rot_x;
+
+    // move relative to facing directions
+    position.0 += mat_rot * cam_move_delta;
+
+    // generate proj matrix
+    let aspect = pmfx.get_window_aspect("main_dock");
+    
+    // assign view proj
+    let constants = camera_constants_from_fly(&position, &camera.rot, aspect, 60.0);
+    view_proj.0 = constants.view_projection_matrix;
+
+    // update camera in pmfx
+    pmfx.update_camera_constants(&name, &constants);
+}
+
+fn update_cameras(
+    app: Res<AppRes>,
+    time: Res<TimeRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {    
+    for (name, mut position, mut camera, mut view_proj) in &mut query {
+        match camera.camera_type {
+            CameraType::Fly => {
+                update_camera_fly(&app, &time, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
+            },
+            CameraType::Orbit => {
+                update_camera_orbit(&app,&mut pmfx, &mut camera, &mut position, &mut view_proj, name);
+            }
+            _ => continue
+        }
     }
 }
 
@@ -401,6 +474,28 @@ impl BevyPlugin {
 
         client
     }
+
+    fn setup_camera(&self) -> (Camera, Mat4f, Position) {
+        let main_camera = self.session_info.main_camera.unwrap_or_default();
+        let pos = Position(Vec3f::from(main_camera.pos));
+        let focus = Vec3f::from(main_camera.focus);
+        let rot = Vec3f::from(main_camera.rot);
+        let zoom = main_camera.zoom;
+        let constants = match main_camera.camera_type {
+            CameraType::Orbit => camera_constants_from_orbit(&rot, &focus, zoom, main_camera.aspect, main_camera.fov),
+            _ => camera_constants_from_fly(&pos, &rot, main_camera.aspect, main_camera.fov)
+        };
+        (
+            Camera {
+                rot: rot,
+                focus: focus,
+                zoom: zoom,
+                camera_type: main_camera.camera_type
+            },
+            constants.view_projection_matrix,
+            pos
+        )
+    }
 }
 
 impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
@@ -530,16 +625,11 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            let main_camera = self.session_info.main_camera.unwrap_or_default();
-            let pos = Position { 0: Vec3f::new(main_camera.pos.0, main_camera.pos.1, main_camera.pos.2) };
-            let rot = vec2f(main_camera.rot.0, main_camera.rot.1);
-
+            let (cam, vp, pos) = self.setup_camera();           
             self.world.spawn((
-                ViewProjectionMatrix(camera_view_proj_from(&pos, &rot, main_camera.aspect, main_camera.fov)),
+                ViewProjectionMatrix(vp),
                 pos,
-                Camera {
-                    rot: vec2f(main_camera.rot.0, main_camera.rot.1)
-                },
+                cam,
                 MainCamera,
                 Name(String::from("main_camera"))
             ));
@@ -593,6 +683,27 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                     self.session_info.active_demo = selected;
                     resetup = true;
                 }
+            }
+
+            // camera type select
+            if client.imgui.button(font_awesome::strs::CAMERA) {
+                // TODO: set to default
+            }
+            client.imgui.same_line();
+
+            let mut main_camera_query = self.world.query::<(&mut Camera, &MainCamera)>();
+            for (mut camera, _) in &mut main_camera_query.iter_mut(&mut self.world) {
+                let camera_types = vec![
+                    "Fly".to_string(),
+                    "Orbit".to_string()
+                ];
+                let selected = format!("{:?}", camera.camera_type);
+                let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
+                camera.camera_type = match selected.as_str() {
+                    "Fly" => CameraType::Fly,
+                    "Orbit" => CameraType::Orbit,
+                    _ => CameraType::Fly
+                };
             }
 
             // -/+ to toggle through demos, ignore test missing and test failing demos

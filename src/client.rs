@@ -56,6 +56,8 @@ pub struct HotlineInfo {
 pub struct Time {
     /// Delta time in seconds since the last frame
     pub delta: f32,
+    /// Accumulated delta time
+    pub accumulated: f32,
     /// Smoothed delta time to reduce spikes
     pub smooth_delta: f32,
     /// System time that the last frame started
@@ -77,6 +79,7 @@ impl Time {
     fn new() -> Self {
         Self {
             delta: 0.0,
+            accumulated: 0.0,
             smooth_delta: 0.0,
             frame_start: SystemTime::now(),
             paused: false,
@@ -284,7 +287,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             libs: HashMap::new(),
             time: Time::new(),
             delta_history: VecDeque::new(),
-            instance_name: info.name.to_string(),
+            instance_name: info.name,
             status_bar_height: STATUS_BAR_HEIGHT
         };
 
@@ -308,6 +311,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             if !self.time.delta_paused {
                 self.time.delta = elapsed.as_secs_f32() * self.time.time_scale;
 
+                // increment accumulated
+                self.time.accumulated += self.time.delta;
+
                 // record history
                 self.delta_history.push_front(self.time.delta);
                 if self.delta_history.len() > SMOOTH_DELTA_FRAMES {
@@ -321,6 +327,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             else {
                 // paused delta
                 self.time.delta = 0.0;
+                self.time.accumulated = 0.0;
                 self.time.smooth_delta = 0.0;
                 self.delta_history.clear();
             }
@@ -636,10 +643,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 // fixed time step
                 if let Some(mut step) = self.time.fixed_delta {
                     let mut fixed = true;
-                    if self.imgui.checkbox("##", &mut fixed) {
-                        if !fixed {
-                            self.time.fixed_delta = None;
-                        }
+                    if self.imgui.checkbox("##", &mut fixed) && !fixed {
+                        self.time.fixed_delta = None;
                     }
                     self.imgui.same_line();
                     self.imgui.dummy(5.0, 0.0);
@@ -650,10 +655,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 }
                 else {
                     let mut fixed = false;
-                    if self.imgui.checkbox("Fixed Timestep", &mut fixed) {
-                        if fixed {
-                            self.time.fixed_delta = Some(1.0 / 60.0);
-                        }
+                    if self.imgui.checkbox("Fixed Timestep", &mut fixed) && fixed {
+                        self.time.fixed_delta = Some(1.0 / 60.0);
                     }
                 }
 
