@@ -1,11 +1,11 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::{prelude::*, gfx::Buffer};
+use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 
-use crate::draw::{self, LightData};
+use pmfx::PointLightData;
 
 #[derive(Clone, Copy)]
 enum MeshType {
@@ -128,11 +128,11 @@ pub fn setup_geometry_primitives(
 
 /// Init function for primitives demo
 #[no_mangle]
-pub fn light_primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+pub fn point_lights(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
-            "setup_light_primitives"
+            "setup_point_lights"
         ],
         update: systems![
             "animate_lights",
@@ -145,22 +145,54 @@ pub fn light_primitives(client: &mut Client<gfx_platform::Device, os_platform::A
 
 #[no_mangle]
 pub fn batch_lights(
-    light_query: Query<(&Position, &Colour), With<LightType>>,
-    mut world_buffers_query: Query<&mut draw::WorldBuffers>) {
-    let data_size = std::mem::size_of::<LightData>();
-    for mut buffers in &mut world_buffers_query {
-        let mut offset = 0;
-        for (pos, colour) in &light_query {
-            buffers.light.write(
-                offset, 
-                gfx::as_u8_slice(&LightData{
-                    pos: pos.0,
-                    radius: 64.0,
-                    colour: colour.0
-            })).unwrap();
-            offset += data_size as isize
+    mut pmfx: ResMut<PmfxRes>,
+    light_query: Query<(&Position, &Colour, &LightType)>) {
+    let world_buffers = pmfx.get_world_buffers_mut();
+    let mut point_offset = 0;
+    let mut spot_offset = 0;
+    let mut directional_offset = 0;
+    for (pos, colour, light_type) in &light_query {
+        match light_type {
+            LightType::Point => {
+                if let Some(light_buf) = &mut world_buffers.point_light {
+                    light_buf.write(
+                        point_offset, 
+                        gfx::as_u8_slice(&PointLightData{
+                            pos: pos.0,
+                            radius: 64.0,
+                            colour: colour.0
+                        }
+                    )).unwrap();
+                    point_offset += std::mem::size_of::<PointLightData>();
+                }
+            },
+            LightType::Spot => {
+                if let Some(light_buf) = &mut world_buffers.spot_light {
+                    light_buf.write(
+                        spot_offset, 
+                        gfx::as_u8_slice(&SpotLightData{
+                            pos: pos.0,
+                            colour: colour.0,
+                            dir: Vec3f::zero(),
+                            cutoff: 0.0
+                        }
+                    )).unwrap();
+                    spot_offset += std::mem::size_of::<PointLightData>();
+                }
+            },
+            LightType::Directional => {
+                if let Some(light_buf) = &mut world_buffers.directional_light {
+                    light_buf.write(
+                        directional_offset, 
+                        gfx::as_u8_slice(&DirectionalLightData{
+                            dir: Vec3f::zero(),
+                            colour: colour.0
+                        }
+                    )).unwrap();
+                    directional_offset += std::mem::size_of::<PointLightData>();
+                }
+            }
         }
-        break;
     }
 }
 
@@ -177,14 +209,13 @@ pub fn _rgba8_to_vec4<T: Float + FloatOps<T> + Cast<T>>(rgba: u32) -> Vec4<T> {
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
 #[no_mangle]
-pub fn setup_light_primitives(
+pub fn setup_point_lights(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
     let plane = hotline_rs::primitives::create_plane_mesh(&mut device.0, 1);
 
     let num_lights = 64;
-    let mut light_data = Vec::new();
     for i in 0..num_lights {
         let pos = vec3f(0.0, 32.0, 0.0);
         let col = match i {
@@ -199,46 +230,11 @@ pub fn setup_light_primitives(
             Colour(col),
             LightType::Point
         ));
-
-        light_data.push(LightData{
-            pos: pos,
-            radius: 64.0,
-            colour: col
-        });
     }
 
-    let draw_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::WRITE,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<draw::DrawData>(),
-        num_elements: 1,
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
-
-    let material_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::NONE,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<draw::MaterialData>(),
-        num_elements: 1,
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
-
-    let light_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::WRITE | gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<draw::LightData>(),
-        num_elements: light_data.len(),
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
-
-    // spawn the world buffer entity
-    commands.spawn(draw::WorldBuffers {
-        draw: draw_buf,
-        material: material_buf,
-        light: light_buf
+    pmfx.resize_world_buffers(&mut device, pmfx::WorldBufferResizeInfo{
+        point_light_count: num_lights,
+        ..Default::default()
     });
 
     let meshes = vec![

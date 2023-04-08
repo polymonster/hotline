@@ -105,6 +105,7 @@ hotline_ecs!(Resource, UserConfigRes, client::UserConfig);
 //
 
 hotline_ecs!(Component, Name, String);
+hotline_ecs!(Component, Parent, Entity);
 hotline_ecs!(Component, Velocity, Vec3f);
 hotline_ecs!(Component, Position, Vec3f);
 hotline_ecs!(Component, Rotation, Quatf);
@@ -116,6 +117,7 @@ hotline_ecs!(Component, ViewProjectionMatrix, Mat4f);
 hotline_ecs!(Component, MeshComponent, pmfx::Mesh<gfx_platform::Device>);
 hotline_ecs!(Component, PipelineComponent, String);
 hotline_ecs!(Component, TextureComponent, gfx_platform::Texture);
+hotline_ecs!(Component, BufferComponent, gfx_platform::Buffer);
 hotline_ecs!(Component, TextureInstance, u32);
 hotline_ecs!(Component, TimeComponent, f32);
 

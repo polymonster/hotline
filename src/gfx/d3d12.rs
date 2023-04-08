@@ -3249,7 +3249,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 impl super::Buffer<Device> for Buffer {
-    fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+    fn update<T: Sized>(&mut self, offset: usize, data: &[T]) -> result::Result<(), super::Error> {
         if !self.persistent_mapped_data.is_null() {
             Err(super::Error{
                 msg: "hotline_rs::d3d12:: buffer was created with CpuAccessFlags::PERSISTENTLY_MAPPED use write to update it instead of update".to_string()
@@ -3261,7 +3261,7 @@ impl super::Buffer<Device> for Buffer {
             let mut map_data = std::ptr::null_mut();
             unsafe {
                 self.resource.Map(0, Some(&range), Some(&mut map_data))?;
-                let dst = (map_data as *mut u8).offset(offset);
+                let dst = (map_data as *mut u8).add(offset);
                 std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
                 self.resource.Unmap(0, None);
             }
@@ -3269,11 +3269,11 @@ impl super::Buffer<Device> for Buffer {
         }
     }
 
-    fn write<T: Sized>(&mut self, offset: isize, data: &[T]) -> result::Result<(), super::Error> {
+    fn write<T: Sized>(&mut self, offset: usize, data: &[T]) -> result::Result<(), super::Error> {
         unsafe {
             if !self.persistent_mapped_data.is_null() {
                 let update_bytes = data.len() * std::mem::size_of::<T>();
-                let dst = (self.persistent_mapped_data as *mut u8).offset(offset);
+                let dst = (self.persistent_mapped_data as *mut u8).add(offset);
                 std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
                 Ok(())
             }

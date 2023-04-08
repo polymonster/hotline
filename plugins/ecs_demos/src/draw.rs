@@ -1,29 +1,14 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::{prelude::*, gfx::Buffer};
+use hotline_rs::prelude::*;
+use hotline_rs::pmfx::WorldBufferResizeInfo;
 
 use maths_rs::prelude::*;
 use rand::prelude::*;
 use bevy_ecs::prelude::*;
 
 use maths_rs::Vec4u;
-
-#[derive(Component)]
-pub struct WorldBuffers {
-    /// Structured buffer containing bindless draw call information for entities (world matrix)
-    pub draw: gfx_platform::Buffer,
-    // Structured buffer containing texture ids and material parameters
-    pub material: gfx_platform::Buffer,
-    // Structured buffer containing light data
-    pub light: gfx_platform::Buffer
-}
-
-#[derive(Component)]
-pub struct Parent(Entity);
-
-#[derive(Component)]
-pub struct BufferComponent(pub gfx_platform::Buffer);
 
 #[derive(Component)]
 pub struct InstanceBuffer {
@@ -52,26 +37,6 @@ pub struct Instance {
 pub struct InstanceIds {
     entity_id: u32,
     material_id: u32
-}
-
-#[repr(C)]
-pub struct DrawData {
-    pub world_matrix: Mat34f,
-}
-
-#[repr(C)]
-pub struct MaterialData {
-    pub albedo_id: u32,
-    pub normal_id: u32,
-    pub roughness_id: u32,
-    pub padding: u32
-}
-
-#[repr(C)]
-pub struct LightData {
-    pub pos: Vec3f,
-    pub radius: f32,
-    pub colour: Vec4f
 }
 
 #[derive(Component)]
@@ -197,23 +162,18 @@ pub fn batch_material_instances(
 
 #[no_mangle]
 pub fn batch_bindless_world_matrix_instances(
-    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>,
-    mut world_buffers_query: Query<&mut WorldBuffers>) {
-
-    let mut instance_data = Vec::new();
-    let mut count = 0;
-    for (ids, _) in &instances_query {
-        count = max(count, ids.entity_id);
-    }
-    instance_data.resize((count+1) as usize, Mat34f::zero());
-
-    for (ids, world_matrix) in &instances_query {
-        let i = ids.entity_id as usize;
-        instance_data[i] = world_matrix.0;
-    }
-
-    for mut buf in &mut world_buffers_query {
-        buf.draw.update(0, &instance_data).unwrap();
+    mut pmfx: ResMut<PmfxRes>,
+    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>) {
+    let world_buffers = pmfx.get_world_buffers_mut();
+    let mut offset = 0;
+    if let Some(buf) = &mut world_buffers.draw {
+        for (ids, world_matrix) in &instances_query {
+            buf.write(
+                offset,
+                &world_matrix.0
+            ).unwrap();
+            offset += std::mem::size_of::<DrawData>();
+        }
     }
 }
 
@@ -648,15 +608,6 @@ pub fn setup_draw_material(
         }
     }
 
-    let draw_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::WRITE,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<DrawData>(),
-        num_elements: entity_itr as usize,
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
-
     let mut material_data = Vec::new();
     for material in &materials {
         material_data.push(
@@ -669,30 +620,18 @@ pub fn setup_draw_material(
         );
     }
 
-    let material_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::NONE,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<MaterialData>(),
-        num_elements: materials.len(),
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![&material_data], &mut pmfx.shader_heap).unwrap();
-
-    let light_buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-        usage: gfx::BufferUsage::SHADER_RESOURCE,
-        cpu_access: gfx::CpuAccessFlags::NONE,
-        format: gfx::Format::Unknown,
-        stride: std::mem::size_of::<LightData>(),
-        num_elements: 1,
-        initial_state: gfx::ResourceState::ShaderResource
-    }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
-
-    // Spaw the world buffer entity
-    commands.spawn(WorldBuffers {
-        draw: draw_buf,
-        material: material_buf,
-        light: light_buf
+    pmfx.resize_world_buffers(&mut device, WorldBufferResizeInfo {
+        draw_count: entity_itr as usize,
+        material_count: materials.len(),
+        ..Default::default()
     });
+
+    if let Some(buf) = &mut pmfx.get_world_buffers_mut().material {
+        buf.write(
+            0,
+            &material_data
+        );
+    }
 
     for material in materials {
         commands.spawn(material);

@@ -6,8 +6,6 @@ use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
 
-use hotline_rs::gfx::Buffer;
-
 mod primitives;
 mod test;
 mod dev;
@@ -104,12 +102,11 @@ pub fn render_meshes_bindless_material(
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
         Query<(&draw::InstanceBuffer, &MeshComponent)>,
-        Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>,
-        Query<&draw::WorldBuffers>
+        Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>
     )
 ) -> Result<(), hotline_rs::Error> {
     
-    let (instance_draw_query, single_draw_query, world_buffers_query) = queries;
+    let (instance_draw_query, single_draw_query) = queries;
 
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -132,30 +129,11 @@ pub fn render_meshes_bindless_material(
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
-    // set the world buffer ids in push constants
-    let mut set_world_buffers = false;
-    for world_buffers in &world_buffers_query {
-        let buffer_ids = vec4u(
-            world_buffers.draw.get_srv_index().unwrap() as u32,
-            world_buffers.material.get_srv_index().unwrap() as u32, 
-            world_buffers.light.get_srv_index().unwrap() as u32,
-            0
-        );
-
-        // set the buffer ids push constants
-        let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
-        if let Some(slot) = slot {
-            view.cmd_buf.push_constants(slot.slot, 4, 0, &buffer_ids);
-        }
-
-        set_world_buffers = true;
-        break;
-    }
-
-    if !set_world_buffers {
-        return Err(hotline_rs::Error {
-            msg: "hotline_rs::ecs:: world buffers not set!".to_string()
-        });
+    let world_buffer_info = pmfx.get_world_buffer_info();
+    let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = slot {
+        view.cmd_buf.push_constants(
+            slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
 
     // instance batch draw calls
@@ -495,7 +473,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
     demos![
         // primitive examples
         "geometry_primitives",
-        "light_primitives",
+        "point_lights",
 
         // draw tests
         "draw_indexed",
@@ -530,7 +508,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
     match name.as_str() {
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
-        "setup_light_primitives" => system_func![setup_light_primitives],
+        "setup_point_lights" => system_func![setup_point_lights],
 
         // draw tests
         "setup_draw_indexed" => system_func![setup_draw_indexed],
@@ -579,8 +557,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
             pass_name,
             (
                 Query<(&draw::InstanceBuffer, &MeshComponent)>,
-                Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>,
-                Query<&draw::WorldBuffers>
+                Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>
             )
         ],
         "render_meshes" => render_func![

@@ -574,6 +574,11 @@ fn geometry_primitives() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
+fn test_point_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("point_lights")
+}
+
+#[test]
 fn draw_indexed() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("draw_indexed")
 }
