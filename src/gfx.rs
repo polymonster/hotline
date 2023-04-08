@@ -1090,9 +1090,9 @@ pub trait Buffer<D: Device>: Send + Sync {
     /// updates the buffer by mapping and copying memory, if you update while a buffer is in use on the GPU you may see tearing
     /// multi-buffer updates to buffer so that a buffer is never written to while in flight on the GPU.
     /// this function internally will map and unmap
-    fn update<T: Sized>(&mut self, offset: isize, data: &[T]) -> Result<(), Error>; // TODO: should be mut surely?
+    fn update<T: Sized>(&mut self, offset: usize, data: &[T]) -> Result<(), Error>; // TODO: should be mut surely?
     // write data directly to the buffer, the buffer is required to be persistently mapped
-    fn write<T: Sized>(&mut self, offset: isize, data: &[T]) -> Result<(), Error>; 
+    fn write<T: Sized>(&mut self, offset: usize, data: &[T]) -> Result<(), Error>; 
     /// maps the entire buffer for reading or writing... see MapInfo
     fn map(&mut self, info: &MapInfo) -> *mut u8;
     /// unmap buffer... see UnmapInfo

@@ -432,13 +432,13 @@ fn render_draw_data<D: Device>(
             let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
             let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
             buffers.vb.update(vertex_write_offset, vb_slice)?;
-            vertex_write_offset += vb_size_bytes as isize;
+            vertex_write_offset += vb_size_bytes;
             // index
             let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
             let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
             let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
             buffers.ib.update(index_write_offset, ib_slice)?;
-            index_write_offset += ib_size_bytes as isize;
+            index_write_offset += ib_size_bytes;
         }
 
         // update push constants

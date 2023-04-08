@@ -174,7 +174,8 @@ pub mod prelude {
 
         // traits
         ecs_base::*,
-        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline},
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
+        pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,

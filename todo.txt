@@ -1,29 +1,25 @@
 // TODO:
 
-// maths-rs
-// - add vec rotate 2d function
-// - add cubic interpolate function
-// - add cubic tangents function
-// - fix rbga8/vec functions
+// update: maths-rs
 
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
 
 // bits
-// - different camera support
 // - fix get_num_32bit_constants function
 
 // material system
 // - need to supply number of lights
-// - cook torrence
-// - oren nayar
 // - spot light
 // - directional light
 // - area light
 // - disney brdf
 // - transform normals with world matrix
 // - construct tangent space
+// - shadow map
+// - omni shadow map
+// - cascaded shadow map
 
 // engine
 // - glft
@@ -37,9 +33,9 @@
 // - reverse depth
 // - stencil examples
 // - per demo settings
-// - shadow
 // - update aabb's
 // - culling
+// - post process / 2d passes (compute based)
 
 // gfx
 // - MRT
@@ -58,6 +54,13 @@
 // - view menu + saving state
 
 // DONE:
+// x add vec rotate 2d function
+// x add cubic interpolate function
+// x add cubic tangents function
+// x fix rbga8/vec functions
+// x cook torrence
+// x oren nayar
+// x different camera support
 // x persistent mapped buffers
 // x point light
 // x create texture with heap

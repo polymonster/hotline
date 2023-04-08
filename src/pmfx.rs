@@ -1,5 +1,6 @@
 #![allow(clippy::collapsible_if)] 
 
+use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
 use crate::os;
 use crate::gfx;
@@ -16,7 +17,7 @@ use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min, num::Base};
+use maths_rs::{max, min, num::Base, Mat34f, Vec3f, Vec4f, Vec2u};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -124,6 +125,10 @@ pub struct Pmfx<D: gfx::Device> {
     pass_stats: HashMap<String, PassStats<D>>,
     /// Map of camera constants that can be retrieved by name for use as push constants
     cameras: HashMap<String, CameraConstants>,
+    /// Container which holds onto buffer resources for view passes
+    world_buffers: WorldBuffers<D>,
+    /// Indices and sizes of the `world_buffers` 
+    world_buffer_info: WorldBufferInfo,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
     barriers: HashMap<String, D::CmdBuf>,
     /// Vector of view names to execute in designated order
@@ -328,12 +333,125 @@ struct GraphPassInfo {
     depends_on: Option<Vec<String>>,
 }
 
+/// Structure of buffers used during world view render passes
+pub struct WorldBuffers<D: gfx::Device> {
+    /// Structured buffer containing bindless draw call information `DrawData`
+    pub draw: Option<D::Buffer>,
+    // Structured buffer containing `MaterialData`
+    pub material: Option<D::Buffer>,
+    // Structured buffer containing `PointLightData`
+    pub point_light: Option<D::Buffer>,
+    // Structured buffer containing `SpotLightData`
+    pub spot_light: Option<D::Buffer>,
+    // Structured buffer containing `DirectionalLightData`
+    pub directional_light: Option<D::Buffer>
+}
+
+impl<D> Default for WorldBuffers<D> where D: gfx::Device {
+    fn default() -> Self {
+        Self {
+            draw: None,
+            material: None,
+            point_light: None,
+            spot_light: None,
+            directional_light: None,
+        }
+    }
+}
+
+/// Information to cerate `WorldBuffers` for rendering
+#[derive(Default)]
+pub struct WorldBufferResizeInfo {
+    pub draw_count: usize,
+    pub material_count: usize,
+    pub point_light_count: usize,
+    pub spot_light_count: usize,
+    pub directinal_light_count: usize,
+}
+
+/// GPU friendly structure containing camera view information
 #[repr(C)]
 #[derive(Clone)]
 pub struct CameraConstants {
     pub view_matrix: maths_rs::Mat4f,
     pub view_projection_matrix: maths_rs::Mat4f,
     pub view_position: maths_rs::Vec4f
+}
+
+/// GPU friendly struct containing single entity draw data
+#[repr(C)]
+#[derive(Clone)]
+pub struct DrawData {
+    pub world_matrix: Mat34f,
+}
+
+/// GPU friendly structure containing lookup id's for bindless materials 
+#[repr(C)]
+#[derive(Clone)]
+pub struct MaterialData {
+    pub albedo_id: u32,
+    pub normal_id: u32,
+    pub roughness_id: u32,
+    pub padding: u32
+}
+
+/// GPU friendly structure for point lights
+#[repr(C)]
+#[derive(Clone)]
+pub struct PointLightData {
+    pub pos: Vec3f,
+    pub radius: f32,
+    pub colour: Vec4f
+}
+
+/// GPU friendly structure for directional lights
+#[repr(C)]
+#[derive(Clone)]
+pub struct DirectionalLightData {
+    pub dir: Vec3f,
+    pub colour: Vec4f
+}
+
+/// GPU friendly structure for spot lights
+#[repr(C)]
+#[derive(Clone)]
+pub struct SpotLightData {
+    pub pos: Vec3f,
+    pub dir: Vec3f,
+    pub cutoff: f32,
+    pub colour: Vec4f,
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct WorldBufferInfo {
+    /// srv index of the draw buffer (contains entity world matrices and draw call data) stored in x
+    /// the count of the buffer is stored in y
+    pub draw: Vec2u,
+    /// srv index of the material buffer (contains ids of textures to look up and material parameters) stored in x
+    /// the count of the buffer is stored in y
+    pub material: Vec2u,
+    /// srv index of the point light buffer stored in x
+    /// the count of the buffer is stored in y
+    pub point_light: Vec2u,
+    /// srv index of the spot light buffer stored in x
+    /// the count of the buffer is stored in y
+    pub spot_light: Vec2u,
+    /// srv index of the directional light buffer stored in x
+    /// the count of the buffer is stored in y
+    pub directional_light: Vec2u,
+}
+
+impl Default for WorldBufferInfo {
+    fn default() -> Self {
+        Self {
+            draw: Vec2u::zero(),
+            material: Vec2u::zero(),
+            point_light: Vec2u::zero(),
+            spot_light: Vec2u::zero(),
+            directional_light: Vec2u::zero(),
+        }
+    }
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -553,8 +671,87 @@ impl<D> Pmfx<D> where D: gfx::Device {
             view_errors: Arc::new(Mutex::new(HashMap::new())),
             reloader: Reloader::create(Box::new(PmfxReloadResponder::new())),
             total_stats: TotalStats::new(),
+            world_buffers: WorldBuffers::default(),
+            world_buffer_info: WorldBufferInfo::default(),
             shader_heap
         }
+    }
+
+    /// Create a signle world buffer
+    fn create_world_buffer<T: Sized>(
+        new_count: usize, 
+        buf_info: &mut Vec2u, 
+        buf_resource: &mut Option<D::Buffer>, 
+        device: &mut D,
+        heap: &mut D::Heap,
+    ) {
+        if new_count > buf_info.y as usize {
+            let buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+                usage: gfx::BufferUsage::SHADER_RESOURCE,
+                cpu_access: gfx::CpuAccessFlags::WRITE| gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<T>(),
+                num_elements: new_count,
+                initial_state: gfx::ResourceState::ShaderResource
+            }, crate::data![], heap).unwrap();
+
+            buf_info.y = new_count as u32;
+            buf_info.x = buf.get_srv_index().unwrap() as u32;
+            *buf_resource = Some(buf);
+        }
+    }
+
+
+    /// Resizes the set of world buffers used for rendering, this assumes that the buffers will be populated each frame
+    /// creates new buffers if the requested count exceeds the capacity.
+    pub fn resize_world_buffers(&mut self, device: &mut D, info: WorldBufferResizeInfo) {
+        Self::create_world_buffer::<DrawData>(
+            info.draw_count, 
+            &mut self.world_buffer_info.draw, 
+            &mut self.world_buffers.draw,
+            device, 
+            &mut self.shader_heap
+        );
+        Self::create_world_buffer::<MaterialData>(
+            info.material_count, 
+            &mut self.world_buffer_info.material, 
+            &mut self.world_buffers.material,
+            device, 
+            &mut self.shader_heap
+        );
+        Self::create_world_buffer::<PointLightData>(
+            info.point_light_count, 
+            &mut self.world_buffer_info.point_light, 
+            &mut self.world_buffers.point_light,
+            device, 
+            &mut self.shader_heap
+        );
+        Self::create_world_buffer::<SpotLightData>(
+            info.spot_light_count, 
+            &mut self.world_buffer_info.spot_light, 
+            &mut self.world_buffers.spot_light,
+            device, 
+            &mut self.shader_heap
+        );
+        Self::create_world_buffer::<DirectionalLightData>(
+            info.directinal_light_count, 
+            &mut self.world_buffer_info.directional_light, 
+            &mut self.world_buffers.directional_light,
+            device, 
+            &mut self.shader_heap
+        );
+    }
+
+    /// Returns a mutable refernce to the the world buffers, these are persistently mapped GPU buffers which can be
+    /// updated using the `.write` function
+    pub fn get_world_buffers_mut(&mut self) -> &mut WorldBuffers<D> {
+        &mut self.world_buffers
+    }
+
+    /// Retunrs a `WorldBufferInfo` that contains the serv index and count of the various world buffers used
+    /// during rendering
+    pub fn get_world_buffer_info(&self) -> WorldBufferInfo {
+        self.world_buffer_info.clone()
     }
 
     /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files within the directory
