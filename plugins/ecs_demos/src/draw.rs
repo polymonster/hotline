@@ -167,7 +167,7 @@ pub fn batch_bindless_world_matrix_instances(
     let world_buffers = pmfx.get_world_buffers_mut();
     let mut offset = 0;
     if let Some(buf) = &mut world_buffers.draw {
-        for (ids, world_matrix) in &instances_query {
+        for (_, world_matrix) in &instances_query {
             buf.write(
                 offset,
                 &world_matrix.0
@@ -630,7 +630,7 @@ pub fn setup_draw_material(
         buf.write(
             0,
             &material_data
-        );
+        ).unwrap();
     }
 
     for material in materials {

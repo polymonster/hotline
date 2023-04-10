@@ -417,8 +417,9 @@ pub struct DirectionalLightData {
 #[derive(Clone)]
 pub struct SpotLightData {
     pub pos: Vec3f,
-    pub dir: Vec3f,
     pub cutoff: f32,
+    pub dir: Vec3f,
+    pub falloff: f32,
     pub colour: Vec4f,
 }
 
