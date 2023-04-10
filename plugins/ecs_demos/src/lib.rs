@@ -38,12 +38,6 @@ fn animate_textures(
     }
 }
 
-fn vec_rotate(v: Vec2f, angle: f32) -> Vec2f {
-    let c = cos(angle);
-    let s = sin(angle);
-    return vec2f(c * v.x - s * v.y, s * v.x + c * v.y); // anti-clockwise rotation
-}
-
 #[no_mangle]
 fn animate_lights(
     time: Res<TimeRes>, 
@@ -51,7 +45,6 @@ fn animate_lights(
     
     let t = time.accumulated;
     let r = sin(t);
-    let tau = 6.28318507;
 
     let rot0 = sin(t);
     let rot1 = sin(-t);
@@ -63,32 +56,94 @@ fn animate_lights(
     let mut i = 0;
     for mut position in &mut light_query {
         if i < 16 {
-            position.x = r * cos(tau * f) * 1000.0;
-            position.z = r * sin(tau * f) * 1000.0;
-            let pr = vec_rotate(position.xz(), rot0);
+            position.x = r * cos(f32::tau() * f) * 1000.0;
+            position.z = r * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot0);
             position.set_xz(pr);
             f += step;
         }
         else if i < 32 {
-            position.x = (r + 1.0) * cos(tau * f) * 1000.0;
-            position.z = (r + 1.0) * sin(tau * f) * 1000.0;
-            let pr = vec_rotate(position.xz(), rot2);
+            position.x = (r + 1.0) * cos(f32::tau() * f) * 1000.0;
+            position.z = (r + 1.0) * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot2);
             position.set_xz(pr);
             f += step;
         }
         else if i < 48 {
-            position.x = (r - 1.0) * cos(tau * f) * 1000.0;
-            position.z = (r - 1.0) * sin(tau * f) * 1000.0;
-            let pr = vec_rotate(position.xz(), rot3);
+            position.x = (r - 1.0) * cos(f32::tau() * f) * 1000.0;
+            position.z = (r - 1.0) * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot3);
             position.set_xz(pr);
             f += step;
         }
         else if i < 64 {
-            position.x = r * 2.0 * cos(tau * f) * 1000.0;
-            position.z = r * 2.0 * sin(tau * f) * 1000.0;
-            let pr = vec_rotate(position.xz(), rot1);
+            position.x = r * 2.0 * cos(f32::tau() * f) * 1000.0;
+            position.z = r * 2.0 * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot1);
             position.set_xz(pr);
             f += step;
+        }
+        i += 1;
+    }
+}
+
+#[no_mangle]
+fn animate_lights2(
+    time: Res<TimeRes>, 
+    mut light_query: Query<&mut Position, With<LightType>>) {
+    
+    let t = time.accumulated;
+    let rot0 = t;
+    
+    let mut i = 0;
+    for mut position in &mut light_query {
+        if i < 16 {
+            let fi = i as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), rot0);
+            position.set_xz(pr);
+        }
+        else if i < 32 {
+            let fi = (i-16) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), -rot0);
+            position.set_xz(pr);
+        }
+        else if i < 48 {
+            let fi = (i-32) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), -rot0);
+            position.set_xz(pr);
+        }
+        else if i < 64 {
+            let fi = (i-48) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), rot0);
+            position.set_xz(pr);
+        }
+        else {
+            let pr = rotate_2d(position.xz(), sin(rot0));
+            position.set_xz(pr);
         }
         i += 1;
     }
@@ -129,6 +184,7 @@ pub fn render_meshes_bindless_material(
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
+    // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
     let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
@@ -471,9 +527,10 @@ pub fn render_meshes_texture3d_test(
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
     demos![
-        // primitive examples
+        // primitive entities
         "geometry_primitives",
         "point_lights",
+        "spot_lights",
 
         // draw tests
         "draw_indexed",
@@ -509,6 +566,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
         "setup_point_lights" => system_func![setup_point_lights],
+        "setup_spot_lights" => system_func![setup_spot_lights],
 
         // draw tests
         "setup_draw_indexed" => system_func![setup_draw_indexed],
@@ -535,6 +593,9 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         ],
         "animate_lights" => system_func![
             animate_lights.in_base_set(SystemSets::Update)
+        ],
+        "animate_lights2" => system_func![
+            animate_lights2.in_base_set(SystemSets::Update)
         ],
 
         // batches

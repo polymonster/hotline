@@ -6,11 +6,7 @@
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
 
-// bits
-// - fix get_num_32bit_constants function
-
 // material system
-// - need to supply number of lights
 // - spot light
 // - directional light
 // - area light
@@ -54,6 +50,8 @@
 // - view menu + saving state
 
 // DONE:
+// x fix get_num_32bit_constants function
+// x need to supply number of lights
 // x add vec rotate 2d function
 // x add cubic interpolate function
 // x add cubic tangents function
