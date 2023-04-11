@@ -221,11 +221,11 @@ pub fn render_meshes(
     view.cmd_buf.set_viewport(&view.viewport);
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
     view.cmd_buf.set_render_pipeline(&mesh_debug);
-    view.cmd_buf.push_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
+    view.cmd_buf.push_render_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
     // make draw calls
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 16, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 16, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);

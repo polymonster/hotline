@@ -31,6 +31,7 @@ macro_rules! gfx_debug_name {
 }
 
 /// 3-Dimensional struct for compute shader thread count / thread group size.
+#[derive(Copy, Clone)]
 pub struct Size3 {
     pub x: u32,
     pub y: u32,
@@ -1058,8 +1059,10 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
     /// Set the resource heap to be used on the render pipeline
     fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
-    /// Push a small amount of data into the command buffer
-    fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    /// Push a small amount of data into the command buffer for a render pipeline
+    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    /// Push a small amount of data into the command buffer for a compute pipeline
+    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
         &self,

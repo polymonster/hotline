@@ -3116,10 +3116,22 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn push_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRoot32BitConstants(
+                slot,
+                num_values,
+                data.as_ptr() as *const ::core::ffi::c_void,
+                dest_offset,
+            )
+        }
+    }
+
+    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+        let cmd = self.cmd();
+        unsafe {
+            cmd.SetComputeRoot32BitConstants(
                 slot,
                 num_values,
                 data.as_ptr() as *const ::core::ffi::c_void,
