@@ -1,14 +1,10 @@
 // TODO:
 
-// update: maths-rs
-
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
 
 // material system
-// - spot light
-// - directional light
 // - area light
 // - disney brdf
 // - transform normals with world matrix
@@ -18,8 +14,11 @@
 // - cascaded shadow map
 
 // engine
-// - glft
+// - post process / 2d passes (compute based)
 // - resolves properly data driven
+// - barriers for compute, resource sizes passed to compute
+
+// - glft
 // - set name on resources
 // - lazy init print function
 // - render target fixed size
@@ -31,12 +30,11 @@
 // - per demo settings
 // - update aabb's
 // - culling
-// - post process / 2d passes (compute based)
 
 // gfx
+// - Execute Indirect
 // - MRT
 // - Alpha to coverage
-// - Execute Indirect
 // - Stencil Ref
 // - Texture Formats (BC etc)
 // - API for fence?
@@ -50,6 +48,9 @@
 // - view menu + saving state
 
 // DONE:
+// x directional light
+// x spot light
+// x update: maths-rs
 // x fix get_num_32bit_constants function
 // x need to supply number of lights
 // x add vec rotate 2d function

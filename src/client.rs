@@ -451,7 +451,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             let srv = tex.get_srv_index().unwrap();
             let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
             self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
-            self.cmd_buf.push_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
+            self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
             self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);

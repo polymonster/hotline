@@ -41,7 +41,7 @@ fn animate_textures(
 #[no_mangle]
 fn animate_lights(
     time: Res<TimeRes>, 
-    mut light_query: Query<&mut Position, With<LightType>>) {
+    mut light_query: Query<&mut Position, With<LightComponent>>) {
     
     let t = time.accumulated;
     let r = sin(t);
@@ -90,7 +90,7 @@ fn animate_lights(
 #[no_mangle]
 fn animate_lights2(
     time: Res<TimeRes>, 
-    mut light_query: Query<&mut Position, With<LightType>>) {
+    mut light_query: Query<&mut Position, With<LightComponent>>) {
     
     let t = time.accumulated;
     let rot0 = t;
@@ -149,6 +149,31 @@ fn animate_lights2(
     }
 }
 
+#[no_mangle]
+fn animate_lights3(
+    time: Res<TimeRes>, 
+    mut light_query: Query<(&mut Position, &mut LightComponent)>) {
+    
+    let t = time.accumulated;
+    let r = sin(t);
+    let rot0 = sin(t);
+    
+    let step = 1.0 / 4.0;
+    let mut f = 0.0;
+    for (mut position, mut light) in &mut light_query {
+        position.x = r * (cos(f32::tau() * f) * 2.0 - 1.0) * 500.0;
+        position.z = r * (sin(f32::tau() * f) * 2.0 - 1.0) * 500.0;
+        
+        let pr = rotate_2d(position.xz(), rot0);
+        position.set_xz(pr);
+
+        // derive direction from position, always look at the origin
+        light.direction = normalize(-position.0);
+
+        f += step;
+    }
+}
+
 
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
@@ -169,8 +194,8 @@ pub fn render_meshes_bindless_material(
 
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind the shader resource heap for t0 (if exists)
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
@@ -188,7 +213,7 @@ pub fn render_meshes_bindless_material(
     let world_buffer_info = pmfx.get_world_buffer_info();
     let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
-        view.cmd_buf.push_constants(
+        view.cmd_buf.push_render_constants(
             slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
 
@@ -205,7 +230,7 @@ pub fn render_meshes_bindless_material(
         // set the world matrix push constants
         let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
-            view.cmd_buf.push_constants(slot.slot, 12, 0, &world_matrix.0);
+            view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
         }
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
@@ -233,12 +258,12 @@ pub fn render_meshes(
 
     view.cmd_buf.set_render_pipeline(&pipeline);
 
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -248,7 +273,7 @@ pub fn render_meshes(
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
     for (world_matrix, mesh) in &billboard_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
-        view.cmd_buf.push_constants(1, 12, 0, &bbmat);
+        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -263,7 +288,7 @@ pub fn render_meshes(
     );
     for (world_matrix, mesh) in &cylindrical_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        view.cmd_buf.push_constants(1, 12, 0, &bbmat);
+        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -287,8 +312,8 @@ pub fn render_meshes_pipeline(
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -313,9 +338,9 @@ pub fn render_meshes_pipeline_coloured(
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_constants(1, 4, 12, &colour.0);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 4, 12, &colour.0);
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -338,7 +363,7 @@ pub fn render_meshes_push_constants_texture(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
@@ -346,8 +371,8 @@ pub fn render_meshes_push_constants_texture(
     }
 
     for (world_matrix, mesh, texture) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -373,7 +398,7 @@ pub fn render_meshes_vertex_buffer_instanced(
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
         
         // bind the shader resource heap for t0 (if exists)
         let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
@@ -406,7 +431,7 @@ pub fn render_meshes_cbuffer_instanced(
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
         view.cmd_buf.set_render_heap(1, instance_batch.heap.as_ref().unwrap(), 0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
@@ -430,7 +455,7 @@ pub fn render_meshes_texture2d_array_test(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
@@ -447,8 +472,8 @@ pub fn render_meshes_texture2d_array_test(
 
     for (world_matrix, mesh, texture, animated_texture) in &mesh_query {
         let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        view.cmd_buf.push_constants(1, 12, 0, &bbmat);
-        view.cmd_buf.push_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
+        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -470,7 +495,7 @@ pub fn render_meshes_cubemap_test(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
@@ -479,8 +504,8 @@ pub fn render_meshes_cubemap_test(
 
     let mut mip = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
 
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -504,8 +529,8 @@ pub fn render_meshes_texture3d_test(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
@@ -513,8 +538,8 @@ pub fn render_meshes_texture3d_test(
     }
 
     for (world_matrix, mesh, tex) in &mesh_draw_query {
-        view.cmd_buf.push_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_constants(1, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -531,6 +556,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "geometry_primitives",
         "point_lights",
         "spot_lights",
+        "directional_lights",
 
         // draw tests
         "draw_indexed",
@@ -567,6 +593,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
         "setup_point_lights" => system_func![setup_point_lights],
         "setup_spot_lights" => system_func![setup_spot_lights],
+        "setup_directional_lights" => system_func![setup_directional_lights],
 
         // draw tests
         "setup_draw_indexed" => system_func![setup_draw_indexed],
@@ -596,6 +623,9 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         ],
         "animate_lights2" => system_func![
             animate_lights2.in_base_set(SystemSets::Update)
+        ],
+        "animate_lights3" => system_func![
+            animate_lights3.in_base_set(SystemSets::Update)
         ],
 
         // batches

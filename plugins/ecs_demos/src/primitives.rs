@@ -129,20 +129,20 @@ pub fn setup_geometry_primitives(
 #[no_mangle]
 pub fn batch_lights(
     mut pmfx: ResMut<PmfxRes>,
-    light_query: Query<(&Position, &Colour, &LightType)>) {
+    light_query: Query<(&Position, &Colour, &LightComponent)>) {
     let world_buffers = pmfx.get_world_buffers_mut();
     let mut point_offset = 0;
     let mut spot_offset = 0;
     let mut directional_offset = 0;
-    for (pos, colour, light_type) in &light_query {
-        match light_type {
+    for (pos, colour, light) in &light_query {
+        match light.light_type {
             LightType::Point => {
                 if let Some(light_buf) = &mut world_buffers.point_light {
                     light_buf.write(
                         point_offset, 
                         gfx::as_u8_slice(&PointLightData{
                             pos: pos.0,
-                            radius: 64.0,
+                            radius: light.radius,
                             colour: colour.0
                         }
                     )).unwrap();
@@ -155,9 +155,9 @@ pub fn batch_lights(
                         spot_offset, 
                         gfx::as_u8_slice(&SpotLightData{
                             pos: pos.0,
-                            cutoff: f32::pi() / 8.0,
-                            dir: vec3f(0.0, -1.0, 0.0),
-                            falloff: 0.5,
+                            cutoff: light.cutoff,
+                            dir: light.direction,
+                            falloff: light.falloff,
                             colour: colour.0,
                         }
                     )).unwrap();
@@ -169,15 +169,20 @@ pub fn batch_lights(
                     light_buf.write(
                         directional_offset, 
                         gfx::as_u8_slice(&DirectionalLightData{
-                            dir: Vec3f::zero(),
+                            dir: Vec4f::from((light.direction, 0.0)),
                             colour: colour.0
                         }
                     )).unwrap();
-                    directional_offset += std::mem::size_of::<PointLightData>();
+                    directional_offset += std::mem::size_of::<DirectionalLightData>();
                 }
             }
         }
     }
+
+    let mut buffer_info = pmfx.get_world_buffer_info_mut();
+    buffer_info.point_light.y = (point_offset / std::mem::size_of::<PointLightData>()) as u32;
+    buffer_info.spot_light.y = (spot_offset / std::mem::size_of::<SpotLightData>()) as u32;
+    buffer_info.directional_light.y = (directional_offset / std::mem::size_of::<DirectionalLightData>()) as u32;
 }
 
 /// Init function for primitives demo
@@ -218,7 +223,10 @@ pub fn setup_point_lights(
         commands.spawn((
             Position(pos),
             Colour(col),
-            LightType::Point
+            LightComponent {
+                light_type: LightType::Point,
+                ..Default::default()
+            }
         ));
     }
 
@@ -247,7 +255,7 @@ pub fn setup_point_lights(
             commands.spawn((
                 MeshComponent(meshes[0].clone()),
                 Position(iter_pos),
-                Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
+                Rotation(Quatf::identity()),
                 Scale(splat3f(10.0)),
                 WorldMatrix(Mat34f::identity())
             ));
@@ -303,7 +311,10 @@ pub fn setup_spot_lights(
         commands.spawn((
             Position(pos),
             Colour(col),
-            LightType::Spot
+            LightComponent {
+                light_type: LightType::Spot,
+                ..Default::default()
+            }
         ));
     }
 
@@ -311,7 +322,10 @@ pub fn setup_spot_lights(
     commands.spawn((
         Position(vec3f(0.0, 2000.0, 0.0)),
         Colour(Vec4f::cyan() * 0.33),
-        LightType::Spot
+        LightComponent {
+            light_type: LightType::Spot,
+            ..Default::default()
+        }
     ));
 
     let height = 1000.0;
@@ -321,25 +335,37 @@ pub fn setup_spot_lights(
     commands.spawn((
         Position(vec3f(-edge, height, -edge)),
         Colour(col * 0.33),
-        LightType::Spot
+        LightComponent {
+            light_type: LightType::Spot,
+            ..Default::default()
+        }
     ));
 
     commands.spawn((
         Position(vec3f(edge, height, -edge)),
         Colour(col * 0.33),
-        LightType::Spot
+        LightComponent {
+            light_type: LightType::Spot,
+            ..Default::default()
+        }
     ));
 
     commands.spawn((
         Position(vec3f(edge, height, edge)),
         Colour(col * 0.33),
-        LightType::Spot
+        LightComponent {
+            light_type: LightType::Spot,
+            ..Default::default()
+        }
     ));
 
     commands.spawn((
         Position(vec3f(-edge, height, edge)),
         Colour(col * 0.33),
-        LightType::Spot
+        LightComponent {
+            light_type: LightType::Spot,
+            ..Default::default()
+        }
     ));
 
 
@@ -370,6 +396,97 @@ pub fn setup_spot_lights(
                 MeshComponent(meshes[0].clone()),
                 Position(iter_pos),
                 Rotation(Quatf::from_euler_angles(0.0, 0.0, 0.0)),
+                Scale(vec3f(size, height, size)),
+                WorldMatrix(Mat34f::identity())
+            ));
+        }
+    }
+
+    // ground plane
+    commands.spawn((
+        MeshComponent(plane.clone()),
+        Position(Vec3f::zero()),
+        Rotation(Quatf::identity()),
+        Scale(splat3f(half_extent * 2.0)),
+        WorldMatrix(Mat34f::identity())
+    ));
+}
+
+/// Init function for primitives demo
+#[no_mangle]
+pub fn directional_lights(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_directional_lights"
+        ],
+        update: systems![
+            "animate_lights3",
+            "batch_lights"
+        ],
+        render_graph: "mesh_lit",
+        ..Default::default()
+    }
+}
+
+/// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
+#[no_mangle]
+pub fn setup_directional_lights(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands) {
+    let plane = hotline_rs::primitives::create_plane_mesh(&mut device.0, 1);
+
+    // animating lights
+    let num_lights = 4;
+    for i in 0..num_lights {
+        let pos = vec3f(0.0, 128.0, 0.0);
+
+        let col = match i {
+            0 => vec4f(0.25, 0.0, 0.25, 0.5),
+            1 => vec4f(0.25, 0.25, 0.0, 0.5),
+            2 => vec4f(0.0, 0.25, 0.25, 0.5),
+            _ => vec4f(0.25, 0.0, 0.5, 0.5)
+        };
+
+        commands.spawn((
+            Position(pos),
+            Colour(col),
+            LightComponent {
+                light_type: LightType::Directional,
+                direction: normalize(vec3f(0.5, -0.5, 0.5)),
+                ..Default::default()
+            }
+        ));
+    }
+
+    pmfx.resize_world_buffers(&mut device, pmfx::WorldBufferResizeInfo{
+        directinal_light_count: num_lights,
+        ..Default::default()
+    });
+
+    let meshes = vec![
+        hotline_rs::primitives::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
+    ];
+
+    // square number of rows and columns
+    let rc = 100.0;
+    let irc = rc as i32;
+
+    let size = 10.0;
+    let height = 10.0;
+    let half_size = size * 0.5;    
+    let step = size * half_size;
+    let half_extent = (rc-1.0) * step * 0.5;
+    let start_pos = vec3f(-half_extent, size, -half_extent);
+
+    for y in 0..irc {
+        for x in 0..irc {
+            let iter_pos = start_pos + vec3f(x as f32 * step, height, y as f32 * step);
+            commands.spawn((
+                MeshComponent(meshes[0].clone()),
+                Position(iter_pos),
+                Rotation(Quatf::identity()),
                 Scale(vec3f(size, height, size)),
                 WorldMatrix(Mat34f::identity())
             ));

@@ -4,9 +4,9 @@
 use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
 
 use bevy_ecs::prelude::*;
-use serde::{Deserialize, Serialize};
-use maths_rs::{Vec3f, Vec4f, Mat4f, Mat34f, Quatf};
+use maths_rs::prelude::*;
 
+use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::ops::DerefMut;
 
@@ -144,11 +144,39 @@ pub struct Billboard;
 #[derive(Component)]
 pub struct CylindricalBillboard;
 
-#[derive(Component)]
+#[derive(Debug, Clone, Copy)]
 pub enum LightType {
     Point,
     Spot,
     Directional
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CameraType {
+    None,
+    Fly,
+    Orbit,
+}
+
+#[derive(Component)]
+pub struct LightComponent {
+    pub light_type: LightType,
+    pub direction: Vec3f,
+    pub cutoff: f32,
+    pub falloff: f32,
+    pub radius: f32
+}
+
+impl Default for LightComponent {
+    fn default() -> Self {
+        Self {
+            light_type: LightType::Directional,
+            direction: vec3f(0.0, -1.0, 0.0),
+            cutoff: f32::pi() / 8.0,
+            falloff: 0.5,
+            radius: 64.0
+        }
+    }
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
@@ -158,13 +186,6 @@ pub enum SystemSets {
     Update,
     Batch,
     Render,
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-pub enum CameraType {
-    None,
-    Fly,
-    Orbit,
 }
 
 #[macro_export]
@@ -248,20 +269,18 @@ macro_rules! compute_func_closure {
 
                         pass.cmd_buf.begin_event(0xffffff, &$pass_name);
                         pass.cmd_buf.set_compute_pipeline(&pipeline);
-                        pass.cmd_buf.set_compute_heap(0, &pmfx.shader_heap);
-                        pass.cmd_buf.dispatch(
-                            gfx::Size3 {
-                                x: 64 / 8,
-                                y: 64 / 8,
-                                z: 64 / 8,
-                            },
-                            gfx::Size3 {
-                                x: 64,
-                                y: 64,
-                                z: 64,
-                            },
-                        );
 
+                        for i in 0..pass.srv_indices.len() {
+                            pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.srv_indices[i]));
+                        }
+                        
+                        
+                        pass.cmd_buf.set_compute_heap(1, &pmfx.shader_heap);
+
+                        pass.cmd_buf.dispatch(
+                            pass.group_count,
+                            pass.thread_count
+                        );
                         pass.cmd_buf.end_event();
 
                         Ok(())

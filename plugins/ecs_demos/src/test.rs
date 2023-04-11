@@ -355,30 +355,12 @@ pub fn test_compute(client: &mut Client<gfx_platform::Device, os_platform::App>)
 #[no_mangle]
 pub fn setup_compute_test(
     mut device: ResMut<DeviceRes>,
-    mut pmfx: ResMut<PmfxRes>,
+    pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
 
-    let volume = device.0.create_texture_with_heaps(
-        &gfx::TextureInfo {
-            width: 64,
-            height: 64,
-            depth: 64,
-            tex_type: gfx::TextureType::Texture3D,
-            format: gfx::Format::RGBA8n,
-            array_layers: 1,
-            mip_levels: 1,
-            samples: 1,
-            usage: gfx::TextureUsage::UNORDERED_ACCESS | gfx::TextureUsage::SHADER_RESOURCE,
-            initial_state: gfx::ResourceState::ShaderResource
-        },
-        gfx::TextureHeapInfo {
-            shader: Some(&mut pmfx.shader_heap),
-            ..Default::default()
-        },
-        hotline_rs::data!()
-    ).unwrap();
+    let srv = pmfx.get_texture("compute_texture3d").unwrap().get_srv_index().unwrap() as u32;
 
     let dim = 50.0;
     commands.spawn((
@@ -387,13 +369,8 @@ pub fn setup_compute_test(
         Rotation(Quatf::identity()),
         Scale(splat3f(dim)),
         WorldMatrix(Mat34f::identity()),
-        TextureInstance(volume.get_srv_index().unwrap() as u32)
+        TextureInstance(srv)
     ));
-
-    // spawn entity to keep hold of the texture
-    commands.spawn(
-        TextureComponent(volume)
-    );
 }
 
 /// Tests missing setup and updates are handled gracefully and notified to the user

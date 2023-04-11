@@ -129,11 +129,11 @@ fn update_camera_orbit(
         if buttons[os::MouseButton::Left as usize] {
             camera.rot -= Vec3f::from((drag.yx(), 0.0));
         }
-    }
 
-    let scoll_speed = 100.0;
-    camera.zoom += wheel * scoll_speed;
-    camera.zoom = max(camera.zoom, 1.0);
+        let scoll_speed = 100.0;
+        camera.zoom += wheel * scoll_speed;
+        camera.zoom = max(camera.zoom, 1.0);
+    }
 
     // generate proj matrix
     let aspect = pmfx.get_window_aspect("main_dock");
@@ -296,7 +296,7 @@ fn render_grid(
     view.cmd_buf.set_scissor_rect(&view.scissor_rect);
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_constants(0, 16, 0, &camera.view_projection_matrix);
+    view.cmd_buf.push_render_constants(0, 16, 0, &camera.view_projection_matrix);
 
     imdraw.draw_3d(&mut view.cmd_buf, bb as usize);
 

@@ -287,7 +287,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
 
-        cmdbuffer.push_constants(0, 4, 0, constants.as_slice());
+        cmdbuffer.push_render_constants(0, 4, 0, constants.as_slice());
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 

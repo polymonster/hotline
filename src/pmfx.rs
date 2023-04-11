@@ -60,6 +60,12 @@ pub struct ComputePass<D: gfx::Device> {
     pub name_hash: PmfxHash,
     /// Colour hash (for debug markers, derived from name)
     pub colour_hash: u32,
+    /// We can calulcate this based on resource dimension / thread count
+    pub group_count: gfx::Size3,
+    /// The number of threads specified in the shader
+    pub thread_count: gfx::Size3,
+    // An vector of resource view indices supplied by info inside the `uses` section
+    pub srv_indices: Vec<u32>
 }
 pub type ComputePassRef<D> = Arc<Mutex<ComputePass<D>>>;
 
@@ -80,8 +86,8 @@ struct TrackedTexture<D: gfx::Device>  {
     texture: D::Texture,
     /// Optional ratio, which will contain window name and scale info if present
     ratio: Option<TextureSizeRatio>,
-    /// Tuple of (width, height) to track the current size of the texture and compare for updates
-    size: (u64, u64)
+    /// Tuple of (width, height, depth) to track the current size of the texture and compare for updates
+    size: (u64, u64, u32)
 }
 
 /// Information to track changes to 
@@ -327,10 +333,21 @@ struct ViewInfo {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct GraphPassInfo {
+    /// For render passes, specifies the view (render target, camera etc
     view: Option<String>,
+    /// Pipelines array that will use during this pass
     pipelines: Option<Vec<String>>,
+    /// A function to call which can build draw or compute commands
     function: String,
+    /// Dependency info for determining execute order
     depends_on: Option<Vec<String>>,
+    /// Array of resources we wish to use during this pass, which can be passed to a shader (to know the srv indices)
+    uses: Option<Vec<String>>,
+    /// For compute passes the number of threads
+    thread_count: Option<(u32, u32, u32)>,
+    /// The nbame of a resource a compute shader will write to so we can calculate the group size
+    /// based on the resource dimension
+    compute_target: Option<String>
 }
 
 /// Structure of buffers used during world view render passes
@@ -408,7 +425,7 @@ pub struct PointLightData {
 #[repr(C)]
 #[derive(Clone)]
 pub struct DirectionalLightData {
-    pub dir: Vec3f,
+    pub dir: Vec4f,
     pub colour: Vec4f
 }
 
@@ -755,6 +772,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.world_buffer_info.clone()
     }
 
+    /// Retunrs a mutable `WorldBufferInfo` for updating the counts of resources
+    pub fn get_world_buffer_info_mut(&mut self) -> &mut WorldBufferInfo {
+        &mut self.world_buffer_info
+    }
+
     /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files within the directory
     /// You can load multiple pmfx files which will be merged together, shaders are grouped by pmfx_name/ps_main.psc
     /// Render graphs and pipleines must have unique names, if multiple pmfx name a pipeline the same name  
@@ -916,11 +938,29 @@ impl<D> Pmfx<D> where D: gfx::Device {
             println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
             let pmfx_tex = &self.pmfx.textures[texture_name];
             let size = self.get_texture_size_from_ratio(pmfx_tex)?;
-            let tex = device.create_texture::<u8>(&to_gfx_texture_info(pmfx_tex, size), None)?;
+            
+            // select heap.
+            let heap = if texture_name == "main_colour" || texture_name == "main_depth" {
+                None
+            }
+            else {
+                Some(&mut self.shader_heap)
+            };
+
+            // create resources
+            let tex = device.create_texture_with_heaps::<u8>(
+                &to_gfx_texture_info(pmfx_tex, size),
+                gfx::TextureHeapInfo {
+                    shader: heap,
+                    ..Default::default()
+                },
+                None
+            )?;
+
             self.textures.insert(texture_name.to_string(), (pmfx_tex.hash, TrackedTexture {
                 texture: tex,
                 ratio: self.pmfx.textures[texture_name].ratio.clone(),
-                size
+                size: (size.0, size.1, pmfx_tex.depth)
             }));
         }
         Ok(())
@@ -938,6 +978,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Returns the tuple (width, height) of a texture
     pub fn get_texture_2d_size(&self, texture_name: &str) -> Option<(u64, u64)> {
+        if self.textures.contains_key(texture_name) {
+            let size = self.textures[texture_name].1.size;
+            Some((size.0, size.1))
+        }
+        else {
+            None
+        }
+    }
+
+    /// Returns the tuple (width, height, depth) of a texture
+    pub fn get_texture_3d_size(&self, texture_name: &str) -> Option<(u64, u64, u32)> {
         if self.textures.contains_key(texture_name) {
             Some(self.textures[texture_name].1.size)
         }
@@ -1098,6 +1149,37 @@ impl<D> Pmfx<D> where D: gfx::Device {
             String::new()
         };
 
+        // create textures we may use
+        let mut srv_indices = Vec::new();
+        if let Some(uses) = &info.uses {
+            for resource_use in uses {
+                self.create_texture(device, resource_use)?;
+
+                let srv = self.get_texture(resource_use)
+                    .unwrap()
+                    .get_srv_index()
+                    .unwrap();
+
+                srv_indices.push(srv as u32);
+            }
+        }
+
+        // get the target dimension
+        let target_size = if let Some(target) = &info.compute_target {
+            self.get_texture_3d_size(target).unwrap()
+        }
+        else {
+            (1, 1, 1)
+        };
+
+        // get the thread count
+        let thread_count = if let Some(threads) = info.thread_count {
+            threads
+        }
+        else {
+            (1, 1, 1)
+        };
+
         // hashes
         let mut hash = DefaultHasher::new();
         graph_pass_name.hash(&mut hash);
@@ -1113,6 +1195,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
             pass_pipline: pass_pipeline,
             name_hash,
             colour_hash,
+            group_count: gfx::Size3 {
+                x: target_size.0 as u32 / thread_count.0,
+                y: target_size.1 as u32 / thread_count.1,
+                z: target_size.2 as u32 / thread_count.2,
+            },
+            thread_count: gfx::Size3 {
+                x: thread_count.0,
+                y: thread_count.1,
+                z: thread_count.2,
+            },
+            srv_indices
         };
 
         self.compute_passes.insert(
