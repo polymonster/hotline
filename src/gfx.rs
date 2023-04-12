@@ -337,6 +337,8 @@ bitflags! {
         const SHADER_RESOURCE = (1 << 3);
         /// Used as a read-writable resource in compute shaders
         const UNORDERED_ACCESS = (1 << 4);
+        /// Used as indirect arguments for `execute_indirect`
+        const INDIRECT_ARGUMENT_BUFFER = (1 << 5);
     }
 }
 
@@ -387,7 +389,7 @@ pub enum ShaderVisibility {
     Compute,
 }
 
-/// Describes space in the shader to send data to via `CmdBuf::push_constants`.
+/// Describes space in the shader to send data to via `CmdBuf::push_constants`. 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PushConstantInfo {
     /// The shader stage the constants will be accessible to.
@@ -814,7 +816,9 @@ pub enum ResourceState {
     /// Used as a destination for copies from other resources or queries
     CopyDst,
     /// Used as destination to read back data from buffers / queries
-    GenericRead
+    GenericRead,
+    /// Used for argument buffer in `execute_indirect` calls 
+    IndirectArgument,
 }
 
 /// ome resources may contain subresources for resolving
@@ -870,6 +874,45 @@ pub trait Pipeline {
     fn get_heap_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
 }
 
+pub trait CommandSignature<D: Device>: Send + Sync {}
+
+#[derive(Clone, Copy)]
+pub enum IndirectCommandType {
+    Draw,
+    DrawIndexed,
+    Dispatch
+}
+
+/// Structure of arguments which can be used to execute `draw_instanced` calls indirectly 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DrawArguments {
+    pub vertex_count_per_instance: u32,
+    pub instance_count: u32,
+    pub start_vertex_location: u32,
+    pub start_instance_location: u32
+}
+
+/// Structure of arguments which can be used to execute `draw_indexed_instanced` calls indirectly 
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DrawIndexedArguments {
+    pub index_count_per_instance: u32,
+    pub instance_count: u32,
+    pub start_index_location: u32,
+    pub base_vertex_location: i32,
+    pub start_instance_location: u32,
+}
+
+/// Structure of arguments which can be used to execute `dispatch` calls indirectly
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct DispatchArguments {
+    pub thread_group_count_x: u32,
+    pub thread_group_count_y: u32,
+    pub thread_group_count_z: u32,
+}
+
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame. Default heaps for shader resources,
 /// render targets and depth stencils are also provided
@@ -885,6 +928,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Heap: Heap<Self>;
     type QueryHeap: QueryHeap<Self>;
     type ComputePipeline: ComputePipeline<Self>;
+    type CommandSignature: CommandSignature<Self>;
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
     /// Create a new resource `Heap` from `HeapInfo`
@@ -946,6 +990,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
+    /// Creat a command signature for `execute_indirect` commands associated on the `RenderPipeline`
+    fn create_indirect_render_command(
+        &mut self, 
+        indirect_type: IndirectCommandType, 
+        pipeline: Option<&Self::RenderPipeline>
+    ) -> Result<Self::CommandSignature, super::Error>;
     /// The Device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
     fn destroy_texture(&mut self, texture: Self::Texture);
     /// Check if resources are finished on the gpu and de-allocate from shader heaps
@@ -975,6 +1025,8 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn get_timestamp_size_bytes() -> usize;
     /// Size of a single pipeline statistics query result in bytes
     fn get_pipeline_statistics_size_bytes() -> usize;
+    /// Size of the indirect draw command in bytes
+    fn get_indirect_command_size(argument_type: IndirectCommandType) -> usize;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -1082,6 +1134,16 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&self, group_count: Size3, thread_count: Size3);
+    /// Issue indirect commands with signature created from `create_indirect_render_command`
+    fn execute_indirect(
+        &self,
+        command: &D::CommandSignature, 
+        max_command_count: u32, 
+        argument_buffer: &D::Buffer, 
+        argument_buffer_offset: usize,
+        counter_buffer: Option<&D::Buffer>,
+        counter_buffer_offset: usize
+    );
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
