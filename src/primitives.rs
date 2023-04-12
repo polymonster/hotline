@@ -654,6 +654,63 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     } 
 }
 
+/// Create an indexed unit triangle mesh instance with the front face pointing +z 
+pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
+    // quad veritces
+    let vertices: Vec<Vertex3D> = vec![
+        // front face
+        Vertex3D {
+            position: vec3f(-1.0, -1.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(0.0, 1.0, 0.0),
+            texcoord: vec2f(0.5, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+        Vertex3D {
+            position: vec3f(1.0, -1.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        },
+    ];
+
+    let indices: Vec<u16> = vec![
+        0,  2,  1
+    ];
+
+    pmfx::Mesh {
+        vb: dev.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::VERTEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 3,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<Vertex3D>(),
+                initial_state: gfx::ResourceState::VertexConstantBuffer
+            }, 
+            Some(vertices.as_slice())
+        ).unwrap(),
+        ib: dev.create_buffer(&gfx::BufferInfo {
+            usage: gfx::BufferUsage::INDEX,
+            cpu_access: gfx::CpuAccessFlags::NONE,
+            num_elements: 3,
+            format: gfx::Format::R16u,
+            stride: std::mem::size_of::<u16>(),
+            initial_state: gfx::ResourceState::IndexBuffer
+            },
+            Some(indices.as_slice())
+        ).unwrap(),
+        num_indices: 3
+    } 
+}
+
 /// Create an indexed unit subdivided plane mesh facing +y direction with evenly subdivided quads `subdivisions`
 pub fn create_plane_mesh<D: gfx::Device>(dev: &mut D, subdivisions: u32) -> pmfx::Mesh<D> {
     let start = vec3f(-1.0, 0.0, -1.0);

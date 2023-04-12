@@ -241,6 +241,65 @@ pub fn render_meshes_bindless_material(
     Ok(())
 }
 
+/// Renders meshes with a draw call (non-indexed)
+#[no_mangle]
+pub fn draw_meshes(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    for (world_matrix, mesh) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_instanced(3, 1, 0, 0);
+    }
+
+    Ok(())
+}
+
+/// Renders meshes indirectly with a draw call (non-indexed)
+#[no_mangle]
+pub fn draw_meshes_indirect(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_indirect_query: Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>) 
+    -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    for (world_matrix, mesh, command, args) in &mesh_draw_indirect_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+
+        view.cmd_buf.execute_indirect(
+            &command.0, 
+            1, 
+            &args.0, 
+            0, 
+            None, 
+            0
+        );
+
+        //view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
 #[no_mangle]
 pub fn render_meshes(
@@ -559,12 +618,14 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "directional_lights",
 
         // draw tests
+        "draw",
         "draw_indexed",
         "draw_indexed_push_constants",
         "draw_indexed_vertex_buffer_instanced",
         "draw_indexed_cbuffer_instanced",
         "draw_push_constants_texture",
         "draw_material",
+        "draw_indirect",
 
         // render tests
         "test_raster_states",
@@ -573,7 +634,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "test_texture2d_array",
         "test_texture3d",
         "test_compute",
-
+        
         // basic tests
         "test_missing_demo",
         "test_missing_systems",
@@ -596,12 +657,14 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_directional_lights" => system_func![setup_directional_lights],
 
         // draw tests
+        "setup_draw" => system_func![setup_draw],
         "setup_draw_indexed" => system_func![setup_draw_indexed],
         "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
         "setup_draw_indexed_vertex_buffer_instanced" => system_func![setup_draw_indexed_vertex_buffer_instanced],
         "setup_draw_indexed_cbuffer_instanced" => system_func![setup_draw_indexed_cbuffer_instanced],
         "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
         "setup_draw_material" => system_func![setup_draw_material],
+        "setup_draw_indirect" => system_func![setup_draw_indirect],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
@@ -650,6 +713,16 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
                 Query<(&draw::InstanceBuffer, &MeshComponent)>,
                 Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>
             )
+        ],
+        "draw_meshes" => render_func![
+            draw_meshes, 
+            pass_name,
+            Query<(&WorldMatrix, &MeshComponent)>
+        ],
+        "draw_meshes_indirect" => render_func![
+            draw_meshes_indirect, 
+            pass_name,
+            Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>
         ],
         "render_meshes" => render_func![
             render_meshes, 

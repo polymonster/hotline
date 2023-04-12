@@ -1,8 +1,20 @@
 // TODO:
 
+// wip
+// - Execute Indirect
+
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
+// - cbuffers containing arrays not being correctly compiled in
+// - structures being brought in when not used
+// - cbuffer members incorrectly being brought in when referenced by scope (world_matrix, entity_world_matrix)
+
+// examples
+// - improve ecs examples structure
+// - per demo settings
+// - gpu aabb culling
+// - update docs with examples
 
 // material system
 // - area light
@@ -14,6 +26,7 @@
 // - cascaded shadow map
 
 // engine
+// - print validation messages on panic / stack unwind?
 // - post process / 2d passes (compute based)
 // - resolves properly data driven
 // - barriers for compute, resource sizes passed to compute
@@ -23,22 +36,21 @@
 // - lazy init print function
 // - render target fixed size
 // - texture load image from file into pmfx
-// - update docs
 // - store hotline-data commit hash for crates.io
 // - reverse depth
 // - stencil examples
-// - per demo settings
-// - update aabb's
-// - culling
 
 // gfx
-// - Execute Indirect
 // - MRT
 // - Alpha to coverage
 // - Stencil Ref
 // - Texture Formats (BC etc)
-// - API for fence?
-// - API for copies and clears
+// - API for fence
+// - API for copies and clears?
+//      buffer
+//      texture
+//      buffer region
+//      texture region
 
 // ui / debug
 // - render grid not tracked

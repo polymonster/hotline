@@ -22,7 +22,6 @@ pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform:
     }
 }
 
-/// Sets up a few primitives with designated pipelines to verify raster state conformance
 #[no_mangle]
 pub fn setup_raster_test(
     mut device: ResMut<DeviceRes>,
@@ -82,7 +81,6 @@ pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::
     }
 }
 
-/// Sets up a few primitives with designated pipelines to verify raster state conformance
 #[no_mangle]
 pub fn setup_blend_test(
     mut device: ResMut<DeviceRes>,
@@ -172,7 +170,6 @@ pub fn test_cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>)
     }
 }
 
-/// Sets up a few spheres, to render cubemap mip-levels
 #[no_mangle]
 pub fn setup_cubemap_test(
     mut device: ResMut<DeviceRes>,
@@ -230,7 +227,6 @@ pub fn test_texture2d_array(client: &mut Client<gfx_platform::Device, os_platfor
     }
 }
 
-/// Sets up a few spheres, to render cubemap mip-levels
 #[no_mangle]
 pub fn setup_texture2d_array_test(
     mut device: ResMut<DeviceRes>,
@@ -302,7 +298,6 @@ pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App
     }
 }
 
-/// Sets up a few spheres, to render cubemap mip-levels
 #[no_mangle]
 pub fn setup_texture3d_test(
     mut device: ResMut<DeviceRes>,
@@ -351,7 +346,6 @@ pub fn test_compute(client: &mut Client<gfx_platform::Device, os_platform::App>)
     }
 }
 
-/// Sets up a few spheres, to render cubemap mip-levels
 #[no_mangle]
 pub fn setup_compute_test(
     mut device: ResMut<DeviceRes>,

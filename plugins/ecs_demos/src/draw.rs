@@ -46,6 +46,42 @@ pub struct MaterialResources {
     pub roughness: gfx_platform::Texture
 }
 
+#[derive(Component)]
+pub struct CommandSignatureComponent(pub gfx_platform::CommandSignature);
+
+/// Sets up a single cube mesh to test draw indexed call with a single enity
+#[no_mangle]
+pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_draw"
+        ],
+        update: systems![
+            "rotate_meshes"
+        ],
+        render_graph: "mesh_debug",
+        ..Default::default()
+    }
+}
+
+#[no_mangle]
+pub fn setup_draw(
+    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
+    mut commands: bevy_ecs::system::Commands) {
+
+    let pos = Mat34f::identity();
+    let scale = Mat34f::from_scale(splat3f(100.0));
+
+    let cube_mesh = hotline_rs::primitives::create_triangle_mesh(&mut device.0);
+    commands.spawn((
+        Position(Vec3f::zero()),
+        Velocity(Vec3f::one()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(pos * scale)
+    ));
+}
+
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -61,8 +97,8 @@ pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>)
 
 #[no_mangle]
 pub fn setup_draw_indexed(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
 
     let pos = Mat34f::from_translation(Vec3f::unit_y() * 10.0);
     let scale = Mat34f::from_scale(splat3f(10.0));
@@ -91,8 +127,8 @@ pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_
 
 #[no_mangle]
 pub fn setup_draw_indexed_push_constants(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands:  bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     let dim = 64;
@@ -125,6 +161,57 @@ pub fn setup_draw_indexed_push_constants(
             ));
         }
     }
+}
+
+#[no_mangle]
+pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_draw_indirect"
+        ],
+        render_graph: "mesh_draw_indirect",
+        ..Default::default()
+    }
+}
+
+#[no_mangle]
+pub fn setup_draw_indirect(
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
+
+    let pos = Mat34f::from_translation(Vec3f::unit_y() * 10.0); 
+    let scale = Mat34f::from_scale(splat3f(10.0));
+
+    let teapot = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 8);
+    let args = gfx::DrawIndexedArguments {
+        index_count_per_instance: teapot.num_indices,
+        instance_count: 1,
+        start_index_location: 0,
+        base_vertex_location: 0,
+        start_instance_location: 0
+    };
+
+    let draw_indexed_args = device.create_buffer(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<gfx::DrawIndexedArguments>(),
+        initial_state: gfx::ResourceState::IndirectArgument,
+        num_elements: 1
+    }, hotline_rs::data!(gfx::as_u8_slice(&args))).unwrap();
+
+    let command_signature = 
+        device.create_indirect_render_command(gfx::IndirectCommandType::DrawIndexed, None).unwrap();
+
+    commands.spawn((
+        Position(Vec3f::zero()),
+        Velocity(Vec3f::one()),
+        MeshComponent(teapot.clone()),
+        WorldMatrix(pos * scale),
+        BufferComponent(draw_indexed_args),
+        CommandSignatureComponent(command_signature)
+    ));
 }
 
 /// Batch updates instance world matrices into the `InstanceBuffer`

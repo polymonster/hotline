@@ -15,6 +15,7 @@ use std::result;
 use std::str;
 use std::sync::Mutex;
 
+use bevy_ecs::system::Command;
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
     Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
@@ -139,29 +140,6 @@ pub struct Device {
     cleanup_textures: Vec<(u32, Texture)>
 }
 
-unsafe impl Send for Device {}
-unsafe impl Sync for Device {}
-unsafe impl Send for SwapChain {}
-unsafe impl Sync for SwapChain {}
-unsafe impl Send for RenderPass {}
-unsafe impl Sync for RenderPass {}
-unsafe impl Send for RenderPipeline {}
-unsafe impl Sync for RenderPipeline {}
-unsafe impl Send for ComputePipeline {}
-unsafe impl Sync for ComputePipeline {}
-unsafe impl Send for Shader {}
-unsafe impl Sync for Shader {}
-unsafe impl Send for CmdBuf {}
-unsafe impl Sync for CmdBuf {}
-unsafe impl Send for Buffer {}
-unsafe impl Sync for Buffer {}
-unsafe impl Send for Texture {}
-unsafe impl Sync for Texture {}
-unsafe impl Send for Heap {}
-unsafe impl Sync for Heap {}
-unsafe impl Send for QueryHeap {}
-unsafe impl Sync for QueryHeap {}
-
 #[derive(Clone)]
 pub struct SwapChain {
     width: i32,
@@ -261,6 +239,11 @@ pub struct RenderPass {
     ds_format: DXGI_FORMAT,
     sample_count: u32,
     format_hash: u64 
+}
+
+#[derive(Clone)]
+pub struct CommandSignature {
+    command_signature: ID3D12CommandSignature
 }
 
 /// A free list thread safe with mutex
@@ -425,7 +408,7 @@ const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_
         super::ResourceState::RenderTarget => D3D12_RESOURCE_STATE_RENDER_TARGET,
         super::ResourceState::Present => D3D12_RESOURCE_STATE_PRESENT,
         super::ResourceState::UnorderedAccess => D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-        super::ResourceState::ShaderResource => D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE,
+        super::ResourceState::ShaderResource => D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE,
         super::ResourceState::VertexConstantBuffer => {
             D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER
         }
@@ -437,6 +420,7 @@ const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_
         super::ResourceState::CopySrc => D3D12_RESOURCE_STATE_COPY_SOURCE,
         super::ResourceState::CopyDst => D3D12_RESOURCE_STATE_COPY_DEST,
         super::ResourceState::GenericRead => D3D12_RESOURCE_STATE_GENERIC_READ,
+        super::ResourceState::IndirectArgument => D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT,
     }
 }
 
@@ -682,6 +666,14 @@ fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_D
         super::TextureType::Texture3D => D3D12_RESOURCE_DIMENSION_TEXTURE3D
     }
 }
+
+fn to_d3d12_indirect_argument_type(indirect_type: IndirectCommandType) -> D3D12_INDIRECT_ARGUMENT_TYPE {
+    match indirect_type {
+        IndirectCommandType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
+        IndirectCommandType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
+        IndirectCommandType::Dispatch => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH
+    }
+} 
 
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
@@ -1380,6 +1372,7 @@ impl super::Device for Device {
     type ComputePipeline = ComputePipeline;
     type Heap = Heap;
     type QueryHeap = QueryHeap;
+    type CommandSignature = CommandSignature;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -2533,6 +2526,53 @@ impl super::Device for Device {
         }
     }
 
+    fn create_indirect_render_command(
+        &mut self, 
+        indirect_type: IndirectCommandType, 
+        pipeline: Option<&RenderPipeline>) -> result::Result<CommandSignature, super::Error> {
+        
+        // execute indirect
+        // - create command signature
+        // * create compute and render pipelines (already have this)
+        // - create a UAV to store the results of compute work
+        // - CopyBufferRegion to clear the UAV counter
+        // - dispatch to perform culling
+        // - bind uav heap
+        // - ExecuteIndirect
+
+        let descs = [
+            D3D12_INDIRECT_ARGUMENT_DESC {
+                Type: to_d3d12_indirect_argument_type(indirect_type),
+                ..Default::default()
+            }
+        ];
+
+        let sz = Self::get_indirect_command_size(indirect_type) as u32;
+
+        let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
+            pArgumentDescs: &descs as *const D3D12_INDIRECT_ARGUMENT_DESC,
+            NumArgumentDescs: 1,
+            ByteStride: sz,
+            NodeMask: 0
+        };
+
+        let mut sig : Option<ID3D12CommandSignature> = None;
+        if let Some(pipeline) = pipeline {
+            unsafe {
+                self.device.CreateCommandSignature(&cmd_desc, &pipeline.root_signature, &mut sig)?;
+            }
+        }
+        else {
+            unsafe {
+                self.device.CreateCommandSignature(&cmd_desc, None, &mut sig)?;
+            }
+        };
+
+        Ok(CommandSignature {
+            command_signature: sig.unwrap()
+        })
+    }    
+
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
             let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
@@ -2686,6 +2726,14 @@ impl super::Device for Device {
 
     fn get_pipeline_statistics_size_bytes() -> usize {
         std::mem::size_of::<D3D12_QUERY_DATA_PIPELINE_STATISTICS>()
+    }
+
+    fn get_indirect_command_size(argument_type: IndirectCommandType) -> usize {
+        match argument_type {
+            IndirectCommandType::Draw => std::mem::size_of::<D3D12_DRAW_ARGUMENTS>(),
+            IndirectCommandType::DrawIndexed => std::mem::size_of::<D3D12_DRAW_INDEXED_ARGUMENTS>(),
+            IndirectCommandType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
+        }
     }
 }
 
@@ -3177,6 +3225,33 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn execute_indirect(
+        &self, 
+        command: &CommandSignature, 
+        max_command_count: u32, 
+        argument_buffer: &Buffer, 
+        argument_buffer_offset: usize,
+        counter_buffer: Option<&Buffer>,
+        counter_buffer_offset: usize
+    ) {
+        let counter_buffer_resource = if let Some(buf) = counter_buffer {
+            Some(&buf.resource)
+        }
+        else {
+            None
+        };
+        unsafe {
+            self.cmd().ExecuteIndirect(
+                &command.command_signature, 
+                max_command_count, 
+                &argument_buffer.resource, 
+                argument_buffer_offset as u64, 
+                counter_buffer_resource, 
+                counter_buffer_offset as u64
+            );
+        }
+    }
+
     fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> result::Result<ReadBackRequest, super::Error> {
         let bb = self.bb_index;
         let bbz = self.bb_index as u32;
@@ -3424,8 +3499,6 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
     }
 }
 
-impl super::ComputePipeline<Device> for ComputePipeline {}
-
 impl From<os::win32::NativeHandle> for HWND {
     fn from(handle: os::win32::NativeHandle) -> HWND {
         handle.hwnd
@@ -3475,3 +3548,31 @@ impl Drop for Buffer {
         }
     }
 }
+
+unsafe impl Send for Device {}
+unsafe impl Sync for Device {}
+unsafe impl Send for SwapChain {}
+unsafe impl Sync for SwapChain {}
+unsafe impl Send for RenderPass {}
+unsafe impl Sync for RenderPass {}
+unsafe impl Send for RenderPipeline {}
+unsafe impl Sync for RenderPipeline {}
+unsafe impl Send for ComputePipeline {}
+unsafe impl Sync for ComputePipeline {}
+unsafe impl Send for Shader {}
+unsafe impl Sync for Shader {}
+unsafe impl Send for CmdBuf {}
+unsafe impl Sync for CmdBuf {}
+unsafe impl Send for Buffer {}
+unsafe impl Sync for Buffer {}
+unsafe impl Send for Texture {}
+unsafe impl Sync for Texture {}
+unsafe impl Send for Heap {}
+unsafe impl Sync for Heap {}
+unsafe impl Send for QueryHeap {}
+unsafe impl Sync for QueryHeap {}
+unsafe impl Send for CommandSignature {}
+unsafe impl Sync for CommandSignature {}
+
+impl super::ComputePipeline<Device> for ComputePipeline {}
+impl super::CommandSignature<Device> for CommandSignature {}
