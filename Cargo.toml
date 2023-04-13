@@ -1,6 +1,6 @@
 [package]
 name = "hotline-rs"
-version = "0.1.19"
+version = "0.2.0"
 edition = "2021"
 authors = ["polymonster <alexandercdixon@gmail.com>"]
 description = "hot-reloading playground for graphics, compute, video decoding and more."
