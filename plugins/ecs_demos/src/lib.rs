@@ -1,179 +1,135 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+/// Contains basic examples of ecs primtives, setting them up and rendering (meshes, lights, etc)
+mod primitives;
+
+/// Contains basic examples and unit tests of render states, texture types and error handling
+mod test;
+
+/// Used as a sandbox area to bring code from the core engine (to live-reload)
+mod dev;
+
+/// Contains basic examples and variations of making fdifferent kinds of draw calls and instancing
+mod draw;
+
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
-
-mod primitives;
-mod test;
-mod dev;
-mod draw;
 
 use crate::draw::*;
 use crate::primitives::*;
 use crate::test::*;
 
 #[no_mangle]
-fn rotate_meshes(
-    time: Res<TimeRes>, 
-    mut mesh_query: Query<&mut Rotation, Without<Billboard>>) {
-    for mut rotation in &mut mesh_query {
-        rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
+pub fn batch_lights(
+    mut pmfx: ResMut<PmfxRes>,
+    light_query: Query<(&Position, &Colour, &LightComponent)>) {
+    let world_buffers = pmfx.get_world_buffers_mut();
+    let mut point_offset = 0;
+    let mut spot_offset = 0;
+    let mut directional_offset = 0;
+    for (pos, colour, light) in &light_query {
+        match light.light_type {
+            LightType::Point => {
+                if let Some(light_buf) = &mut world_buffers.point_light {
+                    light_buf.write(
+                        point_offset, 
+                        gfx::as_u8_slice(&PointLightData{
+                            pos: pos.0,
+                            radius: light.radius,
+                            colour: colour.0
+                        }
+                    )).unwrap();
+                    point_offset += std::mem::size_of::<PointLightData>();
+                }
+            },
+            LightType::Spot => {
+                if let Some(light_buf) = &mut world_buffers.spot_light {
+                    light_buf.write(
+                        spot_offset, 
+                        gfx::as_u8_slice(&SpotLightData{
+                            pos: pos.0,
+                            cutoff: light.cutoff,
+                            dir: light.direction,
+                            falloff: light.falloff,
+                            colour: colour.0,
+                        }
+                    )).unwrap();
+                    spot_offset += std::mem::size_of::<SpotLightData>();
+                }
+            },
+            LightType::Directional => {
+                if let Some(light_buf) = &mut world_buffers.directional_light {
+                    light_buf.write(
+                        directional_offset, 
+                        gfx::as_u8_slice(&DirectionalLightData{
+                            dir: Vec4f::from((light.direction, 0.0)),
+                            colour: colour.0
+                        }
+                    )).unwrap();
+                    directional_offset += std::mem::size_of::<DirectionalLightData>();
+                }
+            }
+        }
+    }
+
+    let mut buffer_info = pmfx.get_world_buffer_info_mut();
+    buffer_info.point_light.y = (point_offset / std::mem::size_of::<PointLightData>()) as u32;
+    buffer_info.spot_light.y = (spot_offset / std::mem::size_of::<SpotLightData>()) as u32;
+    buffer_info.directional_light.y = (directional_offset / std::mem::size_of::<DirectionalLightData>()) as u32;
+}
+
+/// Batch updates instance world matrices into the `InstanceBuffer`
+#[no_mangle]
+pub fn batch_world_matrix_instances(
+    instances_query: Query<(&Parent, &WorldMatrix)>,
+    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+
+    for (entity, mut instance_batch) in &mut instance_batch_query {
+        let mut mats = Vec::new();
+        for (parent, world_matrix) in &instances_query {
+            if parent.0 == entity {
+                mats.push(world_matrix.0);
+            }
+        }
+        instance_batch.buffer.update(0, &mats).unwrap();
     }
 }
 
 #[no_mangle]
-fn animate_textures(
-    time: Res<TimeRes>,
-    mut animated_texture_query: Query<(&mut AnimatedTexture, &mut TimeComponent)>) {
-    let frame_length = 1.0 / 24.0;
-    for (mut animated_texture, mut timer) in &mut animated_texture_query {
-        timer.0 += time.0.delta;
-        if timer.0 > frame_length {
-            timer.0 = 0.0;
-            animated_texture.frame = (animated_texture.frame + 1) % animated_texture.frame_count;
+pub fn batch_material_instances(
+    mut instances_query: Query<(&Parent, &InstanceIds)>,
+    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+
+    for (entity, mut instance_batch) in &mut instance_batch_query {
+        let mut indices = Vec::new();
+        for (parent, ids) in &mut instances_query {
+            if parent.0 == entity {
+                indices.push(vec4u(ids.entity_id, ids.material_id, 0, 0));
+            }
         }
+        instance_batch.buffer.update(0, &indices).unwrap();
     }
 }
 
 #[no_mangle]
-fn animate_lights(
-    time: Res<TimeRes>, 
-    mut light_query: Query<&mut Position, With<LightComponent>>) {
-    
-    let t = time.accumulated;
-    let r = sin(t);
-
-    let rot0 = sin(t);
-    let rot1 = sin(-t);
-    let rot2 = sin(t * 0.5);
-    let rot3 = sin(-t * 0.5);
-    
-    let step = 1.0 / 16.0;
-    let mut f = 0.0;
-    let mut i = 0;
-    for mut position in &mut light_query {
-        if i < 16 {
-            position.x = r * cos(f32::tau() * f) * 1000.0;
-            position.z = r * sin(f32::tau() * f) * 1000.0;
-            let pr = rotate_2d(position.xz(), rot0);
-            position.set_xz(pr);
-            f += step;
+pub fn batch_bindless_world_matrix_instances(
+    mut pmfx: ResMut<PmfxRes>,
+    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>) {
+    let world_buffers = pmfx.get_world_buffers_mut();
+    let mut offset = 0;
+    if let Some(buf) = &mut world_buffers.draw {
+        for (_, world_matrix) in &instances_query {
+            buf.write(
+                offset,
+                &world_matrix.0
+            ).unwrap();
+            offset += std::mem::size_of::<DrawData>();
         }
-        else if i < 32 {
-            position.x = (r + 1.0) * cos(f32::tau() * f) * 1000.0;
-            position.z = (r + 1.0) * sin(f32::tau() * f) * 1000.0;
-            let pr = rotate_2d(position.xz(), rot2);
-            position.set_xz(pr);
-            f += step;
-        }
-        else if i < 48 {
-            position.x = (r - 1.0) * cos(f32::tau() * f) * 1000.0;
-            position.z = (r - 1.0) * sin(f32::tau() * f) * 1000.0;
-            let pr = rotate_2d(position.xz(), rot3);
-            position.set_xz(pr);
-            f += step;
-        }
-        else if i < 64 {
-            position.x = r * 2.0 * cos(f32::tau() * f) * 1000.0;
-            position.z = r * 2.0 * sin(f32::tau() * f) * 1000.0;
-            let pr = rotate_2d(position.xz(), rot1);
-            position.set_xz(pr);
-            f += step;
-        }
-        i += 1;
     }
 }
-
-#[no_mangle]
-fn animate_lights2(
-    time: Res<TimeRes>, 
-    mut light_query: Query<&mut Position, With<LightComponent>>) {
-    
-    let t = time.accumulated;
-    let rot0 = t;
-    
-    let mut i = 0;
-    for mut position in &mut light_query {
-        if i < 16 {
-            let fi = i as f32 / 16.0;
-            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
-
-            let ss = 300.0 * ts;
-            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
-            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
-            let pr = rotate_2d(position.xz(), rot0);
-            position.set_xz(pr);
-        }
-        else if i < 32 {
-            let fi = (i-16) as f32 / 16.0;
-            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
-
-            let ss = 300.0 * ts;
-            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
-            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
-            let pr = rotate_2d(position.xz(), -rot0);
-            position.set_xz(pr);
-        }
-        else if i < 48 {
-            let fi = (i-32) as f32 / 16.0;
-            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
-
-            let ss = 300.0 * ts;
-            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
-            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
-            let pr = rotate_2d(position.xz(), -rot0);
-            position.set_xz(pr);
-        }
-        else if i < 64 {
-            let fi = (i-48) as f32 / 16.0;
-            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
-
-            let ss = 300.0 * ts;
-            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
-            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
-            let pr = rotate_2d(position.xz(), rot0);
-            position.set_xz(pr);
-        }
-        else {
-            let pr = rotate_2d(position.xz(), sin(rot0));
-            position.set_xz(pr);
-        }
-        i += 1;
-    }
-}
-
-#[no_mangle]
-fn animate_lights3(
-    time: Res<TimeRes>, 
-    mut light_query: Query<(&mut Position, &mut LightComponent)>) {
-    
-    let t = time.accumulated;
-    let r = sin(t);
-    let rot0 = sin(t);
-    
-    let step = 1.0 / 4.0;
-    let mut f = 0.0;
-    for (mut position, mut light) in &mut light_query {
-        position.x = r * (cos(f32::tau() * f) * 2.0 - 1.0) * 500.0;
-        position.z = r * (sin(f32::tau() * f) * 2.0 - 1.0) * 500.0;
-        
-        let pr = rotate_2d(position.xz(), rot0);
-        position.set_xz(pr);
-
-        // derive direction from position, always look at the origin
-        light.direction = normalize(-position.0);
-
-        f += step;
-    }
-}
-
 
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
@@ -181,8 +137,8 @@ pub fn render_meshes_bindless_material(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
-        Query<(&draw::InstanceBuffer, &MeshComponent)>,
-        Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>
+        Query<(&InstanceBuffer, &MeshComponent)>,
+        Query<(&MeshComponent, &WorldMatrix), Without<InstanceBuffer>>
     )
 ) -> Result<(), hotline_rs::Error> {
     
@@ -236,63 +192,6 @@ pub fn render_meshes_bindless_material(
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders meshes with a draw call (non-indexed)
-#[no_mangle]
-pub fn draw_meshes(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_instanced(3, 1, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders meshes indirectly
-#[no_mangle]
-pub fn draw_meshes_indirect(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_indirect_query: Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>) 
-    -> Result<(), hotline_rs::Error> {
-        
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    for (world_matrix, mesh, command, args) in &mesh_draw_indirect_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-
-        view.cmd_buf.execute_indirect(
-            &command.0, 
-            1, 
-            &args.0, 
-            0, 
-            None, 
-            0
-        );
     }
 
     Ok(())
@@ -380,274 +279,7 @@ pub fn render_meshes_pipeline(
     Ok(())
 }
 
-/// Renders all scene meshes with a pipeline component, binding a new pipeline each draw with matrix + colour push constants
-#[no_mangle]
-pub fn render_meshes_pipeline_coloured(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    for (world_matrix, mesh, pipeline, colour) in &mesh_draw_query {
-        // set pipeline per mesh
-        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 4, 12, &colour.0);
-
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders all scene meshes with a material instance component, using push constants to push texture ids
-#[no_mangle]
-pub fn render_meshes_push_constants_texture(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    for (world_matrix, mesh, texture) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
-
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders all scene meshes with a constant normal map texture, used to debug tangent space on meshes
-#[no_mangle]
-pub fn render_meshes_debug_tangent_space(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    queries: (
-        Query<&TextureComponent>,
-        Query<(&WorldMatrix, &MeshComponent)>
-    )) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    let (texture_query, mesh_draw_query) = queries;
-
-    // bind first texture
-    for texture in &texture_query {
-        let usrv = texture.get_srv_index().unwrap() as u32;
-        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
-        break;
-    }
-
-    for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders all scene instance batches with vertex instance buffer
-#[no_mangle]
-pub fn render_meshes_vertex_buffer_instanced(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
-) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    for (instance_batch, mesh, pipeline) in &instance_draw_query {
-        // set pipeline per mesh
-        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        
-        // bind the shader resource heap for t0 (if exists)
-        let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-        if let Some(slot) = slot {
-            view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-        }
-
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders all scene instance batches with cbuffer instance buffer
-#[no_mangle]
-pub fn render_meshes_cbuffer_instanced(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    instance_draw_query: Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
-) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    for (instance_batch, mesh, pipeline) in &instance_draw_query {
-        // set pipeline per mesh
-        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-        view.cmd_buf.set_render_heap(1, instance_batch.heap.as_ref().unwrap(), 0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders a texture2d test passing the texture index and frame index to the shader for sampling along with a world matrix.
-#[no_mangle]
-pub fn render_meshes_texture2d_array_test(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>) -> Result<(), hotline_rs::Error> {
-        
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    // spherical billboard
-    let inv_rot = Mat3f::from(camera.view_matrix.transpose());
-    let cyl_rot = Mat3f::new(
-        inv_rot[0], 0.0, inv_rot[2],
-        0.0, 1.0, 0.0,
-        inv_rot[6], 0.0, inv_rot[8],
-    );
-
-    for (world_matrix, mesh, texture, animated_texture) in &mesh_query {
-        let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
-
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Renders all scene meshes with a cubemap applied and samples the separate mip levels in the shader per entity
-#[no_mangle]
-pub fn render_meshes_cubemap_test(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
-        
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    let mut mip = 0;
-    for (world_matrix, mesh, cubemap) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
-
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-
-        mip += 1;
-    }
-
-    Ok(())
-}
-
-/// Renders a texture3d test from a loaded (pre-generated signed distance field), the shader ray marches the volume
-#[no_mangle]
-pub fn render_meshes_texture3d_test(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
-        
-    let fmt = view.pass.get_format_hash();
-    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
-
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    for (world_matrix, mesh, tex) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-/// Register demos
+/// Register demos / examples by name... this assuems a function exists of the same name
 #[no_mangle]
 pub fn get_demos_ecs_demos() -> Vec<String> {
     demos![
@@ -735,16 +367,16 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
 
         // batches
         "batch_world_matrix_instances" => system_func![
-            draw::batch_world_matrix_instances.after(SystemSets::Batch)
+            batch_world_matrix_instances.after(SystemSets::Batch)
         ],
         "batch_material_instances" => system_func![
-            draw::batch_material_instances.after(SystemSets::Batch)
+            batch_material_instances.after(SystemSets::Batch)
         ],
         "batch_bindless_world_matrix_instances" => system_func![
-            draw::batch_bindless_world_matrix_instances.after(SystemSets::Batch)
+            batch_bindless_world_matrix_instances.after(SystemSets::Batch)
         ],
         "batch_lights" => system_func![
-            primitives::batch_lights.after(SystemSets::Batch)
+            batch_lights.after(SystemSets::Batch)
         ],
 
         // render functions
@@ -752,8 +384,8 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
             render_meshes_bindless_material, 
             pass_name,
             (
-                Query<(&draw::InstanceBuffer, &MeshComponent)>,
-                Query<(&MeshComponent, &WorldMatrix), Without<draw::InstanceBuffer>>
+                Query<(&InstanceBuffer, &MeshComponent)>,
+                Query<(&MeshComponent, &WorldMatrix), Without<InstanceBuffer>>
             )
         ],
         "draw_meshes" => render_func![
@@ -788,12 +420,12 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "render_meshes_vertex_buffer_instanced" => render_func![
             render_meshes_vertex_buffer_instanced, 
             pass_name, 
-            Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
+            Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_cbuffer_instanced" => render_func![
             render_meshes_cbuffer_instanced, 
             pass_name, 
-            Query<(&draw::InstanceBuffer, &MeshComponent, &PipelineComponent)>
+            Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
         ],
         "render_meshes_push_constants_texture" => render_func![
             render_meshes_push_constants_texture, 

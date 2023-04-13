@@ -65,6 +65,10 @@ pub fn setup_raster_test(
     }
 }
 
+///
+/// test_blend_states
+/// 
+
 /// Test various combinations of different blend states
 #[no_mangle]
 pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -157,6 +161,37 @@ pub fn setup_blend_test(
     }
 }
 
+/// Renders all scene meshes with a pipeline component, binding a new pipeline each draw with matrix + colour push constants
+#[no_mangle]
+pub fn render_meshes_pipeline_coloured(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    for (world_matrix, mesh, pipeline, colour) in &mesh_draw_query {
+        // set pipeline per mesh
+        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
+        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 4, 12, &colour.0);
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+///
+/// test_cubemap
+/// 
+
 /// Test cubemap loading (including mip-maps) and rendering
 #[no_mangle]
 pub fn test_cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -211,7 +246,45 @@ pub fn setup_cubemap_test(
     );
 }
 
-/// Test cubemap loading (including mip-maps) and rendering
+/// Renders all scene meshes with a cubemap applied and samples the separate mip levels in the shader per entity
+#[no_mangle]
+pub fn render_meshes_cubemap_test(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    let mut mip = 0;
+    for (world_matrix, mesh, cubemap) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+
+        mip += 1;
+    }
+
+    Ok(())
+}
+
+///
+/// test_texture2d_array
+/// 
+
+/// Test texture2d_array loading, loads a dds texture2d_array generated from an image sequence
 #[no_mangle]
 pub fn test_texture2d_array(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
@@ -285,6 +358,64 @@ pub fn setup_texture2d_array_test(
     );
 }
 
+/// Renders a texture2d test passing the texture index and frame index to the shader for sampling along with a world matrix.
+#[no_mangle]
+pub fn render_meshes_texture2d_array_test(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>) -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    // spherical billboard
+    let inv_rot = Mat3f::from(camera.view_matrix.transpose());
+    let cyl_rot = Mat3f::new(
+        inv_rot[0], 0.0, inv_rot[2],
+        0.0, 1.0, 0.0,
+        inv_rot[6], 0.0, inv_rot[8],
+    );
+
+    for (world_matrix, mesh, texture, animated_texture) in &mesh_query {
+        let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
+        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+#[no_mangle]
+pub fn animate_textures(
+    time: Res<TimeRes>,
+    mut animated_texture_query: Query<(&mut AnimatedTexture, &mut TimeComponent)>) {
+    let frame_length = 1.0 / 24.0;
+    for (mut animated_texture, mut timer) in &mut animated_texture_query {
+        timer.0 += time.0.delta;
+        if timer.0 > frame_length {
+            timer.0 = 0.0;
+            animated_texture.frame = (animated_texture.frame + 1) % animated_texture.frame_count;
+        }
+    }
+}
+
+///
+/// test_texture3d
+///
+
 /// Test 3d texture loading and rendering using a pre-built sdf texture
 #[no_mangle]
 pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -331,6 +462,37 @@ pub fn setup_texture3d_test(
     commands.spawn(
         TextureComponent(volume)
     );
+}
+
+/// Renders a texture3d test from a loaded (pre-generated signed distance field), the shader ray marches the volume
+#[no_mangle]
+pub fn render_meshes_texture3d_test(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    for (world_matrix, mesh, tex) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
 }
 
 /// Test compute shader by reading and writing from a 3d texture un-ordered access

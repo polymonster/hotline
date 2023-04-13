@@ -5,14 +5,16 @@ use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 
-use pmfx::PointLightData;
-
 #[derive(Clone, Copy)]
 enum MeshType {
     Normal,
     Billboard,
     CylindricalBillboard
 }
+
+///
+/// geometry_primitives
+/// 
 
 /// Init function for primitives demo
 #[no_mangle]
@@ -93,8 +95,8 @@ pub fn setup_geometry_primitives(
                         commands.spawn((
                             MeshComponent(meshes[i].0.clone()),
                             Position(iter_pos),
-                            // Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
-                            Rotation(Quatf::identity()),
+                            Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
+                            //Rotation(Quatf::identity()),
                             Scale(splat3f(10.0)),
                             WorldMatrix(Mat34f::identity())
                         ));
@@ -127,6 +129,19 @@ pub fn setup_geometry_primitives(
     }
 }
 
+#[no_mangle]
+pub fn rotate_meshes(
+    time: Res<TimeRes>, 
+    mut mesh_query: Query<&mut Rotation, Without<Billboard>>) {
+    for mut rotation in &mut mesh_query {
+        rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
+    }
+}
+
+///
+/// tangent_space_normal_maps
+/// 
+
 /// Init function for tangent space normal maps to debug tangents 
 #[no_mangle]
 pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -136,11 +151,9 @@ pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_pl
             "setup_geometry_primitives",
             "setup_tangent_space_normal_maps"
         ],
-        /*
         update: systems![
             "rotate_meshes"
         ],
-        */
         render_graph: "mesh_debug_tangent_space",
         ..Default::default()
     }
@@ -166,64 +179,51 @@ pub fn setup_tangent_space_normal_maps(
     }
 }
 
+/// Renders all scene meshes with a constant normal map texture, used to debug tangent space on meshes
 #[no_mangle]
-pub fn batch_lights(
-    mut pmfx: ResMut<PmfxRes>,
-    light_query: Query<(&Position, &Colour, &LightComponent)>) {
-    let world_buffers = pmfx.get_world_buffers_mut();
-    let mut point_offset = 0;
-    let mut spot_offset = 0;
-    let mut directional_offset = 0;
-    for (pos, colour, light) in &light_query {
-        match light.light_type {
-            LightType::Point => {
-                if let Some(light_buf) = &mut world_buffers.point_light {
-                    light_buf.write(
-                        point_offset, 
-                        gfx::as_u8_slice(&PointLightData{
-                            pos: pos.0,
-                            radius: light.radius,
-                            colour: colour.0
-                        }
-                    )).unwrap();
-                    point_offset += std::mem::size_of::<PointLightData>();
-                }
-            },
-            LightType::Spot => {
-                if let Some(light_buf) = &mut world_buffers.spot_light {
-                    light_buf.write(
-                        spot_offset, 
-                        gfx::as_u8_slice(&SpotLightData{
-                            pos: pos.0,
-                            cutoff: light.cutoff,
-                            dir: light.direction,
-                            falloff: light.falloff,
-                            colour: colour.0,
-                        }
-                    )).unwrap();
-                    spot_offset += std::mem::size_of::<SpotLightData>();
-                }
-            },
-            LightType::Directional => {
-                if let Some(light_buf) = &mut world_buffers.directional_light {
-                    light_buf.write(
-                        directional_offset, 
-                        gfx::as_u8_slice(&DirectionalLightData{
-                            dir: Vec4f::from((light.direction, 0.0)),
-                            colour: colour.0
-                        }
-                    )).unwrap();
-                    directional_offset += std::mem::size_of::<DirectionalLightData>();
-                }
-            }
-        }
+pub fn render_meshes_debug_tangent_space(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    queries: (
+        Query<&TextureComponent>,
+        Query<(&WorldMatrix, &MeshComponent)>
+    )) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
-    let mut buffer_info = pmfx.get_world_buffer_info_mut();
-    buffer_info.point_light.y = (point_offset / std::mem::size_of::<PointLightData>()) as u32;
-    buffer_info.spot_light.y = (spot_offset / std::mem::size_of::<SpotLightData>()) as u32;
-    buffer_info.directional_light.y = (directional_offset / std::mem::size_of::<DirectionalLightData>()) as u32;
+    let (texture_query, mesh_draw_query) = queries;
+
+    // bind first texture
+    for texture in &texture_query {
+        let usrv = texture.get_srv_index().unwrap() as u32;
+        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
+        break;
+    }
+
+    for (world_matrix, mesh) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
 }
+
+///
+/// point_lights
+/// 
 
 /// Init function for primitives demo
 #[no_mangle]
@@ -310,6 +310,55 @@ pub fn setup_point_lights(
         Scale(splat3f(half_extent * 2.0)),
         WorldMatrix(Mat34f::identity())
     ));
+}
+
+#[no_mangle]
+pub fn animate_lights(
+    time: Res<TimeRes>, 
+    mut light_query: Query<&mut Position, With<LightComponent>>) {
+    
+    let t = time.accumulated;
+    let r = sin(t);
+
+    let rot0 = sin(t);
+    let rot1 = sin(-t);
+    let rot2 = sin(t * 0.5);
+    let rot3 = sin(-t * 0.5);
+    
+    let step = 1.0 / 16.0;
+    let mut f = 0.0;
+    let mut i = 0;
+    for mut position in &mut light_query {
+        if i < 16 {
+            position.x = r * cos(f32::tau() * f) * 1000.0;
+            position.z = r * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot0);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 32 {
+            position.x = (r + 1.0) * cos(f32::tau() * f) * 1000.0;
+            position.z = (r + 1.0) * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot2);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 48 {
+            position.x = (r - 1.0) * cos(f32::tau() * f) * 1000.0;
+            position.z = (r - 1.0) * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot3);
+            position.set_xz(pr);
+            f += step;
+        }
+        else if i < 64 {
+            position.x = r * 2.0 * cos(f32::tau() * f) * 1000.0;
+            position.z = r * 2.0 * sin(f32::tau() * f) * 1000.0;
+            let pr = rotate_2d(position.xz(), rot1);
+            position.set_xz(pr);
+            f += step;
+        }
+        i += 1;
+    }
 }
 
 /// Init function for primitives demo
@@ -452,6 +501,72 @@ pub fn setup_spot_lights(
     ));
 }
 
+#[no_mangle]
+pub fn animate_lights2(
+    time: Res<TimeRes>, 
+    mut light_query: Query<&mut Position, With<LightComponent>>) {
+    
+    let t = time.accumulated;
+    let rot0 = t;
+    
+    let mut i = 0;
+    for mut position in &mut light_query {
+        if i < 16 {
+            let fi = i as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), rot0);
+            position.set_xz(pr);
+        }
+        else if i < 32 {
+            let fi = (i-16) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), -rot0);
+            position.set_xz(pr);
+        }
+        else if i < 48 {
+            let fi = (i-32) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), -rot0);
+            position.set_xz(pr);
+        }
+        else if i < 64 {
+            let fi = (i-48) as f32 / 16.0;
+            let ts = 1.0 - ((t + (1.0-fi)) % 1.0);
+
+            let ss = 300.0 * ts;
+            position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
+            position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
+            
+            let pr = rotate_2d(position.xz(), rot0);
+            position.set_xz(pr);
+        }
+        else {
+            let pr = rotate_2d(position.xz(), sin(rot0));
+            position.set_xz(pr);
+        }
+        i += 1;
+    }
+}
+
+///
+/// directional_lights
+/// 
+
 /// Init function for primitives demo
 #[no_mangle]
 pub fn directional_lights(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -541,4 +656,29 @@ pub fn setup_directional_lights(
         Scale(splat3f(half_extent * 2.0)),
         WorldMatrix(Mat34f::identity())
     ));
+}
+
+#[no_mangle]
+pub fn animate_lights3(
+    time: Res<TimeRes>, 
+    mut light_query: Query<(&mut Position, &mut LightComponent)>) {
+    
+    let t = time.accumulated;
+    let r = sin(t);
+    let rot0 = sin(t);
+    
+    let step = 1.0 / 4.0;
+    let mut f = 0.0;
+    for (mut position, mut light) in &mut light_query {
+        position.x = r * (cos(f32::tau() * f) * 2.0 - 1.0) * 500.0;
+        position.z = r * (sin(f32::tau() * f) * 2.0 - 1.0) * 500.0;
+        
+        let pr = rotate_2d(position.xz(), rot0);
+        position.set_xz(pr);
+
+        // derive direction from position, always look at the origin
+        light.direction = normalize(-position.0);
+
+        f += step;
+    }
 }

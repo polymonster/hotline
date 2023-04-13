@@ -2185,12 +2185,10 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
 
         for i in 0..segments+1 {
             let cur = (1.0 / fsegments) * i as f32;
-            let next = (1.0 / fsegments) * (i+1) as f32;
             let v = cur * edge_uv_scale;
     
             // linear lerp
             let lv0 = lerp(bottom_start, bottom_end, cur);
-            let lvt = lerp(bottom_start, bottom_end, next);
             let lv1 = lerp(top_start, top_end, cur);
     
             // project corner to unit cube (chebyshev_normalize)
@@ -2204,7 +2202,6 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
             // lerp between square corner and cut corner, forming circle
             let mut p0 = lerp(chebyshev_normalize(lv0), lv0, cur);
             let mut p1 = lerp(chebyshev_normalize(lv1), lv1, cur);
-            let pt = lerp(chebyshev_normalize(lvt), lvt, cur);
     
             // ..
             p0[clamp_axis] = bottom_start[clamp_axis];

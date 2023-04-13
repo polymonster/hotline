@@ -13,27 +13,38 @@ Hotline is a graphics engine and live coding tool that allows you to edit code, 
 
 There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages and an example workflow demonstration of how the geometry primitives were created. Some development has been live streamed on [Twitch](https://www.twitch.tv/polymonstr) and archived on [YouTube](https://www.youtube.com/channel/UCQRmui5w4Urz-h4P9CL7rmA).
 
+## Features
+
+- An easy to use cross platform graphics/compute/os api for rapid development.
+- Hot reloadable, live coding environment (shaders, render graphs, code).
+- [gfx](#gfx) - Concise low level graphics api...
+- [pmfx](#pmfx) - High level data driven graphics api for ease of use and speed.
+- A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
+- Hardware accelerated video decoding.
+
 ## Prerequisites
 
 Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan and more over time.
 
+## Using the Client / Examples
+
 For the time being it is recommended to use the repository from GitHub if you want to use the example `plugins` or standalone `examples`. If you just want to use the library then `crates.io` is suitable. There are some difficulties with publishing data and plugins which I hope to iron out in time.
 
-## Building Data
+### Building / Fetching Data 
 
-The [hotline-data](https://github.com/polymonster/hotline-data) repository is required but it is kept separate to keep the size of the main hotline repository down. When running `cargo build` the `hotline-data` repository will be cloned automatically for you.
+The [hotline-data](https://github.com/polymonster/hotline-data) repository is required to build and serve data for the examples and the example plugins, it is included as a submodule of this repository you can clone with submodules as so:
 
-The [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) is used to configure [pmbuild](https://github.com/polymonster/pmbuild) build jobs and tools, if you wanted to manually configure the setup or add new steps.
-
-```text
-// fetch the data repository, build the library and client
-cargo build
-
-// build the data to target/data
-.\hotline-data\pmbuild.cmd win32-data
+```
+git clone https://github.com/polymonster/hotline.git --recursive
 ```
 
-## Using the Client
+You can add the submodule after cloning or update the submodule to keep it in-sync with the main repository as follows:
+
+```
+git submodule update --init --recursive
+```
+
+### Running The Client
 
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
@@ -409,7 +420,7 @@ pub fn main() -> Result<(), hotline_rs::Error> {
 }
 ```
 
-### Gfx
+### gfx
 
 The [gfx](https://docs.rs/hotline-rs/latest/hotline_rs/gfx/index.html) module provides a modern graphics API loosely following Direct3D12 with Vulkan and Metal compatibility in mind. If you are familiar with those API's it should be straight forward, but here is a quick example of how to do some render commands:
 
@@ -518,7 +529,7 @@ device.execute(&cmd);
 swap_chain.swap(&device);
 ```
 
-### Pmfx
+### pmfx
 
 Pmfx builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html) module and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
 
@@ -625,19 +636,6 @@ This is wrapped into `pmbuild` so you can also run:
 ```text
 pmbuild test
 ```
-
-## Design Goals
-
-- An easy to use cross platform graphics/compute/os api for rapid development.
-- Hot reloadable, live coding environment (shaders, render graphs, code).
-- Concise low level graphics api... think somewhere in-between Metal and Direct3D12.
-- High level data driven graphics api (`pmfx`) for ease of use and speed.
-- A focus on modern rendering examples (gpu-driven, multi-threaded, bindless, ray-tracing).
-- Flexibility to easily create and use different rendering strategies (deferred vs forward, gpu-driven vs cpu driven, etc).
-- Hardware accelerated video decoding.
-- Fibre based, multi-threaded, easily scalable to utilise available cpu and gpu.
-- Data-driven and configurable.
-- Plugin based and extensible...
 
 ## Roadmap
 

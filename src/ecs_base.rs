@@ -120,6 +120,43 @@ hotline_ecs!(Component, TextureComponent, gfx_platform::Texture);
 hotline_ecs!(Component, BufferComponent, gfx_platform::Buffer);
 hotline_ecs!(Component, TextureInstance, u32);
 hotline_ecs!(Component, TimeComponent, f32);
+hotline_ecs!(Component, CommandSignatureComponent, gfx_platform::CommandSignature);
+
+#[derive(Component)]
+pub struct InstanceBuffer {
+    pub heap: Option<gfx_platform::Heap>,
+    pub buffer: gfx_platform::Buffer,
+    pub instance_count: u32
+}
+
+#[derive(Bundle)]
+pub struct InstanceBatch {
+    pub mesh: MeshComponent,
+    pub pipeline: PipelineComponent,
+    pub instance_buffer: InstanceBuffer
+}
+
+#[derive(Bundle)]
+pub struct Instance {
+    pub pos: Position,
+    pub rot: Rotation,
+    pub scale: Scale,
+    pub world_matrix: WorldMatrix,
+    pub parent: Parent
+}
+
+#[derive(Component)]
+pub struct InstanceIds {
+    pub entity_id: u32,
+    pub material_id: u32
+}
+
+#[derive(Component)]
+pub struct MaterialResources {
+    pub albedo: gfx_platform::Texture,
+    pub normal: gfx_platform::Texture,
+    pub roughness: gfx_platform::Texture
+}
 
 #[derive(Component)]
 pub struct Camera {
