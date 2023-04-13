@@ -579,6 +579,21 @@ fn test_point_lights() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
+fn test_spot_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("spot_lights")
+}
+
+#[test]
+fn test_directional_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("directional_lights")
+}
+
+#[test]
+fn test_tangent_space_normal_maps() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_tangent_space_normal_maps")
+}
+
+#[test]
 fn draw_indexed() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("draw_indexed")
 }
@@ -609,6 +624,11 @@ fn draw_material() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
+fn draw_indirect() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_indirect")
+}
+
+#[test]
 fn test_raster_states() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_raster_states")
 }
@@ -631,4 +651,9 @@ fn test_texture2d_array() -> Result<(), hotline_rs::Error> {
 #[test]
 fn test_texture3d() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_texture3d")
+}
+
+#[test]
+fn test_compute() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_compute")
 }

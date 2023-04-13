@@ -96,6 +96,7 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
 }
 
 /// Loads an image from file and creates a shader resource on the specified heap, or on the device heap if `heap.is_none()`
+#[cfg(target_os = "windows")]
 pub fn load_texture_from_file(
     device: &mut crate::gfx_platform::Device,
     file: &str,
