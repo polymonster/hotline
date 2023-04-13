@@ -1,0 +1,3 @@
+[submodule "hotline-data"]
+	path = hotline-data
+	url = https://github.com/polymonster/hotline-data.git

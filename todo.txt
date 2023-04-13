@@ -6,9 +6,6 @@
 // -    Change binding
 // - gpu aabb culling
 
-// - transform normals with world matrix
-// - construct tangent space
-
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
@@ -46,12 +43,12 @@
 // - Alpha to coverage
 // - Stencil Ref
 // - Texture Formats (BC etc)
-// - API for fence
 // - API for copies and clears?
 //      buffer
 //      texture
 //      buffer region
-//      texture region
+//      texture regioncd
+// - API for fence
 
 // ui / debug
 // - render grid not tracked
@@ -61,6 +58,8 @@
 // - view menu + saving state
 
 // DONE:
+// x transform normals with world matrix
+// x construct tangent space
 // x resource sizes passed to compute
 // x render target fixed size
 // x directional light

@@ -8,46 +8,9 @@ use maths_rs::prelude::*;
 use rand::prelude::*;
 use bevy_ecs::prelude::*;
 
-use maths_rs::Vec4u;
-
-#[derive(Component)]
-pub struct InstanceBuffer {
-    pub heap: Option<gfx_platform::Heap>,
-    pub buffer: gfx_platform::Buffer,
-    pub instance_count: u32
-}
-
-#[derive(Bundle)]
-pub struct InstanceBatch {
-    mesh: MeshComponent,
-    pipeline: PipelineComponent,
-    instance_buffer: InstanceBuffer
-}
-
-#[derive(Bundle)]
-pub struct Instance {
-    pos: Position,
-    rot: Rotation,
-    scale: Scale,
-    world_matrix: WorldMatrix,
-    parent: Parent
-}
-
-#[derive(Component)]
-pub struct InstanceIds {
-    entity_id: u32,
-    material_id: u32
-}
-
-#[derive(Component)]
-pub struct MaterialResources {
-    pub albedo: gfx_platform::Texture,
-    pub normal: gfx_platform::Texture,
-    pub roughness: gfx_platform::Texture
-}
-
-#[derive(Component)]
-pub struct CommandSignatureComponent(pub gfx_platform::CommandSignature);
+///
+/// draw
+/// 
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
@@ -65,6 +28,7 @@ pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Sche
     }
 }
 
+/// Adds a single triangle mesh
 #[no_mangle]
 pub fn setup_draw(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -81,6 +45,34 @@ pub fn setup_draw(
         WorldMatrix(pos * scale)
     ));
 }
+
+/// Renders meshes with a draw call (non-indexed) (single triangle)
+#[no_mangle]
+pub fn draw_meshes(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    for (world_matrix, mesh) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_instanced(3, 1, 0, 0);
+    }
+
+    Ok(())
+}
+
+///
+/// draw_indexed
+/// 
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
@@ -162,6 +154,10 @@ pub fn setup_draw_indexed_push_constants(
         }
     }
 }
+
+///
+/// draw_indirect
+/// 
 
 /// draws 2 meshes one with draw indirect and one witg draw indexed indirect.
 /// no root binds are changed or buffers updated, this is just simply to test the execute indirect call
@@ -249,55 +245,42 @@ pub fn setup_draw_indirect(
     ));
 }
 
-/// Batch updates instance world matrices into the `InstanceBuffer`
+/// Renders meshes indirectly in a basic way, we issues some execute indirect draw whit arguments pre-populated in a buffer
 #[no_mangle]
-pub fn batch_world_matrix_instances(
-    instances_query: Query<(&Parent, &WorldMatrix)>,
-    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+pub fn draw_meshes_indirect(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_indirect_query: Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>) 
+    -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    for (entity, mut instance_batch) in &mut instance_batch_query {
-        let mut mats = Vec::new();
-        for (parent, world_matrix) in &instances_query {
-            if parent.0 == entity {
-                mats.push(world_matrix.0);
-            }
-        }
-        instance_batch.buffer.update(0, &mats).unwrap();
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    for (world_matrix, mesh, command, args) in &mesh_draw_indirect_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+
+        view.cmd_buf.execute_indirect(
+            &command.0, 
+            1, 
+            &args.0, 
+            0, 
+            None, 
+            0
+        );
     }
+
+    Ok(())
 }
 
-#[no_mangle]
-pub fn batch_material_instances(
-    mut instances_query: Query<(&Parent, &InstanceIds)>,
-    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
-
-    for (entity, mut instance_batch) in &mut instance_batch_query {
-        let mut indices = Vec::new();
-        for (parent, ids) in &mut instances_query {
-            if parent.0 == entity {
-                indices.push(vec4u(ids.entity_id, ids.material_id, 0, 0));
-            }
-        }
-        instance_batch.buffer.update(0, &indices).unwrap();
-    }
-}
-
-#[no_mangle]
-pub fn batch_bindless_world_matrix_instances(
-    mut pmfx: ResMut<PmfxRes>,
-    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>) {
-    let world_buffers = pmfx.get_world_buffers_mut();
-    let mut offset = 0;
-    if let Some(buf) = &mut world_buffers.draw {
-        for (_, world_matrix) in &instances_query {
-            buf.write(
-                offset,
-                &world_matrix.0
-            ).unwrap();
-            offset += std::mem::size_of::<DrawData>();
-        }
-    }
-}
+///
+/// draw_indexed_vertex_buffer_instanced
+/// 
 
 /// Creates a instance batch, where the `InstanceBatch` parent will update a vertex buffer containing
 /// it's child (instance) entities. The vertex shader layput steps the instance buffer per instance
@@ -370,6 +353,43 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
         }
     }
 }
+
+/// Renders all scene instance batches with vertex instance buffer
+#[no_mangle]
+pub fn render_meshes_vertex_buffer_instanced(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    instance_draw_query: Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
+) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    for (instance_batch, mesh, pipeline) in &instance_draw_query {
+        // set pipeline per mesh
+        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
+        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        
+        // bind the shader resource heap for t0 (if exists)
+        let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+        if let Some(slot) = slot {
+            view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+        }
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+///
+/// draw_indexed_cbuffer_instanced
+/// 
 
 /// Creates a instance batch, where the `InstanceBatch` parent will update a cbuffer containing 
 /// the cbuffer is created in a separate heap and the matrices and indexed into using the instance id system value semantic
@@ -451,7 +471,38 @@ pub fn setup_draw_indexed_cbuffer_instanced(
     }
 }
 
+/// Renders all scene instance batches with cbuffer instance buffer
+#[no_mangle]
+pub fn render_meshes_cbuffer_instanced(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    instance_draw_query: Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
+) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    for (instance_batch, mesh, pipeline) in &instance_draw_query {
+        // set pipeline per mesh
+        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
+        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+        view.cmd_buf.set_render_heap(1, instance_batch.heap.as_ref().unwrap(), 0);
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
 /// 
+/// draw_push_constants_texture
+///
+
 #[no_mangle]
 pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
@@ -464,7 +515,6 @@ pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_
     }
 }
 
-///
 #[no_mangle]
 pub fn setup_draw_push_constants_texture(
     mut device: ResMut<DeviceRes>,
@@ -588,6 +638,42 @@ pub fn setup_draw_push_constants_texture(
         );
     }
 }
+
+/// Renders all scene meshes with a material instance component, using push constants to push texture ids
+#[no_mangle]
+pub fn render_meshes_push_constants_texture(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    for (world_matrix, mesh, texture) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
+
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+///
+/// draw_material
+/// 
 
 /// Creates instance batches for each mesh and makes an instanced draw call per mesh
 /// entity id's for lookups are stored in vertex buffers
