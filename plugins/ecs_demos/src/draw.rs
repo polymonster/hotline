@@ -163,6 +163,8 @@ pub fn setup_draw_indexed_push_constants(
     }
 }
 
+/// draws 2 meshes one with draw indirect and one witg draw indexed indirect.
+/// no root binds are changed or buffers updated, this is just simply to test the execute indirect call
 #[no_mangle]
 pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
@@ -179,11 +181,45 @@ pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>
 pub fn setup_draw_indirect(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) {
+    
+    let scalar_scale = 10.0;
+    let scale = Mat34f::from_scale(splat3f(scalar_scale));
 
-    let pos = Mat34f::from_translation(Vec3f::unit_y() * 10.0); 
-    let scale = Mat34f::from_scale(splat3f(10.0));
+    // draw indirect
+    let tri = hotline_rs::primitives::create_triangle_mesh(&mut device.0);
+    let pos = Mat34f::from_translation(vec3f(-scalar_scale, scalar_scale, 0.0)); 
 
+    let args = gfx::DrawArguments {
+        vertex_count_per_instance: 3,
+        instance_count: 1,
+        start_vertex_location: 0,
+        start_instance_location: 0
+    };
+
+    let draw_args = device.create_buffer(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<gfx::DrawArguments>(),
+        initial_state: gfx::ResourceState::IndirectArgument,
+        num_elements: 1
+    }, hotline_rs::data!(gfx::as_u8_slice(&args))).unwrap();
+
+    let command_signature = device.create_indirect_render_command(gfx::IndirectCommandType::Draw, None).unwrap();
+
+    commands.spawn((
+        Position(Vec3f::zero()),
+        Velocity(Vec3f::one()),
+        MeshComponent(tri.clone()),
+        WorldMatrix(pos * scale),
+        BufferComponent(draw_args),
+        CommandSignatureComponent(command_signature)
+    ));
+
+    // draw indexed indirect
     let teapot = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 8);
+    let pos = Mat34f::from_translation(vec3f(scalar_scale, scalar_scale, 0.0)); 
+
     let args = gfx::DrawIndexedArguments {
         index_count_per_instance: teapot.num_indices,
         instance_count: 1,
@@ -201,8 +237,7 @@ pub fn setup_draw_indirect(
         num_elements: 1
     }, hotline_rs::data!(gfx::as_u8_slice(&args))).unwrap();
 
-    let command_signature = 
-        device.create_indirect_render_command(gfx::IndirectCommandType::DrawIndexed, None).unwrap();
+    let command_signature = device.create_indirect_render_command(gfx::IndirectCommandType::DrawIndexed, None).unwrap();
 
     commands.spawn((
         Position(Vec3f::zero()),

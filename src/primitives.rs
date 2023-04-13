@@ -206,6 +206,7 @@ fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, c
 
             // tangent
             angle += angle_step;
+
             let x = cos(angle);
             let z = -sin(angle);
             let xz = vec3f(x, 0.0, z) * radius;
@@ -214,7 +215,14 @@ fn create_sphere_vertices(segments: usize, hemi_start: usize, hemi_end: usize, c
             let p_next = normalize(p_next);
 
             let p = normalize(p);
-            let t = p_next - p;
+
+            let mut t = p_next - p;
+
+            // handle case of small p_next - p
+            if mag2(t) < 0.001 {
+                t = Vec3f::unit_x();
+            }
+
             let bt = cross(p, t);
 
             let v = 0.5 + asin(p.y) / f32::pi();
@@ -902,118 +910,118 @@ pub fn cube_vertices() -> Vec<Vertex3D> {
         // right face
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, 1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, 1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, 1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, 1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         // left face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, -1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, -1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 0.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, -1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
+            tangent: vec3f(0.0, 0.0, -1.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         // top face
         Vertex3D {
             position: vec3f(-1.0, 1.0, -1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, 1.0),
         },
         Vertex3D {
             position: vec3f(-1.0, 1.0, 1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, 1.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, 1.0),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, 1.0),
         },
         Vertex3D {
             position: vec3f(1.0, 1.0, -1.0),
-            texcoord: vec2f(1.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, 1.0),
         },
         // bottom face
         Vertex3D {
             position: vec3f(-1.0, -1.0, -1.0),
-            texcoord: vec2f(0.0, 1.0),
+            texcoord: vec2f(1.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, -1.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, -1.0),
-            texcoord: vec2f(1.0, 1.0),
+            texcoord: vec2f(0.0, 0.0),
             normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, -1.0),
         },
         Vertex3D {
             position: vec3f(1.0, -1.0, 1.0),
-            texcoord: vec2f(1.0, 0.0),
+            texcoord: vec2f(0.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, -1.0),
         },
         Vertex3D {
             position: vec3f(-1.0, -1.0, 1.0),
-            texcoord: vec2f(0.0, 0.0),
+            texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
+            tangent: vec3f(-1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 0.0, -1.0),
         },
     ]
 }
@@ -1375,7 +1383,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
     for i in 0..vertex_segments {
         let u = 0.5 + atan2(bottom_points[i].z, bottom_points[i].x) / f32::two_pi();
         let u = if i == segments { 0.0 } else { u };
-        let bt = cross(tangents[i], points[i]);
+        let bt = cross(points[i], tangents[i]);
         vertices.push(Vertex3D{
             position: bottom_points[i],
             normal: points[i],
@@ -1389,7 +1397,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
     for i in 0..vertex_segments {
         let u = 0.5 + atan2(top_points[i].z, top_points[i].x) / f32::two_pi();
         let u = if i == segments { 0.0 } else { u };
-        let bt = cross(tangents[i], points[i]);
+        let bt = cross(points[i], tangents[i]);
         vertices.push(Vertex3D{
             position: top_points[i],
             normal: points[i],
@@ -1406,7 +1414,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
             normal: -Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
+            texcoord: Vec2f::new(-point.x, -point.z) * 0.5 + 0.5
         });
     }
 
@@ -1417,7 +1425,7 @@ pub fn create_prism_mesh<D: gfx::Device>(dev: &mut D, segments: usize, smooth: b
             normal: Vec3f::unit_y(),
             tangent: Vec3f::unit_x(),
             bitangent: Vec3f::unit_z(),
-            texcoord: Vec2f::new(point.x, point.z) * 0.5 + 0.5
+            texcoord: Vec2f::new(point.x, -point.z) * 0.5 + 0.5
         });
     }
 
@@ -2140,185 +2148,19 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
     let inset = 1.0 - radius;
     let edge_uv_scale = radius;
 
-    
+    // cube verts with inset
+    let mut vertices = cube_vertices();
 
-    // cube veritces
-    let mut vertices: Vec<Vertex3D> = vec![
-        // front face
-        Vertex3D {
-            position: vec3f(-inset, -inset, 1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, -inset,  1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, inset, 1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-inset, inset, 1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // back face
-        Vertex3D {
-            position: vec3f(-inset, -inset, -1.0),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-inset, inset, -1.0),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, inset, -1.0),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, -inset, -1.0),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 0.0, -1.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // right face
-        Vertex3D {
-            position: vec3f(1.0, -inset, -inset),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, inset, -inset),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, inset, inset),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(1.0, -inset, inset),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // left face
-        Vertex3D {
-            position: vec3f(-1.0, -inset, -inset),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, -inset, inset),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, inset, inset),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-1.0, inset, -inset),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(-1.0, 0.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // top face
-        Vertex3D {
-            position: vec3f(-inset, 1.0, -inset),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-inset, 1.0, inset),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, 1.0, inset),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, 1.0, -inset),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, 1.0, 0.0),
-            tangent: vec3f(-1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        // bottom face
-        Vertex3D {
-            position: vec3f(-inset, -1.0, -inset),
-            texcoord: vec2f(0.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, -1.0, -inset),
-            texcoord: vec2f(1.0, 1.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(inset, -1.0, inset),
-            texcoord: vec2f(1.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
-            position: vec3f(-inset, -1.0, inset),
-            texcoord: vec2f(0.0, 0.0),
-            normal: vec3f(0.0, -1.0, 0.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
+    let insets = [
+        vec3f(inset, inset, 1.0),
+        vec3f(1.0, inset, inset),
+        vec3f(inset, 1.0, inset),
     ];
+
+    for i in 0..vertices.len() {
+        let face = i / 8;
+        vertices[i].position *= insets[face];
+    }
 
     let mut indices: Vec<usize> = vec![
         0,  2,  1,  2,  0,  3,   // front face
@@ -2369,7 +2211,7 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
             p1[clamp_axis] = top_start[clamp_axis];
 
             let n = normalize(p0 - pivot);
-            let t = normalize(pt - p0);
+            let t = normalize(top_pivot - pivot);
             let bt = cross(n, t);
     
             vertices.extend(
@@ -2377,14 +2219,14 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
                     Vertex3D {
                         position: pivot + normalize(p0 - pivot) * radius,
                         normal: n,
-                        tangent: n,
+                        tangent: t,
                         bitangent: bt,
                         texcoord: vec2f(0.0, v)
                     },
                     Vertex3D {
                         position: top_pivot + normalize(p1 - top_pivot) * radius,
                         normal: n,
-                        tangent: n,
+                        tangent: t,
                         bitangent: bt,
                         texcoord: vec2f(1.0, v)
                     }
@@ -2455,14 +2297,18 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
                 let nextp = centre + normalize(lv1 - centre) * radius;
     
                 let n = normalize(lv0 - centre);
-                let t = normalize(nextp - p);
+                let mut t = normalize(p - nextp);
+                
+                if j > segments - 1 {
+                    t = Vec3f::unit_x();
+                }
                 let bt = cross(n, t);
-    
+
                 vertices.extend(vec![
                     Vertex3D {
                         position: p,
                         normal: n,
-                        tangent: n,
+                        tangent: t,
                         bitangent: bt,
                         texcoord: vec2f(u, v) * edge_uv_scale
                     },
@@ -2509,7 +2355,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
     // add an extra segment at the end to make uv's wrap nicely
     let vertex_segments = segments + 1;
 
-    let prism_vertices = |radius: f32| -> (Vec<Vertex3D>, Vec<Vertex3D>) {
+    let prism_vertices = |radius: f32, flip: f32| -> (Vec<Vertex3D>, Vec<Vertex3D>) {
         let mut vertices = Vec::new();
         let mut cap_vertices = Vec::new();
         let mut points = Vec::new();
@@ -2546,7 +2392,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
             let bt = cross(tangents[i], points[i]);
             vertices.push(Vertex3D{
                 position: bottom_points[i],
-                normal: points[i],
+                normal: points[i] * flip,
                 tangent: tangents[i],
                 bitangent: bt,
                 texcoord: Vec2f::new(u * 3.0, 0.0)
@@ -2560,7 +2406,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
             let bt = cross(tangents[i], points[i]);
             vertices.push(Vertex3D{
                 position: top_points[i],
-                normal: points[i],
+                normal: points[i] * flip,
                 tangent: tangents[i],
                 bitangent: bt,
                 texcoord: Vec2f::new(u * 3.0, 1.0)
@@ -2592,7 +2438,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
         (vertices, cap_vertices)
     };
 
-    let end_cap = |loop_start: usize, v: &Vec<Vertex3D>, inner_offset: usize| -> Vec<Vertex3D> {
+    let end_cap = |loop_start: usize, v: &Vec<Vertex3D>, inner_offset: usize, flip: f32| -> Vec<Vertex3D> {
         // start
         let bottom = loop_start;
         let top = loop_start + vertex_segments;
@@ -2608,7 +2454,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
 
         let b = normalize(verts[1].position - verts[0].position);
         let t = normalize(verts[2].position - verts[0].position);
-        let n = cross(b, t);
+        let n = cross(b, t) * flip;
 
         for v in &mut verts {
             v.normal = n;
@@ -2624,8 +2470,8 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
         verts
     };
 
-    let (outer_vertices, outer_cap_vertices) = prism_vertices(1.0);
-    let (inner_vertices, inner_cap_vertices) = prism_vertices(thickness);
+    let (outer_vertices, outer_cap_vertices) = prism_vertices(1.0, 1.0);
+    let (inner_vertices, inner_cap_vertices) = prism_vertices(thickness, -1.0);
 
     if smooth {
         let mut indices = Vec::new();
@@ -2703,7 +2549,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
 
         // end caps
         if trunc_start != 0 || trunc_end != segments {
-            let start_verts = end_cap(trunc_start, &vertices, inner_offset);
+            let start_verts = end_cap(trunc_start, &vertices, inner_offset, 1.0);
             let start_offset = vertices.len();
             vertices.extend(start_verts);
 
@@ -2716,7 +2562,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
                 start_offset + 3,
             ]);
 
-            let end_verts = end_cap(trunc_end, &vertices, inner_offset);
+            let end_verts = end_cap(trunc_end, &vertices, inner_offset, -1.0);
             let end_offset = vertices.len();
             vertices.extend(end_verts);
 
@@ -2784,8 +2630,8 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
             let v = face_index;
             let n = get_triangle_normal(
                 triangle_vertices[v].position, 
-                triangle_vertices[v+1].position,
                 triangle_vertices[v+2].position,
+                triangle_vertices[v+1].position,
             );
 
             // set hard face normals
@@ -2828,7 +2674,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
             let inner_offset = vertices.len();
             vertices.extend(inner_vertices);
 
-            let start_verts = end_cap(trunc_start, &vertices, inner_offset);
+            let start_verts = end_cap(trunc_start, &vertices, inner_offset, 1.0);
             triangle_vertices.extend(vec![
                 start_verts[0].clone(),
                 start_verts[3].clone(),
@@ -2838,7 +2684,7 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
                 start_verts[3].clone(),
             ]);
 
-            let end_verts = end_cap(trunc_end, &vertices, inner_offset);
+            let end_verts = end_cap(trunc_end, &vertices, inner_offset, -1.0);
             triangle_vertices.extend(vec![
                 end_verts[0].clone(),
                 end_verts[1].clone(),
@@ -3130,10 +2976,10 @@ pub fn create_teapot_mesh<D: gfx::Device>(dev: &mut D, tessellation: usize) -> p
                 let q3 = cubic_interpolate(patch[2], patch[6], patch[10], patch[14], v);
                 let q4 = cubic_interpolate(patch[3], patch[7], patch[11], patch[15], v);
 
-                let tangent1 = cubic_tangent(p1, p2, p3, p4, v);
-                let tangent2 = cubic_tangent(q1, q2, q3, q4, u);
-
+                let mut tangent1 = cubic_tangent(p1, p2, p3, p4, v);
+                let mut tangent2 = cubic_tangent(q1, q2, q3, q4, u);
                 let mut normal = cross(tangent1, tangent2);
+
                 if is_mirrored {
                     normal = -normal;
                 }
@@ -3141,8 +2987,11 @@ pub fn create_teapot_mesh<D: gfx::Device>(dev: &mut D, tessellation: usize) -> p
                 // this is a hack, because the bezier patches are not very well constructed
                 if approx(normal, Vec3f::zero(), 0.001) {
                     normal = Vec3f::unit_y();
+                    tangent1 = Vec3f::unit_x();
+                    tangent2 = Vec3f::unit_z();
                     if pos.y < 0.0 {
-                        normal = -Vec3f::unit_y();
+                        normal *= -1.0;
+                        tangent1 *= -1.0;
                     }
                 }
 

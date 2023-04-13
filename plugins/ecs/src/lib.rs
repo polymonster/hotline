@@ -159,8 +159,9 @@ fn update_camera_fly(
 
     let mut cam_move_delta = Vec3f::zero();
 
-    let speed = 240.0 * (1.0 / time.time_scale);
+    let speed = 240.0;
     let boost_speed = 2.0;
+    let control_speed = 0.25;
 
     if enable_keyboard {
         // get keyboard position movement
@@ -184,13 +185,18 @@ fn update_camera_fly(
             cam_move_delta.z += speed;
         }
 
-        // speed boost
+        // modifiers
         if app.is_sys_key_down(os::SysKey::Shift) {
+            // speed boost
             cam_move_delta *= boost_speed;
+        }
+        else if app.is_sys_key_down(os::SysKey::Ctrl) {
+            // fine control
+            cam_move_delta *= control_speed;
         }
 
         // scale by delta time, consistencies, but we ignore time scaling
-        cam_move_delta *= time.smooth_delta;
+        cam_move_delta *= time.raw_delta;
     }
 
     // get mouse rotation
