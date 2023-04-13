@@ -4,7 +4,9 @@ jobs:
   win32:
     runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
+      with: 
+        submodules: "recursive"
     - name: build-data
       run: |
         cargo build
