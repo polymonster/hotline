@@ -33,8 +33,8 @@ pub fn geometry_primitives(client: &mut Client<gfx_platform::Device, os_platform
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
 #[no_mangle]
 pub fn setup_geometry_primitives(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
 
     let meshes = vec![
         (hotline_rs::primitives::create_billboard_mesh(&mut device.0), MeshType::Billboard),
@@ -93,7 +93,8 @@ pub fn setup_geometry_primitives(
                         commands.spawn((
                             MeshComponent(meshes[i].0.clone()),
                             Position(iter_pos),
-                            Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
+                            // Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
+                            Rotation(Quatf::identity()),
                             Scale(splat3f(10.0)),
                             WorldMatrix(Mat34f::identity())
                         ));
@@ -123,6 +124,45 @@ pub fn setup_geometry_primitives(
             }
             i = i + 1;
         }
+    }
+}
+
+/// Init function for tangent space normal maps to debug tangents 
+#[no_mangle]
+pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_geometry_primitives",
+            "setup_tangent_space_normal_maps"
+        ],
+        /*
+        update: systems![
+            "rotate_meshes"
+        ],
+        */
+        render_graph: "mesh_debug_tangent_space",
+        ..Default::default()
+    }
+}
+
+#[no_mangle]
+pub fn setup_tangent_space_normal_maps(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands
+) {
+    let textures = [
+        TextureComponent(image::load_texture_from_file(&mut device, 
+            &hotline_rs::get_data_path("textures/pbr/antique-grate1/antique-grate1_normal.dds"), 
+            Some(&mut pmfx.shader_heap)
+        ).unwrap())
+    ];
+
+    for tex in textures {
+        commands.spawn(
+            tex
+        );
     }
 }
 

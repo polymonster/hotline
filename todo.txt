@@ -2,6 +2,12 @@
 
 // wip
 // - Execute Indirect
+// -    GPU culling
+// -    Change binding
+// - gpu aabb culling
+
+// - transform normals with world matrix
+// - construct tangent space
 
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
@@ -13,14 +19,11 @@
 // examples
 // - improve ecs examples structure
 // - per demo settings
-// - gpu aabb culling
 // - update docs with examples
 
 // material system
 // - area light
 // - disney brdf
-// - transform normals with world matrix
-// - construct tangent space
 // - shadow map
 // - omni shadow map
 // - cascaded shadow map
@@ -28,13 +31,11 @@
 // engine
 // - print validation messages on panic / stack unwind?
 // - post process / 2d passes (compute based)
-// - resolves properly data driven
-// - barriers for compute, resource sizes passed to compute
-
+// - resolves fully data driven
+// - barriers for compute
 // - glft
 // - set name on resources
 // - lazy init print function
-// - render target fixed size
 // - texture load image from file into pmfx
 // - store hotline-data commit hash for crates.io
 // - reverse depth
@@ -60,6 +61,8 @@
 // - view menu + saving state
 
 // DONE:
+// x resource sizes passed to compute
+// x render target fixed size
 // x directional light
 // x spot light
 // x update: maths-rs
@@ -77,7 +80,6 @@
 // x create texture with heap
 // x pmfx shader heap
 // x compute passes
-
 // x ecs texture
 // x stats read out
 // x cleaning up srvs in ecs worlds

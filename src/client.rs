@@ -54,8 +54,10 @@ pub struct HotlineInfo {
 /// Time structure to pass around to plugins and systems
 #[derive(Clone)]
 pub struct Time {
-    /// Delta time in seconds since the last frame
+    /// Delta time in seconds since the last frame... scaled time_scale or may be paused
     pub delta: f32,
+    /// A raw delta time not affected by any scaling or pausing
+    pub raw_delta: f32,
     /// Accumulated delta time
     pub accumulated: f32,
     /// Smoothed delta time to reduce spikes
@@ -79,6 +81,7 @@ impl Time {
     fn new() -> Self {
         Self {
             delta: 0.0,
+            raw_delta: 0.0,
             accumulated: 0.0,
             smooth_delta: 0.0,
             frame_start: SystemTime::now(),
@@ -307,6 +310,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         self.time.frame_start = SystemTime::now();
         let elapsed = prev_frame_start.elapsed();
         if let Ok(elapsed) = elapsed {
+            // raw delta each frame
+            self.time.raw_delta = elapsed.as_secs_f32();
+
             // track delta
             if !self.time.delta_paused {
                 self.time.delta = elapsed.as_secs_f32() * self.time.time_scale;
@@ -671,8 +677,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // status bar
         if self.imgui.begin_window("status_bar") {
             // fps / cpu / gpu
-            let fps = maths_rs::round(1.0 / self.time.smooth_delta) as u32;
-            let cpu_ms = self.time.smooth_delta * 1000.0;
+            let fps = maths_rs::round(1.0 / self.time.raw_delta) as u32;
+            let cpu_ms = self.time.raw_delta * 1000.0;
             let gpu_ms = self.pmfx.get_total_stats().gpu_time_ms;
             self.imgui.text(&format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)", fps, cpu_ms, gpu_ms));
             self.imgui.same_line();

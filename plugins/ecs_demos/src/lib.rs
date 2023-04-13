@@ -265,7 +265,7 @@ pub fn draw_meshes(
     Ok(())
 }
 
-/// Renders meshes indirectly with a draw call (non-indexed)
+/// Renders meshes indirectly
 #[no_mangle]
 pub fn draw_meshes_indirect(
     pmfx: &Res<PmfxRes>,
@@ -293,8 +293,6 @@ pub fn draw_meshes_indirect(
             None, 
             0
         );
-
-        //view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
@@ -433,6 +431,48 @@ pub fn render_meshes_push_constants_texture(
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&texture.0));
 
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+/// Renders all scene meshes with a constant normal map texture, used to debug tangent space on meshes
+#[no_mangle]
+pub fn render_meshes_debug_tangent_space(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    queries: (
+        Query<&TextureComponent>,
+        Query<(&WorldMatrix, &MeshComponent)>
+    )) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    let (texture_query, mesh_draw_query) = queries;
+
+    // bind first texture
+    for texture in &texture_query {
+        let usrv = texture.get_srv_index().unwrap() as u32;
+        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
+        break;
+    }
+
+    for (world_matrix, mesh) in &mesh_draw_query {
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -616,6 +656,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "point_lights",
         "spot_lights",
         "directional_lights",
+        "tangent_space_normal_maps",
 
         // draw tests
         "draw",
@@ -655,6 +696,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_point_lights" => system_func![setup_point_lights],
         "setup_spot_lights" => system_func![setup_spot_lights],
         "setup_directional_lights" => system_func![setup_directional_lights],
+        "setup_tangent_space_normal_maps" => system_func![setup_tangent_space_normal_maps],
 
         // draw tests
         "setup_draw" => system_func![setup_draw],
@@ -757,6 +799,14 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
             render_meshes_push_constants_texture, 
             pass_name, 
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
+        ],
+        "render_meshes_debug_tangent_space" => render_func![
+            render_meshes_debug_tangent_space,
+            pass_name, 
+            (
+                Query<&TextureComponent>,
+                Query<(&WorldMatrix, &MeshComponent)>
+            )
         ],
         "render_meshes_cubemap_test" => render_func![
             render_meshes_cubemap_test,
