@@ -1598,6 +1598,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.get_render_pipeline_permutation_for_format(pipeline_name, 0, format_hash)
     }
 
+    /// Returns a pmfx pipline for a random / unknown render target format... prefer to use `get_render_pipeline_for_format` 
+    /// if you know the format the target you are rendering in to.
+    pub fn get_render_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Result<&'stack D::RenderPipeline, super::Error> {
+        for format in self.render_pipelines.values() {
+            if format.contains_key(pipeline_name) {
+                return Ok(&format[pipeline_name][&0].1);
+            }
+        }
+        Err(super::Error {
+            msg: format!("hotline_rs::pmfx:: could not find render pipeline for any format: {}", pipeline_name),
+        })
+    }
+
     /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
     pub fn get_render_pipeline_permutation_for_format<'stack>(&'stack self, pipeline_name: &str, permutation: u32, format_hash: u64) -> Result<&'stack D::RenderPipeline, super::Error> {
         if let Some(formats) = &self.render_pipelines.get(&format_hash) {

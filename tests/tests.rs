@@ -396,16 +396,16 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     let colour_pipeline = ctx.pmfx.get_render_pipeline_for_format("blend_additive", fmt)?;
 
     // textures pipeline has 2 sets of push constants, so the resources bind onto 2
-    let slots = texture_pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    let slots = texture_pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_some());
     if let Some(slots) = slots {
         assert_eq!(slots.slot, 2);
     }
 
-    let slots = colour_pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    let slots = colour_pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_none());
 
-    let slots = colour_pipeline.get_heap_slot(0, gfx::DescriptorType::PushConstants);
+    let slots = colour_pipeline.get_descriptor_slot(0, gfx::DescriptorType::PushConstants);
     assert!(slots.is_some());
 
     Ok(())

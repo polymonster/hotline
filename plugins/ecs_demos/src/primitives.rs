@@ -197,7 +197,7 @@ pub fn render_meshes_debug_tangent_space(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }

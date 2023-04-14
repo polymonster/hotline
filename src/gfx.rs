@@ -871,16 +871,68 @@ pub trait Pipeline {
     /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
-    fn get_heap_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
+    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
 }
 
+/// A command signature is used to `execute_indirect` commands
 pub trait CommandSignature<D: Device>: Send + Sync {}
 
+/// Different types of arguments which can be changed through execute indirect calls
 #[derive(Clone, Copy)]
-pub enum IndirectCommandType {
+pub enum IndirectArgumentType {
+    /// Used to issue indirect `draw` calls
     Draw,
+    /// Used to issue indirect `draw_indexed` calls
     DrawIndexed,
-    Dispatch
+    /// Used to issue indirect compute `dispatch` calls
+    Dispatch,
+    /// Used to change a vertex buffer binding
+    VertexBuffer,
+    /// Used to change an index buffer binding
+    IndexBuffer,
+    /// Used to change push constants
+    PushConstants,
+    /// Used to change constant buffer binding
+    ConstantBuffer,
+    /// Used to change a shader resource view binding
+    ShaderResource,
+    /// Userd to change an unordered access view binding
+    UnorderedAccess
+}
+
+/// Arguments to change push constants during an `execute_indirect` call when `Constant` is the `IndirectArgumentType`
+#[derive(Clone, Copy)]
+pub struct IndirectPushConstantsArguments {
+    /// The slot within the descriptor layout to modify
+    pub slot: u32,
+    /// Offset in 32bit values
+    pub offset: u32,
+    /// Number of 32bit values
+    pub num_values: u32,
+}
+
+/// Arguments to change a buffer during an `execute_indirect` call when `ConstantBuffer`, `ShaderResource` or `UnorderedAccess`
+/// are the `IndirectArgumentType`
+#[derive(Clone, Copy)]
+pub struct IndirectBufferArguments {
+    /// The slot within the descriptor layout or the vertex buffer / index buffer slot
+    pub slot: u32
+}
+
+/// This can be used for `Draw`, `DrawIndexed`, or `Dispatch` `IndirectArgumentType`
+#[derive(Clone, Copy)]
+pub struct IndirectNoArguments;
+
+/// Union of `IndirectArguments` where data can be selected by the `IndirectArgumentType`
+pub union IndirectTypeArguments {
+    pub push_constants: IndirectPushConstantsArguments,
+    pub buffer: IndirectBufferArguments
+}
+
+/// Pair of `IndirectArgumentType` and `IndirectTypeArguments` where the type selects the union member of data
+pub struct IndirectArgument {
+    pub argument_type: IndirectArgumentType,
+    pub arguments: Option<IndirectTypeArguments>
 }
 
 /// Structure of arguments which can be used to execute `draw_instanced` calls indirectly 
@@ -911,6 +963,24 @@ pub struct DispatchArguments {
     pub thread_group_count_x: u32,
     pub thread_group_count_y: u32,
     pub thread_group_count_z: u32,
+}
+
+/// Structure of arguments which can be used to change a vertex buffer during `execute_indirect`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct VertexBufferView {
+    pub location: u64,
+    pub size_bytes: u32,
+    pub stride_bytes: u32,
+}
+
+/// Structure of arguments which can be used to change an index buffer during `execute_indirect`
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct IndexBufferView {
+    pub location: u64,
+    pub size_bytes: u32,
+    pub format: u32,
 }
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
@@ -991,9 +1061,9 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
     /// Creat a command signature for `execute_indirect` commands associated on the `RenderPipeline`
-    fn create_indirect_render_command(
+    fn create_indirect_render_command<T: Sized>(
         &mut self, 
-        indirect_type: IndirectCommandType, 
+        arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
     /// The Device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
@@ -1026,7 +1096,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Size of a single pipeline statistics query result in bytes
     fn get_pipeline_statistics_size_bytes() -> usize;
     /// Size of the indirect draw command in bytes
-    fn get_indirect_command_size(argument_type: IndirectCommandType) -> usize;
+    fn get_indirect_command_size(argument_type: IndirectArgumentType) -> usize;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -1111,9 +1181,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
     /// Set the resource heap to be used on the render pipeline
     fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
-    /// Push a small amount of data into the command buffer for a render pipeline
+    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
-    /// Push a small amount of data into the command buffer for a compute pipeline
+    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
@@ -1168,6 +1238,10 @@ pub trait Buffer<D: Device>: Send + Sync {
     fn get_cbv_index(&self) -> Option<usize>;
     /// Return the index to unorder access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
+    /// Return a vertex buffer view
+    fn get_vbv(&self) -> Option<VertexBufferView>;
+    /// Return an index buffer view
+    fn get_ibv(&self) -> Option<IndexBufferView>;
 }
 
 /// An opaque Texture type

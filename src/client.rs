@@ -899,6 +899,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run(mut self) -> Result<(), super::Error> {
         while self.app.run() {
+            
             self.new_frame()?;
 
             self.core_ui();

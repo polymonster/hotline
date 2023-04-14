@@ -131,6 +131,23 @@ pub fn batch_bindless_world_matrix_instances(
     }
 }
 
+#[no_mangle]
+pub fn batch_bindless_world_matrices(
+    mut pmfx: ResMut<PmfxRes>,
+    matrices_query: Query<&WorldMatrix>) {
+    let world_buffers = pmfx.get_world_buffers_mut();
+    let mut offset = 0;
+    if let Some(buf) = &mut world_buffers.draw {
+        for world_matrix in &matrices_query {
+            buf.write(
+                offset,
+                &world_matrix.0
+            ).unwrap();
+            offset += std::mem::size_of::<DrawData>();
+        }
+    }
+}
+
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
 pub fn render_meshes_bindless_material(
@@ -154,20 +171,20 @@ pub fn render_meshes_bindless_material(
     view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind the shader resource heap for t0 (if exists)
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     // bind the shader resource heap for t1 (if exists)
-    let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_heap_slot(2, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_descriptor_slot(2, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(
             slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
@@ -184,7 +201,7 @@ pub fn render_meshes_bindless_material(
     // single draw calls
     for (mesh, world_matrix) in &single_draw_query {
         // set the world matrix push constants
-        let slot = pipeline.get_heap_slot(1, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
         }
@@ -299,6 +316,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "draw_push_constants_texture",
         "draw_material",
         "draw_indirect",
+        "draw_indirect_gpu_frustum_culling",
 
         // render tests
         "test_raster_states",
@@ -339,6 +357,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
         "setup_draw_material" => system_func![setup_draw_material],
         "setup_draw_indirect" => system_func![setup_draw_indirect],
+        "setup_draw_indirect_gpu_frustum_culling" => system_func![setup_draw_indirect_gpu_frustum_culling],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
@@ -349,23 +368,17 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_compute_test" => system_func![setup_compute_test],
         
         // updates
-        "rotate_meshes" => system_func![
-            rotate_meshes.in_base_set(SystemSets::Update)
-        ],
-        "animate_textures" => system_func![
-            animate_textures.in_base_set(SystemSets::Update)
-        ],
-        "animate_lights" => system_func![
-            animate_lights.in_base_set(SystemSets::Update)
-        ],
-        "animate_lights2" => system_func![
-            animate_lights2.in_base_set(SystemSets::Update)
-        ],
-        "animate_lights3" => system_func![
-            animate_lights3.in_base_set(SystemSets::Update)
-        ],
+        "rotate_meshes" => system_func![rotate_meshes.in_base_set(SystemSets::Update)],
+        "animate_textures" => system_func![animate_textures.in_base_set(SystemSets::Update)],
+        "animate_lights" => system_func![animate_lights.in_base_set(SystemSets::Update)],
+        "animate_lights2" => system_func![animate_lights2.in_base_set(SystemSets::Update)],
+        "animate_lights3" => system_func![animate_lights3.in_base_set(SystemSets::Update)],
+        "swirling_meshes" => system_func![swirling_meshes.in_base_set(SystemSets::Update)],
 
         // batches
+        "batch_bindless_world_matrices" => system_func![
+            batch_bindless_world_matrices.after(SystemSets::Batch)
+        ],
         "batch_world_matrix_instances" => system_func![
             batch_world_matrix_instances.after(SystemSets::Batch)
         ],
@@ -397,6 +410,11 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
             draw_meshes_indirect, 
             pass_name,
             Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>
+        ],
+        "draw_meshes_indirect_culling" => render_func![
+            draw_meshes_indirect_culling, 
+            pass_name,
+            Query<(&MeshComponent, &IndirectDraw)>
         ],
         "render_meshes" => render_func![
             render_meshes, 

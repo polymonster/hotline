@@ -556,7 +556,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
 
             colors[ImGuiCol_WindowBg as usize] = bg[3];
             colors[ImGuiCol_Header as usize] = hl[3];
-            colors[ImGuiCol_HeaderHovered as usize] = hl[2];
             colors[ImGuiCol_HeaderActive as usize] = hl[1];
             colors[ImGuiCol_Button as usize] = hl[4];
             colors[ImGuiCol_ButtonHovered as usize] = hl[1];
@@ -572,6 +571,15 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             colors[ImGuiCol_TitleBg as usize] = bg[2];
             colors[ImGuiCol_TitleBgActive as usize] = hl[4];
             colors[ImGuiCol_TitleBgCollapsed as usize] = bg[2];
+
+            //
+            colors[ImGuiCol_CheckMark as usize] = hl[1];
+            colors[ImGuiCol_SliderGrab as usize] = hl[1];
+            colors[ImGuiCol_SliderGrabActive as usize] = hl[0];
+            colors[ImGuiCol_HeaderHovered as usize] = hl[1];
+            colors[ImGuiCol_ResizeGrip as usize] = bg[0];
+            colors[ImGuiCol_ResizeGripActive as usize] = hl[0];
+            colors[ImGuiCol_ResizeGripHovered as usize] = hl[1];
        }
     }
 
