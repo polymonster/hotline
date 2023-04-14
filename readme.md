@@ -15,7 +15,7 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 ## Features
 
 - An easy to use cross platform graphics/compute/os api for rapid development.
-- Hot reloadable, live coding environment (shaders, render graphs, code).
+- Hot reloadable, live coding environment (shaders, render configuration, code).
 - [gfx](#gfx) - Concise low level graphics api...
 - [pmfx](#pmfx) - High level data driven graphics api for ease of use and speed.
 - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
