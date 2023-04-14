@@ -666,11 +666,17 @@ fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_D
     }
 }
 
-fn to_d3d12_indirect_argument_type(indirect_type: IndirectCommandType) -> D3D12_INDIRECT_ARGUMENT_TYPE {
+fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) -> D3D12_INDIRECT_ARGUMENT_TYPE {
     match indirect_type {
-        IndirectCommandType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
-        IndirectCommandType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
-        IndirectCommandType::Dispatch => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH
+        IndirectArgumentType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
+        IndirectArgumentType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
+        IndirectArgumentType::Dispatch => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+        IndirectArgumentType::PushConstants => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT,
+        IndirectArgumentType::ConstantBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW,
+        IndirectArgumentType::VertexBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW,
+        IndirectArgumentType::IndexBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_INDEX_BUFFER_VIEW,
+        IndirectArgumentType::UnorderedAccess => D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW,
+        IndirectArgumentType::ShaderResource => D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW,
     }
 } 
 
@@ -2525,36 +2531,66 @@ impl super::Device for Device {
         }
     }
 
-    fn create_indirect_render_command(
+    fn create_indirect_render_command<T: Sized>(
         &mut self, 
-        indirect_type: IndirectCommandType, 
+        arguments: Vec<super::IndirectArgument>,
         pipeline: Option<&RenderPipeline>) -> result::Result<CommandSignature, super::Error> {
         
-        // execute indirect
-        // - create command signature
-        // * create compute and render pipelines (already have this)
-        // - create a UAV to store the results of compute work
-        // - CopyBufferRegion to clear the UAV counter
-        // - dispatch to perform culling
-        // - bind uav heap
-        // - ExecuteIndirect
-
-        let descs = [
-            D3D12_INDIRECT_ARGUMENT_DESC {
-                Type: to_d3d12_indirect_argument_type(indirect_type),
-                ..Default::default()
+        let descs = arguments.iter().map(|arg|
+            match arg.argument_type {
+                super::IndirectArgumentType::PushConstants => {
+                    if let Some(args) = &arg.arguments {
+                        unsafe {
+                            D3D12_INDIRECT_ARGUMENT_DESC {
+                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                    Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
+                                        RootParameterIndex: args.push_constants.slot,
+                                        DestOffsetIn32BitValues: args.push_constants.offset,
+                                        Num32BitValuesToSet: args.push_constants.num_values
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        panic!("hotline_rs::gfx::d3d12:: indirect push constants must specify `push_constants` arguments");
+                    }
+                },
+                super::IndirectArgumentType::VertexBuffer => {
+                    if let Some(args) = &arg.arguments {
+                        unsafe {
+                            D3D12_INDIRECT_ARGUMENT_DESC {
+                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                    VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_4 {
+                                        Slot: args.buffer.slot,
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    else {
+                        panic!("hotline_rs::gfx::d3d12:: indirect vertex buffer must specify `buffer` arguments");
+                    }
+                }
+                _ => {
+                    D3D12_INDIRECT_ARGUMENT_DESC {
+                        Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                        ..Default::default()
+                    }
+                }
             }
-        ];
-
-        let sz = Self::get_indirect_command_size(indirect_type) as u32;
+        ).collect::<Vec<D3D12_INDIRECT_ARGUMENT_DESC>>();
 
         let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
-            pArgumentDescs: &descs as *const D3D12_INDIRECT_ARGUMENT_DESC,
-            NumArgumentDescs: 1,
-            ByteStride: sz,
+            pArgumentDescs: descs.as_ptr() as *const D3D12_INDIRECT_ARGUMENT_DESC,
+            NumArgumentDescs: descs.len() as u32,
+            ByteStride: std::mem::size_of::<T>() as u32,
             NodeMask: 0
         };
 
+        // If the number of args is just 1 and is draw, draw_indexed it is invalid to pass a pipeline
         let mut sig : Option<ID3D12CommandSignature> = None;
         if let Some(pipeline) = pipeline {
             unsafe {
@@ -2727,11 +2763,12 @@ impl super::Device for Device {
         std::mem::size_of::<D3D12_QUERY_DATA_PIPELINE_STATISTICS>()
     }
 
-    fn get_indirect_command_size(argument_type: IndirectCommandType) -> usize {
+    fn get_indirect_command_size(argument_type: IndirectArgumentType) -> usize {
         match argument_type {
-            IndirectCommandType::Draw => std::mem::size_of::<D3D12_DRAW_ARGUMENTS>(),
-            IndirectCommandType::DrawIndexed => std::mem::size_of::<D3D12_DRAW_INDEXED_ARGUMENTS>(),
-            IndirectCommandType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
+            IndirectArgumentType::Draw => std::mem::size_of::<D3D12_DRAW_ARGUMENTS>(),
+            IndirectArgumentType::DrawIndexed => std::mem::size_of::<D3D12_DRAW_INDEXED_ARGUMENTS>(),
+            IndirectArgumentType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
+            _ => panic!("hotline_rs::d3d12:: not implemented")
         }
     }
 }
@@ -3383,6 +3420,36 @@ impl super::Buffer<Device> for Buffer {
         self.uav_index
     }
 
+    fn get_vbv(&self) -> Option<VertexBufferView> {
+        if let Some(vbv) = self.vbv {
+            Some(
+                VertexBufferView { 
+                    location: vbv.BufferLocation, 
+                    size_bytes: vbv.SizeInBytes, 
+                    stride_bytes: vbv.StrideInBytes
+                }
+            )
+        }
+        else {
+            None
+        }
+    }
+
+    fn get_ibv(&self) -> Option<IndexBufferView> {
+        if let Some(ibv) = self.ibv {
+            Some(
+                IndexBufferView { 
+                    location: ibv.BufferLocation, 
+                    size_bytes: ibv.SizeInBytes, 
+                    format: ibv.Format.0
+                }
+            )
+        }
+        else {
+            None
+        }
+    }
+
     fn map(&mut self, info: &MapInfo) -> *mut u8 {
         if !self.persistent_mapped_data.is_null() {
             self.persistent_mapped_data as *mut u8
@@ -3442,7 +3509,7 @@ impl super::Texture<Device> for Texture {
 }
 
 impl super::Pipeline for RenderPipeline {
-    fn get_heap_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
+    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
         let mut hash = DefaultHasher::new();
         register.hash(&mut hash);
         descriptor_type.hash(&mut hash);

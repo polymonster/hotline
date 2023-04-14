@@ -201,7 +201,13 @@ pub fn setup_draw_indirect(
         num_elements: 1
     }, hotline_rs::data!(gfx::as_u8_slice(&args))).unwrap();
 
-    let command_signature = device.create_indirect_render_command(gfx::IndirectCommandType::Draw, None).unwrap();
+    let command_signature = device.create_indirect_render_command::<gfx::DrawArguments>(
+        vec![gfx::IndirectArgument{
+            argument_type: gfx::IndirectArgumentType::Draw,
+            arguments: None
+        }], 
+        None
+    ).unwrap();
 
     commands.spawn((
         Position(Vec3f::zero()),
@@ -233,7 +239,13 @@ pub fn setup_draw_indirect(
         num_elements: 1
     }, hotline_rs::data!(gfx::as_u8_slice(&args))).unwrap();
 
-    let command_signature = device.create_indirect_render_command(gfx::IndirectCommandType::DrawIndexed, None).unwrap();
+    let command_signature = device.create_indirect_render_command::<gfx::DrawIndexedArguments>(
+        vec![gfx::IndirectArgument{
+            argument_type: gfx::IndirectArgumentType::DrawIndexed,
+            arguments: None
+        }], 
+        None
+    ).unwrap();
 
     commands.spawn((
         Position(Vec3f::zero()),
@@ -373,7 +385,7 @@ pub fn render_meshes_vertex_buffer_instanced(
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
         
         // bind the shader resource heap for t0 (if exists)
-        let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+        let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
         if let Some(slot) = slot {
             view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
         }
@@ -654,7 +666,7 @@ pub fn render_meshes_push_constants_texture(
     view.cmd_buf.set_render_pipeline(&pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_heap_slot(0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
         view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
     }
@@ -844,4 +856,256 @@ pub fn setup_draw_material(
     for material in materials {
         commands.spawn(material);
     }
+}
+
+///
+/// draw_indirect_gpu_frustum_culling
+/// 
+
+// 22503776 ia verts
+// 7501392 ia primitives
+// 13924796 vs invocations
+
+// struct of world matrix, local aabb?
+// compute frustum cull + build uav
+// aabb from meshes
+// copy buffer into 1 single large mesh buffer
+
+// - CopyBufferRegion to clear the UAV counter
+// - buffer counter passed to execute indirect
+
+struct DrawIndirect2 {
+    vertex_buffer: gfx::VertexBufferView,
+    index_buffer: gfx::IndexBufferView,
+    draw_id: u32,
+    args: gfx::DrawIndexedArguments,
+}
+
+#[derive(Component)]
+pub struct IndirectDraw {
+    signature: gfx_platform::CommandSignature,
+    max_count: u32,
+    arg_buffer: gfx_platform::Buffer,
+}
+
+#[no_mangle]
+pub fn draw_indirect_gpu_frustum_culling(
+    client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_draw_indirect_gpu_frustum_culling"
+        ],
+        update: systems![
+            "swirling_meshes",
+            "batch_bindless_world_matrices"
+        ],
+        render_graph: "mesh_draw_indirect_culling"
+    }
+}
+
+#[no_mangle]
+pub fn setup_draw_indirect_gpu_frustum_culling(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut commands: Commands) {
+
+    let meshes = vec![
+        hotline_rs::primitives::create_octahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_icosahedron_mesh(&mut device.0),
+        hotline_rs::primitives::create_icosasphere_mesh(&mut device.0, 1),
+        hotline_rs::primitives::create_cube_subdivision_mesh(&mut device.0, 1),
+        hotline_rs::primitives::create_sphere_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_sphere_mesh_truncated(&mut device.0, 16, 8, true),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 3, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 5, false, true, 1.0, 1.0),
+        hotline_rs::primitives::create_cylinder_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 4, false, true),
+        hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 5, false, true),
+        hotline_rs::primitives::create_cone_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_capsule_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_tourus_mesh(&mut device.0, 16),
+        hotline_rs::primitives::create_chamfer_cube_mesh(&mut device.0, 0.4, 8),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 3, false, true, 0.25, 0.7),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
+        hotline_rs::primitives::create_prism_mesh(&mut device.0, 5, false, true, 0.25, 0.5),
+        hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.66, 1.0),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 1.0, 0.66, 1.0),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 0.33, 0.66, 0.33),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 3, 0, 3, false, true, 0.33, 0.66, 1.0),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 4, 0, 4, false, true, 0.33, 0.9, 1.0),
+        hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0),
+    ];
+    let mesh_dist = rand::distributions::Uniform::from(0..meshes.len());
+
+    let irc = 256;
+    let frc = 1.0 / irc as f32;
+    let mut rng = rand::thread_rng();
+    let entity_count = irc * irc;
+
+    let pipeline = pmfx.get_render_pipeline("mesh_test_indirect").unwrap();
+    
+    let command_signature2 = device.create_indirect_render_command::<DrawIndirect2>(
+        vec![
+            gfx::IndirectArgument{
+                argument_type: gfx::IndirectArgumentType::VertexBuffer,
+                arguments: Some(gfx::IndirectTypeArguments {
+                    buffer: gfx::IndirectBufferArguments {
+                        slot: 0
+                    }
+                })
+            },
+            gfx::IndirectArgument{
+                argument_type: gfx::IndirectArgumentType::IndexBuffer,
+                arguments: None
+            },
+            gfx::IndirectArgument{
+                argument_type: gfx::IndirectArgumentType::PushConstants,
+                arguments: Some(gfx::IndirectTypeArguments {
+                    push_constants: gfx::IndirectPushConstantsArguments {
+                        slot: pipeline.get_descriptor_slot(1, gfx::DescriptorType::PushConstants).unwrap().slot,
+                        offset: 0,
+                        num_values: 1
+                    }
+                })
+            },
+            gfx::IndirectArgument{
+                argument_type: gfx::IndirectArgumentType::DrawIndexed,
+                arguments: None
+            }
+        ], 
+        Some(pipeline)
+    ).unwrap();
+
+    let mut args2 = Vec::new();
+
+    let mut i = 0;
+    for y in 0..irc {
+        for x in 0..irc {
+            let offset = rng.gen::<f32>() * 500.0;
+            let iter_pos = vec3f(cos(x as f32 / frc), sin(y as f32 / frc), sin(x as f32 / frc)) * (1000.0 - offset);
+            let imesh = mesh_dist.sample(&mut rng);
+            let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::two_pi();
+            commands.spawn((
+                Position(iter_pos),
+                Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
+                Scale(splat3f(10.0)),
+                WorldMatrix(Mat34f::identity())
+            ));
+
+            args2.push(DrawIndirect2 {
+                draw_id: i,
+                vertex_buffer: meshes[imesh].vb.get_vbv().unwrap(),
+                index_buffer: meshes[imesh].ib.get_ibv().unwrap(),
+                args: gfx::DrawIndexedArguments {
+                    index_count_per_instance: meshes[imesh].num_indices,
+                    instance_count: 1,
+                    start_index_location: 0,
+                    base_vertex_location: 0,
+                    start_instance_location: 0
+                }
+            });
+            i += 1;
+        }
+    }
+
+    let draw2 = device.create_buffer(&gfx::BufferInfo{
+        usage: gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<DrawIndirect2>(),
+        initial_state: gfx::ResourceState::IndirectArgument,
+        num_elements: args2.len()
+    }, hotline_rs::data!(&args2)).unwrap();
+
+    pmfx.resize_world_buffers(&mut device, WorldBufferResizeInfo {
+        draw_count: entity_count as usize,
+        ..Default::default()
+    });
+
+    commands.spawn((
+        IndirectDraw {
+            signature: command_signature2,
+            arg_buffer: draw2,
+            max_count: entity_count,
+        },
+        MeshComponent(meshes[0].clone())
+    ));
+
+    // keep hold of meshes
+    for mesh in meshes {
+        commands.spawn(
+            MeshComponent(mesh.clone())
+        );
+    }
+}
+
+#[no_mangle]
+pub fn swirling_meshes(
+    time: Res<TimeRes>, 
+    mut mesh_query: Query<(&mut Rotation, &mut Position)>) {
+
+    let mut i = 0.0;
+    for (mut rotation, mut position) in &mut mesh_query {
+        rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
+        
+        let pr = rotate_2d(position.0.xz(), time.accumulated * 0.0001);
+        position.0.set_xz(pr);
+        
+        position.0.y += sin(time.accumulated + i) * 2.0;
+
+        i += 1.0;
+    }
+}
+
+#[no_mangle]
+pub fn draw_meshes_indirect_culling(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    indirect_draw_query: Query<(&MeshComponent, &IndirectDraw)>) 
+    -> Result<(), hotline_rs::Error> {
+        
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+
+    // bind the shader resource heap for t0 (if exists)
+    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    // bind the shader resource heap for t1 (if exists)
+    let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+    }
+
+    // bind the world buffer info
+    let world_buffer_info = pmfx.get_world_buffer_info();
+    let slot = pipeline.get_descriptor_slot(2, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = slot {
+        view.cmd_buf.push_render_constants(
+            slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
+    }
+
+    for (mesh, indirect_draw) in &indirect_draw_query {
+        view.cmd_buf.execute_indirect(
+            &indirect_draw.signature,
+            indirect_draw.max_count,
+            &indirect_draw.arg_buffer,
+            0,
+            None,
+            0
+        );
+    }
+
+    Ok(())
 }

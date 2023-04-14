@@ -2,8 +2,6 @@
 
 // wip
 // - Execute Indirect
-// -    GPU culling
-// -    Change binding
 // - gpu aabb culling
 
 // pmfx-shader
@@ -14,11 +12,11 @@
 // - cbuffer members incorrectly being brought in when referenced by scope (world_matrix, entity_world_matrix)
 
 // examples
-// - improve ecs examples structure
 // - per demo settings
 // - update docs with examples
 
 // material system
+// - apply maps / material properties + lights
 // - area light
 // - disney brdf
 // - shadow map
@@ -53,11 +51,12 @@
 // ui / debug
 // - render grid not tracked
 // - imgui not tracked within draw call stats
-// - imgui colours are not complete
 // - thread stats
 // - view menu + saving state
 
 // DONE:
+// x imgui colours are not complete
+// x improve ecs examples structure
 // x transform normals with world matrix
 // x construct tangent space
 // x resource sizes passed to compute
