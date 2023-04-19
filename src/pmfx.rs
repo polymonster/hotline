@@ -17,7 +17,7 @@ use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min, num::Base, Mat34f, Vec3f, Vec4f, Vec2u};
+use maths_rs::{max, min, num::Base, Mat34f, Vec3f, Vec4f, Mat4f};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -131,10 +131,8 @@ pub struct Pmfx<D: gfx::Device> {
     pass_stats: HashMap<String, PassStats<D>>,
     /// Map of camera constants that can be retrieved by name for use as push constants
     cameras: HashMap<String, CameraConstants>,
-    /// Container which holds onto buffer resources for view passes
-    world_buffers: WorldBuffers<D>,
-    /// Indices and sizes of the `world_buffers` 
-    world_buffer_info: WorldBufferInfo,
+    /// Comtainer to hold world data for use on the GPU
+    world_buffers: DynamicWorldBuffers<D>,
     /// Auto-generated barriers to insert between view passes to ensure correct resource states
     barriers: HashMap<String, D::CmdBuf>,
     /// Vector of view names to execute in designated order
@@ -350,40 +348,167 @@ struct GraphPassInfo {
     compute_target: Option<String>
 }
 
-/// Structure of buffers used during world view render passes
-pub struct WorldBuffers<D: gfx::Device> {
-    /// Structured buffer containing bindless draw call information `DrawData`
-    pub draw: Option<D::Buffer>,
-    // Structured buffer containing `MaterialData`
-    pub material: Option<D::Buffer>,
-    // Structured buffer containing `PointLightData`
-    pub point_light: Option<D::Buffer>,
-    // Structured buffer containing `SpotLightData`
-    pub spot_light: Option<D::Buffer>,
-    // Structured buffer containing `DirectionalLightData`
-    pub directional_light: Option<D::Buffer>
+/// A GPU buffer type which can resize and stretch like a vector
+pub struct DynamicBuffer<D: gfx::Device, T: Sized> {
+    len: usize,
+    capacity: usize,
+    buffers: Option<Vec<D::Buffer>>,
+    usage: gfx::BufferUsage,
+    bb: usize,
+    num_buffers: usize,
+    resource_type: std::marker::PhantomData<T>
 }
 
-impl<D> Default for WorldBuffers<D> where D: gfx::Device {
+impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
+    /// creates a new empty buffer, you need to `reserve` space afterwards
+    pub fn new(usage: gfx::BufferUsage, num_buffers: usize) -> Self {
+        DynamicBuffer {
+            len: 0,
+            capacity: 0,
+            buffers: None,
+            usage: usage,
+            bb: 0,
+            num_buffers,
+            resource_type: std::marker::PhantomData
+        }
+    }
+
+    /// Swap buffers once a frame for safe CPU writes an GPU in flight reads
+    pub fn swap(&mut self) {
+        self.bb = (self.bb + 1) % self.num_buffers
+    }
+
+    /// Access the internal buffer to write to this frame, for safe CPU writes an GPU in flight reads
+    pub fn mut_buf(&mut self) -> &mut D::Buffer {
+        &mut self.buffers.as_mut().unwrap()[self.bb]
+    }
+
+    /// Access immutable buffer to us in the current frame
+    pub fn buf(&mut self) -> &D::Buffer {
+        &self.buffers.as_ref().unwrap()[self.bb]
+    }
+
+    /// creates a new buffer if more cpaacity is required
+    pub fn reserve(&mut self, device: &mut D, heap: &mut D::Heap, capacity: usize) {
+        if capacity > self.capacity {
+            let mut inner_buffers = Vec::new();
+            for _ in 0..self.num_buffers {
+                let buf = device.create_buffer_with_heap(&gfx::BufferInfo{
+                    usage: self.usage,
+                    cpu_access: gfx::CpuAccessFlags::WRITE | gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
+                    format: gfx::Format::Unknown,
+                    stride: std::mem::size_of::<T>(),
+                    num_elements: capacity,
+                    initial_state: if self.usage.contains(gfx::BufferUsage::CONSTANT_BUFFER) {
+                        gfx::ResourceState::VertexConstantBuffer
+                    }
+                    else {
+                        gfx::ResourceState::ShaderResource
+                    }
+                }, crate::data![], heap).unwrap();
+                inner_buffers.push(buf);
+            }
+
+            self.capacity = capacity;
+            self.buffers = Some(inner_buffers);
+        }
+    }
+
+    /// Resets length to zero
+    pub fn clear(&mut self) {
+        self.len = 0
+    }
+
+    /// Returns the length of the data written to the buffer in elements
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// Returns the capacity of the buffer
+    pub fn capacity(&self) -> usize {
+        self.capacity
+    }
+
+    /// Write arbitrary data data to the buffer and update len, it should be either a u8 slice, a single &T or a slice of T
+    pub fn write<T2: Sized>(&mut self, offset: usize, data: &[T2]) {
+        self.mut_buf().write(
+            offset,
+            data
+        ).unwrap();
+        let write_offset = offset + data.len() * std::mem::size_of::<T2>();
+        self.len = max(write_offset / std::mem::size_of::<T>(), self.len);
+    }
+
+    /// Push an item of type `T` to the dynamic buffer and update the len
+    pub fn push(&mut self, item: &T) {
+        let write_offset = self.len * std::mem::size_of::<T>();
+        self.mut_buf().write(
+            write_offset,
+            gfx::as_u8_slice(item)
+        ).unwrap();
+        self.len += 1;
+    }
+
+    /// get's the appropriate resource index
+    fn get_index(&self) -> usize {
+        if let Some(buf) = &self.buffers {
+            if self.usage.contains(gfx::BufferUsage::CONSTANT_BUFFER) {
+                buf[self.bb].get_cbv_index().unwrap()
+            }
+            else {
+                buf[self.bb].get_srv_index().unwrap()
+            }
+        }
+        else {
+            0
+        }
+    }
+
+    pub fn get_lookup(&self) -> GpuBufferLookup {
+        GpuBufferLookup {
+            index: self.get_index() as u32,
+            count: self.len as u32
+        }
+    }
+}
+
+pub struct DynamicWorldBuffers<D: gfx::Device> {
+    /// Structured buffer containing bindless draw call information `DrawData`
+    pub draw: DynamicBuffer<D, DrawData>,
+    // Structured buffer containing `MaterialData`
+    pub material: DynamicBuffer<D, MaterialData>,
+    // Structured buffer containing `PointLightData`
+    pub point_light: DynamicBuffer<D, PointLightData>,
+    // Structured buffer containing `SpotLightData`
+    pub spot_light: DynamicBuffer<D, SpotLightData>,
+    // Structured buffer containing `DirectionalLightData`
+    pub directional_light: DynamicBuffer<D, DirectionalLightData>,
+    /// Constant buffer containing camera info
+    pub camera: DynamicBuffer<D, CameraData>
+}
+
+impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
     fn default() -> Self {
         Self {
-            draw: None,
-            material: None,
-            point_light: None,
-            spot_light: None,
-            directional_light: None,
+            draw: DynamicBuffer::<D, DrawData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            material: DynamicBuffer::<D, MaterialData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            point_light: DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            spot_light: DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            directional_light: DynamicBuffer::<D, DirectionalLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            camera: DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3)
         }
     }
 }
 
 /// Information to cerate `WorldBuffers` for rendering
 #[derive(Default)]
-pub struct WorldBufferResizeInfo {
-    pub draw_count: usize,
-    pub material_count: usize,
-    pub point_light_count: usize,
-    pub spot_light_count: usize,
-    pub directinal_light_count: usize,
+pub struct WorldBufferReserveInfo {
+    pub draw_capacity: usize,
+    pub material_capacity: usize,
+    pub point_light_capacity: usize,
+    pub spot_light_capacity: usize,
+    pub directional_light_capacity: usize,
+    pub camera_capacity: usize
 }
 
 /// GPU friendly structure containing camera view information
@@ -440,34 +565,64 @@ pub struct SpotLightData {
     pub colour: Vec4f,
 }
 
+/// GPU friendly structure for cameras
+#[repr(C)]
+#[derive(Clone)]
+pub struct CameraData {
+    pub view_projection_matrix: Mat4f,
+    pub view_position: Vec4f,
+    pub planes: [Vec4f; 6],
+}
+
+#[repr(C)]
+#[derive(Clone)]
+pub struct GpuBufferLookup {
+    /// index of the srv or cbv
+    pub index: u32,
+    /// number of elements in the buffer
+    pub count: u32
+}
+
+impl GpuBufferLookup {
+    pub fn new() -> Self {
+        Self {
+            index: 0,
+            count: 0
+        }
+    }
+}
+
 #[repr(C)]
 #[derive(Clone)]
 pub struct WorldBufferInfo {
     /// srv index of the draw buffer (contains entity world matrices and draw call data) stored in x
     /// the count of the buffer is stored in y
-    pub draw: Vec2u,
+    pub draw: GpuBufferLookup,
     /// srv index of the material buffer (contains ids of textures to look up and material parameters) stored in x
     /// the count of the buffer is stored in y
-    pub material: Vec2u,
+    pub material: GpuBufferLookup,
     /// srv index of the point light buffer stored in x
     /// the count of the buffer is stored in y
-    pub point_light: Vec2u,
+    pub point_light: GpuBufferLookup,
     /// srv index of the spot light buffer stored in x
     /// the count of the buffer is stored in y
-    pub spot_light: Vec2u,
+    pub spot_light: GpuBufferLookup,
     /// srv index of the directional light buffer stored in x
     /// the count of the buffer is stored in y
-    pub directional_light: Vec2u,
+    pub directional_light: GpuBufferLookup,
+    /// cbv index of the camera
+    pub camera: GpuBufferLookup
 }
 
 impl Default for WorldBufferInfo {
     fn default() -> Self {
         Self {
-            draw: Vec2u::zero(),
-            material: Vec2u::zero(),
-            point_light: Vec2u::zero(),
-            spot_light: Vec2u::zero(),
-            directional_light: Vec2u::zero(),
+            draw: GpuBufferLookup::new(),
+            material: GpuBufferLookup::new(),
+            point_light: GpuBufferLookup::new(),
+            spot_light: GpuBufferLookup::new(),
+            directional_light: GpuBufferLookup::new(),
+            camera:  GpuBufferLookup::new(),
         }
     }
 }
@@ -686,95 +841,43 @@ impl<D> Pmfx<D> where D: gfx::Device {
             view_texture_refs: HashMap::new(),
             window_sizes: HashMap::new(),
             active_render_graph: String::new(),
-            view_errors: Arc::new(Mutex::new(HashMap::new())),
             reloader: Reloader::create(Box::new(PmfxReloadResponder::new())),
+            world_buffers: DynamicWorldBuffers::default(),
+            shader_heap,
             total_stats: TotalStats::new(),
-            world_buffers: WorldBuffers::default(),
-            world_buffer_info: WorldBufferInfo::default(),
-            shader_heap
+            view_errors: Arc::new(Mutex::new(HashMap::new())),
         }
     }
-
-    /// Create a signle world buffer
-    fn create_world_buffer<T: Sized>(
-        new_count: usize, 
-        buf_info: &mut Vec2u, 
-        buf_resource: &mut Option<D::Buffer>, 
-        device: &mut D,
-        heap: &mut D::Heap,
-    ) {
-        if new_count > buf_info.y as usize {
-            let buf = device.create_buffer_with_heap(&gfx::BufferInfo{
-                usage: gfx::BufferUsage::SHADER_RESOURCE,
-                cpu_access: gfx::CpuAccessFlags::WRITE| gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
-                format: gfx::Format::Unknown,
-                stride: std::mem::size_of::<T>(),
-                num_elements: new_count,
-                initial_state: gfx::ResourceState::ShaderResource
-            }, crate::data![], heap).unwrap();
-
-            buf_info.y = new_count as u32;
-            buf_info.x = buf.get_srv_index().unwrap() as u32;
-            *buf_resource = Some(buf);
-        }
-    }
-
 
     /// Resizes the set of world buffers used for rendering, this assumes that the buffers will be populated each frame
     /// creates new buffers if the requested count exceeds the capacity.
-    pub fn resize_world_buffers(&mut self, device: &mut D, info: WorldBufferResizeInfo) {
-        Self::create_world_buffer::<DrawData>(
-            info.draw_count, 
-            &mut self.world_buffer_info.draw, 
-            &mut self.world_buffers.draw,
-            device, 
-            &mut self.shader_heap
-        );
-        Self::create_world_buffer::<MaterialData>(
-            info.material_count, 
-            &mut self.world_buffer_info.material, 
-            &mut self.world_buffers.material,
-            device, 
-            &mut self.shader_heap
-        );
-        Self::create_world_buffer::<PointLightData>(
-            info.point_light_count, 
-            &mut self.world_buffer_info.point_light, 
-            &mut self.world_buffers.point_light,
-            device, 
-            &mut self.shader_heap
-        );
-        Self::create_world_buffer::<SpotLightData>(
-            info.spot_light_count, 
-            &mut self.world_buffer_info.spot_light, 
-            &mut self.world_buffers.spot_light,
-            device, 
-            &mut self.shader_heap
-        );
-        Self::create_world_buffer::<DirectionalLightData>(
-            info.directinal_light_count, 
-            &mut self.world_buffer_info.directional_light, 
-            &mut self.world_buffers.directional_light,
-            device, 
-            &mut self.shader_heap
-        );
+    pub fn reserve_world_buffers(&mut self, device: &mut D, info: WorldBufferReserveInfo) {
+        self.world_buffers.draw.reserve(device, &mut self.shader_heap, info.draw_capacity);
+        self.world_buffers.material.reserve(device, &mut self.shader_heap, info.material_capacity);
+        self.world_buffers.point_light.reserve(device, &mut self.shader_heap, info.point_light_capacity);
+        self.world_buffers.spot_light.reserve(device, &mut self.shader_heap, info.spot_light_capacity);
+        self.world_buffers.directional_light.reserve(device, &mut self.shader_heap, info.directional_light_capacity);
+        self.world_buffers.camera.reserve(device, &mut self.shader_heap, info.camera_capacity);
     }
 
     /// Returns a mutable refernce to the the world buffers, these are persistently mapped GPU buffers which can be
     /// updated using the `.write` function
-    pub fn get_world_buffers_mut(&mut self) -> &mut WorldBuffers<D> {
+    pub fn get_world_buffers_mut(&mut self) -> &mut DynamicWorldBuffers<D> {
         &mut self.world_buffers
     }
 
     /// Retunrs a `WorldBufferInfo` that contains the serv index and count of the various world buffers used
     /// during rendering
     pub fn get_world_buffer_info(&self) -> WorldBufferInfo {
-        self.world_buffer_info.clone()
-    }
-
-    /// Retunrs a mutable `WorldBufferInfo` for updating the counts of resources
-    pub fn get_world_buffer_info_mut(&mut self) -> &mut WorldBufferInfo {
-        &mut self.world_buffer_info
+        // construct on the fly
+        WorldBufferInfo {
+            draw: self.world_buffers.draw.get_lookup(),
+            material: self.world_buffers.material.get_lookup(),
+            point_light: self.world_buffers.point_light.get_lookup(),
+            spot_light: self.world_buffers.spot_light.get_lookup(),
+            directional_light: self.world_buffers.directional_light.get_lookup(),
+            camera: self.world_buffers.camera.get_lookup(),
+        }
     }
 
     /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files within the directory
@@ -1699,6 +1802,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
         // reset command buffers
         self.reset(swap_chain);
+
+        // swap the world buffers
+        self.world_buffers.camera.swap();
+        self.world_buffers.draw.swap();
+        self.world_buffers.point_light.swap();
+        self.world_buffers.directional_light.swap();
+        self.world_buffers.spot_light.swap();
 
         Ok(())
     }

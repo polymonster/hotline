@@ -270,8 +270,8 @@ pub fn setup_point_lights(
         ));
     }
 
-    pmfx.resize_world_buffers(&mut device, pmfx::WorldBufferResizeInfo{
-        point_light_count: num_lights,
+    pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
+        point_light_capacity: num_lights,
         ..Default::default()
     });
 
@@ -457,9 +457,8 @@ pub fn setup_spot_lights(
         }
     ));
 
-
-    pmfx.resize_world_buffers(&mut device, pmfx::WorldBufferResizeInfo{
-        spot_light_count: num_lights + 5,
+    pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
+        spot_light_capacity: num_lights + 5,
         ..Default::default()
     });
 
@@ -615,8 +614,8 @@ pub fn setup_directional_lights(
         ));
     }
 
-    pmfx.resize_world_buffers(&mut device, pmfx::WorldBufferResizeInfo{
-        directinal_light_count: num_lights,
+    pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
+        directional_light_capacity: num_lights,
         ..Default::default()
     });
 

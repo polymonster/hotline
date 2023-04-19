@@ -27,58 +27,35 @@ pub fn batch_lights(
     mut pmfx: ResMut<PmfxRes>,
     light_query: Query<(&Position, &Colour, &LightComponent)>) {
     let world_buffers = pmfx.get_world_buffers_mut();
-    let mut point_offset = 0;
-    let mut spot_offset = 0;
-    let mut directional_offset = 0;
+    world_buffers.point_light.clear();
+    world_buffers.spot_light.clear();
+    world_buffers.directional_light.clear();
     for (pos, colour, light) in &light_query {
         match light.light_type {
             LightType::Point => {
-                if let Some(light_buf) = &mut world_buffers.point_light {
-                    light_buf.write(
-                        point_offset, 
-                        gfx::as_u8_slice(&PointLightData{
-                            pos: pos.0,
-                            radius: light.radius,
-                            colour: colour.0
-                        }
-                    )).unwrap();
-                    point_offset += std::mem::size_of::<PointLightData>();
-                }
+                world_buffers.point_light.push(&PointLightData{
+                    pos: pos.0,
+                    radius: light.radius,
+                    colour: colour.0
+                });
             },
             LightType::Spot => {
-                if let Some(light_buf) = &mut world_buffers.spot_light {
-                    light_buf.write(
-                        spot_offset, 
-                        gfx::as_u8_slice(&SpotLightData{
-                            pos: pos.0,
-                            cutoff: light.cutoff,
-                            dir: light.direction,
-                            falloff: light.falloff,
-                            colour: colour.0,
-                        }
-                    )).unwrap();
-                    spot_offset += std::mem::size_of::<SpotLightData>();
-                }
+                world_buffers.spot_light.push(&SpotLightData{
+                    pos: pos.0,
+                    cutoff: light.cutoff,
+                    dir: light.direction,
+                    falloff: light.falloff,
+                    colour: colour.0,
+                });
             },
             LightType::Directional => {
-                if let Some(light_buf) = &mut world_buffers.directional_light {
-                    light_buf.write(
-                        directional_offset, 
-                        gfx::as_u8_slice(&DirectionalLightData{
-                            dir: Vec4f::from((light.direction, 0.0)),
-                            colour: colour.0
-                        }
-                    )).unwrap();
-                    directional_offset += std::mem::size_of::<DirectionalLightData>();
-                }
+                world_buffers.directional_light.push(&DirectionalLightData{
+                    dir: Vec4f::from((light.direction, 0.0)),
+                    colour: colour.0
+                });
             }
         }
     }
-
-    let mut buffer_info = pmfx.get_world_buffer_info_mut();
-    buffer_info.point_light.y = (point_offset / std::mem::size_of::<PointLightData>()) as u32;
-    buffer_info.spot_light.y = (spot_offset / std::mem::size_of::<SpotLightData>()) as u32;
-    buffer_info.directional_light.y = (directional_offset / std::mem::size_of::<DirectionalLightData>()) as u32;
 }
 
 /// Batch updates instance world matrices into the `InstanceBuffer`
@@ -86,7 +63,6 @@ pub fn batch_lights(
 pub fn batch_world_matrix_instances(
     instances_query: Query<(&Parent, &WorldMatrix)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
-
     for (entity, mut instance_batch) in &mut instance_batch_query {
         let mut mats = Vec::new();
         for (parent, world_matrix) in &instances_query {
@@ -102,7 +78,6 @@ pub fn batch_world_matrix_instances(
 pub fn batch_material_instances(
     mut instances_query: Query<(&Parent, &InstanceIds)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
-
     for (entity, mut instance_batch) in &mut instance_batch_query {
         let mut indices = Vec::new();
         for (parent, ids) in &mut instances_query {
@@ -119,15 +94,11 @@ pub fn batch_bindless_world_matrix_instances(
     mut pmfx: ResMut<PmfxRes>,
     instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>) {
     let world_buffers = pmfx.get_world_buffers_mut();
-    let mut offset = 0;
-    if let Some(buf) = &mut world_buffers.draw {
-        for (_, world_matrix) in &instances_query {
-            buf.write(
-                offset,
-                &world_matrix.0
-            ).unwrap();
-            offset += std::mem::size_of::<DrawData>();
-        }
+    world_buffers.draw.clear();
+    for (_, world_matrix) in &instances_query {
+        world_buffers.draw.push(&DrawData {
+            world_matrix: world_matrix.0
+        });
     }
 }
 
@@ -135,16 +106,12 @@ pub fn batch_bindless_world_matrix_instances(
 pub fn batch_bindless_world_matrices(
     mut pmfx: ResMut<PmfxRes>,
     matrices_query: Query<&WorldMatrix>) {
-    let world_buffers = pmfx.get_world_buffers_mut();
-    let mut offset = 0;
-    if let Some(buf) = &mut world_buffers.draw {
-        for world_matrix in &matrices_query {
-            buf.write(
-                offset,
-                &world_matrix.0
-            ).unwrap();
-            offset += std::mem::size_of::<DrawData>();
-        }
+    let world_buffers = pmfx.get_world_buffers_mut();    
+    world_buffers.draw.clear();
+    for world_matrix in &matrices_query {
+        world_buffers.draw.push(&DrawData {
+            world_matrix: world_matrix.0
+        });
     }
 }
 
@@ -414,7 +381,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "draw_meshes_indirect_culling" => render_func![
             draw_meshes_indirect_culling, 
             pass_name,
-            Query<(&MeshComponent, &IndirectDraw)>
+            Query<&DrawIndirectComponent>
         ],
         "render_meshes" => render_func![
             render_meshes, 
@@ -474,6 +441,11 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
             Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
         ],
         "dispatch_compute" => compute_func!(pass_name),
+        "dispatch_compute_frustum_cull" => compute_func_query![
+            dispatch_compute_frustum_cull,
+            pass_name,
+            Query<&DrawIndirectComponent>
+        ],
         
         // basic tests
         "render_missing_camera" => render_func![

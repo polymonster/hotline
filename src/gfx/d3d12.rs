@@ -166,8 +166,7 @@ pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
     topology: D3D_PRIMITIVE_TOPOLOGY,
-    /// you can look up Hash(register, space, binding_type) to get the slot in the layout to bind to and the count
-    heap_slot_lookup: HashMap<u64, super::HeapSlotInfo>
+    descriptor_slot_lookup: DescitorSlotLookup
 }
 
 #[derive(Clone)]
@@ -189,6 +188,7 @@ pub struct Buffer {
     srv_index: Option<usize>,
     cbv_index: Option<usize>,
     uav_index: Option<usize>,
+    counter_offset: Option<usize>,
     free_list: Option<FreeListRef>,
     persistent_mapped_data: *mut c_void
 }
@@ -245,6 +245,13 @@ pub struct CommandSignature {
     command_signature: ID3D12CommandSignature
 }
 
+type DescitorSlotLookup = HashMap<u64, DescriptorSlotInfo>;
+
+struct SignatureLookup {
+    root_signature: ID3D12RootSignature,
+    lookup: DescitorSlotLookup
+}
+
 /// A free list thread safe with mutex
 struct FreeList {
     list: Mutex<Vec<usize>>
@@ -282,6 +289,7 @@ pub struct QueryHeap {
 pub struct ComputePipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
+    descriptor_slot_lookup: DescitorSlotLookup
 }
 
 const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -474,6 +482,14 @@ fn to_d3d12_texture_usage_flags(usage: super::TextureUsage) -> D3D12_RESOURCE_FL
     }
     if usage.contains(super::TextureUsage::VIDEO_DECODE_TARGET) {
         flags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET | D3D12_RESOURCE_FLAG_ALLOW_SIMULTANEOUS_ACCESS;
+    }
+    flags
+}
+
+fn to_d3d12_buffer_usage_flags(usage: super::BufferUsage) -> D3D12_RESOURCE_FLAGS {
+    let mut flags = D3D12_RESOURCE_FLAG_NONE;
+    if usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+        flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
     flags
 }
@@ -928,6 +944,10 @@ fn align_buffer_data_size(size_bytes: usize, usage: super::BufferUsage) -> usize
     if usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
         align_pow2(size_bytes as u64, D3D12_CONSTANT_BUFFER_DATA_PLACEMENT_ALIGNMENT as u64) as usize
     }
+    else if usage.contains(super::BufferUsage::APPEND_COUNTER) {
+        // must align the original buffer to D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT and then add a u32 counter
+        align_pow2(size_bytes as u64, D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT as u64) as usize + std::mem::size_of::<u32>()
+    }   
     else {
         size_bytes
     }
@@ -1019,11 +1039,14 @@ impl Device {
         d3d12_elems
     }
 
-    fn create_root_signature(
+    fn create_root_signature_with_lookup(
         &self,
         layout: &super::DescriptorLayout,
-    ) -> result::Result<ID3D12RootSignature, super::Error> {
+    ) -> result::Result<SignatureLookup, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
+
+        let mut slot_iter = 0;
+        let mut descriptor_slot_lookup = HashMap::new();
 
         // push constants
         if let Some(constants_set) = &layout.push_constants {
@@ -1039,17 +1062,35 @@ impl Device {
                     },
                     ShaderVisibility: to_d3d12_shader_visibility(&constants.visibility),
                 });
+
+                // track the slots push constants occupy
+                let mut hash = DefaultHasher::new();
+                constants.shader_register.hash(&mut hash);
+                DescriptorType::PushConstants.hash(&mut hash);
+                descriptor_slot_lookup.insert(hash.finish(), DescriptorSlotInfo {
+                    slot: slot_iter,
+                    count: Some(constants.num_values)
+                });
+                slot_iter += 1;
             }
         }
 
         // bindings for (SRV, UAV, CBV an Samplers)
-        let mut visibility_map: HashMap<super::ShaderVisibility, Vec<D3D12_DESCRIPTOR_RANGE>> =
-            HashMap::new();
+        #[derive(Default)]
+        struct RangeInfo {
+            ranges: Vec<D3D12_DESCRIPTOR_RANGE>,
+            info: Vec<DescriptorBinding>
+        }
+
+        let mut visibility_map: 
+            HashMap<super::ShaderVisibility, RangeInfo> = HashMap::new();
+
         if let Some(bindings) = &layout.bindings {
             for binding in bindings {
                 let count = if binding.num_descriptors.is_some() {
                     binding.num_descriptors.unwrap()
-                } else {
+                } 
+                else {
                     u32::MAX
                 };
                 let range = D3D12_DESCRIPTOR_RANGE {
@@ -1066,25 +1107,36 @@ impl Device {
                     OffsetInDescriptorsFromTableStart: 0,
                 };
 
-                let map = visibility_map.get_mut(&binding.visibility);
-                if let Some(map) = map {
-                    map.push(range);
-                } else {
-                    visibility_map.insert(binding.visibility, vec![range]);
-                }
+                let entry = visibility_map.entry(binding.visibility).or_default();
+                entry.ranges.push(range);
+                entry.info.push(binding.clone());
             }
 
-            for (visibility, ranges) in visibility_map.iter() {
+            for (visibility, range_info) in visibility_map.iter() {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
                         DescriptorTable: D3D12_ROOT_DESCRIPTOR_TABLE {
-                            NumDescriptorRanges: ranges.len() as u32,
-                            pDescriptorRanges: ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
+                            NumDescriptorRanges: range_info.ranges.len() as u32,
+                            pDescriptorRanges: range_info.ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
                         },
                     },
                     ShaderVisibility: to_d3d12_shader_visibility(visibility),
                 });
+
+                for binding in &range_info.info {
+                    let mut hash = DefaultHasher::new();
+                    binding.shader_register.hash(&mut hash);
+                    binding.binding_type.hash(&mut hash);
+                    let h = hash.finish();
+                    if !descriptor_slot_lookup.contains_key(&h) {
+                        descriptor_slot_lookup.insert(h, DescriptorSlotInfo {
+                            slot: slot_iter,
+                            count: binding.num_descriptors
+                        });
+                    }
+                }
+                slot_iter += 1;
             }
         }
 
@@ -1141,7 +1193,11 @@ impl Device {
             let sig = signature.unwrap();
             let slice : &[u8] = std::slice::from_raw_parts(sig.GetBufferPointer() as *mut u8, sig.GetBufferSize());
             let sig = self.device.CreateRootSignature(0, slice)?;
-            Ok(sig)
+            
+            Ok(SignatureLookup {
+                root_signature: sig,
+                lookup: descriptor_slot_lookup
+            })
         }
     }
 
@@ -1610,7 +1666,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        let root_signature = self.create_root_signature(&info.descriptor_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.descriptor_layout)?;
 
         let semantics = null_terminate_semantics(&info.input_layout);
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
@@ -1634,7 +1690,7 @@ impl super::Device for Device {
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
-            pRootSignature: unsafe { std::mem::transmute_copy(&root_signature) },
+            pRootSignature: unsafe { std::mem::transmute_copy(&sig_lookup.root_signature) },
             VS: if let Some(vs) = &info.vs {
                 D3D12_SHADER_BYTECODE {
                     pShaderBytecode: vs.get_buffer_pointer(),
@@ -1710,6 +1766,7 @@ impl super::Device for Device {
         desc.DSVFormat = pass.ds_format;
 
         // push constants occupy the first slots
+        /*
         let mut slot_iter = 0;
         let mut heap_slot_lookup = HashMap::new();
         if let Some(push_constants) = &info.descriptor_layout.push_constants {
@@ -1717,7 +1774,7 @@ impl super::Device for Device {
                 let mut hash = DefaultHasher::new();
                 pc.shader_register.hash(&mut hash);
                 DescriptorType::PushConstants.hash(&mut hash);
-                heap_slot_lookup.insert(hash.finish(), HeapSlotInfo {
+                heap_slot_lookup.insert(hash.finish(), DescriptorSlotInfo {
                     slot: slot_iter,
                     count: Some(pc.num_values)
                 });
@@ -1733,7 +1790,7 @@ impl super::Device for Device {
                 binding.binding_type.hash(&mut hash);
                 let h = hash.finish();
                 if !heap_slot_lookup.contains_key(&h) {
-                    heap_slot_lookup.insert(h, HeapSlotInfo {
+                    heap_slot_lookup.insert(h, DescriptorSlotInfo {
                         slot: slot_iter,
                         count: binding.num_descriptors
                     });
@@ -1741,12 +1798,13 @@ impl super::Device for Device {
                 }
             }
         }
+        */
 
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
-            root_signature,
+            root_signature: sig_lookup.root_signature,
             topology: to_d3d12_primitive_topology(info.topology, info.patch_index),
-            heap_slot_lookup
+            descriptor_slot_lookup: sig_lookup.lookup
         })
     }
 
@@ -1865,6 +1923,7 @@ impl super::Device for Device {
                         Quality: 0,
                     },
                     Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: to_d3d12_buffer_usage_flags(info.usage),
                     ..Default::default()
                 },
                 // initial state
@@ -1975,7 +2034,7 @@ impl super::Device for Device {
                 self.device.CreateConstantBufferView(
                     Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
                         BufferLocation: buf.GetGPUVirtualAddress(),
-                        SizeInBytes: size_bytes as u32
+                        SizeInBytes: aligned_size as u32
                     }),
                     h,
                 );
@@ -2009,13 +2068,61 @@ impl super::Device for Device {
                 buf.Map(0, None, Some(&mut map_data))?;
             }
 
+            // append counter
+            let counter_offset = if info.usage.contains(super::BufferUsage::APPEND_COUNTER) {
+                Some(aligned_size - std::mem::size_of::<u32>())
+            }
+            else {
+                None
+            };
+
+            // create uav
+            let mut uav_index = None;
+            if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+                let h = heap.allocate();
+                if let Some(offset) = counter_offset {
+                    // append counter buffers are implictly added to the end of the buffer
+                    // different approches could be used with manually tracking and adding counters
+                    // but this approach creates a d3d friendly `AppendStructuredBuffer`
+                    self.device.CreateUnorderedAccessView(
+                        &buf,
+                        &buf,
+                        Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
+                            Format: DXGI_FORMAT_UNKNOWN,
+                            ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
+                            Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_UAV {
+                                    FirstElement: 0,
+                                    NumElements: info.num_elements as u32,
+                                    StructureByteStride: info.stride as u32,
+                                    CounterOffsetInBytes: offset as u64,
+                                    Flags: D3D12_BUFFER_UAV_FLAG_NONE
+                                }
+                            }
+                        }),
+                        h,
+                    );
+                }
+                else {
+                    self.device.CreateUnorderedAccessView(
+                        &buf,
+                        None,
+                        None,
+                        h,
+                    );
+                }
+
+                uav_index = Some(heap.get_handle_index(&h));
+            }
+
             Ok(Buffer {
                 resource: buf,
                 vbv,
                 ibv,
                 srv_index,
                 cbv_index,
-                uav_index: None,
+                counter_offset,
+                uav_index,
                 free_list: Some(heap.free_list.clone()),
                 persistent_mapped_data: map_data
             })
@@ -2047,6 +2154,7 @@ impl super::Device for Device {
                 cbv_index: None,
                 uav_index: None,
                 free_list: None,
+                counter_offset: None,
                 persistent_mapped_data: std::ptr::null_mut()
             })
         }
@@ -2512,21 +2620,22 @@ impl super::Device for Device {
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
         let cs = &info.cs;
-        let root_signature = self.create_root_signature(&info.descriptor_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.descriptor_layout)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
             CS: D3D12_SHADER_BYTECODE {
                 pShaderBytecode: cs.get_buffer_pointer(),
                 BytecodeLength: cs.get_buffer_size(),
             },
-            pRootSignature: unsafe { std::mem::transmute_copy(&root_signature) },
+            pRootSignature: unsafe { std::mem::transmute_copy(&sig_lookup.root_signature) },
             ..Default::default()
         };
 
         unsafe {
             Ok(ComputePipeline {
                 pso: self.device.CreateComputePipelineState(&desc)?,
-                root_signature,
+                root_signature: sig_lookup.root_signature,
+                descriptor_slot_lookup: sig_lookup.lookup
             })
         }
     }
@@ -2616,42 +2725,46 @@ impl super::Device for Device {
     }
 
     fn report_live_objects(&self) -> result::Result<(), super::Error> {
-        let debug_device : ID3D12DebugDevice = self.device.cast()?;
-        unsafe {
-            debug_device.ReportLiveDeviceObjects(D3D12_RLDO_DETAIL)?;
+        if cfg!(debug_assertions) {
+            let debug_device : ID3D12DebugDevice = self.device.cast()?;
+            unsafe {
+                debug_device.ReportLiveDeviceObjects(D3D12_RLDO_DETAIL)?;
+            }
         }
         Ok(())
     }
 
     fn get_info_queue_messages(&self) -> result::Result<Vec<String>, super::Error> {
-        let info_queue : ID3D12InfoQueue = self.device.cast()?;
         let mut output = Vec::new();
-        unsafe {
-            let count = info_queue.GetNumStoredMessages();
-            for i in 0..count {
-                let mut size = 0;
-                info_queue.GetMessage(i, None, &mut size)?;
+        if cfg!(debug_assertions) {
+            let info_queue : ID3D12InfoQueue = self.device.cast()?;
+            unsafe {
+                let count = info_queue.GetNumStoredMessages();
+                for i in 0..count {
+                    let mut size = 0;
+                    info_queue.GetMessage(i, None, &mut size)?;
 
-                let layout = std::alloc::Layout::from_size_align(size, 4)?;
-                let data = std::alloc::alloc(layout);
+                    let layout = std::alloc::Layout::from_size_align(size, 4)?;
+                    let data = std::alloc::alloc(layout);
 
-                assert!(size <= layout.size(), 
-                    "{} vs {}", size, layout.size());
+                    assert!(size <= layout.size(), 
+                        "{} vs {}", size, layout.size());
 
-                info_queue.GetMessage(i, Some(data as *mut D3D12_MESSAGE), &mut size)?;
+                    info_queue.GetMessage(i, Some(data as *mut D3D12_MESSAGE), &mut size)?;
 
-                let msg = *(data as *mut D3D12_MESSAGE);
+                    let msg = *(data as *mut D3D12_MESSAGE);
 
-                let mut descripton_chars = Vec::new();
-                for c in 0..msg.DescriptionByteLength {
-                    descripton_chars.push(*msg.pDescription.add(c));
+                    let mut descripton_chars = Vec::new();
+                    for c in 0..msg.DescriptionByteLength {
+                        descripton_chars.push(*msg.pDescription.add(c));
+                    }
+                    let str = std::str::from_utf8(descripton_chars.as_slice())?;
+                    output.push(str.to_string());
+
+                    std::ptr::drop_in_place(data);
                 }
-                let str = std::str::from_utf8(descripton_chars.as_slice())?;
-                output.push(str.to_string());
-
-                std::ptr::drop_in_place(data);
+                info_queue.ClearStoredMessages();
             }
-            info_queue.ClearStoredMessages();
         }
         Ok(output)
     }
@@ -2770,6 +2883,10 @@ impl super::Device for Device {
             IndirectArgumentType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
             _ => panic!("hotline_rs::d3d12:: not implemented")
         }
+    }
+
+    fn get_counter_alignment() -> usize {
+        D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT as usize
     }
 }
 
@@ -3280,7 +3397,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             self.cmd().ExecuteIndirect(
                 &command.command_signature, 
                 max_command_count, 
-                &argument_buffer.resource, 
+                &argument_buffer.resource,
                 argument_buffer_offset as u64, 
                 counter_buffer_resource, 
                 counter_buffer_offset as u64
@@ -3369,6 +3486,25 @@ impl super::CmdBuf<Device> for CmdBuf {
             }
         }
     }
+
+    fn copy_buffer_region(
+        &mut self, 
+        dst_buffer: &Buffer, 
+        dst_offset: usize, 
+        src_buffer: &Buffer, 
+        src_offset: usize,
+        num_bytes: usize
+    ) {
+        unsafe {
+            self.cmd().CopyBufferRegion(
+                &dst_buffer.resource, 
+                dst_offset as u64,
+                &src_buffer.resource, 
+                src_offset  as u64,
+                num_bytes as u64
+            );
+        }
+    }
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -3450,6 +3586,10 @@ impl super::Buffer<Device> for Buffer {
         }
     }
 
+    fn get_counter_offset(&self) -> Option<usize> {
+        self.counter_offset
+    }
+
     fn map(&mut self, info: &MapInfo) -> *mut u8 {
         if !self.persistent_mapped_data.is_null() {
             self.persistent_mapped_data as *mut u8
@@ -3509,13 +3649,23 @@ impl super::Texture<Device> for Texture {
 }
 
 impl super::Pipeline for RenderPipeline {
-    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::HeapSlotInfo> {
+    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
         let mut hash = DefaultHasher::new();
         register.hash(&mut hash);
         descriptor_type.hash(&mut hash);
-        self.heap_slot_lookup.get(&hash.finish())
+        self.descriptor_slot_lookup.get(&hash.finish())
     }
 }
+
+impl super::Pipeline for ComputePipeline {
+    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
+        let mut hash = DefaultHasher::new();
+        register.hash(&mut hash);
+        descriptor_type.hash(&mut hash);
+        self.descriptor_slot_lookup.get(&hash.finish())
+    }
+}
+
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {
     fn is_complete(&self, swap_chain: &SwapChain) -> bool {

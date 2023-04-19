@@ -1,15 +1,11 @@
 // TODO:
 
 // wip
-// - Execute Indirect
-// - gpu aabb culling
+// aabb culling with extent / pos
 
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
 // - allow pipelines to drive the num thread in compute shaders
-// - cbuffers containing arrays not being correctly compiled in
-// - structures being brought in when not used
-// - cbuffer members incorrectly being brought in when referenced by scope (world_matrix, entity_world_matrix)
 
 // examples
 // - per demo settings
@@ -28,6 +24,7 @@
 // - post process / 2d passes (compute based)
 // - resolves fully data driven
 // - barriers for compute
+// - buffers in pmfx
 // - glft
 // - set name on resources
 // - lazy init print function
@@ -37,6 +34,7 @@
 // - stencil examples
 
 // gfx
+// - example triangle culling via execute indirect
 // - MRT
 // - Alpha to coverage
 // - Stencil Ref
@@ -44,8 +42,7 @@
 // - API for copies and clears?
 //      buffer
 //      texture
-//      buffer region
-//      texture regioncd
+//      texture region
 // - API for fence
 
 // ui / debug
@@ -55,6 +52,14 @@
 // - view menu + saving state
 
 // DONE:
+// x Execute Indirect
+// x gpu culling
+// x pmfx-shader
+// x nested structure usages are not detected correctly
+// x cbuffers containing arrays not being correctly compiled in
+// x structures being brought in when not used
+// x cbuffer members incorrectly being brought in when referenced by scope (world_matrix, entity_world_matrix)
+// x copy buffer region
 // x imgui colours are not complete
 // x improve ecs examples structure
 // x transform normals with world matrix

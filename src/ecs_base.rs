@@ -60,13 +60,6 @@ impl Default for CameraInfo {
     }
 }
 
-/// Seriablisable user info for maintaining state between reloads and sessions
-#[derive(Serialize, Deserialize, Default, Resource, Clone)]
-pub struct SessionInfo {
-    pub active_demo: String,
-    pub main_camera: Option<CameraInfo>
-}
-
 /// This macro allows you to create a newtype which will automatically deref and deref_mut
 /// you can use it to create resources or compnents and avoid having to use .0 to access the inner data
 #[macro_export]
@@ -246,6 +239,13 @@ macro_rules! compute_func {
     }
 }
 
+#[macro_export]
+macro_rules! compute_func_query {
+    ($func:expr, $pass:expr, $query:ty) => {
+        Some(compute_func_query_closure![$func, $pass, $query].into_config())
+    }
+}
+
 /// This macro can be used to export a system render function for bevy ecs. You can pass a compatible 
 /// system function with a `view` name which can be looked up when the function is called
 /// so that a single render function can have different views
@@ -311,13 +311,49 @@ macro_rules! compute_func_closure {
                             pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.srv_indices[i]));
                         }
                         
-                        
                         pass.cmd_buf.set_compute_heap(1, &pmfx.shader_heap);
 
                         pass.cmd_buf.dispatch(
                             pass.group_count,
                             pass.thread_count
                         );
+                        pass.cmd_buf.end_event();
+
+                        Ok(())
+                    }
+                    Err(p) => {
+                        Err(hotline_rs::Error {
+                            msg: p.msg
+                        })
+                    }
+                };
+
+                // record errors
+                if let Err(err) = err {
+                    pmfx.log_error(&$pass_name, &err.msg);
+                }
+            }
+    }
+}
+
+#[macro_export]
+macro_rules! compute_func_query_closure {
+    ($func:expr, $pass_name:expr, $query:ty) => {
+        move | 
+            pmfx: Res<PmfxRes>,
+            q: $query  | {
+                let pass = pmfx.get_compute_pass(&$pass_name);
+                let err = match pass {
+                    Ok(p) => {
+                        let mut pass = p.lock().unwrap();
+                        pass.cmd_buf.begin_event(0xffffff, &$pass_name);
+
+                        let result = $func(
+                            &pmfx,
+                            &mut pass,
+                            q
+                        );
+
                         pass.cmd_buf.end_event();
 
                         Ok(())
