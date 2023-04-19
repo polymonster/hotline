@@ -10,12 +10,25 @@ use bevy_ecs::schedule::SystemConfig;
 
 use std::collections::HashMap;
 
+use serde::{Deserialize, Serialize};
+
 macro_rules! log_error {
     ($map:expr, $name:expr) => {
         if !$map.contains_key(&$name) {
             $map.insert($name, Vec::new());
         }
     }
+}
+
+/// Seriablisable user info for maintaining state between reloads and sessions
+#[derive(Serialize, Deserialize, Default, Resource, Clone)]
+pub struct SessionInfo {
+    /// The active running demo will be saved between sessions
+    pub active_demo: String,
+    /// Main camera setings will be saved between sessions
+    pub main_camera: Option<CameraInfo>,
+    /// Default camera for a demo, can be set by the camera button in the UI
+    pub default_cameras: Option<HashMap<String, CameraInfo>>
 }
 
 struct BevyPlugin {
@@ -123,16 +136,38 @@ fn update_camera_orbit(
     let buttons = app.get_mouse_buttons();
     let drag = vec2f(drag.x as f32, drag.y as f32);
 
-    let (_, enable_mouse) = app.get_input_enabled();
+    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
+
+    // speed modifier
+    let boost_speed = 2.0;
+    let control_speed = 0.25;
+    let mut scroll_speed = 100.0;
+    if enable_keyboard {
+        // modifiers
+        if app.is_sys_key_down(os::SysKey::Shift) {
+            // speed boost
+            scroll_speed *= boost_speed;
+        }
+        else if app.is_sys_key_down(os::SysKey::Ctrl) {
+            // fine control
+            scroll_speed *= control_speed;
+        }
+    }
 
     if enable_mouse {
-        if buttons[os::MouseButton::Left as usize] {
-            camera.rot -= Vec3f::from((drag.yx(), 0.0));
+        if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
+            let right = view_proj.get_row(0).xyz();
+            let up = view_proj.get_row(1).xyz();
+            camera.focus += up * -drag.y;
+            camera.focus += right * -drag.x;
         }
-
-        let scoll_speed = 100.0;
-        camera.zoom += wheel * scoll_speed;
-        camera.zoom = max(camera.zoom, 1.0);
+        else {
+            if buttons[os::MouseButton::Left as usize] {
+                camera.rot -= Vec3f::from((drag.yx(), 0.0));
+            }
+            camera.zoom += wheel * scroll_speed;
+            camera.zoom = max(camera.zoom, 1.0);
+        }
     }
 
     // generate proj matrix
@@ -231,7 +266,8 @@ fn update_cameras(
     app: Res<AppRes>,
     time: Res<TimeRes>,
     mut pmfx: ResMut<PmfxRes>,
-    mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {    
+    mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {
+    pmfx.get_world_buffers_mut().camera.clear();
     for (name, mut position, mut camera, mut view_proj) in &mut query {
         match camera.camera_type {
             CameraType::Fly => {
@@ -241,6 +277,15 @@ fn update_cameras(
                 update_camera_orbit(&app,&mut pmfx, &mut camera, &mut position, &mut view_proj, name);
             }
             _ => continue
+        }
+
+        // 
+        if pmfx.get_world_buffers_mut().camera.capacity() > 0 {
+            pmfx.get_world_buffers_mut().camera.push(&pmfx::CameraData {
+                view_projection_matrix: view_proj.0,
+                view_position: Vec4f::from(position.0),
+                planes: view_proj.0.get_frustum_planes()
+            });
         }
     }
 }
@@ -481,7 +526,15 @@ impl BevyPlugin {
         client
     }
 
-    fn setup_camera(&self) -> (Camera, Mat4f, Position) {
+    fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
+        // use a default demo camera, if we have no main camera (mainly for test runners)
+        if let Some(default_cameras) = &self.session_info.default_cameras {
+            if default_cameras.contains_key(&self.session_info.active_demo) {
+                if self.session_info.main_camera.is_none() {
+                    self.session_info.main_camera = Some(default_cameras[&self.session_info.active_demo]);
+                }
+            }
+        }
         let main_camera = self.session_info.main_camera.unwrap_or_default();
         let pos = Position(Vec3f::from(main_camera.pos));
         let focus = Vec3f::from(main_camera.focus);
@@ -675,7 +728,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
             // refresh button
-            if client.imgui.button(font_awesome::strs::SYNC) {
+            if client.imgui.button_size(font_awesome::strs::SYNC, 32.0, 0.0) {
                 resetup = true;
             }
             client.imgui.same_line();
@@ -692,8 +745,14 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
 
             // camera type select
-            if client.imgui.button(font_awesome::strs::CAMERA) {
-                // TODO: set to default
+            if client.imgui.button_size(font_awesome::strs::CAMERA, 32.0, 0.0) {
+                // save default
+                if self.session_info.default_cameras.is_none() {
+                    self.session_info.default_cameras = Some(HashMap::new());
+                }
+                let default_cam_map = self.session_info.default_cameras.as_mut().unwrap();
+                let entry = default_cam_map.entry(self.session_info.active_demo.to_string()).or_default();
+                *entry = self.session_info.main_camera.unwrap();
             }
             client.imgui.same_line();
 
@@ -716,8 +775,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let wrap_len = demo_list.iter()
                 .filter(|d| !d.contains("test_missing") && !d.contains("test_failing"))
                 .collect::<Vec<_>>().len();
-            
-            //let wrap_len = demo_list.len();
             
             let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
             if let Some(index) = cur_demo_index {
@@ -742,6 +799,12 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // preform any re-setup actions
         if resetup {
+            // set camera to the default position for the selected demo
+            if let Some(default_cameras) = &self.session_info.default_cameras {
+                if default_cameras.contains_key(&self.session_info.active_demo) {
+                    self.session_info.main_camera = Some(default_cameras[&self.session_info.active_demo]);
+                }
+            }
             client = self.resetup(client);
         }
 

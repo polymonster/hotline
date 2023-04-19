@@ -649,12 +649,12 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(vertices.as_slice())
         ).unwrap(),
         ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::INDEX,
-            cpu_access: gfx::CpuAccessFlags::NONE,
-            num_elements: 6,
-            format: gfx::Format::R16u,
-            stride: std::mem::size_of::<u16>(),
-            initial_state: gfx::ResourceState::IndexBuffer
+                usage: gfx::BufferUsage::INDEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 6,
+                format: gfx::Format::R16u,
+                stride: std::mem::size_of::<u16>(),
+                initial_state: gfx::ResourceState::IndexBuffer
             },
             Some(indices.as_slice())
         ).unwrap(),
@@ -706,12 +706,12 @@ pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(vertices.as_slice())
         ).unwrap(),
         ib: dev.create_buffer(&gfx::BufferInfo {
-            usage: gfx::BufferUsage::INDEX,
-            cpu_access: gfx::CpuAccessFlags::NONE,
-            num_elements: 3,
-            format: gfx::Format::R16u,
-            stride: std::mem::size_of::<u16>(),
-            initial_state: gfx::ResourceState::IndexBuffer
+                usage: gfx::BufferUsage::INDEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 3,
+                format: gfx::Format::R16u,
+                stride: std::mem::size_of::<u16>(),
+                initial_state: gfx::ResourceState::IndexBuffer
             },
             Some(indices.as_slice())
         ).unwrap(),

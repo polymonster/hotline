@@ -175,7 +175,7 @@ pub mod prelude {
         // traits
         ecs_base::*,
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
-        pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData},
+        pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData, WorldBufferReserveInfo, WorldBufferInfo},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,
@@ -189,8 +189,12 @@ pub mod prelude {
         system_func,
         render_func,
         render_func_closure,
+
         compute_func,
         compute_func_closure,
+        compute_func_query,
+        compute_func_query_closure,
+
         demos,
         systems
     };

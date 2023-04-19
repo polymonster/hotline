@@ -58,6 +58,8 @@ pub struct Time {
     pub delta: f32,
     /// A raw delta time not affected by any scaling or pausing
     pub raw_delta: f32,
+    /// Delta time for the CPU update (ignoring v-sync / present cost)
+    pub update_delta: f32,
     /// Accumulated delta time
     pub accumulated: f32,
     /// Smoothed delta time to reduce spikes
@@ -82,6 +84,7 @@ impl Time {
         Self {
             delta: 0.0,
             raw_delta: 0.0,
+            update_delta: 0.0,
             accumulated: 0.0,
             smooth_delta: 0.0,
             frame_start: SystemTime::now(),
@@ -312,7 +315,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         if let Ok(elapsed) = elapsed {
             // raw delta each frame
             self.time.raw_delta = elapsed.as_secs_f32();
-
+            
             // track delta
             if !self.time.delta_paused {
                 self.time.delta = elapsed.as_secs_f32() * self.time.time_scale;
@@ -680,7 +683,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             let fps = maths_rs::round(1.0 / self.time.raw_delta) as u32;
             let cpu_ms = self.time.raw_delta * 1000.0;
             let gpu_ms = self.pmfx.get_total_stats().gpu_time_ms;
-            self.imgui.text(&format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)", fps, cpu_ms, gpu_ms));
+            self.imgui.text(
+                &format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)", 
+                fps, cpu_ms, gpu_ms
+            ));
             self.imgui.same_line();
 
             // hot reloading (plugins)
@@ -911,6 +917,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
                 self.imgui.image_window("main_dock", tex);
             }
 
+            // record time before we do gpu stuff
+            if let Ok(elapsed) = self.time.frame_start.elapsed() {
+                self.time.update_delta = elapsed.as_secs_f32();
+            }
+
             self.present("");
 
             // print d3d debug info messages to the console
@@ -989,6 +1000,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
             self.swap_chain.wait_for_last_frame();
 
+            // wait for the second frame so the first one has data to read
             if i == 2 {
                 let data = readback_request.map(&gfx::MapInfo {
                     subresource: 0,

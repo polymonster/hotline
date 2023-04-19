@@ -339,6 +339,8 @@ bitflags! {
         const UNORDERED_ACCESS = (1 << 4);
         /// Used as indirect arguments for `execute_indirect`
         const INDIRECT_ARGUMENT_BUFFER = (1 << 5);
+        /// Used in shader as `AppendStructuredBuffer` and contains a counter element
+        const APPEND_COUNTER = (1 << 6);
     }
 }
 
@@ -403,9 +405,9 @@ pub struct PushConstantInfo {
 }
 
 /// You can request this based on resource type, register and space (as specified in shader). To identify the slot to bind to
-/// when using `set_render_heap` or `set_compute_heap`
+/// when using `set_render_heap` or `set_compute_heap` or the slot to push constants onto
 #[derive(Clone)]
-pub struct HeapSlotInfo {
+pub struct DescriptorSlotInfo {
     /// The slot in the pipelines descriptor layout to bind to
     pub slot: u32,
     /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
@@ -871,7 +873,7 @@ pub trait Pipeline {
     /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
-    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&HeapSlotInfo>;
+    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&DescriptorSlotInfo>;
 }
 
 /// A command signature is used to `execute_indirect` commands
@@ -1097,6 +1099,8 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn get_pipeline_statistics_size_bytes() -> usize;
     /// Size of the indirect draw command in bytes
     fn get_indirect_command_size(argument_type: IndirectArgumentType) -> usize;
+    /// Returns the alignment requirement size in bytes for counters (append buffers / uavs)
+    fn get_counter_alignment() -> usize;
 }
 
 /// A swap chain is connected to a window, controls fences and signals as we swap buffers.
@@ -1218,6 +1222,15 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
+    /// Copy from one buffer to another with offsets
+    fn copy_buffer_region(
+        &mut self, 
+        dst_buffer: &D::Buffer, 
+        dst_offset: usize, 
+        src_buffer: &D::Buffer, 
+        src_offset: usize,
+        num_bytes: usize
+    );
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
@@ -1242,6 +1255,9 @@ pub trait Buffer<D: Device>: Send + Sync {
     fn get_vbv(&self) -> Option<VertexBufferView>;
     /// Return an index buffer view
     fn get_ibv(&self) -> Option<IndexBufferView>;
+    /// Returns the offset in bytes of a counter element for an append structured buffer
+    /// `None` is returned if the buffer was not created with `BufferUsage::APPEND_COUNTER`
+    fn get_counter_offset(&self) -> Option<usize>;
 }
 
 /// An opaque Texture type

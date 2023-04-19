@@ -1331,11 +1331,19 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         };
     }
 
-    /// Button 
+    /// Button with label, auto size
     pub fn button(&mut self, label: &str) -> bool {
         unsafe {
             let null_label = CString::new(label).unwrap();
             igButton(null_label.as_ptr() as *const i8, ImVec2{x: 0.0, y: 0.0})
+        }
+    }
+
+    // Button with lable at specified size, supply 0.0 to `w` or `h` to auto size the dimension
+    pub fn button_size(&mut self, label: &str, w: f32, h: f32) -> bool {
+        unsafe {
+            let null_label = CString::new(label).unwrap();
+            igButton(null_label.as_ptr() as *const i8, ImVec2{x: w, y: h})
         }
     }
 
@@ -1454,7 +1462,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
             );
 
             igEnd();
+        }
+    }
 
+    /// Sets the item of the next widget > 0.0 = width on pixels. < 0.0 = align to the right of window
+    pub fn set_next_item_width(&mut self, item_width: f32) {
+        unsafe {
+            igSetNextItemWidth(item_width);
         }
     }
 
