@@ -156,6 +156,9 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
         ).unwrap()
     };
 
+    let aabb_min = vertices.iter().fold( Vec3f::max_value(), |acc, v| min(acc, v.position));
+    let aabb_max = vertices.iter().fold(-Vec3f::max_value(), |acc, v| max(acc, v.position));
+
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
                 usage: gfx::BufferUsage::VERTEX,
@@ -168,7 +171,9 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
             Some(vertices.as_slice())
         ).unwrap(),
         ib: index_buffer,
-        num_indices: indices.len() as u32
+        num_indices: indices.len() as u32,
+        aabb_min,
+        aabb_max
     }
 }
 
@@ -594,7 +599,9 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             },
             Some(indices.as_slice())
         ).unwrap(),
-        num_indices: 6
+        num_indices: 6,
+        aabb_min: vec3f(-1.0, -1.0, 0.0),
+        aabb_max: vec3f( 1.0,  1.0, 0.0)
     } 
 }
 
@@ -658,7 +665,9 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             },
             Some(indices.as_slice())
         ).unwrap(),
-        num_indices: 6
+        num_indices: 6,
+        aabb_min: vec3f(-1.0, -1.0, 0.0),
+        aabb_max: vec3f( 1.0,  1.0, 0.0)
     } 
 }
 
@@ -694,6 +703,9 @@ pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
         0,  2,  1
     ];
 
+    let aabb_min = vertices.iter().fold( Vec3f::max_value(), |acc, v| min(acc, v.position));
+    let aabb_max = vertices.iter().fold(-Vec3f::max_value(), |acc, v| max(acc, v.position));
+
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
                 usage: gfx::BufferUsage::VERTEX,
@@ -715,7 +727,9 @@ pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             },
             Some(indices.as_slice())
         ).unwrap(),
-        num_indices: 3
+        num_indices: 3,
+        aabb_min,
+        aabb_max
     } 
 }
 

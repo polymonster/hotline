@@ -126,7 +126,13 @@ pub struct InstanceBuffer {
 pub struct InstanceBatch {
     pub mesh: MeshComponent,
     pub pipeline: PipelineComponent,
-    pub instance_buffer: InstanceBuffer
+    pub instance_buffer: InstanceBuffer,
+}
+
+#[derive(Component)]
+pub struct Extents {
+    pub aabb_min: Vec3f,
+    pub aabb_max: Vec3f
 }
 
 #[derive(Bundle)]

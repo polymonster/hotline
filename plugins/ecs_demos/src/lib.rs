@@ -1,26 +1,15 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-/// Contains basic examples of ecs primtives, setting them up and rendering (meshes, lights, etc)
-mod primitives;
-
-/// Contains basic examples and unit tests of render states, texture types and error handling
-mod test;
-
-/// Used as a sandbox area to bring code from the core engine (to live-reload)
-mod dev;
-
-/// Contains basic examples and variations of making fdifferent kinds of draw calls and instancing
-mod draw;
+/// Contains basic examples and unit tests of rendering and ecs functionality
+mod examples;
 
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
 
-use crate::draw::*;
-use crate::primitives::*;
-use crate::test::*;
+use crate::examples::*;
 
 #[no_mangle]
 pub fn batch_lights(
@@ -74,6 +63,7 @@ pub fn batch_world_matrix_instances(
     }
 }
 
+/// Batch updates lookup id's into the instance buffer
 #[no_mangle]
 pub fn batch_material_instances(
     mut instances_query: Query<(&Parent, &InstanceIds)>,
@@ -89,28 +79,53 @@ pub fn batch_material_instances(
     }
 }
 
+const fn unit_aabb_corners() -> [Vec3f; 8] {
+    [
+        // front face
+        Vec3f { x: 0.0, y: 0.0, z: 0.0 },
+        Vec3f { x: 0.0, y: 1.0, z: 0.0 },
+        Vec3f { x: 1.0, y: 1.0, z: 0.0 },
+        Vec3f { x: 1.0, y: 0.0, z: 0.0 },
+
+        // back face
+        Vec3f { x: 0.0, y: 0.0,  z: 1.0 },
+        Vec3f { x: 0.0, y: 1.0,  z: 1.0 },
+        Vec3f { x: 1.0, y: 1.0,  z: 1.0 },
+        Vec3f { x: 1.0, y: 0.0,  z: 1.0 },
+    ]
+}
+
+/// Batches draw calls into a structured buffer which can be looked up into, and also batches extents
+/// to perform GPU culling
 #[no_mangle]
-pub fn batch_bindless_world_matrix_instances(
+pub fn batch_bindless_draw_data(
     mut pmfx: ResMut<PmfxRes>,
-    instances_query: Query<(&InstanceIds, &WorldMatrix), With<Parent>>) {
-    let world_buffers = pmfx.get_world_buffers_mut();
+    draw_query: Query<(&WorldMatrix, &Extents)>) {
+    
+    let world_buffers = pmfx.get_world_buffers_mut();    
     world_buffers.draw.clear();
-    for (_, world_matrix) in &instances_query {
+    world_buffers.extent.clear();
+
+    // for transforming the extents
+    let corners = unit_aabb_corners();
+
+    for (world_matrix, extents) in &draw_query {
         world_buffers.draw.push(&DrawData {
             world_matrix: world_matrix.0
         });
-    }
-}
 
-#[no_mangle]
-pub fn batch_bindless_world_matrices(
-    mut pmfx: ResMut<PmfxRes>,
-    matrices_query: Query<&WorldMatrix>) {
-    let world_buffers = pmfx.get_world_buffers_mut();    
-    world_buffers.draw.clear();
-    for world_matrix in &matrices_query {
-        world_buffers.draw.push(&DrawData {
-            world_matrix: world_matrix.0
+        let emin = extents.aabb_min;
+        let emax = extents.aabb_max;
+        
+        let transform_min = corners.iter().fold( Vec3f::max_value(), |acc, x| min(acc, world_matrix.0 * (emin + emax * *x)));
+        let transform_max = corners.iter().fold(-Vec3f::max_value(), |acc, x| max(acc, world_matrix.0 * (emin + emax * *x)));
+
+        let extent_pos = transform_min + (transform_max - transform_min) * 0.5;
+        let extent = transform_max - extent_pos;
+
+        world_buffers.extent.push(&pmfx::ExtentData {
+            pos: extent_pos,
+            extent: extent
         });
     }
 }
@@ -343,17 +358,14 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "swirling_meshes" => system_func![swirling_meshes.in_base_set(SystemSets::Update)],
 
         // batches
-        "batch_bindless_world_matrices" => system_func![
-            batch_bindless_world_matrices.after(SystemSets::Batch)
+        "batch_bindless_draw_data" => system_func![
+            batch_bindless_draw_data.after(SystemSets::Batch)
         ],
         "batch_world_matrix_instances" => system_func![
             batch_world_matrix_instances.after(SystemSets::Batch)
         ],
         "batch_material_instances" => system_func![
             batch_material_instances.after(SystemSets::Batch)
-        ],
-        "batch_bindless_world_matrix_instances" => system_func![
-            batch_bindless_world_matrix_instances.after(SystemSets::Batch)
         ],
         "batch_lights" => system_func![
             batch_lights.after(SystemSets::Batch)

@@ -779,10 +779,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
             if let Some(index) = cur_demo_index {
                 let keys = client.app.get_keys_pressed();
-                let toggle = if keys[187] {
+                let toggle = if keys[189] {
                     index.wrapping_sub(1) % wrap_len
                 }
-                else if keys[189] {
+                else if keys[187] {
                      (index + 1) % wrap_len
                 }
                 else {

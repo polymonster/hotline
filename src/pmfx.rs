@@ -77,7 +77,11 @@ pub struct Mesh<D: gfx::Device> {
     // Index Buffer
     pub ib: D::Buffer,
     /// Number of indices to draw from the index buffer
-    pub num_indices: u32
+    pub num_indices: u32,
+    /// Bounding aabb min
+    pub aabb_min: Vec3f,
+    /// Bounding aabb mix
+    pub aabb_max: Vec3f,
 }
 
 /// Additional info to wrap with a texture for tracking changes from windwow sizes or other associated bounds
@@ -475,6 +479,8 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
 pub struct DynamicWorldBuffers<D: gfx::Device> {
     /// Structured buffer containing bindless draw call information `DrawData`
     pub draw: DynamicBuffer<D, DrawData>,
+    /// Structured buffer containing bindless draw call information `DrawData`
+    pub extent: DynamicBuffer<D, ExtentData>,
     // Structured buffer containing `MaterialData`
     pub material: DynamicBuffer<D, MaterialData>,
     // Structured buffer containing `PointLightData`
@@ -491,6 +497,7 @@ impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
     fn default() -> Self {
         Self {
             draw: DynamicBuffer::<D, DrawData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            extent: DynamicBuffer::<D, ExtentData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             material: DynamicBuffer::<D, MaterialData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             point_light: DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             spot_light: DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
@@ -504,6 +511,7 @@ impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
 #[derive(Default)]
 pub struct WorldBufferReserveInfo {
     pub draw_capacity: usize,
+    pub extent_capacity: usize,
     pub material_capacity: usize,
     pub point_light_capacity: usize,
     pub spot_light_capacity: usize,
@@ -524,7 +532,18 @@ pub struct CameraConstants {
 #[repr(C)]
 #[derive(Clone)]
 pub struct DrawData {
-    pub world_matrix: Mat34f,
+    /// World matrix for transforming entity
+    pub world_matrix: Mat34f, 
+}
+
+/// GPU friendly struct containing single entity draw data
+#[repr(C)]
+#[derive(Clone)]
+pub struct ExtentData {
+    /// Centre pos of aabb
+    pub pos: Vec3f,
+    /// Half extent of aabb
+    pub extent: Vec3f 
 }
 
 /// GPU friendly structure containing lookup id's for bindless materials 
@@ -595,20 +614,17 @@ impl GpuBufferLookup {
 #[repr(C)]
 #[derive(Clone)]
 pub struct WorldBufferInfo {
-    /// srv index of the draw buffer (contains entity world matrices and draw call data) stored in x
-    /// the count of the buffer is stored in y
+    /// srv index of the draw buffer (contains entity world matrices and draw call data)
     pub draw: GpuBufferLookup,
-    /// srv index of the material buffer (contains ids of textures to look up and material parameters) stored in x
-    /// the count of the buffer is stored in y
+    /// srv index of the extent buffer (contains data for culling entities)
+    pub extent: GpuBufferLookup,
+    /// srv index of the material buffer (contains ids of textures to look up and material parameters)
     pub material: GpuBufferLookup,
-    /// srv index of the point light buffer stored in x
-    /// the count of the buffer is stored in y
+    /// srv index of the point light buffer
     pub point_light: GpuBufferLookup,
-    /// srv index of the spot light buffer stored in x
-    /// the count of the buffer is stored in y
+    /// srv index of the spot light buffer
     pub spot_light: GpuBufferLookup,
-    /// srv index of the directional light buffer stored in x
-    /// the count of the buffer is stored in y
+    /// srv index of the directional light buffer
     pub directional_light: GpuBufferLookup,
     /// cbv index of the camera
     pub camera: GpuBufferLookup
@@ -618,6 +634,7 @@ impl Default for WorldBufferInfo {
     fn default() -> Self {
         Self {
             draw: GpuBufferLookup::new(),
+            extent: GpuBufferLookup::new(),
             material: GpuBufferLookup::new(),
             point_light: GpuBufferLookup::new(),
             spot_light: GpuBufferLookup::new(),
@@ -853,6 +870,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// creates new buffers if the requested count exceeds the capacity.
     pub fn reserve_world_buffers(&mut self, device: &mut D, info: WorldBufferReserveInfo) {
         self.world_buffers.draw.reserve(device, &mut self.shader_heap, info.draw_capacity);
+        self.world_buffers.extent.reserve(device, &mut self.shader_heap, info.extent_capacity);
         self.world_buffers.material.reserve(device, &mut self.shader_heap, info.material_capacity);
         self.world_buffers.point_light.reserve(device, &mut self.shader_heap, info.point_light_capacity);
         self.world_buffers.spot_light.reserve(device, &mut self.shader_heap, info.spot_light_capacity);
@@ -872,6 +890,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // construct on the fly
         WorldBufferInfo {
             draw: self.world_buffers.draw.get_lookup(),
+            extent: self.world_buffers.extent.get_lookup(),
             material: self.world_buffers.material.get_lookup(),
             point_light: self.world_buffers.point_light.get_lookup(),
             spot_light: self.world_buffers.spot_light.get_lookup(),
