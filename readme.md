@@ -65,7 +65,7 @@ Any code changes made to the plugin libs will cause a rebuild and reload to happ
 
 ### Building One-Liners
 
-To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled `pmbuild` in the `hotline-data` repository and use the following commands which bundle together build steps:
+To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled [pmbuild](https://github.com/polymonster/pmbuild) in the `hotline-data` repository and use the following commands which bundle together build steps:
 
 ```text
 // show aavailable build profiles
@@ -83,20 +83,6 @@ To make things more convenient during development and keep the `plugins`, `clien
 // build and run the client 
 .\hotline-data\pmbuild.cmd win32-release -all -run
 ```
-
-### Building Issues
-
-Because hotline is still in it's infancy things are changing quickly and `pmfx-shader` is rapidly evolving to assist the needs of new graphics features. In order to make this possible I have been swoitching between a pre-built release and a development version. If you see an error message such as this:
-
-```text
---------------------------------------------------------------------------------
-pmfx ---------------------------------------------------------------------------
---------------------------------------------------------------------------------
-The system cannot find the path specified.
-[error] processing task pmfx
-```
-
-This means pmfx has been comitted in dev mode, you can edit the [config.jsn](https://github.com/polymonster/hotline/blob/master/config.jsn) to switch the `pmfx` task type from `type: pmfx_dev` back to `type: pmfx` or comment out that line completely. If you do need the `pmfx_dev` unctionality you can clone the [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository so it is adjacent to the hotline directory.
 
 ### Building from Visual Studio Code
 
