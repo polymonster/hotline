@@ -1,4 +1,5 @@
 use crate::gfx;
+use crate::gfx::Heap;
 use crate::gfx::ReadBackRequest;
 use crate::os;
 use crate::imgui;
@@ -157,7 +158,7 @@ pub struct UserConfig {
     pub main_window_rect: os::Rect<i32>,
     pub console_window_rect: Option<os::Rect<i32>>,
     pub plugins: Option<HashMap<String, PluginInfo>>,
-    pub plugin_data: Option<HashMap<String, String>>
+    pub plugin_data: Option<HashMap<String, serde_json::Value>>
 }
 
 /// Internal enum to track plugin state and syncornise unloads, reloads and setups etc.
@@ -236,8 +237,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
 
         // imdraw
         let imdraw_info = imdraw::ImDrawInfo {
-            initial_buffer_size_2d: 1024,
-            initial_buffer_size_3d: 1024
+            initial_buffer_size_2d: 65535 * 1024,
+            initial_buffer_size_3d: 65535 * 1024
         };
         let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
@@ -461,16 +462,31 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
             self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
+            
+            // TODO_BINDING
             self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
+            
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
             self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
             self.cmd_buf.end_event();
         }
 
+        let image_heaps = vec![
+            &self.pmfx.shader_heap
+        ];
+
         // render imgui
         self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
-        self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
+        
+        self.imgui.render(
+            &mut self.app, 
+            &mut self.main_window, 
+            &mut self.device, 
+            &mut self.cmd_buf,
+            &image_heaps
+        );
+        
         self.cmd_buf.end_event();
 
         self.cmd_buf.end_render_pass();
@@ -487,7 +503,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
         // execute the main window command buffer + swap
         self.device.execute(&self.cmd_buf);
         self.swap_chain.swap(&self.device);
-        self.device.clean_up_resources(&self.swap_chain);
     }
 
     /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
@@ -877,21 +892,22 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     ///     }
     /// }
     pub fn serialise_plugin_data<T: Serialize>(&mut self, plugin_name: &str, data: &T) {
-        let serialised = serde_json::to_string_pretty(&data).unwrap();
+        let serialised = serde_json::to_value(data).unwrap();
         if self.user_config.plugin_data.is_none() {
             self.user_config.plugin_data = Some(HashMap::new());
         }
+
         if let Some(plugin_data) = &mut self.user_config.plugin_data {
-            *plugin_data.entry(plugin_name.to_string()).or_insert(String::new()) = serialised;
+            *plugin_data.entry(plugin_name.to_string()).or_insert(serde_json::Value::default()) = serialised;
         }
     }
 
     /// Deserialises string json into a `T` returning defaults if the entry does not exist
-    pub fn deserialise_plugin_data<'de, T: Deserialize<'de> + Default>(&'de mut self, plugin_name: &str) -> T {
+    pub fn deserialise_plugin_data<T: Default + serde::de::DeserializeOwned>(&mut self, plugin_name: &str) -> T {
         // deserialise user data saved from a previous session
         if let Some(plugin_data) = &self.user_config.plugin_data {
             if plugin_data.contains_key(plugin_name) {
-                serde_json::from_slice(plugin_data[plugin_name].as_bytes()).unwrap()
+                serde_json::from_value(plugin_data[plugin_name].clone()).unwrap()
             }
             else {
                 T::default()
@@ -929,6 +945,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             for msg in info_queue {
                 println!("{}", msg);
             }
+
+            // cleanup heaps
+            self.pmfx.shader_heap.cleanup_dropped_resources(&self.swap_chain);
+            self.device.cleanup_dropped_resources(&self.swap_chain);
         }
 
         // save out values for next time
@@ -976,7 +996,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
     
             // render imgui
             self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
-            self.imgui.render(&mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf);
+
+            let image_heaps = vec![
+                &self.pmfx.shader_heap
+            ];
+            
+            self.imgui.render(
+                &mut self.app, 
+                &mut self.main_window, 
+                &mut self.device, 
+                &mut self.cmd_buf,
+                &image_heaps
+            );
+            
             self.cmd_buf.end_event();
     
             self.cmd_buf.end_render_pass();
@@ -996,7 +1028,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             // execute the main window command buffer + swap
             self.device.execute(&self.cmd_buf);
             self.swap_chain.swap(&self.device);
-            self.device.clean_up_resources(&self.swap_chain);
 
             self.swap_chain.wait_for_last_frame();
 

@@ -4,6 +4,7 @@ use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
 use crate::os;
 use crate::gfx;
+use crate::primitives;
 
 use crate::gfx::{ResourceState, RenderPass, CmdBuf, Subresource, QueryHeap, SwapChain, Texture};
 use crate::reloader::{ReloadState, Reloader, ReloadResponder};
@@ -17,7 +18,7 @@ use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min, num::Base, Mat34f, Vec3f, Vec4f, Mat4f};
+use maths_rs::{max, min, ceil, num::Base, Mat34f, Vec2f, Vec3f, Vec4f, Mat4f};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -41,12 +42,18 @@ pub struct View<D: gfx::Device> {
     pub viewport: gfx::Viewport,
     /// Pre-calculated viewport based on the output dimensions of the render target adjusted for user data from .pmfx
     pub scissor_rect: gfx::ScissorRect,
+    /// Dimension of a resource for use when blitting
+    pub blit_dimension: Vec2f,
     /// A command buffer ready to be used to buffer draw / render commands
     pub cmd_buf: D::CmdBuf,
     /// Name of camera this view intends to be used with
     pub camera: String,
     /// This is the name of a single pipeline used for all draw calls in the view. supplied in data as `pipelines: ["name"]`
     pub view_pipeline: String,
+    // A vector of resource view indices supplied by info inside the `uses` section
+    // they will be supplied in order they are specified in the `pmfx` file
+    // and may be srv or uav depending on `ResourceUsage`
+    pub use_indices: Vec<u32>,
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
@@ -65,7 +72,9 @@ pub struct ComputePass<D: gfx::Device> {
     /// The number of threads specified in the shader
     pub thread_count: gfx::Size3,
     // An vector of resource view indices supplied by info inside the `uses` section
-    pub srv_indices: Vec<u32>
+    // they will be supplied in order they are specified in the `pmfx` file
+    // and may be srv or uav depending on `ResourceUsage`
+    pub use_indices: Vec<u32>
 }
 pub type ComputePassRef<D> = Arc<Mutex<ComputePass<D>>>;
 
@@ -147,6 +156,8 @@ pub struct Pmfx<D: gfx::Device> {
     total_stats: TotalStats,
     /// Heaps for shader resource view allocations
     pub shader_heap: D::Heap,
+    /// Unit quad mesh for fullscreen passes on the raster pipeline
+    pub unit_quad_mesh: Mesh<D>,
     /// Watches for filestamp changes and will trigger callbacks in the `PmfxReloadResponder`
     pub reloader: Reloader,
     /// Errors which occur through render systems can be pushed here for feedback to the user
@@ -283,6 +294,7 @@ struct TextureSizeRatio {
 #[derive(Serialize, Deserialize)]
 struct TextureInfo {
     ratio: Option<TextureSizeRatio>,
+    generate_mips: Option<bool>,
     filepath: Option<String>,
     width: u64,
     height: u64,
@@ -292,7 +304,7 @@ struct TextureInfo {
     samples: u32,
     format: gfx::Format,
     usage: Vec<ResourceState>,
-    hash: u64
+    hash: u64,
 }
 
 /// Pmfx texture serialisation layout, this data is emitted from pmfx-shader compiler
@@ -333,6 +345,17 @@ struct ViewInfo {
     hash: PmfxHash
 }
 
+/// Resoure uage for a graph pass
+#[derive(Serialize, Deserialize, Clone)]
+enum ResourceUsage {
+    /// Write to an un-ordeded access resource or rneder target resource
+    Write,
+    /// Read from the primary (resovled) resource
+    Read,
+    /// Read from an MSAA resource
+    ReadMsaa
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 struct GraphPassInfo {
     /// For render passes, specifies the view (render target, camera etc
@@ -344,12 +367,11 @@ struct GraphPassInfo {
     /// Dependency info for determining execute order
     depends_on: Option<Vec<String>>,
     /// Array of resources we wish to use during this pass, which can be passed to a shader (to know the srv indices)
-    uses: Option<Vec<String>>,
+    uses: Option<Vec<(String, ResourceUsage)>>,
     /// For compute passes the number of threads
     thread_count: Option<(u32, u32, u32)>,
-    /// The nbame of a resource a compute shader will write to so we can calculate the group size
-    /// based on the resource dimension
-    compute_target: Option<String>
+    /// The name of a resource a compute shader wil distrubute work into
+    target_dimension: Option<String>
 }
 
 /// A GPU buffer type which can resize and stretch like a vector
@@ -370,7 +392,7 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
             len: 0,
             capacity: 0,
             buffers: None,
-            usage: usage,
+            usage,
             bb: 0,
             num_buffers,
             resource_type: std::marker::PhantomData
@@ -379,7 +401,7 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
 
     /// Swap buffers once a frame for safe CPU writes an GPU in flight reads
     pub fn swap(&mut self) {
-        self.bb = (self.bb + 1) % self.num_buffers
+        // self.bb = (self.bb + 1) % self.num_buffers
     }
 
     /// Access the internal buffer to write to this frame, for safe CPU writes an GPU in flight reads
@@ -426,6 +448,11 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
     /// Returns the length of the data written to the buffer in elements
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    /// Returns true if the len is 0
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 
     /// Returns the capacity of the buffer
@@ -594,7 +621,7 @@ pub struct CameraData {
 }
 
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct GpuBufferLookup {
     /// index of the srv or cbv
     pub index: u32,
@@ -602,17 +629,8 @@ pub struct GpuBufferLookup {
     pub count: u32
 }
 
-impl GpuBufferLookup {
-    pub fn new() -> Self {
-        Self {
-            index: 0,
-            count: 0
-        }
-    }
-}
-
 #[repr(C)]
-#[derive(Clone)]
+#[derive(Clone, Default, Debug)]
 pub struct WorldBufferInfo {
     /// srv index of the draw buffer (contains entity world matrices and draw call data)
     pub draw: GpuBufferLookup,
@@ -628,20 +646,6 @@ pub struct WorldBufferInfo {
     pub directional_light: GpuBufferLookup,
     /// cbv index of the camera
     pub camera: GpuBufferLookup
-}
-
-impl Default for WorldBufferInfo {
-    fn default() -> Self {
-        Self {
-            draw: GpuBufferLookup::new(),
-            extent: GpuBufferLookup::new(),
-            material: GpuBufferLookup::new(),
-            point_light: GpuBufferLookup::new(),
-            spot_light: GpuBufferLookup::new(),
-            directional_light: GpuBufferLookup::new(),
-            camera:  GpuBufferLookup::new(),
-        }
-    }
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -764,14 +768,22 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo, ratio_size: (u64, u64)) -> gf
         }
     }
 
+    let mut mip_levels = pmfx_texture.mip_levels;
+    if let Some(mips) = pmfx_texture.generate_mips {
+        if mips {
+            usage |= gfx::TextureUsage::GENERATE_MIP_MAPS;
+            mip_levels = gfx::mip_levels_for_dimension(width, height);
+        }
+    }
+
     gfx::TextureInfo {
         width,
         height,
         tex_type,
         initial_state,
         usage,
+        mip_levels,
         depth: pmfx_texture.depth,
-        mip_levels: pmfx_texture.mip_levels,
         array_layers: pmfx_texture.array_layers,
         samples: pmfx_texture.samples,
         format: pmfx_texture.format,
@@ -861,6 +873,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             reloader: Reloader::create(Box::new(PmfxReloadResponder::new())),
             world_buffers: DynamicWorldBuffers::default(),
             shader_heap,
+            unit_quad_mesh: primitives::create_unit_quad_mesh(device),
             total_stats: TotalStats::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
         }
@@ -1119,6 +1132,40 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Retruns a vector of resource use indices specified in `pmfx` pass and based on `ResourceUsage`
+    /// creates resources that do not yet exist
+    fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<u32>, super::Error> {
+        // create textures we may use
+        let mut use_indices = Vec::new();
+        if let Some(uses) = &info.uses {
+            for (resource, usage) in uses {
+                self.create_texture(device, resource)?;
+                let index = match usage {
+                    ResourceUsage::Write => {
+                        self.get_texture(resource)
+                            .unwrap()
+                            .get_uav_index()
+                            .unwrap()
+                    }
+                    ResourceUsage::Read => {
+                         self.get_texture(resource)
+                            .unwrap()
+                            .get_srv_index()
+                            .unwrap()
+                    }
+                    ResourceUsage::ReadMsaa => {
+                        self.get_texture(resource)
+                            .unwrap()
+                            .get_msaa_srv_index()
+                            .unwrap()
+                    }
+                };
+                use_indices.push(index as u32);
+            }
+        }
+        Ok(use_indices)
+    }
+
     /// Create a view pass from information specified in pmfx file
     fn create_view_pass(&mut self, device: &mut D, view_name: &str, graph_pass_name: &str, info: &GraphPassInfo) -> Result<(), super::Error> {
         if !self.views.contains_key(graph_pass_name) && self.pmfx.views.contains_key(view_name) {
@@ -1210,6 +1257,22 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 });
             }
 
+            //
+            let use_indices = self.get_resource_use_indices(device, info)?;
+
+            // get blit dimension, tbh this shoudl probably be a rect
+            let target_size = if let Some(target) = &info.target_dimension {
+                if let Some(dim) = self.get_texture_2d_size(target) {
+                    dim
+                }
+                else {
+                    (0, 0)
+                }
+            }
+            else {
+                (0, 0)
+            };
+
             let view = View::<D> {
                 graph_pass_name: graph_pass_name.to_string(),
                 pmfx_view_name: view_name.to_string(),
@@ -1232,7 +1295,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 },
                 cmd_buf: device.create_cmd_buf(2),
                 camera: pmfx_view.camera.to_string(),
-                view_pipeline
+                view_pipeline,
+                use_indices,
+                blit_dimension: Vec2f::from((target_size.0 as f32, target_size.1 as f32))
             };
 
             self.views.insert(graph_pass_name.to_string(), 
@@ -1272,23 +1337,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
         };
 
         // create textures we may use
-        let mut srv_indices = Vec::new();
-        if let Some(uses) = &info.uses {
-            for resource_use in uses {
-                self.create_texture(device, resource_use)?;
-
-                let srv = self.get_texture(resource_use)
-                    .unwrap()
-                    .get_srv_index()
-                    .unwrap();
-
-                srv_indices.push(srv as u32);
-            }
-        }
+        let use_indices = self.get_resource_use_indices(device, info)?;
 
         // get the target dimension
-        let target_size = if let Some(target) = &info.compute_target {
-            self.get_texture_3d_size(target).unwrap()
+        let target_size = if let Some(target) = &info.target_dimension {
+            if let Some(dim) = self.get_texture_3d_size(target) {
+                dim
+            }
+            else if let Some(dim) = self.get_texture_2d_size(target) {
+                (dim.0, dim.1, 1)
+            }
+            else {
+                (1, 1, 1)
+            }
         }
         else {
             (1, 1, 1)
@@ -1318,16 +1379,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
             name_hash,
             colour_hash,
             group_count: gfx::Size3 {
-                x: target_size.0 as u32 / thread_count.0,
-                y: target_size.1 as u32 / thread_count.1,
-                z: target_size.2 as u32 / thread_count.2,
+                x: ceil(target_size.0 as f32 / thread_count.0 as f32) as u32,
+                y: ceil(target_size.1 as f32 / thread_count.1 as f32) as u32,
+                z: ceil(target_size.2 as f32 / thread_count.2 as f32) as u32,
             },
             thread_count: gfx::Size3 {
                 x: thread_count.0,
                 y: thread_count.1,
                 z: thread_count.2,
             },
-            srv_indices
+            use_indices
         };
 
         self.compute_passes.insert(
@@ -1368,6 +1429,24 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     self.create_compute_pass(device, graph_pass_name, node)?;
                 }
             }
+        }
+        Ok(())
+    }
+
+    pub fn generate_mip_maps(
+        &mut self,
+        device: &mut D,
+        texture_name: &str) -> Result<(), super::Error> {
+        if let Some(tex) = self.get_texture(texture_name) {
+            let mut cmd_buf = device.create_cmd_buf(1);
+            let barrier_name = format!("barrier_generate_mip_maps-{}", texture_name);
+            cmd_buf.begin_event(0xffdc789a, &format!("generate_mip_maps: {}", &texture_name));
+            cmd_buf.generate_mip_maps(tex, device, device.get_shader_heap())?;
+            cmd_buf.end_event();
+            cmd_buf.close()?;
+            self.barriers.insert(barrier_name.to_string(), cmd_buf);
+            // add barrier placeholder in the command_queue
+            self.command_queue.push(barrier_name);
         }
         Ok(())
     }
@@ -1432,11 +1511,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 // update track state
                 texture_barriers.remove(texture_name);
                 texture_barriers.insert(texture_name.to_string(), ResourceState::ResolveSrc);
-
-                
             }
 
-            // add barrier placeholder in the execute order
+            // add barrier placeholder in the command_queue
             self.command_queue.push(barrier_name);
         }
         Ok(())
@@ -1452,7 +1529,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if texture_barriers.contains_key(texture_name) {
             let state = texture_barriers[texture_name];
             if state != target_state {
-                // add barrier placeholder in the execute order
+                // add barrier placeholder in the command_queue
                 let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
                 self.command_queue.push(barrier_name.to_string());          
 
@@ -1608,6 +1685,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // TODO: tell user without spewing out errors
                 }
 
+                // TODO: data driven
+                /*
+                if name == "main_colour" {
+                    let result = self.generate_mip_maps(device, &name);
+                    if let Err(e) = result {
+                        println!("{}", e.msg);
+                    }
+                }
+                */
+
                 self.create_texture_transition_barrier(
                     device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
             }
@@ -1629,7 +1716,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
-                .expect(&format!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+                .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 self.create_shader(device, Path::new(&folder), &pipeline.cs)?;
             }
@@ -1665,7 +1753,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
-                .expect(&format!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+                .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+            
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 self.create_shader(device, Path::new(&folder), &pipeline.vs)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
@@ -1966,12 +2055,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     fn recreate_textures(&mut self, device: &mut D, texture_names: &HashSet<String>) -> Result<(), super::Error> {
         for texture_name in texture_names {
             // remove the old and destroy
-            let tex = self.textures.remove(texture_name);
-            if let Some(tex) = tex {
-                device.destroy_texture(tex.1.texture);
-                // create with new dimensions from 'window_sizes'
-                self.create_texture(device, texture_name)?;
-            }
+            self.textures.remove(texture_name);
+            // create with new dimensions from 'window_sizes'
+            self.create_texture(device, texture_name)?;
         }
         Ok(())
     }

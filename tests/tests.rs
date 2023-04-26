@@ -366,6 +366,26 @@ fn align_tests() {
     assert_eq!(val % 21, 0);
 }
 
+#[test]
+fn image_size_tests() {
+    assert_eq!(gfx::mip_levels_for_dimension(1024, 1024), 11);
+    assert_eq!(gfx::mip_levels_for_dimension(512, 512), 10);
+    assert_eq!(gfx::mip_levels_for_dimension(256, 256), 9);
+    assert_eq!(gfx::mip_levels_for_dimension(128, 128), 8);
+    assert_eq!(gfx::mip_levels_for_dimension(64, 64), 7);
+    assert_eq!(gfx::mip_levels_for_dimension(32, 32), 6);
+    assert_eq!(gfx::mip_levels_for_dimension(16, 16), 5);
+    assert_eq!(gfx::mip_levels_for_dimension(8, 8), 4);
+    assert_eq!(gfx::mip_levels_for_dimension(4, 4), 3);
+    assert_eq!(gfx::mip_levels_for_dimension(2, 2), 2);
+    assert_eq!(gfx::mip_levels_for_dimension(1, 1), 1);
+
+    assert_eq!(gfx::mip_levels_for_dimension(1024, 2048), 12);
+    assert_eq!(gfx::mip_levels_for_dimension(1024 + 33, 1024 + 513), 11);
+    assert_eq!(gfx::mip_levels_for_dimension(512 + 33, 512 + 263), 10);
+}
+
+
 // client tests must run 1 at a time, this boots the client with empty user info
 #[test]
 fn pmfx() -> Result<(), hotline_rs::Error> {
@@ -384,7 +404,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     }).unwrap();
 
     // loads the test shaders
-    ctx.pmfx.load(&hotline_rs::get_data_path("shaders/tests"))?;
+    ctx.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples"))?;
 
     // create pipelines
     ctx.pmfx.create_render_pipeline(&ctx.device, "texture2d_array_test", ctx.swap_chain.get_backbuffer_pass())?;
@@ -393,19 +413,22 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     // test getting pass for format
     let fmt = ctx.swap_chain.get_backbuffer_pass().get_format_hash();
     let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array_test", fmt)?;
-    let colour_pipeline = ctx.pmfx.get_render_pipeline_for_format("blend_additive", fmt)?;
-
-    // textures pipeline has 2 sets of push constants, so the resources bind onto 2
-    let slots = texture_pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
+    
+    // texture array pipeline has 2 sets of push constants, so the resources bind onto 2
+    // t0, space9 is Texture2DArray
+    let slots = texture_pipeline.get_descriptor_slot(0, 9, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_some());
+
     if let Some(slots) = slots {
         assert_eq!(slots.slot, 2);
     }
 
-    let slots = colour_pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
+    // colour_pipeline has no textures
+    let colour_pipeline = ctx.pmfx.get_render_pipeline_for_format("blend_additive", fmt)?;
+    let slots = colour_pipeline.get_descriptor_slot(0, 6, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_none());
 
-    let slots = colour_pipeline.get_descriptor_slot(0, gfx::DescriptorType::PushConstants);
+    let slots = colour_pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
     assert!(slots.is_some());
 
     Ok(())
@@ -503,7 +526,7 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
         plugins.insert("ecs".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });
-        plugins.insert("ecs_demos".to_string(), PluginInfo {
+        plugins.insert("ecs_examples".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });
     }
@@ -517,6 +540,439 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
     
     // run
     ctx.run_once()
+}
+
+/// default values for examples
+const fn examples_config_defaults() -> &'static str {
+r#"
+{
+    "debug_draw_flags": {
+        "bits": 1
+    },
+    "default_cameras": {
+        "directional_lights": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            249.39102172851562,
+            365.6768493652344,
+            232.56088256835938
+        ],
+        "rot": [
+            -47.0,
+            47.0,
+            0.0
+        ],
+        "zoom": 500.0
+        },
+        "draw": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            0.3299350440502167,
+            1.5006731748580933,
+            -2.6871063709259033
+        ],
+        "rot": [
+            -29.0,
+            173.0,
+            0.0
+        ],
+        "zoom": 3.0953867435455322
+        },
+        "draw_indexed": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            4.720995903015137,
+            6.772276401519775,
+            -7.269696235656738
+        ],
+        "rot": [
+            -38.0,
+            147.0,
+            0.0
+        ],
+        "zoom": 11.0
+        },
+        "draw_indexed_cbuffer_instanced": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            101.81123352050781,
+            123.74796295166016,
+            121.33390808105469
+        ],
+        "rot": [
+            -38.0,
+            40.0,
+            0.0
+        ],
+        "zoom": 201.0
+        },
+        "draw_indexed_push_constants": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            101.81123352050781,
+            123.74796295166016,
+            121.33390808105469
+        ],
+        "rot": [
+            -38.0,
+            40.0,
+            0.0
+        ],
+        "zoom": 201.0
+        },
+        "draw_indirect": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -36.38866424560547,
+            67.58219146728516,
+            -65.6468734741211
+        ],
+        "rot": [
+            -42.0,
+            209.0,
+            0.0
+        ],
+        "zoom": 101.0
+        },
+        "draw_indirect_gpu_frustum_culling": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -135.22999572753906,
+            2188.942626953125,
+            -186.128173828125
+        ],
+        "rot": [
+            -84.0,
+            216.0,
+            0.0
+        ],
+        "zoom": 2201.0
+        },
+        "draw_material": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Fly",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -184.70013427734375,
+            346.8671875,
+            205.2322235107422
+        ],
+        "rot": [
+            -50.0,
+            1401.0,
+            0.0
+        ],
+        "zoom": 401.0
+        },
+        "draw_push_constants_texture": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            51.158878326416016,
+            62.18181228637695,
+            60.968780517578125
+        ],
+        "rot": [
+            -38.0,
+            40.0,
+            0.0
+        ],
+        "zoom": 101.0
+        },
+        "geometry_primitives": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            129.87283325195312,
+            208.39752197265625,
+            172.3470916748047
+        ],
+        "rot": [
+            -44.0,
+            37.0,
+            0.0
+        ],
+        "zoom": 300.0
+        },
+        "point_lights": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            315.1270446777344,
+            4168.69384765625,
+            403.34423828125
+        ],
+        "rot": [
+            -83.0,
+            38.0,
+            0.0
+        ],
+        "zoom": 4200.0
+        },
+        "spot_lights": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            315.1270446777344,
+            4168.69384765625,
+            403.34423828125
+        ],
+        "rot": [
+            -83.0,
+            38.0,
+            0.0
+        ],
+        "zoom": 4200.0
+        },
+        "tangent_space_normal_maps": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            152.46359252929688,
+            185.31411743164062,
+            181.69903564453125
+        ],
+        "rot": [
+            -38.0,
+            40.0,
+            0.0
+        ],
+        "zoom": 301.0
+        },
+        "test_blend_states": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            75.20877838134766,
+            149.3721160888672,
+            111.50161743164062
+        ],
+        "rot": [
+            -48.0,
+            34.0,
+            0.0
+        ],
+        "zoom": 201.0
+        },
+        "test_compute": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -77.8858642578125,
+            167.95074462890625,
+            129.62384033203125
+        ],
+        "rot": [
+            -48.0,
+            -31.0,
+            0.0
+        ],
+        "zoom": 226.0
+        },
+        "test_cubemap": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            75.20877838134766,
+            149.3721160888672,
+            111.50161743164062
+        ],
+        "rot": [
+            -48.0,
+            34.0,
+            0.0
+        ],
+        "zoom": 201.0
+        },
+        "test_multiple_render_targets": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            1012.0797119140625,
+            1288.74560546875,
+            1012.0797119140625
+        ],
+        "rot": [
+            -42.0,
+            45.0,
+            0.0
+        ],
+        "zoom": 1926.0
+        },
+        "test_raster_states": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -28.536039352416992,
+            80.66219329833984,
+            53.66848373413086
+        ],
+        "rot": [
+            -53.0,
+            -28.0,
+            0.0
+        ],
+        "zoom": 101.0
+        },
+        "test_texture2d_array": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            61.213871002197266,
+            62.5814208984375,
+            287.9886169433594
+        ],
+        "rot": [
+            -12.0,
+            12.0,
+            0.0
+        ],
+        "zoom": 301.0
+        },
+        "test_texture3d": {
+        "aspect": 0.9342105388641357,
+        "camera_type": "Orbit",
+        "focus": [
+            0.0,
+            0.0,
+            0.0
+        ],
+        "fov": 60.0,
+        "pos": [
+            -68.53109741210938,
+            70.45830535888672,
+            78.83601379394531
+        ],
+        "rot": [
+            -34.0,
+            -41.0,
+            0.0
+        ],
+        "zoom": 126.0
+        }
+    }
+}
+"#
 }
 
 /// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
@@ -533,15 +989,21 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
         plugins.insert("ecs".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });
-        plugins.insert("ecs_demos".to_string(), PluginInfo {
+        plugins.insert("ecs_examples".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });
     }
 
-    let cameras = "\"default_cameras\": {\n    \"test_raster_states\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -98.194916,\n        139.37158,\n        -63.3391\n      ],\n      \"rot\": [\n        -48.0,\n        235.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 176.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"spot_lights\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        689.35834,\n        4019.8125,\n        858.7116\n      ],\n      \"rot\": [\n        -77.0,\n        44.0,\n        0.0\n      ],\n      \"focus\": [\n        28.986124,\n        -97.87555,\n        174.87614\n      ],\n      \"zoom\": 4226.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"point_lights\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        182.38878,\n        2662.2185,\n        1634.4049\n      ],\n      \"rot\": [\n        -62.0,\n        6.0,\n        0.0\n      ],\n      \"focus\": [\n        28.986124,\n        -97.87555,\n        174.87614\n      ],\n      \"zoom\": 3126.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_material\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -114.654564,\n        186.1614,\n        -117.1013\n      ],\n      \"rot\": [\n        -45.0,\n        222.0,\n        0.0\n      ],\n      \"focus\": [\n        15.933952,\n        -9.000065,\n        27.931932\n      ],\n      \"zoom\": 276.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"test_texture3d\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -66.92452,\n        96.105034,\n        67.170876\n      ],\n      \"rot\": [\n        -44.0,\n        314.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 126.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indexed_vertex_buffer_instanced\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -219.33995,\n        342.10468,\n        -189.63248\n      ],\n      \"rot\": [\n        -47.0,\n        226.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 476.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"test_texture2d_array\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -226.33401,\n        102.97563,\n        -125.46829\n      ],\n      \"rot\": [\n        -20.0,\n        240.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 276.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_push_constants_texture\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -67.33988,\n        115.45073,\n        -64.553024\n      ],\n      \"rot\": [\n        -45.0,\n        222.0,\n        0.0\n      ],\n      \"focus\": [\n        15.933952,\n        -9.000065,\n        27.931932\n      ],\n      \"zoom\": 176.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"tangent_space_normal_maps\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        137.51843,\n        228.4851,\n        225.79953\n      ],\n      \"rot\": [\n        -46.0,\n        33.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 326.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indexed_cbuffer_instanced\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -72.163376,\n        122.69857,\n        -47.505707\n      ],\n      \"rot\": [\n        -47.0,\n        226.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 176.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"test_cubemap\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -3.079699,\n        107.86743,\n        81.7708\n      ],\n      \"rot\": [\n        -52.0,\n        359.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 126.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indirect_gpu_frustum_culling\": {\n      \"camera_type\": \"Fly\",\n      \"pos\": [\n        36.28253,\n        1094.353,\n        -56.87494\n      ],\n      \"rot\": [\n        -17.0,\n        242.0,\n        0.0\n      ],\n      \"focus\": [\n        0.14157295,\n        6.260146,\n        -2.9459028\n      ],\n      \"zoom\": 1676.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indexed\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -55.17009,\n        123.608604,\n        -135.77267\n      ],\n      \"rot\": [\n        -35.0,\n        202.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 226.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"geometry_primitives\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        148.3664,\n        224.52704,\n        178.43329\n      ],\n      \"rot\": [\n        -45.0,\n        41.0,\n        0.0\n      ],\n      \"focus\": [\n        -2.8662376,\n        -5.9897594,\n        4.4600344\n      ],\n      \"zoom\": 326.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"test_blend_states\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -98.194916,\n        139.37158,\n        -63.3391\n      ],\n      \"rot\": [\n        -48.0,\n        235.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 176.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"directional_lights\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        507.42844,\n        486.19464,\n        509.88507\n      ],\n      \"rot\": [\n        -45.0,\n        55.0,\n        0.0\n      ],\n      \"focus\": [\n        28.986124,\n        -97.87555,\n        174.87614\n      ],\n      \"zoom\": 826.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indexed_push_constants\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -99.10036,\n        195.83395,\n        -114.45306\n      ],\n      \"rot\": [\n        -47.0,\n        217.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 276.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw_indirect\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -25.002493,\n        56.120632,\n        48.60706\n      ],\n      \"rot\": [\n        -41.0,\n        334.0,\n        0.0\n      ],\n      \"focus\": [\n        0.14157295,\n        6.260146,\n        -2.9459028\n      ],\n      \"zoom\": 76.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"draw\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -85.85607,\n        180.96625,\n        -211.72314\n      ],\n      \"rot\": [\n        -35.0,\n        202.0,\n        0.0\n      ],\n      \"focus\": [\n        14.180221,\n        -6.019674,\n        35.875328\n      ],\n      \"zoom\": 326.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    },\n    \"test_compute\": {\n      \"camera_type\": \"Orbit\",\n      \"pos\": [\n        -118.6695,\n        165.57088,\n        117.14041\n      ],\n      \"rot\": [\n        -44.0,\n        314.0,\n        0.0\n      ],\n      \"focus\": [\n        -1.7258416,\n        8.578082,\n        4.209255\n      ],\n      \"zoom\": 226.0,\n      \"aspect\": 0.93421054,\n      \"fov\": 60.0\n    }\n  }";
-
     if let Some(plugin_data) = &mut config.plugin_data {
-        plugin_data.insert("ecs".to_string(), format!("{{\"active_demo\": \"{}\", {}}}", demo_name, cameras));
+        let mut plugin_defaults : serde_json::Value = serde_json::from_str(examples_config_defaults())?;
+        
+        // activate the current demo
+        plugin_defaults.as_object_mut().unwrap().insert(
+            "active_demo".to_string(), 
+            serde_json::Value::String(demo_name.to_string())
+        );
+
+        plugin_data.insert("ecs".to_string(), plugin_defaults);
     }
 
     // create client

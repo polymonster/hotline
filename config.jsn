@@ -109,12 +109,14 @@
     // windows specific data, will also build (base)
     win32-data(base): {
         pmfx: {
+            type: pmfx_dev
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
+                "-num_threads 1"
                 "-args"
                 "-Zpr"
             ]

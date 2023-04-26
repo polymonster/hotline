@@ -28,8 +28,7 @@ pub fn geometry_primitives(client: &mut Client<gfx_platform::Device, os_platform
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "mesh_debug",
-        ..Default::default()
+        render_graph: "mesh_debug"
     }
 }
 
@@ -97,7 +96,6 @@ pub fn setup_geometry_primitives(
                             MeshComponent(meshes[i].0.clone()),
                             Position(iter_pos),
                             Rotation(Quatf::from_euler_angles(0.5, 0.0, 0.5)),
-                            //Rotation(Quatf::identity()),
                             Scale(splat3f(10.0)),
                             WorldMatrix(Mat34f::identity())
                         ));
@@ -125,7 +123,7 @@ pub fn setup_geometry_primitives(
                     }
                 }
             }
-            i = i + 1;
+            i += 1;
         }
     }
 }
@@ -146,7 +144,7 @@ pub fn rotate_meshes(
 /// Init function for tangent space normal maps to debug tangents 
 #[no_mangle]
 pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_geometry_primitives",
@@ -155,8 +153,7 @@ pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_pl
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "mesh_debug_tangent_space",
-        ..Default::default()
+        render_graph: "mesh_debug_tangent_space"
     }
 }
 
@@ -195,21 +192,17 @@ pub fn render_meshes_debug_tangent_space(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let (texture_query, mesh_draw_query) = queries;
 
     // bind first texture
-    for texture in &texture_query {
+    if let Some(texture) = (&texture_query).into_iter().next() {
         let usrv = texture.get_srv_index().unwrap() as u32;
         view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
-        break;
     }
 
     for (world_matrix, mesh) in &mesh_draw_query {
@@ -229,7 +222,7 @@ pub fn render_meshes_debug_tangent_space(
 /// Init function for primitives demo
 #[no_mangle]
 pub fn point_lights(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_point_lights"
@@ -238,8 +231,7 @@ pub fn point_lights(client: &mut Client<gfx_platform::Device, os_platform::App>)
             "animate_lights",
             "batch_lights"
         ],
-        render_graph: "mesh_lit",
-        ..Default::default()
+        render_graph: "mesh_lit"
     }
 }
 
@@ -305,7 +297,7 @@ pub fn setup_point_lights(
 
     // ground plane
     commands.spawn((
-        MeshComponent(plane.clone()),
+        MeshComponent(plane),
         Position(Vec3f::zero()),
         Rotation(Quatf::identity()),
         Scale(splat3f(half_extent * 2.0)),
@@ -374,8 +366,7 @@ pub fn spot_lights(client: &mut Client<gfx_platform::Device, os_platform::App>) 
             "animate_lights2",
             "batch_lights"
         ],
-        render_graph: "mesh_lit",
-        ..Default::default()
+        render_graph: "mesh_lit"
     }
 }
 
@@ -579,8 +570,7 @@ pub fn directional_lights(client: &mut Client<gfx_platform::Device, os_platform:
             "animate_lights3",
             "batch_lights"
         ],
-        render_graph: "mesh_lit",
-        ..Default::default()
+        render_graph: "mesh_lit"
     }
 }
 
@@ -650,7 +640,7 @@ pub fn setup_directional_lights(
 
     // ground plane
     commands.spawn((
-        MeshComponent(plane.clone()),
+        MeshComponent(plane),
         Position(Vec3f::zero()),
         Rotation(Quatf::identity()),
         Scale(splat3f(half_extent * 2.0)),
@@ -690,7 +680,7 @@ pub fn animate_lights3(
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw"
@@ -698,8 +688,7 @@ pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Sche
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "mesh_debug",
-        ..Default::default()
+        render_graph: "mesh_draw_identity"
     }
 }
 
@@ -716,7 +705,7 @@ pub fn setup_draw(
     commands.spawn((
         Position(Vec3f::zero()),
         Velocity(Vec3f::one()),
-        MeshComponent(cube_mesh.clone()),
+        MeshComponent(cube_mesh),
         WorldMatrix(pos * scale)
     ));
 }
@@ -732,12 +721,10 @@ pub fn draw_meshes(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+    for (_, mesh) in &mesh_draw_query {
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_instanced(3, 1, 0, 0);
     }
@@ -752,12 +739,12 @@ pub fn draw_meshes(
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed"
         ],
-        render_graph: "mesh_debug",
+        render_graph: "mesh_draw_identity_indexed",
         ..Default::default()
     }
 }
@@ -774,7 +761,7 @@ pub fn setup_draw_indexed(
     commands.spawn((
         Position(Vec3f::zero()),
         Velocity(Vec3f::one()),
-        MeshComponent(cube_mesh.clone()),
+        MeshComponent(cube_mesh),
         WorldMatrix(pos * scale)
     ));
 }
@@ -782,7 +769,7 @@ pub fn setup_draw_indexed(
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
 #[no_mangle]
 pub fn draw_indexed_push_constants(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_push_constants"
@@ -806,8 +793,8 @@ pub fn setup_draw_indexed_push_constants(
 
     for y in 0..dim {    
         for x in 0..dim {    
-            let wave_x = f32::abs(f32::sin((x as f32) / 20.0 as f32)) * 20.0;
-            let wave_y = f32::abs(f32::sin((y as f32) / 20.0 as f32)) * 20.0;
+            let wave_x = f32::abs(f32::sin((x as f32) / 20.0)) * 20.0;
+            let wave_y = f32::abs(f32::sin((y as f32) / 20.0)) * 20.0;
             let wave_h = f32::cos(y as f32) + f32::sin(x as f32 / 0.5);
 
             let pos = Mat34f::from_translation(
@@ -838,7 +825,7 @@ pub fn setup_draw_indexed_push_constants(
 /// no root binds are changed or buffers updated, this is just simply to test the execute indirect call
 #[no_mangle]
 pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indirect"
@@ -887,7 +874,7 @@ pub fn setup_draw_indirect(
     commands.spawn((
         Position(Vec3f::zero()),
         Velocity(Vec3f::one()),
-        MeshComponent(tri.clone()),
+        MeshComponent(tri),
         WorldMatrix(pos * scale),
         BufferComponent(draw_args),
         CommandSignatureComponent(command_signature)
@@ -944,7 +931,7 @@ pub fn draw_meshes_indirect(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     for (world_matrix, mesh, command, args) in &mesh_draw_indirect_query {
@@ -973,7 +960,7 @@ pub fn draw_meshes_indirect(
 /// it's child (instance) entities. The vertex shader layput steps the instance buffer per instance
 #[no_mangle]
 pub fn draw_indexed_vertex_buffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_vertex_buffer_instanced"
@@ -982,7 +969,7 @@ pub fn draw_indexed_vertex_buffer_instanced(client: &mut Client<gfx_platform::De
             "rotate_meshes",
             "batch_world_matrix_instances"
         ],
-        render_graph: "mesh_debug_vertex_buffer_instanced"
+        render_graph: "mesh_draw_vertex_buffer_instanced"
     }
 }
 
@@ -1010,7 +997,7 @@ pub fn setup_draw_indexed_vertex_buffer_instanced(
     for mesh in meshes {
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: PipelineComponent("mesh_debug_vertex_buffer_instanced".to_string()),
+            pipeline: PipelineComponent("mesh_vertex_buffer_instanced".to_string()),
             instance_buffer: InstanceBuffer { 
                 buffer: device.create_buffer(&gfx::BufferInfo{
                     usage: gfx::BufferUsage::VERTEX,
@@ -1056,15 +1043,9 @@ pub fn render_meshes_vertex_buffer_instanced(
     for (instance_batch, mesh, pipeline) in &instance_draw_query {
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.set_render_pipeline(pipeline);
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        
-        // bind the shader resource heap for t0 (if exists)
-        let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-        if let Some(slot) = slot {
-            view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-        }
-
+        view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
@@ -1082,7 +1063,7 @@ pub fn render_meshes_vertex_buffer_instanced(
 /// the cbuffer is created in a separate heap and the matrices and indexed into using the instance id system value semantic
 #[no_mangle]
 pub fn draw_indexed_cbuffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indexed_cbuffer_instanced"
@@ -1091,7 +1072,7 @@ pub fn draw_indexed_cbuffer_instanced(client: &mut Client<gfx_platform::Device, 
             "rotate_meshes",
             "batch_world_matrix_instances"
         ],
-        render_graph: "mesh_debug_cbuffer_instanced"
+        render_graph: "mesh_draw_cbuffer_instanced"
     }
 }
 
@@ -1127,7 +1108,7 @@ pub fn setup_draw_indexed_cbuffer_instanced(
         });
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: PipelineComponent("mesh_debug_cbuffer_instanced".to_string()),
+            pipeline: PipelineComponent("mesh_cbuffer_instanced".to_string()),
             instance_buffer: InstanceBuffer { 
                 buffer: device.create_buffer_with_heap(&gfx::BufferInfo{
                     usage: gfx::BufferUsage::CONSTANT_BUFFER,
@@ -1173,10 +1154,12 @@ pub fn render_meshes_cbuffer_instanced(
     for (instance_batch, mesh, pipeline) in &instance_draw_query {
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.set_render_pipeline(pipeline);
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
+        // TODO_BINDING
         view.cmd_buf.set_render_heap(1, instance_batch.heap.as_ref().unwrap(), 0);
+        
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
 
@@ -1192,7 +1175,7 @@ pub fn render_meshes_cbuffer_instanced(
 
 #[no_mangle]
 pub fn draw_push_constants_texture(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_push_constants_texture"
@@ -1338,13 +1321,10 @@ pub fn render_meshes_push_constants_texture(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     for (world_matrix, mesh, texture) in &mesh_draw_query {
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
@@ -1375,6 +1355,7 @@ pub fn draw_material(client: &mut Client<gfx_platform::Device, os_platform::App>
         ],
         update: systems![
             "rotate_meshes",
+            "batch_lights",
             "batch_material_instances",
             "batch_bindless_draw_data"
         ],
@@ -1519,12 +1500,37 @@ pub fn setup_draw_material(
         );
     }
 
+    let num_lights = 16;
     pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
         draw_capacity: entity_itr as usize,
         extent_capacity: entity_itr as usize,
         material_capacity: materials.len(),
+        point_light_capacity: num_lights,
         ..Default::default()
     });
+
+    // add lights
+    let light_buffer = &mut pmfx.get_world_buffers_mut().point_light;
+    light_buffer.clear();
+
+    for _ in 0..num_lights {
+        let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
+        let col = rgba8_to_vec4(0xf89f5bff);
+        commands.spawn((
+            Position(pos),
+            Colour(col),
+            LightComponent {
+                light_type: LightType::Point,
+                radius: 64.0,
+                ..Default::default()
+            }
+        ));
+        light_buffer.push(&PointLightData{
+            pos: pos,
+            radius: 64.0,
+            colour: col
+        });
+    }
 
     pmfx.get_world_buffers_mut().material.write(0, &material_data);
 
@@ -1575,7 +1581,7 @@ pub struct DrawIndirectComponent {
 #[no_mangle]
 pub fn draw_indirect_gpu_frustum_culling(
     client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_draw_indirect_gpu_frustum_culling"
@@ -1625,7 +1631,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
     ];
     let mesh_dist = rand::distributions::Uniform::from(0..meshes.len());
 
-    let irc = 256;
+    let irc = 128;
     let size = 10.0;
     let frc = 1.0 / irc as f32;
     let mut rng = rand::thread_rng();
@@ -1651,7 +1657,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
                 argument_type: gfx::IndirectArgumentType::PushConstants,
                 arguments: Some(gfx::IndirectTypeArguments {
                     push_constants: gfx::IndirectPushConstantsArguments {
-                        slot: pipeline.get_descriptor_slot(1, gfx::DescriptorType::PushConstants).unwrap().slot,
+                        slot: pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().slot,
                         offset: 0,
                         num_values: 1
                     }
@@ -1764,11 +1770,11 @@ pub fn swirling_meshes(
     let mut i = 0.0;
     for (mut rotation, mut position) in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
-        
-        let pr = rotate_2d(position.0.xz(), time.accumulated * 0.0001);
+    
+        let pr = rotate_2d(position.0.xz(), time.0.delta);
         position.0.set_xz(pr);
         
-        position.0.y += sin(time.accumulated + i) * 2.0;
+        position.0.y += sin(time.0.delta + i / f32::tau()) * 2.0;
 
         i += 1.0;
     }
@@ -1802,10 +1808,10 @@ pub fn dispatch_compute_frustum_cull(
 
         // run the shader to cull the entities
         let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline).unwrap();
-        pass.cmd_buf.set_compute_pipeline(&pipeline);
+        pass.cmd_buf.set_compute_pipeline(pipeline);
 
         // resource index info for looking up input (draw all info) / output (culled draw call info)
-        let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             // output uav
             pass.cmd_buf.push_compute_constants(slot.slot, 1, 0, 
@@ -1818,18 +1824,13 @@ pub fn dispatch_compute_frustum_cull(
         
         // world buffer info to lookup matrices and aabb info
         let world_buffer_info = pmfx.get_world_buffer_info();
-        let slot = pipeline.get_descriptor_slot(2, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
-            // println!("{}", world_buffer_info.draw.index);
             pass.cmd_buf.push_compute_constants(
                 slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
         }
 
-        // bind the heap for un-ordered access and srvs, it should be on the same slot
-        let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::UnorderedAccess);
-        if let Some(slot) = slot {
-            pass.cmd_buf.set_compute_heap(slot.slot, &pmfx.shader_heap);
-        }
+        pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
         pass.cmd_buf.dispatch(
             gfx::Size3 {
@@ -1863,26 +1864,16 @@ pub fn draw_meshes_indirect_culling(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-    
-    // bind the shader resource heap for t0 (if exists)
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    // bind the shader resource heap for t1 (if exists)
-    let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_descriptor_slot(2, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(
             slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
+
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     for indirect_draw in &indirect_draw_query {
         view.cmd_buf.execute_indirect(
@@ -1905,7 +1896,7 @@ pub fn draw_meshes_indirect_culling(
 /// Test various combinations of different rasterizer states
 #[no_mangle]
 pub fn test_raster_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_raster_test"
@@ -1968,7 +1959,7 @@ pub fn setup_raster_test(
 /// Test various combinations of different blend states
 #[no_mangle]
 pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_blend_test"
@@ -1976,8 +1967,7 @@ pub fn test_blend_states(client: &mut Client<gfx_platform::Device, os_platform::
         update: systems![
             "rotate_meshes"
         ],
-        render_graph: "blend_test",
-        ..Default::default()
+        render_graph: "blend_test"
     }
 }
 
@@ -2052,7 +2042,7 @@ pub fn setup_blend_test(
                     ));
                 }
             }
-            i = i + 1;
+            i += 1;
         }
     }
 }
@@ -2071,7 +2061,7 @@ pub fn render_meshes_pipeline_coloured(
     for (world_matrix, mesh, pipeline, colour) in &mesh_draw_query {
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.set_render_pipeline(pipeline);
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.push_render_constants(1, 4, 12, &colour.0);
@@ -2091,7 +2081,7 @@ pub fn render_meshes_pipeline_coloured(
 /// Test cubemap loading (including mip-maps) and rendering
 #[no_mangle]
 pub fn test_cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_cubemap_test"
@@ -2153,13 +2143,10 @@ pub fn render_meshes_cubemap_test(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let mut mip = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
@@ -2183,7 +2170,7 @@ pub fn render_meshes_cubemap_test(
 /// Test texture2d_array loading, loads a dds texture2d_array generated from an image sequence
 #[no_mangle]
 pub fn test_texture2d_array(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_texture2d_array_test"
@@ -2191,8 +2178,7 @@ pub fn test_texture2d_array(client: &mut Client<gfx_platform::Device, os_platfor
         update: systems![
             "animate_textures"
         ],
-        render_graph: "texture2d_array_test",
-        ..Default::default()
+        render_graph: "texture2d_array_test"
     }
 }
 
@@ -2242,7 +2228,7 @@ pub fn setup_texture2d_array_test(
             TextureInstance(texture_array.get_srv_index().unwrap() as u32),
             TimeComponent(0.0),
             AnimatedTexture {
-                frame: floor(rng.gen::<f32>() as f32 * texture_array_info.info.array_layers as f32) as u32,
+                frame: floor(rng.gen::<f32>() * texture_array_info.info.array_layers as f32) as u32,
                 frame_count: texture_array_info.info.array_layers
             }
         ));
@@ -2265,13 +2251,10 @@ pub fn render_meshes_texture2d_array_test(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     // spherical billboard
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
@@ -2315,7 +2298,7 @@ pub fn animate_textures(
 /// Test 3d texture loading and rendering using a pre-built sdf texture
 #[no_mangle]
 pub fn test_texture3d(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_texture3d_test"
@@ -2346,7 +2329,7 @@ pub fn setup_texture3d_test(
     let dim = 50.0;
 
     commands.spawn((
-        MeshComponent(cube_mesh.clone()),
+        MeshComponent(cube_mesh),
         Position(vec3f(0.0, dim * 0.5, 0.0)),
         Rotation(Quatf::identity()),
         Scale(splat3f(dim)),
@@ -2371,14 +2354,11 @@ pub fn render_meshes_texture3d_test(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.set_render_pipeline(pipeline);
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
     view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     for (world_matrix, mesh, tex) in &mesh_draw_query {
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
@@ -2394,7 +2374,7 @@ pub fn render_meshes_texture3d_test(
 /// Test compute shader by reading and writing from a 3d texture un-ordered access
 #[no_mangle]
 pub fn test_compute(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_compute_test"
@@ -2416,12 +2396,46 @@ pub fn setup_compute_test(
 
     let dim = 50.0;
     commands.spawn((
-        MeshComponent(cube_mesh.clone()),
+        MeshComponent(cube_mesh),
         Position(vec3f(0.0, dim * 0.5, 0.0)),
         Rotation(Quatf::identity()),
         Scale(splat3f(dim)),
         WorldMatrix(Mat34f::identity()),
         TextureInstance(srv)
+    ));
+}
+
+///
+/// test_multiple_render_targets
+/// 
+
+#[no_mangle]
+pub fn test_multiple_render_targets(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_multiple_render_targets_test"
+        ],
+        render_graph: "multiple_render_targets_test",
+        ..Default::default()
+    }
+}
+
+#[no_mangle]
+pub fn setup_multiple_render_targets_test(
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
+
+    let dim = 1024;
+    let plane_mesh = hotline_rs::primitives::create_plane_mesh(&mut device.0, 128);
+
+    commands.spawn((
+        MeshComponent(plane_mesh.clone()),
+        Position(vec3f(0.0, 0.0, 0.0)),
+        Rotation(Quatf::identity()),
+        Scale(splat3f(dim as f32)),
+        WorldMatrix(Mat34f::identity()),
+        PipelineComponent("heightmap_mrt".to_string())
     ));
 }
 
@@ -2435,8 +2449,7 @@ pub fn test_missing_systems(_: &mut Client<gfx_platform::Device, os_platform::Ap
         update: systems![
             "missing"
         ],
-        render_graph: "mesh_debug",
-        ..Default::default()
+        render_graph: "mesh_debug"
     }
 }
 
@@ -2455,7 +2468,7 @@ pub fn test_missing_render_graph(_: &mut Client<gfx_platform::Device, os_platfor
 /// Tests missing view specified in the render graph
 #[no_mangle]
 pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -2468,7 +2481,7 @@ pub fn test_missing_view(client: &mut Client<gfx_platform::Device, os_platform::
 /// Tests case where render graph fails, in this case it is missing a pipeline, but the pipeline can also fail to build depending on the src data
 #[no_mangle]
 pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -2481,7 +2494,7 @@ pub fn test_failing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 /// Tests missing pipeline specified in the render graph
 #[no_mangle]
 pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -2494,7 +2507,7 @@ pub fn test_missing_pipeline(client: &mut Client<gfx_platform::Device, os_platfo
 /// Tests missing camera specified in the render graph
 #[no_mangle]
 pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"
@@ -2507,7 +2520,7 @@ pub fn test_missing_camera(client: &mut Client<gfx_platform::Device, os_platform
 /// Tests missing view_function (system) specified in the render graph
 #[no_mangle]
 pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {    
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/tests").as_str()).unwrap();
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_primitives"

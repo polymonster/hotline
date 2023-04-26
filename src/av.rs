@@ -13,8 +13,6 @@ pub type Error = super::Error;
 pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     /// Create a new instance of video player
     fn create(device: &D) -> Result<Self, Error>;
-    /// Call shutdown with the device which was used on created to fuly clean up texture memory
-    fn shutdown(&mut self, device: &mut D);
     /// Sets source media, filepath to a video file supported by the hardware
     fn set_source(&mut self, filepath: String) -> Result<(), Error>;
     /// Call this each frame, needs to be updated after set source is called

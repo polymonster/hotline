@@ -25,8 +25,7 @@ pub struct VideoPlayer {
     notify: *mut NotifyEvents,
     texture: Option<d3d12::Texture>,
     width: u32,
-    height: u32,
-    cleanup_textures: Vec<d3d12::Texture>
+    height: u32
 }
 
 pub struct NotifyEvents {
@@ -96,14 +95,6 @@ fn new_notify_events() -> *mut NotifyEvents {
     }
 }
 
-impl Drop for VideoPlayer {
-    fn drop(&mut self) {
-        if self.texture.is_some() || !self.cleanup_textures.is_empty() {
-            panic!("hotline_rs::av::wmf: dropping video player with live textures, call shutdown with d3d12::device to free srv heap memory.");
-        };
-    }
-}
-
 impl VideoPlayer {
     fn handle_error(&self) -> result::Result<(), super::Error> {
         unsafe {
@@ -133,14 +124,6 @@ impl VideoPlayer {
                 });
             }
             Ok(())
-        }
-    }
-
-    fn cleanup_textures(&mut self, device: &mut d3d12::Device) {
-        // remove elements from the cleanup_textures array
-        while !self.cleanup_textures.is_empty() {
-            let tex = self.cleanup_textures.remove(0);
-            device.destroy_texture(tex);
         }
     }
 }
@@ -208,7 +191,6 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     media_engine_ex: media_engine.cast()?,
                     notify,
                     texture: None,
-                    cleanup_textures: vec![],
                     width: 0,
                     height: 0
                 };
@@ -222,26 +204,9 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         }
     }
 
-    fn shutdown(&mut self, device: &mut d3d12::Device) {
-        // clean up any old lingering textures
-        self.cleanup_textures(device);
-        // take ownership of the player texture
-        let mut none_tex = None;
-        std::mem::swap(&mut none_tex, &mut self.texture);
-        if let Some(tex) = none_tex {
-            device.destroy_texture(tex);
-        }
-    }
 
     fn set_source(&mut self, filepath: String) -> result::Result<(), super::Error> {
         unsafe {
-            // set texture to none and push the old tex for cleanup
-            let mut none_tex = None;
-            std::mem::swap(&mut none_tex, &mut self.texture);
-            if let Some(tex) = none_tex {
-                self.cleanup_textures.push(tex);
-            }
-
             // reset state
             (*self.notify).can_play = false;
             (*self.notify).ended = false;
@@ -277,9 +242,6 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             if !self.is_loaded() {
                 return Ok(());
             }
-
-            // clean up old textures that have now been dropped, requires a device
-            self.cleanup_textures(device);
 
             // create texture
             if self.texture.is_none() && self.is_loaded() {

@@ -15,6 +15,7 @@ use crate::examples::*;
 pub fn batch_lights(
     mut pmfx: ResMut<PmfxRes>,
     light_query: Query<(&Position, &Colour, &LightComponent)>) {
+
     let world_buffers = pmfx.get_world_buffers_mut();
     world_buffers.point_light.clear();
     world_buffers.spot_light.clear();
@@ -117,8 +118,8 @@ pub fn batch_bindless_draw_data(
         let emin = extents.aabb_min;
         let emax = extents.aabb_max;
         
-        let transform_min = corners.iter().fold( Vec3f::max_value(), |acc, x| min(acc, world_matrix.0 * (emin + emax * *x)));
-        let transform_max = corners.iter().fold(-Vec3f::max_value(), |acc, x| max(acc, world_matrix.0 * (emin + emax * *x)));
+        let transform_min = corners.iter().fold( Vec3f::max_value(), |acc, x| min(acc, world_matrix.0 * (emin + (emax - emin) * *x)));
+        let transform_max = corners.iter().fold(-Vec3f::max_value(), |acc, x| max(acc, world_matrix.0 * (emin + (emax - emin) * *x)));
 
         let extent_pos = transform_min + (transform_max - transform_min) * 0.5;
         let extent = transform_max - extent_pos;
@@ -149,28 +150,25 @@ pub fn render_meshes_bindless_material(
 
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    // bind the shader resource heap for t0 (if exists)
-    let slot = pipeline.get_descriptor_slot(0, gfx::DescriptorType::ShaderResource);
+    // bind view push constants
+    let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
-    }
-
-    // bind the shader resource heap for t1 (if exists)
-    let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, 0);
+        view.cmd_buf.push_render_constants(slot.slot, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(slot.slot, 4, 16, gfx::as_u8_slice(&camera.view_position));
     }
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_descriptor_slot(2, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
+        // println!("{:?}", world_buffer_info);
         view.cmd_buf.push_render_constants(
             slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
+
+    // bind the shader resource heap
+    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     // instance batch draw calls
     for (instance_batch, mesh) in &instance_draw_query {
@@ -183,11 +181,10 @@ pub fn render_meshes_bindless_material(
     // single draw calls
     for (mesh, world_matrix) in &single_draw_query {
         // set the world matrix push constants
-        let slot = pipeline.get_descriptor_slot(1, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
         }
-
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -218,7 +215,11 @@ pub fn render_meshes(
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        if let Some(slot) = slot {
+            view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
+        }
+
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -228,7 +229,11 @@ pub fn render_meshes(
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
     for (world_matrix, mesh) in &billboard_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
-        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
+        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        if let Some(slot) = slot {
+            view.cmd_buf.push_render_constants(slot.slot, 12, 0, &bbmat);
+        }
+
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -243,11 +248,94 @@ pub fn render_meshes(
     );
     for (world_matrix, mesh) in &cylindrical_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
+        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        if let Some(slot) = slot {
+            view.cmd_buf.push_render_constants(slot.slot, 12, 0, &bbmat);
+        }
+
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
+
+    Ok(())
+}
+
+///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
+#[no_mangle]
+pub fn render_debug(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    args: (
+        ResMut<ImDrawRes>,
+        ResMut<DeviceRes>,
+        Res<SessionInfo>,
+        Query<(&WorldMatrix, &Extents)>
+    )
+) -> Result<(), hotline_rs::Error> {
+    let (mut imdraw, mut device, session_info, draw_query) = args;
+
+    // skip over rendering if we supply no flags
+    if session_info.debug_draw_flags.is_empty() {
+        return Ok(());
+    }
+    
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+    let bb = view.cmd_buf.get_backbuffer_index();
+
+    // grid
+    if session_info.debug_draw_flags.contains(DebugDrawFlags::GRID) {
+        let scale = 1000.0;
+        let divisions = 10.0;
+        for i in 0..((scale * 2.0) /divisions) as usize {
+            let offset = -scale + i as f32 * divisions;
+            let mut tint = 0.3;
+            if i % 5 == 0 {
+                tint *= 0.5;
+            }
+            if i % 10 == 0 {
+                tint *= 0.25;
+            }
+            if i % 20 == 0 {
+                tint *= 0.125;
+            }
+    
+            imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
+            imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
+        }
+    }
+
+    // aabb
+    if session_info.debug_draw_flags.contains(DebugDrawFlags::AABB) {
+        let corners = unit_aabb_corners();
+        for (world_matrix, extents) in &draw_query {
+            let emin = extents.aabb_min;
+            let emax = extents.aabb_max;
+            let (tmin, tmax) = corners.iter().fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, x| min_max(world_matrix.0 * (emin + (emax - emin) * x), acc));
+            imdraw.add_aabb_3d(tmin, tmax, Vec4f::white());
+        }
+    }
+
+    // obb
+    if session_info.debug_draw_flags.contains(DebugDrawFlags::OBB) {
+        let corners = unit_aabb_corners();
+        for (world_matrix, extents) in &draw_query {
+            let emin = extents.aabb_min;
+            let emax = extents.aabb_max;
+            let obb = corners.iter().map(|x| world_matrix.0 * (emin + (emax - emin) * x)).collect::<Vec<Vec3f>>();
+            imdraw.add_obb_3d(obb, Vec4f::green());
+        }
+    }
+    
+    // submit the buffers
+    imdraw.submit(&mut device.0, bb as usize).unwrap();
+
+    // draw
+    view.cmd_buf.set_render_pipeline(&pipeline);
+    view.cmd_buf.push_render_constants(0, 16, 0, &camera.view_projection_matrix);
+    imdraw.draw_3d(&view.cmd_buf, bb as usize);
 
     Ok(())
 }
@@ -278,9 +366,46 @@ pub fn render_meshes_pipeline(
     Ok(())
 }
 
+#[no_mangle]
+pub fn blit(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    _: Query<()>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format("imdraw_blit", fmt)?;
+
+    if view.use_indices.len() != 1 {
+        return Err(hotline_rs::Error {
+            msg: "blit expects a single read resource specified in the `pmfx` uses".to_string()
+        });
+    }
+    let srv = view.use_indices[0];
+
+    view.cmd_buf.set_render_pipeline(pipeline);
+
+    let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = slot {
+        view.cmd_buf.push_render_constants(slot.slot, 2, 0, &view.blit_dimension);
+    }
+
+    // TODO_BINDING
+    let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, srv as usize);
+    }
+
+    view.cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
+    view.cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
+    view.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+
+    Ok(())
+}
+
 /// Register demos / examples by name... this assuems a function exists of the same name
 #[no_mangle]
-pub fn get_demos_ecs_demos() -> Vec<String> {
+pub fn get_demos_ecs_examples() -> Vec<String> {
     demos![
         // primitive entities
         "geometry_primitives",
@@ -307,6 +432,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
         "test_texture2d_array",
         "test_texture3d",
         "test_compute",
+        "test_multiple_render_targets",
         
         // basic tests
         "test_missing_demo",
@@ -321,7 +447,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 
 /// Register plugin system functions
 #[no_mangle]
-pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemConfig> {
+pub fn get_system_ecs_examples(name: String, pass_name: String) -> Option<SystemConfig> {
     match name.as_str() {
         // primitive setup functions
         "setup_geometry_primitives" => system_func![setup_geometry_primitives],
@@ -348,6 +474,7 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
         "setup_texture2d_array_test" => system_func![setup_texture2d_array_test],
         "setup_texture3d_test" => system_func![setup_texture3d_test],
         "setup_compute_test" => system_func![setup_compute_test],
+        "setup_multiple_render_targets_test" => system_func![setup_multiple_render_targets_test],
         
         // updates
         "rotate_meshes" => system_func![rotate_meshes.in_base_set(SystemSets::Update)],
@@ -359,19 +486,34 @@ pub fn get_system_ecs_demos(name: String, pass_name: String) -> Option<SystemCon
 
         // batches
         "batch_bindless_draw_data" => system_func![
-            batch_bindless_draw_data.after(SystemSets::Batch)
+            batch_bindless_draw_data.in_base_set(SystemSets::Batch)
         ],
         "batch_world_matrix_instances" => system_func![
-            batch_world_matrix_instances.after(SystemSets::Batch)
+            batch_world_matrix_instances.in_base_set(SystemSets::Batch)
         ],
         "batch_material_instances" => system_func![
-            batch_material_instances.after(SystemSets::Batch)
+            batch_material_instances.in_base_set(SystemSets::Batch)
         ],
         "batch_lights" => system_func![
-            batch_lights.after(SystemSets::Batch)
+            batch_lights.in_base_set(SystemSets::Batch)
         ],
 
         // render functions
+        "render_debug" => render_func![
+            render_debug, 
+            pass_name,
+            (
+                ResMut<ImDrawRes>,
+                ResMut<DeviceRes>,
+                Res<SessionInfo>,
+                Query<(&WorldMatrix, &Extents)>
+            )
+        ],
+        "blit" => render_func![
+            blit, 
+            pass_name,
+            Query<()>
+        ],
         "render_meshes_bindless_material" => render_func![
             render_meshes_bindless_material, 
             pass_name,

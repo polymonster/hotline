@@ -1,11 +1,17 @@
 #![cfg(target_os = "windows")]
 
+// some hardcoded switches
+const MANAGE_DROPS : bool = true;
+const GPU_VALIDATION : bool = false;
+
 use crate::os::Window;
 use crate::os::NativeHandle;
 
 use super::*;
 use super::Device as SuperDevice;
 use super::ReadBackRequest as SuperReadBackRequest;
+use super::Heap as SuperHeap;
+use super::Pipeline as SuperPipleline;
 
 use std::char::{decode_utf16, REPLACEMENT_CHARACTER};
 use std::hash::{Hash, Hasher};
@@ -136,7 +142,8 @@ pub struct Device {
     rtv_heap: Heap,
     dsv_heap: Heap,
     timestamp_frequency: f64,
-    cleanup_textures: Vec<(u32, Texture)>
+    generate_mip_maps_pipeline: Option<ComputePipeline>,
+    heap_id: u16
 }
 
 #[derive(Clone)]
@@ -146,7 +153,7 @@ pub struct SwapChain {
     format: super::Format,
     num_bb: u32,
     flags: u32,
-    frame_index: u32,
+    frame_index: usize,
     bb_index: usize,
     swap_chain: IDXGISwapChain3,
     backbuffer_textures: Vec<Texture>,
@@ -166,7 +173,7 @@ pub struct RenderPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
     topology: D3D_PRIMITIVE_TOPOLOGY,
-    descriptor_slot_lookup: DescitorSlotLookup
+    lookup: RootSignatureLookup
 }
 
 #[derive(Clone)]
@@ -182,14 +189,14 @@ pub struct CmdBuf {
 
 #[derive(Clone)]
 pub struct Buffer {
-    resource: ID3D12Resource,
+    resource: Option<ID3D12Resource>,
     vbv: Option<D3D12_VERTEX_BUFFER_VIEW>,
     ibv: Option<D3D12_INDEX_BUFFER_VIEW>,
     srv_index: Option<usize>,
     cbv_index: Option<usize>,
     uav_index: Option<usize>,
     counter_offset: Option<usize>,
-    free_list: Option<FreeListRef>,
+    drop_list: Option<DropListRef>,
     persistent_mapped_data: *mut c_void
 }
 
@@ -203,12 +210,12 @@ pub struct Shader {
 pub struct TextureTarget {
     ptr: D3D12_CPU_DESCRIPTOR_HANDLE,
     index: usize,
-    free_list: FreeListRef,
+    drop_list: DropListRef,
 }
 
 #[derive(Clone)]
 pub struct Texture {
-    resource: ID3D12Resource,
+    resource: Option<ID3D12Resource>,
     resolved_resource: Option<ID3D12Resource>,
     resolved_format: DXGI_FORMAT,
     rtv: Option<TextureTarget>,
@@ -216,9 +223,12 @@ pub struct Texture {
     srv_index: Option<usize>,
     resolved_srv_index: Option<usize>,
     uav_index: Option<usize>,
+    subresource_uav_index: Vec<usize>,
     shared_handle: Option<HANDLE>,
     // free list for srv, uav and resolved srv
-    free_list: Option<FreeListRef>,
+    drop_list: Option<DropListRef>,
+    // the id of the shader heap for (uav, srv etc)
+    shader_heap_id: Option<u16>
 }
 
 #[derive(Clone)]
@@ -245,11 +255,15 @@ pub struct CommandSignature {
     command_signature: ID3D12CommandSignature
 }
 
-type DescitorSlotLookup = HashMap<u64, DescriptorSlotInfo>;
+type DesciptorSlotLookup = HashMap<u64, DescriptorSlotInfo>;
 
-struct SignatureLookup {
+#[derive(Clone)]
+struct RootSignatureLookup {
     root_signature: ID3D12RootSignature,
-    lookup: DescitorSlotLookup
+    /// lookup for all slots based on register, space and 
+    slot_lookup: DesciptorSlotLookup,
+    /// All descriptors (non push constant or samplers)
+    descriptor_slots: Vec<u32>
 }
 
 /// A free list thread safe with mutex
@@ -268,6 +282,28 @@ impl FreeList {
     }
 }
 
+struct DropResource {
+    resources: Vec<ID3D12Resource>,
+    frame: usize,
+    heap_allocs: Vec<usize>
+}
+
+struct DropList {
+    list: Mutex<Vec<DropResource>>
+}
+
+/// Thread safe ref counted drop-list that can be safely used in drop traits,
+/// tracks the frame a resource was dropped on so it can be waited on
+type DropListRef = std::sync::Arc<DropList>;
+
+impl DropList {
+    fn new() -> std::sync::Arc<DropList> {
+        std::sync::Arc::new(DropList {
+            list: Mutex::new(Vec::new())
+        })
+    }
+}
+
 #[derive(Clone)]
 pub struct Heap {
     heap: ID3D12DescriptorHeap,
@@ -275,7 +311,9 @@ pub struct Heap {
     increment_size: usize,
     capacity: usize,
     offset: usize,
-    free_list: FreeListRef
+    free_list: FreeListRef,
+    drop_list: DropListRef,
+    id: u16
 }
 
 #[derive(Clone)]
@@ -289,7 +327,7 @@ pub struct QueryHeap {
 pub struct ComputePipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
-    descriptor_slot_lookup: DescitorSlotLookup
+    lookup: RootSignatureLookup,
 }
 
 const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -401,7 +439,7 @@ const fn to_d3d12_comparison_func(func: super::ComparisonFunc) -> D3D12_COMPARIS
     }
 }
 
-fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D12_COMPARISON_FUNC {
+const fn to_d3d12_address_comparison_func(func: Option<super::ComparisonFunc>) -> D3D12_COMPARISON_FUNC {
     if let Some(func) = func {
         to_d3d12_comparison_func(func)
     }
@@ -649,7 +687,7 @@ const fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
     }
 }
 
-fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) -> D3D12_SRV_DIMENSION {
+const fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) -> D3D12_SRV_DIMENSION {
     if samples > 1 {
         match tex_type {
             super::TextureType::Texture2D => D3D12_SRV_DIMENSION_TEXTURE2DMS,
@@ -670,7 +708,7 @@ fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) ->
     }
 }
 
-fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_DIMENSION {
+const fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_DIMENSION {
     match tex_type {
         super::TextureType::Texture1D => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
         super::TextureType::Texture1DArray => D3D12_RESOURCE_DIMENSION_TEXTURE1D,
@@ -682,7 +720,7 @@ fn to_d3d12_resource_dimension(tex_type: super::TextureType) -> D3D12_RESOURCE_D
     }
 }
 
-fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) -> D3D12_INDIRECT_ARGUMENT_TYPE {
+const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) -> D3D12_INDIRECT_ARGUMENT_TYPE {
     match indirect_type {
         IndirectArgumentType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
         IndirectArgumentType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
@@ -706,6 +744,14 @@ fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     }
 }
 
+fn get_binding_descriptor_hash(register: u32, space: u32, ty: super::DescriptorType) -> u64 {
+    let mut hash = DefaultHasher::new();
+    register.hash(&mut hash);
+    space.hash(&mut hash);
+    ty.hash(&mut hash);
+    hash.finish()
+}
+
 fn transition_barrier(
     resource: &ID3D12Resource,
     state_before: D3D12_RESOURCE_STATES,
@@ -722,6 +768,53 @@ fn transition_barrier(
         Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
         Anonymous: D3D12_RESOURCE_BARRIER_0 { Transition: trans },
     }
+}
+
+#[repr(C)]
+struct GenerateMipMapConstants {
+    num_mips: u32,
+    top_level_srv: u32,
+    mip_level_uav: [u32; 16]
+}
+
+fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputePipeline, super::Error> {
+    let filepath = super::super::get_data_path("shaders/util/cs_mip_chain_texture2d.csc");
+    let shader_data = std::fs::read(filepath)?;
+    
+    device.create_compute_pipeline(&ComputePipelineInfo{
+        cs: &device.create_shader(&ShaderInfo{
+                shader_type: super::ShaderType::Compute,
+                compile_info: None
+            }, 
+            //&d3d12_embeded::CS_MIP_CHAIN_TEXTURE2D
+            &shader_data
+        )?,
+        descriptor_layout: DescriptorLayout { 
+            push_constants: Some(vec![super::PushConstantInfo {
+                visibility: super::ShaderVisibility::Compute,
+                num_values: GenerateMipMapConstants::num_constants(),
+                shader_register: 0,
+                register_space: 0,
+            }]),
+            bindings: Some(vec![
+                super::DescriptorBinding {
+                    visibility: super::ShaderVisibility::Compute,
+                    binding_type: super::DescriptorType::ShaderResource,
+                    num_descriptors: None,
+                    shader_register: 0,
+                    register_space: 0,
+                },
+                super::DescriptorBinding {
+                    visibility: super::ShaderVisibility::Compute,
+                    binding_type: super::DescriptorType::UnorderedAccess,
+                    num_descriptors: None,
+                    shader_register: 0,
+                    register_space: 0,
+                }
+            ]),
+            static_samplers: None 
+        }
+    })
 }
 
 pub fn get_hardware_adapter(
@@ -838,7 +931,7 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
     readback_buffer
 }
 
-fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo) -> Heap {
+fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo, id: u16) -> Heap {
     unsafe {
         let d3d12_type = to_d3d12_descriptor_heap_type(info.heap_type);
         let heap: ID3D12DescriptorHeap = device
@@ -858,7 +951,9 @@ fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo) -> Heap {
             increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
             capacity: info.num_descriptors * incr,
             offset: 0,
-            free_list: FreeList::new()
+            free_list: FreeList::new(),
+            drop_list: DropList::new(),
+            id
         }
     }
 }
@@ -889,23 +984,24 @@ fn create_swap_chain_rtv(
         for i in 0..num_bb {
             let render_target: ID3D12Resource = swap_chain.GetBuffer(i).unwrap();
             let h = device.rtv_heap.allocate();
-
             device.device.CreateRenderTargetView(&render_target, None, h);
             textures.push(Texture {
-                resource: render_target.clone(),
-                resolved_resource: None,
-                resolved_format: DXGI_FORMAT_UNKNOWN,
+                resource: Some(render_target.clone()),
                 rtv: Some(TextureTarget{
                     ptr: h,
                     index: device.rtv_heap.get_handle_index(&h),
-                    free_list: device.rtv_heap.free_list.clone()
+                    drop_list: device.rtv_heap.drop_list.clone()
                 }),
+                resolved_resource: None,
+                resolved_format: DXGI_FORMAT_UNKNOWN,
                 dsv: None,
                 srv_index: None,
                 resolved_srv_index: None,
                 uav_index: None,
                 shared_handle: None,
-                free_list: None
+                drop_list: None,
+                subresource_uav_index: Vec::new(),
+                shader_heap_id: None
             });
             d3d12_debug_name!(render_target, format!("swap_chain_texture"));
         }
@@ -996,6 +1092,40 @@ impl super::Heap<Device> for Heap {
         let mut free_list = self.free_list.list.lock().unwrap();
         free_list.push(index);
     }
+
+    fn cleanup_dropped_resources(&mut self, swap_chain: &SwapChain) {
+        let mut drop_list = self.drop_list.list.lock().unwrap();
+        let mut free_list = self.free_list.list.lock().unwrap();
+        let mut complete_indices = Vec::new();
+        for (res_index, drop_res) in drop_list.iter_mut().enumerate() {
+            // initialise the frame, and then wait
+            if drop_res.frame == 0 {
+                drop_res.frame = swap_chain.frame_index;
+            }
+            else {
+                let diff = swap_chain.frame_index - drop_res.frame;
+                if diff > swap_chain.num_bb as usize {
+                    // waited long enough we can add the resource views to the free list
+                    for alloc in &drop_res.heap_allocs {
+                        free_list.push(*alloc);
+                    }
+                    drop_res.resources.clear();
+                    drop_res.heap_allocs.clear();
+                    complete_indices.push(res_index);
+                }
+            }
+        }
+
+        // remove complete items in reverse
+        complete_indices.reverse();
+        for i in complete_indices {
+            drop_list.remove(i);
+        }
+    }
+
+    fn get_heap_id(&self) -> u16 {
+        self.id
+    }
 }
 
 impl QueryHeap {
@@ -1042,11 +1172,11 @@ impl Device {
     fn create_root_signature_with_lookup(
         &self,
         layout: &super::DescriptorLayout,
-    ) -> result::Result<SignatureLookup, super::Error> {
+    ) -> result::Result<RootSignatureLookup, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
 
         let mut slot_iter = 0;
-        let mut descriptor_slot_lookup = HashMap::new();
+        let mut lookup = HashMap::new();
 
         // push constants
         if let Some(constants_set) = &layout.push_constants {
@@ -1064,10 +1194,8 @@ impl Device {
                 });
 
                 // track the slots push constants occupy
-                let mut hash = DefaultHasher::new();
-                constants.shader_register.hash(&mut hash);
-                DescriptorType::PushConstants.hash(&mut hash);
-                descriptor_slot_lookup.insert(hash.finish(), DescriptorSlotInfo {
+                let h = get_binding_descriptor_hash(constants.shader_register, constants.register_space, super::DescriptorType::PushConstants);
+                lookup.insert(h, DescriptorSlotInfo {
                     slot: slot_iter,
                     count: Some(constants.num_values)
                 });
@@ -1085,6 +1213,7 @@ impl Device {
         let mut visibility_map: 
             HashMap<super::ShaderVisibility, RangeInfo> = HashMap::new();
 
+        let mut descriptor_root_params = Vec::new();
         if let Some(bindings) = &layout.bindings {
             for binding in bindings {
                 let count = if binding.num_descriptors.is_some() {
@@ -1123,18 +1252,14 @@ impl Device {
                     },
                     ShaderVisibility: to_d3d12_shader_visibility(visibility),
                 });
+                descriptor_root_params.push(slot_iter);
 
                 for binding in &range_info.info {
-                    let mut hash = DefaultHasher::new();
-                    binding.shader_register.hash(&mut hash);
-                    binding.binding_type.hash(&mut hash);
-                    let h = hash.finish();
-                    if !descriptor_slot_lookup.contains_key(&h) {
-                        descriptor_slot_lookup.insert(h, DescriptorSlotInfo {
-                            slot: slot_iter,
-                            count: binding.num_descriptors
-                        });
-                    }
+                    let h = get_binding_descriptor_hash(binding.shader_register, binding.register_space, binding.binding_type);
+                    lookup.entry(h).or_insert(DescriptorSlotInfo {
+                        slot: slot_iter,
+                        count: binding.num_descriptors
+                    });
                 }
                 slot_iter += 1;
             }
@@ -1194,9 +1319,10 @@ impl Device {
             let slice : &[u8] = std::slice::from_raw_parts(sig.GetBufferPointer() as *mut u8, sig.GetBufferSize());
             let sig = self.device.CreateRootSignature(0, slice)?;
             
-            Ok(SignatureLookup {
+            Ok(RootSignatureLookup {
                 root_signature: sig,
-                lookup: descriptor_slot_lookup
+                slot_lookup: lookup,
+                descriptor_slots: descriptor_root_params
             })
         }
     }
@@ -1224,6 +1350,7 @@ impl Device {
         passes
     }
 
+    #[allow(clippy::too_many_arguments)] 
     fn upload_texture_data_subresource(
         &mut self, 
         width: u64,
@@ -1442,6 +1569,13 @@ impl super::Device for Device {
                 let mut debug: Option<D3D12DebugVersion> = None;
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                     debug.EnableDebugLayer();
+
+                    // slower but more detailed
+                    if GPU_VALIDATION {
+                        let debug1 : ID3D12Debug1 = debug.cast().unwrap();
+                        debug1.SetEnableGPUBasedValidation(true);
+                    }
+
                     println!("hotline_rs::gfx::d3d12: enabling debug layer");
                 }
                 dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
@@ -1487,37 +1621,43 @@ impl super::Device for Device {
 
             // default heaps
             // shader (srv, cbv, uav)
+            let mut heap_id = 1;
             let shader_heap = create_heap(
                 &device,
                 &HeapInfo {
                     heap_type: super::HeapType::Shader,
                     num_descriptors: info.shader_heap_size,
                 },
+                heap_id
             );
             d3d12_debug_name!(shader_heap.heap, "device_shader_heap");
 
             // rtv
+            heap_id += 1;
             let rtv_heap = create_heap(
                 &device,
                 &HeapInfo {
                     heap_type: super::HeapType::RenderTarget,
                     num_descriptors: info.render_target_heap_size,
                 },
+                heap_id
             );
             d3d12_debug_name!(rtv_heap.heap, "device_render_target_heap");
-
+            
             // dsv
+            heap_id += 1;
             let dsv_heap = create_heap(
                 &device,
                 &HeapInfo {
                     heap_type: super::HeapType::DepthStencil,
                     num_descriptors: info.depth_stencil_heap_size,
                 },
+                heap_id
             );
             d3d12_debug_name!(dsv_heap.heap, "device_depth_stencil_heap");
 
             // initialise struct
-            Device {
+            let mut device = Device {
                 timestamp_frequency,
                 adapter_info,
                 device,
@@ -1529,13 +1669,22 @@ impl super::Device for Device {
                 shader_heap: Some(shader_heap),
                 rtv_heap,
                 dsv_heap,
-                cleanup_textures: Vec::new()
+                generate_mip_maps_pipeline: None,
+                heap_id
+            };
+
+            // pipeline for command buffers to generate mips.. if it exists
+            if let Ok(pipeline) = create_generate_mip_maps_pipeline(&device) {
+                device.generate_mip_maps_pipeline = Some(pipeline);
             }
+            
+            device
         }
     }
 
-    fn create_heap(&self, info: &HeapInfo) -> Heap {
-        create_heap(&self.device, info)
+    fn create_heap(&mut self, info: &HeapInfo) -> Heap {
+        self.heap_id += 1; // bump heap id
+        create_heap(&self.device, info, self.heap_id)
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
@@ -1765,46 +1914,11 @@ impl super::Device for Device {
         }
         desc.DSVFormat = pass.ds_format;
 
-        // push constants occupy the first slots
-        /*
-        let mut slot_iter = 0;
-        let mut heap_slot_lookup = HashMap::new();
-        if let Some(push_constants) = &info.descriptor_layout.push_constants {
-            for pc in push_constants {
-                let mut hash = DefaultHasher::new();
-                pc.shader_register.hash(&mut hash);
-                DescriptorType::PushConstants.hash(&mut hash);
-                heap_slot_lookup.insert(hash.finish(), DescriptorSlotInfo {
-                    slot: slot_iter,
-                    count: Some(pc.num_values)
-                });
-                slot_iter += 1;
-            }
-        }
-
-        // then we add bindings
-        if let Some(bindings) = &info.descriptor_layout.bindings {
-            for binding in bindings {
-                let mut hash = DefaultHasher::new();
-                binding.shader_register.hash(&mut hash);
-                binding.binding_type.hash(&mut hash);
-                let h = hash.finish();
-                if !heap_slot_lookup.contains_key(&h) {
-                    heap_slot_lookup.insert(h, DescriptorSlotInfo {
-                        slot: slot_iter,
-                        count: binding.num_descriptors
-                    });
-                    slot_iter += 1;
-                }
-            }
-        }
-        */
-
         Ok(RenderPipeline {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
-            root_signature: sig_lookup.root_signature,
+            root_signature: sig_lookup.root_signature.clone(),
             topology: to_d3d12_primitive_topology(info.topology, info.patch_index),
-            descriptor_slot_lookup: sig_lookup.lookup
+            lookup: sig_lookup
         })
     }
 
@@ -2116,14 +2230,14 @@ impl super::Device for Device {
             }
 
             Ok(Buffer {
-                resource: buf,
+                resource: Some(buf),
                 vbv,
                 ibv,
                 srv_index,
                 cbv_index,
                 counter_offset,
                 uav_index,
-                free_list: Some(heap.free_list.clone()),
+                drop_list: Some(heap.drop_list.clone()),
                 persistent_mapped_data: map_data
             })
         }
@@ -2147,13 +2261,13 @@ impl super::Device for Device {
         let buf = create_read_back_buffer(self, size as u64);
         if let Some(buf) = buf {
             Ok(Buffer {
-                resource: buf,
+                resource: Some(buf),
                 vbv: None,
                 ibv: None,
                 srv_index: None,
                 cbv_index: None,
                 uav_index: None,
-                free_list: None,
+                drop_list: None,
                 counter_offset: None,
                 persistent_mapped_data: std::ptr::null_mut()
             })
@@ -2199,6 +2313,22 @@ impl super::Device for Device {
 
         let depth_or_array_size = max(info.depth, info.array_layers);
         unsafe {
+
+            // msaa resources can only have 1 mip level, if we want to generate mips, it's on the resolve resource
+            let primary_mip_levels = if info.samples > 1 {
+                1
+            }
+            else {
+                info.mip_levels
+            };
+
+            let extra_usage_flags = if info.usage.contains(super::TextureUsage::GENERATE_MIP_MAPS) && info.samples == 1 {
+                super::TextureUsage::UNORDERED_ACCESS
+            }
+            else {
+                super::TextureUsage::NONE
+            };
+
             // create texture resource
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
@@ -2212,14 +2342,14 @@ impl super::Device for Device {
                     Width: info.width,
                     Height: info.height as u32,
                     DepthOrArraySize: depth_or_array_size as u16,
-                    MipLevels: info.mip_levels as u16,
+                    MipLevels: primary_mip_levels as u16,
                     Format: dxgi_format,
                     SampleDesc: DXGI_SAMPLE_DESC {
                         Count: info.samples,
                         Quality: 0,
                     },
                     Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                    Flags: to_d3d12_texture_usage_flags(info.usage),
+                    Flags: to_d3d12_texture_usage_flags(info.usage | extra_usage_flags),
                 },
                 if data.is_some() {
                     D3D12_RESOURCE_STATE_COPY_DEST
@@ -2232,6 +2362,13 @@ impl super::Device for Device {
             let resource = resource.unwrap();
 
             // create a resolvable texture if we have samples
+            let extra_usage_flags = if info.usage.contains(super::TextureUsage::GENERATE_MIP_MAPS) {
+                super::TextureUsage::UNORDERED_ACCESS
+            }
+            else {
+                super::TextureUsage::NONE
+            };
+
             if info.samples > 1 {
                 self.device.CreateCommittedResource(
                     &D3D12_HEAP_PROPERTIES {
@@ -2252,7 +2389,7 @@ impl super::Device for Device {
                             Quality: 0,
                         },
                         Layout: D3D12_TEXTURE_LAYOUT_UNKNOWN,
-                        Flags: to_d3d12_texture_usage_flags(info.usage),
+                        Flags: to_d3d12_texture_usage_flags(info.usage | extra_usage_flags),
                     },
                     if data.is_some() {
                         D3D12_RESOURCE_STATE_COPY_DEST
@@ -2382,7 +2519,7 @@ impl super::Device for Device {
                 rtv = Some(TextureTarget{
                     ptr: h,
                     index: self.rtv_heap.get_handle_index(&h),
-                    free_list: self.rtv_heap.free_list.clone()
+                    drop_list: self.rtv_heap.drop_list.clone()
                 })
             }
 
@@ -2394,7 +2531,7 @@ impl super::Device for Device {
                 dsv = Some(TextureTarget{
                     ptr: h,
                     index: self.dsv_heap.get_handle_index(&h),
-                    free_list: self.dsv_heap.free_list.clone()
+                    drop_list: self.dsv_heap.drop_list.clone()
                 })
             }
 
@@ -2423,8 +2560,37 @@ impl super::Device for Device {
                 shared_handle = Some(h?);
             }
 
+            // create uav's for a mip chain
+            let mut subresource_uav_index = Vec::new();
+            if info.usage.contains(super::TextureUsage::GENERATE_MIP_MAPS) {
+                for mip in 0..info.mip_levels {
+                    let h = shader_heap.allocate();
+                    self.device.CreateUnorderedAccessView(
+                        if let Some(resolved_resource) = &resolved_resource { 
+                            resolved_resource 
+                        } 
+                        else { 
+                            &resource 
+                        },
+                        None,
+                        Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
+                            Format: to_dxgi_format_srv(info.format),
+                            ViewDimension: D3D12_UAV_DIMENSION_TEXTURE2D,
+                            Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                                Texture2D: D3D12_TEX2D_UAV {
+                                    MipSlice: mip,
+                                    PlaneSlice: 0
+                                }
+                            }
+                        }),
+                        h,
+                    );
+                    subresource_uav_index.push(shader_heap.get_handle_index(&h));
+                }
+            }
+
             Ok(Texture {
-                resource,
+                resource: Some(resource),
                 resolved_resource,
                 resolved_format,
                 rtv,
@@ -2433,13 +2599,11 @@ impl super::Device for Device {
                 resolved_srv_index,
                 uav_index,
                 shared_handle,
-                free_list: Some(shader_heap.free_list.clone())
+                drop_list: Some(shader_heap.drop_list.clone()),
+                subresource_uav_index,
+                shader_heap_id: Some(shader_heap.id)
             })
         }
-    }
-
-    fn destroy_texture(&mut self, texture: Self::Texture) {
-        self.cleanup_textures.push((0, texture));
     }
 
     fn create_render_pass(
@@ -2464,7 +2628,7 @@ impl super::Device for Device {
         }
         let mut sample_count = None;
         for target in &info.render_targets {
-            let desc = unsafe { target.resource.GetDesc() };
+            let desc = unsafe { target.resource.as_ref().unwrap().GetDesc() };
             let dxgi_format = desc.Format;
             let target_sample_count = desc.SampleDesc.Count;
             if sample_count.is_none() {
@@ -2537,7 +2701,7 @@ impl super::Device for Device {
                 }
             }
 
-            let desc = unsafe { depth_stencil.resource.GetDesc() };
+            let desc = unsafe { depth_stencil.resource.as_ref().unwrap().GetDesc() };
             ds_format = desc.Format;
 
             let depth_begin = D3D12_RENDER_PASS_BEGINNING_ACCESS {
@@ -2634,8 +2798,8 @@ impl super::Device for Device {
         unsafe {
             Ok(ComputePipeline {
                 pso: self.device.CreateComputePipelineState(&desc)?,
-                root_signature: sig_lookup.root_signature,
-                descriptor_slot_lookup: sig_lookup.lookup
+                root_signature: sig_lookup.root_signature.clone(),
+                lookup: sig_lookup
             })
         }
     }
@@ -2769,26 +2933,6 @@ impl super::Device for Device {
         Ok(output)
     }
 
-    fn clean_up_resources(&mut self, swap_chain: &SwapChain) {
-        let num_bb = swap_chain.num_bb;
-        let mut todo = true;
-        let mut cur = 0;
-        while todo {
-            todo = false;
-            for i in cur..self.cleanup_textures.len() {
-                // increment frames waited
-                self.cleanup_textures[i].0 += 1;
-                if self.cleanup_textures[i].0 > num_bb {
-                    // if we have waited longer than the swap chain length we can cleanup
-                    self.cleanup_textures.remove(i);
-                    todo = true;
-                    cur = i;
-                    break;
-                }
-            }
-        }
-    }
-
     fn get_shader_heap(&self) -> &Self::Heap {
         self.shader_heap.as_ref().unwrap()
     }
@@ -2797,13 +2941,19 @@ impl super::Device for Device {
         self.shader_heap.as_mut().unwrap()
     }
 
+    fn cleanup_dropped_resources(&mut self, swap_chain: &Self::SwapChain) {
+        self.shader_heap.as_mut().unwrap().cleanup_dropped_resources(swap_chain);
+        self.rtv_heap.cleanup_dropped_resources(swap_chain);
+        self.dsv_heap.cleanup_dropped_resources(swap_chain);
+    }
+
     fn get_adapter_info(&self) -> &AdapterInfo {
         &self.adapter_info
     }
 
     fn read_buffer(&self, swap_chain: &SwapChain, buffer: &Buffer, size: usize, frame_written_fence: u64) -> Option<super::ReadBackData> {
         let rr = ReadBackRequest {
-            resource: Some(buffer.resource.clone()),
+            resource: Some(buffer.resource.as_ref().unwrap().clone()),
             fence_value: frame_written_fence,
             size,
             row_pitch: size,
@@ -2941,6 +3091,13 @@ impl super::SwapChain<Device> for SwapChain {
                 self.wait_for_frame(self.bb_index);
                 
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
+
+                // add the rtv's to free list
+                for tex in &self.backbuffer_textures {
+                    if let Some(rtv) = &tex.rtv {
+                        device.rtv_heap.deallocate(rtv.index);
+                    }
+                }
 
                 // clean up texture resource
                 self.backbuffer_textures.clear();
@@ -3151,7 +3308,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 &heap.heap,
                 D3D12_QUERY_TYPE_TIMESTAMP,
                 index as u32, 1, 
-                &resolve_buffer.resource, 
+                resolve_buffer.resource.as_ref().unwrap(), 
                 0
             );
         }
@@ -3177,7 +3334,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 &heap.heap,
                 to_d3d12_query_type(query_type),
                 index as u32, 1, 
-                &resolve_buffer.resource, 
+                resolve_buffer.resource.as_ref().unwrap(), 
                 0
             );
         }
@@ -3186,14 +3343,14 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<Device>) {
         let barrier = if let Some(tex) = &barrier.texture {
             transition_barrier(
-                &tex.resource,
+                tex.resource.as_ref().unwrap(),
                 to_d3d12_resource_state(barrier.state_before),
                 to_d3d12_resource_state(barrier.state_after),
             )
         }
         else if let Some(buf) = &barrier.buffer {
             transition_barrier(
-                &buf.resource,
+                buf.resource.as_ref().unwrap(),
                 to_d3d12_resource_state(barrier.state_before),
                 to_d3d12_resource_state(barrier.state_after),
             )
@@ -3211,7 +3368,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<Device>, subresource: Subresource) {        
         if let Some(tex) = &barrier.texture {
             let res = match subresource {
-                super::Subresource::Resource => &tex.resource,
+                super::Subresource::Resource => tex.resource.as_ref().unwrap(),
                 super::Subresource::ResolveResource => tex.resolved_resource.as_ref().unwrap()
             };
             let barrier = transition_barrier(
@@ -3289,13 +3446,29 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_compute_heap(&self, slot: u32, heap: &Heap) {
+    fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
-            self.cmd().SetComputeRootDescriptorTable(
-                slot,
-                heap.heap.GetGPUDescriptorHandleForHeapStart(),
-            );
+            let slots = pipeline.get_descriptor_slots();
+            match T::get_pipeline_type() {
+                super::PipelineType::Render => {
+                    for slot in slots {
+                        self.cmd().SetGraphicsRootDescriptorTable(
+                            *slot,
+                            heap.heap.GetGPUDescriptorHandleForHeapStart(),
+                        );
+                    }
+                },
+                super::PipelineType::Compute => {
+                    for slot in slots {
+                        self.cmd().SetComputeRootDescriptorTable(
+                            *slot,
+                            heap.heap.GetGPUDescriptorHandleForHeapStart(),
+                        );
+                    }
+                }
+
+            }
         }
     }
 
@@ -3387,17 +3560,12 @@ impl super::CmdBuf<Device> for CmdBuf {
         counter_buffer: Option<&Buffer>,
         counter_buffer_offset: usize
     ) {
-        let counter_buffer_resource = if let Some(buf) = counter_buffer {
-            Some(&buf.resource)
-        }
-        else {
-            None
-        };
+        let counter_buffer_resource = counter_buffer.map(|buf| buf.resource.as_ref().unwrap());
         unsafe {
             self.cmd().ExecuteIndirect(
                 &command.command_signature, 
                 max_command_count, 
-                &argument_buffer.resource,
+                argument_buffer.resource.as_ref().unwrap(),
                 argument_buffer_offset as u64, 
                 counter_buffer_resource, 
                 counter_buffer_offset as u64
@@ -3473,7 +3641,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 self.cmd().ResolveSubresource(
                     &resolve.clone(),
                     subresource,
-                    &texture.resource,
+                    texture.resource.as_ref().unwrap(),
                     subresource,
                     texture.resolved_format
                  );
@@ -3482,6 +3650,65 @@ impl super::CmdBuf<Device> for CmdBuf {
             else {
                 Err(super::Error {
                     msg: format!("hotline::gfx::d3d12:: failed to resolve texture subresource {}", subresource)
+                })
+            }
+        }
+    }
+
+
+    fn generate_mip_maps(&self, texture: &Texture, device: &Device, heap: &Heap) -> result::Result<(), super::Error> {
+        unsafe {
+            // select between reslve resource and the main resource
+            let desc = if let Some(resolved) = &texture.resolved_resource {
+                resolved.GetDesc()
+            }
+            else {
+                texture.resource.as_ref().unwrap().GetDesc()
+            };
+            
+            if desc.MipLevels <= 1 || texture.subresource_uav_index.len() < desc.MipLevels as usize {
+                Err(super::Error {
+                    msg: "hotline_rs::d3d12:: texture was not created with GENERATE_MIP_MAPS_FLAG".to_string()
+                })
+            }
+            else if let Some(pipeline) = &device.generate_mip_maps_pipeline {
+                self.set_compute_pipeline(pipeline);
+
+                // bind heap
+                self.set_heap(pipeline, heap);
+
+                // multi-pass down sample
+                let mut mipw = (desc.Width / 2).max(1);
+                let mut miph = (desc.Width / 2).max(1);
+
+                for i in 1..desc.MipLevels as usize {
+                    let using_slot = pipeline.get_descriptor_slot(0, 0, super::DescriptorType::PushConstants);
+                    if let Some(slot) = using_slot {
+                        self.push_compute_constants(slot.slot, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i]));
+                        self.push_compute_constants(slot.slot, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i+1]));
+                    }
+                    self.dispatch(
+                        Size3 {
+                            x: (mipw as f32 / 32.0).ceil() as u32,
+                            y: (miph as f32 / 32.0).ceil() as u32,
+                            z: 1
+                        },
+                        Size3 {
+                            x: 32,
+                            y: 32,
+                            z: 1
+                        }
+                    );
+
+                    mipw = (mipw / 2).max(1);
+                    miph = (miph / 2).max(1);
+                }                
+
+                Ok(())
+            }
+            else {
+                Err(super::Error {
+                    msg: "hotline_rs::d3d12:: unable to generate mip maps".to_string()
                 })
             }
         }
@@ -3497,9 +3724,9 @@ impl super::CmdBuf<Device> for CmdBuf {
     ) {
         unsafe {
             self.cmd().CopyBufferRegion(
-                &dst_buffer.resource, 
+                dst_buffer.resource.as_ref().unwrap(), 
                 dst_offset as u64,
-                &src_buffer.resource, 
+                src_buffer.resource.as_ref().unwrap(), 
                 src_offset  as u64,
                 num_bytes as u64
             );
@@ -3519,10 +3746,10 @@ impl super::Buffer<Device> for Buffer {
             let range = D3D12_RANGE { Begin: 0, End: 0 };
             let mut map_data = std::ptr::null_mut();
             unsafe {
-                self.resource.Map(0, Some(&range), Some(&mut map_data))?;
+                self.resource.as_ref().unwrap().Map(0, Some(&range), Some(&mut map_data))?;
                 let dst = (map_data as *mut u8).add(offset);
                 std::ptr::copy_nonoverlapping(data.as_ptr() as *mut _, dst, update_bytes);
-                self.resource.Unmap(0, None);
+                self.resource.as_ref().unwrap().Unmap(0, None);
             }
             Ok(())
         }
@@ -3557,33 +3784,19 @@ impl super::Buffer<Device> for Buffer {
     }
 
     fn get_vbv(&self) -> Option<VertexBufferView> {
-        if let Some(vbv) = self.vbv {
-            Some(
-                VertexBufferView { 
-                    location: vbv.BufferLocation, 
-                    size_bytes: vbv.SizeInBytes, 
-                    stride_bytes: vbv.StrideInBytes
-                }
-            )
-        }
-        else {
-            None
-        }
+        self.vbv.map(|vbv| VertexBufferView { 
+            location: vbv.BufferLocation, 
+            size_bytes: vbv.SizeInBytes, 
+            stride_bytes: vbv.StrideInBytes
+        })
     }
 
     fn get_ibv(&self) -> Option<IndexBufferView> {
-        if let Some(ibv) = self.ibv {
-            Some(
-                IndexBufferView { 
-                    location: ibv.BufferLocation, 
-                    size_bytes: ibv.SizeInBytes, 
-                    format: ibv.Format.0
-                }
-            )
-        }
-        else {
-            None
-        }
+        self.ibv.map(|ibv| IndexBufferView { 
+            location: ibv.BufferLocation, 
+            size_bytes: ibv.SizeInBytes, 
+            format: ibv.Format.0
+        })
     }
 
     fn get_counter_offset(&self) -> Option<usize> {
@@ -3601,7 +3814,7 @@ impl super::Buffer<Device> for Buffer {
             };
             let mut map_data = std::ptr::null_mut();
             unsafe {
-                self.resource.Map(info.subresource, Some(&range), Some(&mut map_data)).unwrap();
+                self.resource.as_ref().unwrap().Map(info.subresource, Some(&range), Some(&mut map_data)).unwrap();
             }
             map_data as *mut u8
         }
@@ -3614,7 +3827,7 @@ impl super::Buffer<Device> for Buffer {
                 End: info.write_end,
             };
             unsafe {
-                self.resource.Unmap(info.subresource, Some(&range));
+                self.resource.as_ref().unwrap().Unmap(info.subresource, Some(&range));
             }
         }
     }
@@ -3635,6 +3848,19 @@ impl super::Texture<Device> for Texture {
         }
     }
 
+    fn get_subresource_uav_index(&self, subresource: u32) -> Option<usize> {
+        if subresource < self.subresource_uav_index.len() as u32 {
+            Some(self.subresource_uav_index[subresource as usize])
+        }
+        else {
+            None
+        }
+    }
+
+    fn get_msaa_srv_index(&self) -> Option<usize> {
+        self.srv_index
+    }
+
     fn get_uav_index(&self) -> Option<usize> {
         self.uav_index
     }
@@ -3646,26 +3872,41 @@ impl super::Texture<Device> for Texture {
     fn is_resolvable(&self) -> bool {
         self.resolved_resource.is_some()
     }
+
+    fn get_shader_heap_id(&self) -> Option<u16> {
+        self.shader_heap_id
+    }
 }
 
 impl super::Pipeline for RenderPipeline {
-    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
-        let mut hash = DefaultHasher::new();
-        register.hash(&mut hash);
-        descriptor_type.hash(&mut hash);
-        self.descriptor_slot_lookup.get(&hash.finish())
+    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
+        let h = get_binding_descriptor_hash(register, space, descriptor_type);
+        self.lookup.slot_lookup.get(&h)
+    }
+
+    fn get_descriptor_slots(&self) -> &Vec<u32> {
+        &self.lookup.descriptor_slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Render
     }
 }
 
 impl super::Pipeline for ComputePipeline {
-    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
-        let mut hash = DefaultHasher::new();
-        register.hash(&mut hash);
-        descriptor_type.hash(&mut hash);
-        self.descriptor_slot_lookup.get(&hash.finish())
+    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
+        let h = get_binding_descriptor_hash(register, space, descriptor_type);
+        self.lookup.slot_lookup.get(&h)
+    }
+
+    fn get_descriptor_slots(&self) -> &Vec<u32> {
+        &self.lookup.descriptor_slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Compute
     }
 }
-
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {
     fn is_complete(&self, swap_chain: &SwapChain) -> bool {
@@ -3723,43 +3964,96 @@ impl From<os::win32::NativeHandle> for HWND {
 
 impl Drop for Texture {
     fn drop(&mut self) {
-        // texture resource views
-        if let Some(free_list) = &self.free_list {
-            let mut free_list = free_list.list.lock().unwrap();
-            if let Some(srv_index) = self.srv_index {
-                free_list.push(srv_index);
+        if MANAGE_DROPS {
+            // only grab resources if we have a drop list, this allows the swap chain rtv
+            // to manage itself
+            let mut res_vec = if self.drop_list.is_some() {
+                // swap out the resources for null
+                let mut res = None;
+                std::mem::swap(&mut res, &mut self.resource);
+                let mut res_vec = vec![
+                    res.unwrap()
+                ];
+                if self.resolved_resource.is_some() {
+                    let mut res = None;
+                    std::mem::swap(&mut res, &mut self.resolved_resource);
+                    res_vec.push(res.unwrap());
+                }
+                res_vec
             }
-            if let Some(uav_index) = self.uav_index {
-                free_list.push(uav_index);
+            else {
+                Vec::new()
+            };
+            // texture resource views
+            if let Some(drop_list) = &self.drop_list {
+                let mut drop_list = drop_list.list.lock().unwrap();
+                let mut drop_res = DropResource {
+                    resources: res_vec.to_vec(),
+                    frame: 0,
+                    heap_allocs: Vec::new()
+                };
+                res_vec.clear();
+                if let Some(srv_index) = self.srv_index {
+                    drop_res.heap_allocs.push(srv_index);
+                }
+                if let Some(uav_index) = self.uav_index {
+                    drop_res.heap_allocs.push(uav_index);
+                }
+                if let Some(resolved_srv) = self.resolved_srv_index {
+                    drop_res.heap_allocs.push(resolved_srv);
+                }
+                drop_list.push(drop_res);
             }
-            if let Some(resolved_srv) = self.resolved_srv_index {
-                free_list.push(resolved_srv);
+            // texture target views
+            if let Some(rtv) = &self.rtv {
+                let mut drop_list = rtv.drop_list.list.lock().unwrap();
+                let drop_res = DropResource {
+                    resources: res_vec.to_vec(),
+                    frame: 0,
+                    heap_allocs: vec![rtv.index]
+                };
+                drop_list.push(drop_res);
+                res_vec.clear();
+            }
+            if let Some(dsv) = &self.dsv {
+                let mut drop_list = dsv.drop_list.list.lock().unwrap();
+                let drop_res = DropResource {
+                    resources: res_vec.to_vec(),
+                    frame: 0,
+                    heap_allocs: vec![dsv.index]
+                };
+                drop_list.push(drop_res);
+                res_vec.clear();
             }
         }
-        // texture target views
-        if let Some(rtv) = &self.rtv {
-            let mut free_list = rtv.free_list.list.lock().unwrap();
-            free_list.push(rtv.index);
-        }
-        if let Some(dsv) = &self.dsv {
-            let mut free_list = dsv.free_list.list.lock().unwrap();
-            free_list.push(dsv.index);
-        }
+
     }
 }
 
 impl Drop for Buffer {
     fn drop(&mut self) {
-        if let Some(free_list) = &self.free_list {
-            let mut free_list = free_list.list.lock().unwrap();
-            if let Some(srv_index) = self.srv_index {
-                free_list.push(srv_index);
-            }
-            if let Some(uav_index) = self.uav_index {
-                free_list.push(uav_index);
-            }
-            if let Some(cbv_index) = self.cbv_index {
-                free_list.push(cbv_index);
+        if MANAGE_DROPS {
+            // swap res with null
+            let mut res = None;
+            std::mem::swap(&mut res, &mut self.resource);
+            // build list of heap allocs and resources to drop later
+            if let Some(drop_list) = &self.drop_list {
+                let mut drop_list = drop_list.list.lock().unwrap();
+                let mut drop_res = DropResource {
+                    resources: vec![res.unwrap()],
+                    frame: 0,
+                    heap_allocs: Vec::new()
+                };
+                if let Some(srv_index) = self.srv_index {
+                    drop_res.heap_allocs.push(srv_index);
+                }
+                if let Some(uav_index) = self.uav_index {
+                    drop_res.heap_allocs.push(uav_index);
+                }
+                if let Some(cbv_index) = self.cbv_index {
+                    drop_res.heap_allocs.push(cbv_index);
+                }
+                drop_list.push(drop_res);
             }
         }
     }

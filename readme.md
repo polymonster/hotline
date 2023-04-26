@@ -110,7 +110,7 @@ The basic `Cargo.toml` setup looks like this:
 
 ```toml
 [package]
-name = "ecs_demos"
+name = "ecs_examples"
 version = "0.1.0"
 edition = "2021"
 
@@ -635,19 +635,6 @@ This is wrapped into `pmbuild` so you can also run:
 ```text
 pmbuild test
 ```
-
-## Roadmap
-
-### In Progress
-
-- Samples and Demos
-- Debug / Primitive Rendering API
-- High level graphics api (render graphs, data driven, Uber shaders)  
-- ~~Multi-threading support (async command buffer generation and job dispatches)~~
-- ~~Hot reloading~~
-- ~~API (gfx::, os::) / Backend (d3d12::, win32::)~~
-- ~~API (av::) / Windows Media Foundation (HW Video / Audio Decoding)~~
-- ~~Imgui support w/ Viewports~~
 
 ### Future Plans
 

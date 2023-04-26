@@ -131,7 +131,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         imgui.end();
 
-        imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer);
+        imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer, &Vec::new());
 
         cmdbuffer.end_render_pass();
 
@@ -151,10 +151,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         ci = (ci + 1) % 4;
     }
 
-    player.shutdown(&mut dev);
-
     swap_chain.wait_for_last_frame();
-    dev.clean_up_resources(&swap_chain);
+
+    // resources now no longer in use they can be properly cleaned up
+    dev.cleanup_dropped_resources(&swap_chain);
 
     Ok(())
 }
