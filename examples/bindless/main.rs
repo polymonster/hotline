@@ -110,10 +110,11 @@ fn main() -> Result<(), hotline_rs::Error> {
     pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
     pmfx.create_compute_pipeline(&dev, "compute_rw")?;
     pmfx.create_render_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
+    pmfx.create_render_pipeline(&dev, "desriptor_layout_test", swap_chain.get_backbuffer_pass())?;
     
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
-    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt).unwrap();
-    let pso_compute = pmfx.get_compute_pipeline("compute_rw").unwrap();
+    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
+    let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
@@ -124,7 +125,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ];
     for file in files {
         let image = image::load_from_file(&file)?;
-        let tex = dev.create_texture(&image.info, data![image.data.as_slice()]).unwrap();
+        let tex = dev.create_texture(&image.info, data![image.data.as_slice()])?;
         textures.push(tex);
     }
 
@@ -180,7 +181,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
 
     // pass for render target with depth stencil
-    let mut render_target_pass = dev
+    let render_target_pass = dev
         .create_render_pass(&gfx::RenderPassInfo {
             render_targets: vec![&render_target],
             rt_clear: Some(gfx::ClearColour {
@@ -225,8 +226,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_marker(0xff00ffff, "START!!!");
 
         cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
-        cmdbuffer.set_compute_pipeline(&pso_compute);
-        cmdbuffer.set_compute_heap(0, dev.get_shader_heap());
+        cmdbuffer.set_compute_pipeline(pso_compute);
+        cmdbuffer.set_heap(pso_compute, dev.get_shader_heap());
         cmdbuffer.dispatch(
             gfx::Size3 {
                 x: 512 / 16,
@@ -250,7 +251,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::RenderTarget,
         });
 
-        cmdbuffer.begin_render_pass(&mut render_target_pass);
+        cmdbuffer.begin_render_pass(&render_target_pass);
         cmdbuffer.end_render_pass();
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
@@ -280,9 +281,9 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
 
-        cmdbuffer.set_render_pipeline(&pso_pmfx);
+        cmdbuffer.set_render_pipeline(pso_pmfx);
         
-        cmdbuffer.set_render_heap(1, dev.get_shader_heap(), 0);
+        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
@@ -311,6 +312,9 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // must wait for the final frame to be completed
     swap_chain.wait_for_last_frame();
+
+    // resources now no longer in use they can be properly cleaned up
+    dev.cleanup_dropped_resources(&swap_chain);
 
     Ok(())
 }

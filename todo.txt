@@ -1,18 +1,18 @@
 // TODO:
 
-// wip
-// aabb culling with extent / pos
+// THIS WEEK:
+// - rename descriptor layout
+// - per demo settings
+// - fix tests
+// - finish blog
+// - update docs with examples
+// - pass output dimensions to compute (fix mrt)
 
 // pmfx-shader
 // - minimise shader duplication caused via pmfx includes
-// - allow pipelines to drive the num thread in compute shaders
-
-// examples
-// - per demo settings
-// - update docs with examples
+// - allow pipelines to drive the num thread in compute shaders and vice/versa
 
 // material system
-// - apply maps / material properties + lights
 // - area light
 // - disney brdf
 // - shadow map
@@ -20,39 +20,45 @@
 // - cascaded shadow map
 
 // engine
-// - post process / 2d passes (compute based)
-// - resolves fully data driven
-// - barriers for compute
+// - HDR pipeline
 // - buffers in pmfx
-// - clear buffers for compute
 // - glft
 // - set name on resources
 // - lazy init print function
 // - texture load image from file into pmfx
-// - store hotline-data commit hash for crates.io
+// - barriers for compute
+// - resolves fully data driven
+// - clear buffer (uav)
+// - clear buffers for compute
 // - reverse depth
-// - stencil examples
+// - example triangle culling via execute indirect
 
 // gfx
-// - example triangle culling via execute indirect
-// - MRT
 // - Alpha to coverage
-// - Stencil Ref
+// - Stencil Ref / Buffer
 // - Texture Formats (BC etc)
 // - API for copies and clears?
-//      clear buffer (uav)
 //      copy texture region
-// - API for fence
+// - API for fence?
 
 // ui / debug
-// - serialise plugin data is badly formatted (needs expanding per plugin / demo)
-// - render grid not tracked
-// - imgui not tracked within draw call stats
 // - thread stats
 // - view menu + saving state
+// - imgui not tracked within draw call stats
 
 // DONE:
-// - print validation messages on panic / stack unwind? (didnt work)
+// x apply maps / material properties + lights
+// x serialise plugin data is badly formatted (needs expanding per plugin / demo)
+// x render grid not tracked
+// o store hotline-data commit hash for crates.io
+// x ability to view images in imgui from different heaps
+// x cleaup heaps
+// x post process / 2d passes (compute based)
+// x mip map generation
+// x MRT
+// x MSAA sample reads
+// x aabb culling with extent / pos
+// o print validation messages on panic / stack unwind? (didnt work)
 // x Execute Indirect
 // x gpu culling
 // x pmfx-shader
@@ -143,7 +149,7 @@
 // x status bar
 // x time resource for systems
 // x spring
-// x move rotate system out of ecs into ecs_demos
+// x move rotate system out of ecs into ecs_examples
 // x core update (cams, configs)
 // x raster examples
 // x update maths 0.1.9

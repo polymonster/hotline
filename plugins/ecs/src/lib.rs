@@ -10,25 +10,12 @@ use bevy_ecs::schedule::SystemConfig;
 
 use std::collections::HashMap;
 
-use serde::{Deserialize, Serialize};
-
 macro_rules! log_error {
     ($map:expr, $name:expr) => {
         if !$map.contains_key(&$name) {
             $map.insert($name, Vec::new());
         }
     }
-}
-
-/// Seriablisable user info for maintaining state between reloads and sessions
-#[derive(Serialize, Deserialize, Default, Resource, Clone)]
-pub struct SessionInfo {
-    /// The active running demo will be saved between sessions
-    pub active_demo: String,
-    /// Main camera setings will be saved between sessions
-    pub main_camera: Option<CameraInfo>,
-    /// Default camera for a demo, can be set by the camera button in the UI
-    pub default_cameras: Option<HashMap<String, CameraInfo>>
 }
 
 struct BevyPlugin {
@@ -140,8 +127,9 @@ fn update_camera_orbit(
 
     // speed modifier
     let boost_speed = 2.0;
-    let control_speed = 0.25;
     let mut scroll_speed = 100.0;
+    let control_speed = 0.1;
+
     if enable_keyboard {
         // modifiers
         if app.is_sys_key_down(os::SysKey::Shift) {
@@ -267,91 +255,31 @@ fn update_cameras(
     time: Res<TimeRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {
+    
     pmfx.get_world_buffers_mut().camera.clear();
+    
     for (name, mut position, mut camera, mut view_proj) in &mut query {
         match camera.camera_type {
             CameraType::Fly => {
                 update_camera_fly(&app, &time, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
             },
             CameraType::Orbit => {
-                update_camera_orbit(&app,&mut pmfx, &mut camera, &mut position, &mut view_proj, name);
+                update_camera_orbit(&app, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
             }
             _ => continue
         }
 
-        // 
+        let constants = pmfx.get_camera_constants(name).unwrap();
+        let camera_data = pmfx::CameraData {
+            view_projection_matrix: constants.view_projection_matrix,
+            view_position: constants.view_position,
+            planes: constants.view_projection_matrix.get_frustum_planes()
+        };
+
         if pmfx.get_world_buffers_mut().camera.capacity() > 0 {
-            pmfx.get_world_buffers_mut().camera.push(&pmfx::CameraData {
-                view_projection_matrix: view_proj.0,
-                view_position: Vec4f::from(position.0),
-                planes: view_proj.0.get_frustum_planes()
-            });
+            pmfx.get_world_buffers_mut().camera.push(&camera_data);
         }
     }
-}
-
-fn render_grid(
-    mut device: ResMut<DeviceRes>,
-    mut imdraw: ResMut<ImDrawRes>,
-    pmfx: Res<PmfxRes>) {
-
-    let imdraw = &mut imdraw.0;
-
-    let view = pmfx.get_view("grid");
-    if view.is_err() {
-        return;
-    }
-    
-    let arc_view = view.unwrap();
-    let mut view = arc_view.lock().unwrap();
-
-    let bb = view.cmd_buf.get_backbuffer_index();
-    let fmt = view.pass.get_format_hash();
-
-    let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt);
-    if pipeline.is_err() {
-        return;
-    }
-    let pipeline = pipeline.unwrap();
-
-    let camera = pmfx.get_camera_constants(&view.camera);
-    if camera.is_err() {
-        return;
-    }
-    let camera = camera.unwrap();
-
-    // render grid
-    let scale = 1000.0;
-    let divisions = 10.0;
-    for i in 0..((scale * 2.0) /divisions) as usize {
-        let offset = -scale + i as f32 * divisions;
-        let mut tint = 0.3;
-        if i % 5 == 0 {
-            tint *= 0.5;
-        }
-        if i % 10 == 0 {
-            tint *= 0.25;
-        }
-        if i % 20 == 0 {
-            tint *= 0.125;
-        }
-
-        imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
-        imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
-    }
-
-    imdraw.submit(&mut device.0, bb as usize).unwrap();
-
-    view.cmd_buf.begin_render_pass(&view.pass);
-    view.cmd_buf.set_viewport(&view.viewport);
-    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-    view.cmd_buf.set_render_pipeline(&pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, &camera.view_projection_matrix);
-
-    imdraw.draw_3d(&mut view.cmd_buf, bb as usize);
-
-    view.cmd_buf.end_render_pass();
 }
 
 impl BevyPlugin {
@@ -522,7 +450,6 @@ impl BevyPlugin {
                 }
             }
         }
-
         client
     }
 
@@ -653,7 +580,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             SystemSets::Batch,
             CoreSystemSets::Render,
             SystemSets::Render
-
         ).chain());
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
@@ -662,7 +588,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     }
 
     fn update(&mut self, mut client: PlatformClient) -> PlatformClient {
-
         let session_info = self.session_info.clone();
 
         // check for any changes
@@ -680,7 +605,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(ImDrawRes(client.imdraw));
         self.world.insert_resource(UserConfigRes(client.user_config));
         self.world.insert_resource(TimeRes(client.time));
-
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
@@ -772,9 +696,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
 
             // -/+ to toggle through demos, ignore test missing and test failing demos
-            let wrap_len = demo_list.iter()
-                .filter(|d| !d.contains("test_missing") && !d.contains("test_failing"))
-                .collect::<Vec<_>>().len();
+            let wrap_len = demo_list.len();
             
             let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
             if let Some(index) = cur_demo_index {
@@ -791,6 +713,45 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 if toggle != index {
                     self.session_info.active_demo = demo_list[toggle].to_string();
                     resetup = true;
+                }
+            }
+
+            // debug draw options
+            client.imgui.button_size(font_awesome::strs::EYE, 32.0, 0.0);
+
+            // grid
+            client.imgui.same_line();
+            let mut dd = self.session_info.debug_draw_flags.contains(DebugDrawFlags::GRID);
+            if client.imgui.checkbox("Grid", &mut dd) {
+                if dd {
+                    self.session_info.debug_draw_flags |= DebugDrawFlags::GRID;
+                }
+                else {
+                    self.session_info.debug_draw_flags &= !DebugDrawFlags::GRID;
+                }
+            }
+
+            // aabb
+            client.imgui.same_line();
+            let mut dd = self.session_info.debug_draw_flags.contains(DebugDrawFlags::AABB);
+            if client.imgui.checkbox("AABB", &mut dd) {
+                if dd {
+                    self.session_info.debug_draw_flags |= DebugDrawFlags::AABB;
+                }
+                else {
+                    self.session_info.debug_draw_flags &= !DebugDrawFlags::AABB;
+                }
+            }
+
+            // obb
+            client.imgui.same_line();
+            let mut dd = self.session_info.debug_draw_flags.contains(DebugDrawFlags::OBB);
+            if client.imgui.checkbox("OBB", &mut dd) {
+                if dd {
+                    self.session_info.debug_draw_flags |= DebugDrawFlags::OBB;
+                }
+                else {
+                    self.session_info.debug_draw_flags &= !DebugDrawFlags::OBB;
                 }
             }
 
@@ -818,12 +779,3 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 //
 
 hotline_plugin![BevyPlugin];
-
-/// Register plugin systems
-#[no_mangle]
-pub fn get_system_ecs(name: String, _view_name: String) -> Option<SystemConfig> {
-    match name.as_str() {
-        "render_grid" => system_func![render_grid],
-        _ => None
-    }
-}

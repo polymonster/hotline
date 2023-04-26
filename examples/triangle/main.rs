@@ -41,7 +41,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     });
 
     let swap_chain_info = gfx::SwapChainInfo {
-        num_buffers: num_buffers.clone() as u32,
+        num_buffers,
         format: gfx::Format::RGBA8n,
         clear_colour: Some(gfx::ClearColour {
             r: 0.45,
@@ -177,6 +177,9 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // must wait for the final frame to be completed
     swap_chain.wait_for_last_frame();
+
+    // resources now no longer in use they can be properly cleaned up
+    device.cleanup_dropped_resources(&swap_chain);
 
     Ok(())
 }

@@ -94,7 +94,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         // imgui
         imgui.new_frame(&mut app, &mut win, &mut dev);
         imgui.demo();
-        imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer);
+        imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer, &Vec::new());
 
         cmdbuffer.end_render_pass();
 
@@ -115,6 +115,9 @@ fn main() -> Result<(), hotline_rs::Error> {
     }
 
     swap_chain.wait_for_last_frame();
+
+    // resources now no longer in use they can be properly cleaned up
+    dev.cleanup_dropped_resources(&swap_chain);
     
     Ok(())
 }

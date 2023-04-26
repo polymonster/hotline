@@ -9,6 +9,7 @@ use maths_rs::prelude::*;
 use serde::{Deserialize, Serialize};
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::collections::HashMap;
 
 /// Schedule info can be filled out and passed to the `ecs` plugin to build a schedulre for a running demo
 pub struct ScheduleInfo {
@@ -58,6 +59,29 @@ impl Default for CameraInfo {
             fov: 60.0
         }
     }
+}
+
+bitflags! {
+    #[derive(Serialize, Deserialize, Resource, Default)]
+    pub struct DebugDrawFlags: u32 {
+        const NONE = 0b00000000;
+        const GRID = 0b00000001;
+        const AABB = 0b00000010;
+        const OBB  = 0b00000100;
+    }
+}
+
+/// Seriablisable user info for maintaining state between reloads and sessions
+#[derive(Serialize, Deserialize, Default, Resource, Clone)]
+pub struct SessionInfo {
+    /// The active running demo will be saved between sessions
+    pub active_demo: String,
+    /// Main camera setings will be saved between sessions
+    pub main_camera: Option<CameraInfo>,
+    /// Default camera for a demo, can be set by the camera button in the UI
+    pub default_cameras: Option<HashMap<String, CameraInfo>>,
+    /// Debug draw flags
+    pub debug_draw_flags: DebugDrawFlags
 }
 
 /// This macro allows you to create a newtype which will automatically deref and deref_mut
@@ -234,21 +258,21 @@ macro_rules! system_func {
 #[macro_export]
 macro_rules! render_func {
     ($func:expr, $view:expr, $query:ty) => {
-        Some(render_func_closure![$func, $view, $query].into_config())
+        Some(render_func_closure![$func, $view, $query].into_config().in_base_set(SystemSets::Render))
     }
 }
 
 #[macro_export]
 macro_rules! compute_func {
     ($pass:expr) => {
-        Some(compute_func_closure![$pass].into_config())
+        Some(compute_func_closure![$pass].into_config().in_base_set(SystemSets::Render))
     }
 }
 
 #[macro_export]
 macro_rules! compute_func_query {
     ($func:expr, $pass:expr, $query:ty) => {
-        Some(compute_func_query_closure![$func, $pass, $query].into_config())
+        Some(compute_func_query_closure![$func, $pass, $query].into_config().in_base_set(SystemSets::Render))
     }
 }
 
@@ -297,13 +321,13 @@ macro_rules! render_func_closure {
     }
 }
 
-/// This macro can be used to export a system render function for bevy ecs. You can pass a compatible 
-/// system function with a `view` name which can be looked up when the function is called
-/// so that a single render function can have different views
+/// This macro can be used to export a system compute function for bevy ecs. You can pass a compatible 
+/// system function with a `pass` name which can be looked up when the function is called
 #[macro_export]
 macro_rules! compute_func_closure {
     ($pass_name:expr) => {
         move | pmfx: Res<PmfxRes> | {
+                
                 let pass = pmfx.get_compute_pass(&$pass_name);
                 let err = match pass {
                     Ok(p) => {
@@ -313,12 +337,15 @@ macro_rules! compute_func_closure {
                         pass.cmd_buf.begin_event(0xffffff, &$pass_name);
                         pass.cmd_buf.set_compute_pipeline(&pipeline);
 
-                        for i in 0..pass.srv_indices.len() {
-                            pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.srv_indices[i]));
+                        let using_slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+                        if let Some(slot) = using_slot {
+                            for i in 0..pass.use_indices.len() {
+                                pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.use_indices[i]));
+                            }
                         }
-                        
-                        pass.cmd_buf.set_compute_heap(1, &pmfx.shader_heap);
 
+                        pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+                        
                         pass.cmd_buf.dispatch(
                             pass.group_count,
                             pass.thread_count

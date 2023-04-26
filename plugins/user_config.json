@@ -20,6 +20,6 @@
     }
   },
   "plugin_data": {
-    "ecs": "{\n  \"active_demo\": \"geometry_primitives\",\n  \"main_camera\": {\n    \"camera_type\": \"Orbit\",\n    \"pos\": [\n      190.2113,\n      235.1141,\n      261.8034\n    ],\n    \"rot\": [\n      -36.0,\n      36.0,\n      0.0\n    ],\n    \"focus\": [\n      0.0,\n      0.0,\n      0.0\n    ],\n    \"zoom\": 400.0,\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
+    "ecs": "{\n \"debug_draw_flags\": {\"bits\": 0},\n \"active_demo\": \"geometry_primitives\",\n  \"main_camera\": {\n    \"camera_type\": \"Orbit\",\n    \"pos\": [\n      190.2113,\n      235.1141,\n      261.8034\n    ],\n    \"rot\": [\n      -36.0,\n      36.0,\n      0.0\n    ],\n    \"focus\": [\n      0.0,\n      0.0,\n      0.0\n    ],\n    \"zoom\": 400.0,\n    \"aspect\": 0.93421054,\n    \"fov\": 60.0\n  }\n}"
   }
 }

@@ -156,8 +156,8 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
         ).unwrap()
     };
 
-    let aabb_min = vertices.iter().fold( Vec3f::max_value(), |acc, v| min(acc, v.position));
-    let aabb_max = vertices.iter().fold(-Vec3f::max_value(), |acc, v| max(acc, v.position));
+    let (aabb_min, aabb_max) =
+        indices.iter().fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, i| min_max(vertices[*i].position, acc));
 
     pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
@@ -684,23 +684,23 @@ pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
         Vertex3D {
-            position: vec3f(0.0, 1.0, 0.0),
-            texcoord: vec2f(0.5, 0.0),
-            normal: vec3f(0.0, 0.0, 1.0),
-            tangent: vec3f(1.0, 0.0, 0.0),
-            bitangent: vec3f(0.0, 1.0, 0.0),
-        },
-        Vertex3D {
             position: vec3f(1.0, -1.0, 0.0),
             texcoord: vec2f(1.0, 1.0),
             normal: vec3f(0.0, 0.0, 1.0),
             tangent: vec3f(1.0, 0.0, 0.0),
             bitangent: vec3f(0.0, 1.0, 0.0),
         },
+        Vertex3D {
+            position: vec3f(0.0, 1.0, 0.0),
+            texcoord: vec2f(0.5, 0.0),
+            normal: vec3f(0.0, 0.0, 1.0),
+            tangent: vec3f(1.0, 0.0, 0.0),
+            bitangent: vec3f(0.0, 1.0, 0.0),
+        }
     ];
 
     let indices: Vec<u16> = vec![
-        0,  2,  1
+        0,  1,  2
     ];
 
     let aabb_min = vertices.iter().fold( Vec3f::max_value(), |acc, v| min(acc, v.position));
@@ -2171,9 +2171,9 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
         vec3f(inset, 1.0, inset),
     ];
 
-    for i in 0..vertices.len() {
+    for (i, vertex) in vertices.iter_mut().enumerate() {
         let face = i / 8;
-        vertices[i].position *= insets[face];
+        vertex.position *= insets[face];
     }
 
     let mut indices: Vec<usize> = vec![
@@ -2355,7 +2355,8 @@ pub fn create_chamfer_cube_mesh<D: gfx::Device>(dev: &mut D, radius: f32, segmen
 
 /// Create an `segments` sided prism tude, if `smooth` the prism is a cylinder with smooth normals
 /// convert to a trapezoid using `taper` with a value between 0-1 to taper the top cap inward where 1 is no taper and 0 makes a pyramid
-/// use thickness to control the size of the inner hole 
+/// use thickness to control the size of the inner hole
+#[allow(clippy::too_many_arguments)]
 pub fn create_tube_prism_mesh<D: gfx::Device>(
     dev: &mut D, segments: usize, trunc_start: usize, trunc_end: usize, smooth: bool, cap: bool, height: f32, thickness: f32, taper: f32) -> pmfx::Mesh<D> {
     let axis = Vec3f::unit_y();
@@ -2425,24 +2426,24 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
         }
 
         // bottom cap
-        for i in 0..vertex_segments {
+        for point in bottom_points.iter().take(vertex_segments) {
             cap_vertices.push(Vertex3D{
-                position: bottom_points[i],
+                position: point.xyz(),
                 normal: -Vec3f::unit_y(),
                 tangent: Vec3f::unit_x(),
                 bitangent: Vec3f::unit_z(),
-                texcoord: bottom_points[i].xz() * 0.5 + 0.5
+                texcoord: point.xz() * 0.5 + 0.5
             });
         }
 
         // top cap
-        for i in 0..vertex_segments {
+        for point in top_points.iter().take(vertex_segments) {
             cap_vertices.push(Vertex3D{
-                position: top_points[i],
+                position: point.xyz(),
                 normal: Vec3f::unit_y(),
                 tangent: Vec3f::unit_x(),
                 bitangent: Vec3f::unit_z(),
-                texcoord: top_points[i].xz() * 0.5 + 0.5
+                texcoord: point.xz() * 0.5 + 0.5
             });
         }
 
@@ -3035,12 +3036,10 @@ pub fn create_teapot_mesh<D: gfx::Device>(dev: &mut D, tessellation: usize) -> p
 
     let mut vertices = Vec::new();
     let mut indices = Vec::new();
-
     let mut lid_index_offset = 0;
     let mut spout_index_offset = 0;
-    let mut ii = 0;
 
-    for patch in &patches {
+    for (ii, patch) in patches.iter().enumerate() {
         // grab the offset to the lid to join it later and the spount to fill in the gap
         if ii == 4 {
             lid_index_offset = vertices.len();
@@ -3048,7 +3047,6 @@ pub fn create_teapot_mesh<D: gfx::Device>(dev: &mut D, tessellation: usize) -> p
         else if ii == 8 {
             spout_index_offset = vertices.len();
         }
-        ii += 1;
 
         let (patch_vertices, patch_indices) = tessalate_patch(patch, tessellation, Vec3f::one(), false, vertices.len());
         vertices.extend(patch_vertices);

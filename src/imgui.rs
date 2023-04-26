@@ -1,5 +1,6 @@
 use imgui_sys::*;
 
+use crate::gfx::Heap;
 use crate::os;
 use crate::os::App;
 use crate::os::Window;
@@ -86,7 +87,8 @@ struct UserData<'a, D: Device, A: App> {
     app: &'a mut A,
     device: &'a mut D,
     main_window: &'a mut A::Window,
-    pipeline: &'a D::RenderPipeline
+    pipeline: &'a D::RenderPipeline,
+    image_heaps: &'a Vec<&'a D::Heap>
 }
 
 /// Trait for hooking into imgui ui calls into other modules
@@ -168,13 +170,27 @@ fn new_ranges() -> *mut [u32; (MAX_RANGES * 2) + 1] {
     }
 }
 
-
 fn to_imgui_texture_id<D: Device>(tex: &D::Texture) -> ImTextureID {
     unsafe {
-        let srv_index = tex.get_srv_index().unwrap();
+        let srv = tex.get_srv_index().unwrap() as u64;
+        let heap_id = tex.get_shader_heap_id().unwrap() as u64;
+
+        // packs them in so the first 48bits are for srv
+        // top 16 bits are heap id
+
+        // mask off 48 bits 0x
+        let mask = 0x0000ffffffffffff;
+        let combined = (srv & mask) | ((heap_id << 48) & !mask);
         let tex_id : *mut cty::c_void = std::ptr::null_mut();
-        tex_id.add(srv_index)
+        tex_id.add(combined as usize)
     }
+}
+
+fn to_srv_heap_id(tex_id: *mut cty::c_void) -> (usize, u16) {
+    let mask = 0x0000ffffffffffff;
+    let srv_id = (tex_id as u64) & mask;
+    let heap_id = ((tex_id as u64) & !mask) >> 48;
+    (srv_id as usize, heap_id as u16)
 }
 
 fn create_fonts_texture<D: Device>(
@@ -400,6 +416,7 @@ fn render_draw_data<D: Device>(
     draw_data: &ImDrawData,
     device: &mut D,
     cmd: &mut D::CmdBuf,
+    image_heaps: &Vec<&D::Heap>,
     buffers: &mut [RenderBuffers<D>],
     pipeline: &D::RenderPipeline,
 ) -> Result<(), super::Error> {
@@ -500,7 +517,23 @@ fn render_draw_data<D: Device>(
                         bottom: clip_max_y as i32,
                     };
 
-                    cmd.set_render_heap(1, device.get_shader_heap(), imgui_cmd.TextureId as usize);
+                    let (srv, heap_id) = to_srv_heap_id(imgui_cmd.TextureId);
+                    if heap_id == device.get_shader_heap().get_heap_id() {
+                        // bind the device heap
+                        // TODO_BINDING
+                        cmd.set_render_heap(1, device.get_shader_heap(), srv);
+                    }
+                    else {
+                        // bund srv in another heap
+                        for heap in image_heaps {
+                            if heap.get_heap_id() == heap_id {
+                                // TODO_BINDING
+                                cmd.set_render_heap(1, heap, srv);
+                                break;
+                            }
+                        }
+                    }
+
                     cmd.set_scissor_rect(&scissor);
                     cmd.draw_indexed_instanced(
                         imgui_cmd.ElemCount,
@@ -824,7 +857,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 device,
                 app,
                 main_window,
-                pipeline: &self.pipeline
+                pipeline: &self.pipeline,
+                image_heaps: &Vec::new()
             };
             io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
@@ -1006,13 +1040,15 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
         }
     }
 
-    /// Call this each frame to render the `ImGui` data 
+    /// Call this each frame to render the `ImGui` data, `image_heaps` can be empty if you are only
+    /// using the default device heap via `device.create_texture`
     pub fn render(
         &mut self,
         app: &mut A,
         main_window: &mut A::Window,
         device: &mut D,
         cmd: &mut D::CmdBuf,
+        image_heaps: &Vec<&D::Heap>,
     ) {
         unsafe {
             let io = &mut *igGetIO();
@@ -1022,6 +1058,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                 &*igGetDrawData(),
                 device,
                 cmd,
+                image_heaps,
                 &mut self.buffers,
                 &self.pipeline,
             )
@@ -1034,6 +1071,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
                     app,
                     main_window,
                     pipeline: &self.pipeline,
+                    image_heaps
                 };
                 io.UserData = (&mut ud as *mut UserData<D, A>) as _;
 
@@ -1410,7 +1448,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App {
     pub fn image(&mut self, tex: &D::Texture, w: f32, h: f32) {
         unsafe {
             let id = to_imgui_texture_id::<D>(tex);
-
             igImage(
                 id, 
                 ImVec2 {x: w, y: h},
@@ -1793,6 +1830,7 @@ unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiVie
         &*vp_ref.DrawData,
         ud.device,
         cmd,
+        ud.image_heaps,
         &mut vd.buffers,
         ud.pipeline,
     )

@@ -320,6 +320,8 @@ bitflags! {
         const DEPTH_STENCIL = (1 << 3);
         /// Used as a target for hardware assisted video decoding operations
         const VIDEO_DECODE_TARGET = (1 << 4);
+        /// Indicates the texture will have mip-maps generated at run time
+        const GENERATE_MIP_MAPS = (1 << 5);
     }
 
     /// Describes how a buffer will be used on the GPU.
@@ -368,7 +370,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
-#[derive(Clone, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, Hash)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers.
     ShaderResource,
@@ -404,8 +406,8 @@ pub struct PushConstantInfo {
     pub num_values: u32,
 }
 
-/// You can request this based on resource type, register and space (as specified in shader). To identify the slot to bind to
-/// when using `set_render_heap` or `set_compute_heap` or the slot to push constants onto
+/// You can request this based on resource type, register and space (as specified in shader).
+/// TODO:
 #[derive(Clone)]
 pub struct DescriptorSlotInfo {
     /// The slot in the pipelines descriptor layout to bind to
@@ -853,6 +855,12 @@ pub struct UnmapInfo {
     pub write_end: usize,
 }
 
+/// Enum to differentiate between render and compute pipelines but also still work on them generically
+pub enum PipelineType {
+    Render,
+    Compute
+}
+
 /// An opaque Shader type
 pub trait Shader<D: Device>: Send + Sync {}
 
@@ -873,7 +881,11 @@ pub trait Pipeline {
     /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
-    fn get_descriptor_slot(&self, register: u32, descriptor_type: DescriptorType) -> Option<&DescriptorSlotInfo>;
+    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&DescriptorSlotInfo>;
+    /// Returns a vec of all descriptor slot indices 
+    fn get_descriptor_slots(&self) -> &Vec<u32>;
+    /// Returns the pipeline type
+    fn get_pipeline_type() -> PipelineType;
 }
 
 /// A command signature is used to `execute_indirect` commands
@@ -1004,7 +1016,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
     /// Create a new resource `Heap` from `HeapInfo`
-    fn create_heap(&self, info: &HeapInfo) -> Self::Heap;
+    fn create_heap(&mut self, info: &HeapInfo) -> Self::Heap;
     /// Create a new `QueryHeap` from `QueryHeapInfo`
     fn create_query_heap(&self, info: &QueryHeapInfo) -> Self::QueryHeap;
     /// Create a new `SwapChain` from `SwapChainInfo` and bind it to the specified `window`
@@ -1068,16 +1080,15 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
-    /// The Device will take ownership safely waiting for the resource to be no longer in use on the gpu before destroying
-    fn destroy_texture(&mut self, texture: Self::Texture);
-    /// Check if resources are finished on the gpu and de-allocate from shader heaps
-    fn clean_up_resources(&mut self, swap_chain: &Self::SwapChain);
     /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&self, cmd: &Self::CmdBuf);
     /// Borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap(&self) -> &Self::Heap;
     /// Mutably borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap_mut(&mut self) -> &mut Self::Heap;
+    /// Cleans up resources which have been dropped associated with the device heaps, safeley waiting for
+    /// any in-flight GPU operations to complete
+    fn cleanup_dropped_resources(&mut self, swap_chain: &Self::SwapChain);
     /// Returns an `AdapterInfo` struct (info about GPU vendor, and HW statistics)
     fn get_adapter_info(&self) -> &AdapterInfo;
     /// Read data back from GPU buffer into CPU `ReadBackData` assumes the `Buffer` is created with `create_read_back_buffer`
@@ -1181,14 +1192,18 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
     /// Set a compute pipeline for `dispatch`
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
-    /// Set the resource heap to be used by the compute pipeline
-    fn set_compute_heap(&self, slot: u32, heap: &D::Heap);
+    /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
+    fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap);
+
+    // TOD_BINDING
     /// Set the resource heap to be used on the render pipeline
     fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
+
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
         &self,
@@ -1220,6 +1235,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
+    /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 
+    fn generate_mip_maps(&self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
     /// Copy from one buffer to another with offsets
@@ -1262,20 +1279,32 @@ pub trait Buffer<D: Device>: Send + Sync {
 
 /// An opaque Texture type
 pub trait Texture<D: Device>: Send + Sync {
-    /// Return the index to access in a shader
+    /// Return the index to access in a shader (if the resource has msaa this is the resolved view)
     fn get_srv_index(&self) -> Option<usize>;
-    /// Return the index to unorder access view for read/write from shaders...
+    /// Return the index to unorderd access view for read/write from shaders...
     fn get_uav_index(&self) -> Option<usize>;
+    /// Return the subresource index unorderd access view for read/write from shaders
+    /// where subresource is the array slice * num mips + mip you want to access
+    fn get_subresource_uav_index(&self, subresource: u32) -> Option<usize>;
+    /// Return the index of an msaa resource to access in a shader
+    fn get_msaa_srv_index(&self) -> Option<usize>;
     /// Return a clone of the internal (platform specific) resource
     fn clone_inner(&self) -> Self;
     /// Returns true if this texture has a subresource which can be resolved into
     fn is_resolvable(&self) -> bool;
+    /// Return the id of the shader heap
+    fn get_shader_heap_id(&self) -> Option<u16>;
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
 pub trait Heap<D: Device>: Send + Sync {
     /// Deallocate a resource from the heap and mark space in free list for re-use
     fn deallocate(&mut self, index: usize);
+    /// Cleans up resources which have been dropped associated with this heap, safeley waiting for
+    /// any in-flight GPU operations to complete
+    fn cleanup_dropped_resources(&mut self, swap_chain: &D::SwapChain);
+    /// Returns the id of the heap to verify and correlate with resources
+    fn get_heap_id(&self) -> u16;
 }
 
 /// An opaque query heap type, use to create queries
@@ -1442,6 +1471,11 @@ pub fn size_for_format_mipped(format: Format, width: u64, height: u64, depth: u3
     total
 }
 
+/// Returns the number of mip levels required for a 2D texture
+pub fn mip_levels_for_dimension(width: u64, height: u64) -> u32 {
+    f32::log2(width.max(height) as f32) as u32 + 1
+}
+
 /// Aligns value to the alignment specified by align. value must be a power of 2
 pub fn align_pow2(value: u64, align: u64) -> u64 {
     (value + (align - 1)) & !(align - 1)
@@ -1460,7 +1494,19 @@ pub fn align(value: u64, align: u64) -> u64 {
 /// For the supplied sized struct `&_` returns the number of 32bit constants required for use as `push_constants`
 pub const fn num_32bit_constants<T: Sized>(_: &T) -> u32 {
     (std::mem::size_of::<T>() / 4) as u32
-} 
+}
+
+/// Trait for sized types where num constants is the number of 32-bit constants in type
+trait NumConstants {
+    fn num_constants() -> u32;
+}
+
+/// Blanket implmenetation for sized `T`
+impl<T> NumConstants for T where T: Sized {
+    fn num_constants() -> u32 {
+        (std::mem::size_of::<T>() / 4) as u32
+    }
+}
 
 impl From<os::Rect<i32>> for Viewport {
     fn from(rect: os::Rect<i32>) -> Viewport {

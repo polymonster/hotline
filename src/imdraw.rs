@@ -162,6 +162,38 @@ impl<D> ImDraw<D> where D: gfx::Device {
         }
     }
 
+    /// Add a 3D aabb from `aabb_min` to `aabb_max` with designated colour `col`
+    pub fn add_aabb_3d(&mut self, aabb_min: Vec3f, aabb_max: Vec3f, col: Vec4f) {
+        self.add_line_3d(vec3f(aabb_min.x, aabb_min.y, aabb_min.z), vec3f(aabb_max.x, aabb_min.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_min.y, aabb_min.z), vec3f(aabb_min.x, aabb_min.y, aabb_max.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_min.y, aabb_max.z), vec3f(aabb_max.x, aabb_min.y, aabb_max.z), col);
+        self.add_line_3d(vec3f(aabb_max.x, aabb_min.y, aabb_max.z), vec3f(aabb_max.x, aabb_min.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_max.y, aabb_min.z), vec3f(aabb_max.x, aabb_max.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_max.y, aabb_min.z), vec3f(aabb_min.x, aabb_max.y, aabb_max.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_max.y, aabb_max.z), vec3f(aabb_max.x, aabb_max.y, aabb_max.z), col);
+        self.add_line_3d(vec3f(aabb_max.x, aabb_max.y, aabb_max.z), vec3f(aabb_max.x, aabb_max.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_min.y, aabb_min.z), vec3f(aabb_min.x, aabb_max.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_max.x, aabb_min.y, aabb_min.z), vec3f(aabb_max.x, aabb_max.y, aabb_min.z), col);
+        self.add_line_3d(vec3f(aabb_max.x, aabb_min.y, aabb_max.z), vec3f(aabb_max.x, aabb_max.y, aabb_max.z), col);
+        self.add_line_3d(vec3f(aabb_min.x, aabb_min.y, aabb_max.z), vec3f(aabb_min.x, aabb_max.y, aabb_max.z), col);
+    }
+
+    /// Add a 3D obb from corners `obb` where the corners are formed of 0-3 front face, 4-7 back-face with designated colour `col`
+    pub fn add_obb_3d(&mut self, obb: Vec<Vec3f>, col: Vec4f) {
+        self.add_line_3d(vec3f(obb[0].x, obb[0].y, obb[0].z), vec3f(obb[1].x, obb[1].y, obb[1].z), col);
+        self.add_line_3d(vec3f(obb[1].x, obb[1].y, obb[1].z), vec3f(obb[2].x, obb[2].y, obb[2].z), col);
+        self.add_line_3d(vec3f(obb[2].x, obb[2].y, obb[2].z), vec3f(obb[3].x, obb[3].y, obb[3].z), col);
+        self.add_line_3d(vec3f(obb[3].x, obb[3].y, obb[3].z), vec3f(obb[0].x, obb[0].y, obb[0].z), col);
+        self.add_line_3d(vec3f(obb[4].x, obb[4].y, obb[4].z), vec3f(obb[5].x, obb[5].y, obb[5].z), col);
+        self.add_line_3d(vec3f(obb[5].x, obb[5].y, obb[5].z), vec3f(obb[6].x, obb[6].y, obb[6].z), col);
+        self.add_line_3d(vec3f(obb[6].x, obb[6].y, obb[6].z), vec3f(obb[7].x, obb[7].y, obb[7].z), col);
+        self.add_line_3d(vec3f(obb[7].x, obb[7].y, obb[7].z), vec3f(obb[4].x, obb[4].y, obb[4].z), col);
+        self.add_line_3d(vec3f(obb[4].x, obb[4].y, obb[4].z), vec3f(obb[0].x, obb[0].y, obb[0].z), col);
+        self.add_line_3d(vec3f(obb[5].x, obb[5].y, obb[5].z), vec3f(obb[1].x, obb[1].y, obb[1].z), col);
+        self.add_line_3d(vec3f(obb[6].x, obb[6].y, obb[6].z), vec3f(obb[2].x, obb[2].y, obb[2].z), col);
+        self.add_line_3d(vec3f(obb[7].x, obb[7].y, obb[7].z), vec3f(obb[3].x, obb[3].y, obb[3].z), col);
+    }
+
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
         if !self.vertices_2d.cpu_data.is_empty() {
             let num_elems = self.vertices_2d.cpu_data.len() / 6;
@@ -206,13 +238,17 @@ impl<D> ImDraw<D> where D: gfx::Device {
         Ok(())     
     }
 
-    pub fn draw_2d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
-        cmd.set_vertex_buffer(&self.vertices_2d.gpu_data[buffer_index], 0);
-        cmd.draw_instanced(self.vertices_2d.vertex_count, 1, 0, 0);
+    pub fn draw_2d(&mut self, cmd: &D::CmdBuf, buffer_index: usize) {
+        if buffer_index < self.vertices_2d.gpu_data.len() {
+            cmd.set_vertex_buffer(&self.vertices_2d.gpu_data[buffer_index], 0);
+            cmd.draw_instanced(self.vertices_2d.vertex_count, 1, 0, 0);
+        }
     }
 
-    pub fn draw_3d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
-        cmd.set_vertex_buffer(&self.vertices_3d.gpu_data[buffer_index], 0);
-        cmd.draw_instanced(self.vertices_3d.vertex_count, 1, 0, 0);
+    pub fn draw_3d(&mut self, cmd: &D::CmdBuf, buffer_index: usize) {
+        if buffer_index < self.vertices_3d.gpu_data.len() {
+            cmd.set_vertex_buffer(&self.vertices_3d.gpu_data[buffer_index], 0);
+            cmd.draw_instanced(self.vertices_3d.vertex_count, 1, 0, 0);
+        }
     }
 }

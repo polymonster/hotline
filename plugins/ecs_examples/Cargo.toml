@@ -1,5 +1,5 @@
 [package]
-name = "ecs_demos"
+name = "ecs_examples"
 version = "0.1.0"
 edition = "2021"
 
@@ -8,6 +8,7 @@ crate-type = ["rlib", "dylib"]
 
 [dependencies]
 hotline-rs = { path = "../.." }
-maths-rs = "0.1.14"
+maths-rs = "0.2.1"
 bevy_ecs = "0.10.0"
 rand = "0.8.5"
+bitflags = "1.3.2"
