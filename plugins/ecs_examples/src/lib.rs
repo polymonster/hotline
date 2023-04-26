@@ -152,7 +152,7 @@ pub fn render_meshes_bindless_material(
     view.cmd_buf.set_render_pipeline(&pipeline);
 
     // bind view push constants
-    let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(slot.slot, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
         view.cmd_buf.push_render_constants(slot.slot, 4, 16, gfx::as_u8_slice(&camera.view_position));
@@ -160,7 +160,7 @@ pub fn render_meshes_bindless_material(
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         // println!("{:?}", world_buffer_info);
         view.cmd_buf.push_render_constants(
@@ -181,7 +181,7 @@ pub fn render_meshes_bindless_material(
     // single draw calls
     for (mesh, world_matrix) in &single_draw_query {
         // set the world matrix push constants
-        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
         }
@@ -215,7 +215,7 @@ pub fn render_meshes(
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &world_matrix.0);
         }
@@ -229,7 +229,7 @@ pub fn render_meshes(
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
     for (world_matrix, mesh) in &billboard_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(inv_rot);
-        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &bbmat);
         }
@@ -248,7 +248,7 @@ pub fn render_meshes(
     );
     for (world_matrix, mesh) in &cylindrical_draw_query {
         let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             view.cmd_buf.push_render_constants(slot.slot, 12, 0, &bbmat);
         }
@@ -385,15 +385,14 @@ pub fn blit(
 
     view.cmd_buf.set_render_pipeline(pipeline);
 
-    let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(slot.slot, 2, 0, &view.blit_dimension);
     }
 
-    // TODO_BINDING
-    let slot = pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::ShaderResource);
+    let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
     if let Some(slot) = slot {
-        view.cmd_buf.set_render_heap(slot.slot, &pmfx.shader_heap, srv as usize);
+        view.cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.slot, srv as usize);
     }
 
     view.cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
