@@ -179,7 +179,7 @@ struct PluginCollection {
 }
 
 /// Hotline `Client` implementation
-impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
+impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx::Pipeline {
     /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, super::Error> {
         // read user config or get defaults
@@ -460,11 +460,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App {
             self.cmd_buf.set_scissor_rect(&gfx::ScissorRect::from(vp_rect));
             let srv = tex.get_srv_index().unwrap();
             let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
-            self.cmd_buf.set_render_pipeline(self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap());
+
+            let pipeline = self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap();
+            let heap = self.device.get_shader_heap();
+
+            self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
             
-            // TODO_BINDING
-            self.cmd_buf.set_render_heap(1, self.device.get_shader_heap(), srv);
+            self.cmd_buf.set_binding(pipeline, heap, 1, srv);
             
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);

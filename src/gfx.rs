@@ -346,11 +346,14 @@ bitflags! {
     }
 }
 
-/// Descriptor layout is required to create a pipeline it describes the layout of resources for access on the GPU.
+/// `PipelineLayout` is required to create a pipeline it describes the layout of resources for access on the GPU.
 #[derive(Default, Clone, Serialize, Deserialize)]
-pub struct DescriptorLayout {
+pub struct PipelineLayout {
+    /// Vector of `DescriptorBinding` which are arrays of textures, samplers or structured buffers, etc
     pub bindings: Option<Vec<DescriptorBinding>>,
+    /// Small amounts of data that can be pushed into a command buffer and available as data in shaders
     pub push_constants: Option<Vec<PushConstantInfo>>,
+    /// Static samplers that come along with the pipeline, 
     pub static_samplers: Option<Vec<SamplerBinding>>,
 }
 
@@ -406,11 +409,10 @@ pub struct PushConstantInfo {
     pub num_values: u32,
 }
 
-/// You can request this based on resource type, register and space (as specified in shader).
-/// TODO:
+/// You can request this based on resource type, register and space (as specified in shader)
 #[derive(Clone)]
-pub struct DescriptorSlotInfo {
-    /// The slot in the pipelines descriptor layout to bind to
+pub struct PipelineSlotInfo {
+    /// The slot in the pipeline layout to bind to
     pub slot: u32,
     /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
     pub count: Option<u32>
@@ -445,7 +447,7 @@ pub enum InputSlotClass {
     PerInstance,
 }
 
-/// Individual sampler state binding for use in static samplers in a DescriptorLayout.
+/// Individual sampler state binding for use in static samplers in a `PipelineLayout`.
 #[derive(Copy, Clone, Serialize, Deserialize)]
 pub struct SamplerBinding {
     /// The shader stage the sampler will be accessible to
@@ -514,7 +516,7 @@ pub struct RenderPipelineInfo<'stack, D: Device> {
     /// Vertex shader input layout
     pub input_layout: InputLayout,
     /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
-    pub descriptor_layout: DescriptorLayout,
+    pub pipeline_layout: PipelineLayout,
     /// Control rasterisation of primitives
     pub raster_info: RasterInfo,
     /// Control depth test and stencil oprations
@@ -707,7 +709,8 @@ pub enum LogicOp {
 pub struct ComputePipelineInfo<'stack, D: Device> {
     /// Compute Shader
     pub cs: &'stack D::Shader,
-    pub descriptor_layout: DescriptorLayout,
+    /// Describe the layout of resources we bind on the pipeline
+    pub pipeline_layout: PipelineLayout,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -878,12 +881,11 @@ pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
-    /// Returns the `HeapSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
-    /// you can use the returned information to guide the `slot` to bind with `set_render_heap` or `set_compute_heap`
+    /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
-    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&DescriptorSlotInfo>;
-    /// Returns a vec of all descriptor slot indices 
-    fn get_descriptor_slots(&self) -> &Vec<u32>;
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&PipelineSlotInfo>;
+    /// Returns a vec of all pipeline slot indices 
+    fn get_pipeline_slots(&self) -> &Vec<u32>;
     /// Returns the pipeline type
     fn get_pipeline_type() -> PipelineType;
 }
@@ -917,7 +919,7 @@ pub enum IndirectArgumentType {
 /// Arguments to change push constants during an `execute_indirect` call when `Constant` is the `IndirectArgumentType`
 #[derive(Clone, Copy)]
 pub struct IndirectPushConstantsArguments {
-    /// The slot within the descriptor layout to modify
+    /// The pipeline slot to modify
     pub slot: u32,
     /// Offset in 32bit values
     pub offset: u32,
@@ -929,7 +931,7 @@ pub struct IndirectPushConstantsArguments {
 /// are the `IndirectArgumentType`
 #[derive(Clone, Copy)]
 pub struct IndirectBufferArguments {
-    /// The slot within the descriptor layout or the vertex buffer / index buffer slot
+    /// The pipeline layout slot or the vertex buffer / index buffer slot
     pub slot: u32
 }
 
@@ -1194,11 +1196,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
     fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap);
-
-    // TOD_BINDING
-    /// Set the resource heap to be used on the render pipeline
-    fn set_render_heap(&self, slot: u32, heap: &D::Heap, offset: usize);
-
+    /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
+    /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
+    fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
@@ -1681,7 +1681,7 @@ impl<'stack, D> Default for RenderPipelineInfo<'stack, D> where D: Device {
             vs: None,
             fs: None,
             input_layout: Vec::new(),
-            descriptor_layout: DescriptorLayout::default(),
+            pipeline_layout: PipelineLayout::default(),
             raster_info: RasterInfo::default(),
             depth_stencil_info: DepthStencilInfo::default(),
             blend_info: BlendInfo::default(),

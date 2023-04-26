@@ -325,7 +325,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 step_rate: 0,
             },
         ],
-        descriptor_layout: gfx::DescriptorLayout {
+        pipeline_layout: gfx::PipelineLayout {
             push_constants: Some(vec![gfx::PushConstantInfo {
                 visibility: gfx::ShaderVisibility::Vertex,
                 num_values: 16,
@@ -419,7 +419,7 @@ fn render_draw_data<D: Device>(
     image_heaps: &Vec<&D::Heap>,
     buffers: &mut [RenderBuffers<D>],
     pipeline: &D::RenderPipeline,
-) -> Result<(), super::Error> {
+) -> Result<(), super::Error> where D::RenderPipeline: gfx::Pipeline {
     unsafe {
         let bb = cmd.get_backbuffer_index() as usize;
 
@@ -520,15 +520,13 @@ fn render_draw_data<D: Device>(
                     let (srv, heap_id) = to_srv_heap_id(imgui_cmd.TextureId);
                     if heap_id == device.get_shader_heap().get_heap_id() {
                         // bind the device heap
-                        // TODO_BINDING
-                        cmd.set_render_heap(1, device.get_shader_heap(), srv);
+                        cmd.set_binding(pipeline, device.get_shader_heap(), 1, srv);
                     }
                     else {
                         // bund srv in another heap
                         for heap in image_heaps {
                             if heap.get_heap_id() == heap_id {
-                                // TODO_BINDING
-                                cmd.set_render_heap(1, heap, srv);
+                                cmd.set_binding(pipeline, heap, 1, srv);
                                 break;
                             }
                         }
@@ -552,7 +550,7 @@ fn render_draw_data<D: Device>(
     }
 }
 
-impl<D, A> ImGui<D, A> where D: Device, A: App {
+impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline {
     /// Internal utility for styling hotline colours in a hardcoded fashion
     fn style_colours_hotline() {
         unsafe {
@@ -1787,7 +1785,7 @@ unsafe extern "C" fn platform_get_window_dpi_scale<D: Device, A: App>(vp: *mut I
     window.get_dpi_scale()
 }
 
-unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) {
+unsafe extern "C" fn renderer_render_window<D: Device, A: App>(vp: *mut ImGuiViewport, _render_arg: *mut cty::c_void) where D::RenderPipeline: gfx::Pipeline {
     let ud = get_user_data::<D, A>();
     let vd = get_viewport_data::<D, A>(vp);
     let vp_ref = &*vp;

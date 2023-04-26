@@ -255,7 +255,7 @@ pub struct CommandSignature {
     command_signature: ID3D12CommandSignature
 }
 
-type DesciptorSlotLookup = HashMap<u64, DescriptorSlotInfo>;
+type DesciptorSlotLookup = HashMap<u64, PipelineSlotInfo>;
 
 #[derive(Clone)]
 struct RootSignatureLookup {
@@ -789,7 +789,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
             //&d3d12_embeded::CS_MIP_CHAIN_TEXTURE2D
             &shader_data
         )?,
-        descriptor_layout: DescriptorLayout { 
+        pipeline_layout: PipelineLayout { 
             push_constants: Some(vec![super::PushConstantInfo {
                 visibility: super::ShaderVisibility::Compute,
                 num_values: GenerateMipMapConstants::num_constants(),
@@ -1171,7 +1171,7 @@ impl Device {
 
     fn create_root_signature_with_lookup(
         &self,
-        layout: &super::DescriptorLayout,
+        layout: &super::PipelineLayout,
     ) -> result::Result<RootSignatureLookup, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
 
@@ -1195,7 +1195,7 @@ impl Device {
 
                 // track the slots push constants occupy
                 let h = get_binding_descriptor_hash(constants.shader_register, constants.register_space, super::DescriptorType::PushConstants);
-                lookup.insert(h, DescriptorSlotInfo {
+                lookup.insert(h, PipelineSlotInfo {
                     slot: slot_iter,
                     count: Some(constants.num_values)
                 });
@@ -1256,7 +1256,7 @@ impl Device {
 
                 for binding in &range_info.info {
                     let h = get_binding_descriptor_hash(binding.shader_register, binding.register_space, binding.binding_type);
-                    lookup.entry(h).or_insert(DescriptorSlotInfo {
+                    lookup.entry(h).or_insert(PipelineSlotInfo {
                         slot: slot_iter,
                         count: binding.num_descriptors
                     });
@@ -1815,7 +1815,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        let sig_lookup = self.create_root_signature_with_lookup(&info.descriptor_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
 
         let semantics = null_terminate_semantics(&info.input_layout);
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
@@ -2784,7 +2784,7 @@ impl super::Device for Device {
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
         let cs = &info.cs;
-        let sig_lookup = self.create_root_signature_with_lookup(&info.descriptor_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
             CS: D3D12_SHADER_BYTECODE {
@@ -3449,7 +3449,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
-            let slots = pipeline.get_descriptor_slots();
+            let slots = pipeline.get_pipeline_slots();
             match T::get_pipeline_type() {
                 super::PipelineType::Render => {
                     for slot in slots {
@@ -3472,14 +3472,20 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_render_heap(&self, slot: u32, heap: &Heap, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&self, _: &T, heap: &Heap, slot: u32, offset: usize) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
-
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
-            
-            self.cmd().SetGraphicsRootDescriptorTable(slot, base);
+
+            match T::get_pipeline_type() {
+                super::PipelineType::Render => {
+                    self.cmd().SetGraphicsRootDescriptorTable(slot, base);
+                },
+                super::PipelineType::Compute => {
+                    self.cmd().SetComputeRootDescriptorTable(slot, base);
+                }
+            }
         }
     }
 
@@ -3682,7 +3688,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 let mut miph = (desc.Width / 2).max(1);
 
                 for i in 1..desc.MipLevels as usize {
-                    let using_slot = pipeline.get_descriptor_slot(0, 0, super::DescriptorType::PushConstants);
+                    let using_slot = pipeline.get_pipeline_slot(0, 0, super::DescriptorType::PushConstants);
                     if let Some(slot) = using_slot {
                         self.push_compute_constants(slot.slot, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i]));
                         self.push_compute_constants(slot.slot, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i+1]));
@@ -3879,12 +3885,12 @@ impl super::Texture<Device> for Texture {
 }
 
 impl super::Pipeline for RenderPipeline {
-    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         let h = get_binding_descriptor_hash(register, space, descriptor_type);
         self.lookup.slot_lookup.get(&h)
     }
 
-    fn get_descriptor_slots(&self) -> &Vec<u32> {
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
         &self.lookup.descriptor_slots
     }
 
@@ -3894,12 +3900,12 @@ impl super::Pipeline for RenderPipeline {
 }
 
 impl super::Pipeline for ComputePipeline {
-    fn get_descriptor_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::DescriptorSlotInfo> {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         let h = get_binding_descriptor_hash(register, space, descriptor_type);
         self.lookup.slot_lookup.get(&h)
     }
 
-    fn get_descriptor_slots(&self) -> &Vec<u32> {
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
         &self.lookup.descriptor_slots
     }
 

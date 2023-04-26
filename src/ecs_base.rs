@@ -337,7 +337,7 @@ macro_rules! compute_func_closure {
                         pass.cmd_buf.begin_event(0xffffff, &$pass_name);
                         pass.cmd_buf.set_compute_pipeline(&pipeline);
 
-                        let using_slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+                        let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
                         if let Some(slot) = using_slot {
                             for i in 0..pass.use_indices.len() {
                                 pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.use_indices[i]));

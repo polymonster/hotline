@@ -322,7 +322,7 @@ struct Pipeline {
     ps: Option<String>,
     cs: Option<String>,
     vertex_layout: Option<gfx::InputLayout>,
-    descriptor_layout: gfx::DescriptorLayout,
+    descriptor_layout: gfx::PipelineLayout,
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
     blend_state: Option<String>,
@@ -1727,7 +1727,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 if let Some(cs) = cs {
                     let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
                         cs,
-                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                        pipeline_layout: pipeline.descriptor_layout.clone(),
                     })?;
                     println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
 
@@ -1775,7 +1775,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         vs: self.get_shader(&pipeline.vs),
                         fs: self.get_shader(&pipeline.ps),
                         input_layout: vertex_layout.to_vec(),
-                        descriptor_layout: pipeline.descriptor_layout.clone(),
+                        pipeline_layout: pipeline.descriptor_layout.clone(),
                         raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
                         depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
                         blend_info: blend_info_from_state(
@@ -2298,8 +2298,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 }
 
+
 use crate::imgui;
-impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::App {
+impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx::Pipeline {
     fn show_ui(&mut self, imgui: &mut imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;

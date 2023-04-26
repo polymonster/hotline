@@ -1157,8 +1157,7 @@ pub fn render_meshes_cbuffer_instanced(
         view.cmd_buf.set_render_pipeline(pipeline);
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-        // TODO_BINDING
-        view.cmd_buf.set_render_heap(1, instance_batch.heap.as_ref().unwrap(), 0);
+        view.cmd_buf.set_binding(pipeline, instance_batch.heap.as_ref().unwrap(), 1, 0);
         
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
@@ -1657,7 +1656,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
                 argument_type: gfx::IndirectArgumentType::PushConstants,
                 arguments: Some(gfx::IndirectTypeArguments {
                     push_constants: gfx::IndirectPushConstantsArguments {
-                        slot: pipeline.get_descriptor_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().slot,
+                        slot: pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().slot,
                         offset: 0,
                         num_values: 1
                     }
@@ -1811,7 +1810,7 @@ pub fn dispatch_compute_frustum_cull(
         pass.cmd_buf.set_compute_pipeline(pipeline);
 
         // resource index info for looking up input (draw all info) / output (culled draw call info)
-        let slot = pipeline.get_descriptor_slot(0, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             // output uav
             pass.cmd_buf.push_compute_constants(slot.slot, 1, 0, 
@@ -1824,7 +1823,7 @@ pub fn dispatch_compute_frustum_cull(
         
         // world buffer info to lookup matrices and aabb info
         let world_buffer_info = pmfx.get_world_buffer_info();
-        let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             pass.cmd_buf.push_compute_constants(
                 slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
@@ -1867,7 +1866,7 @@ pub fn draw_meshes_indirect_culling(
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_descriptor_slot(2, 0, gfx::DescriptorType::PushConstants);
+    let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(
             slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
