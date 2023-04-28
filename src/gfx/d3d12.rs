@@ -933,11 +933,13 @@ fn create_read_back_buffer(device: &Device, size: u64) -> Option<ID3D12Resource>
 
 fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo, id: u16) -> Heap {
     unsafe {
+        // reserve slot 0 as null so add 1 to num
+        let num_descriptors = std::cmp::max(info.num_descriptors + 1, 1);
         let d3d12_type = to_d3d12_descriptor_heap_type(info.heap_type);
         let heap: ID3D12DescriptorHeap = device
             .CreateDescriptorHeap(&D3D12_DESCRIPTOR_HEAP_DESC {
                 Type: d3d12_type,
-                NumDescriptors: std::cmp::max(info.num_descriptors, 1) as u32,
+                NumDescriptors: num_descriptors as u32,
                 Flags: to_d3d12_descriptor_heap_flags(info.heap_type),
                 ..Default::default()
             })
@@ -949,7 +951,7 @@ fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo, id: u16) -> Heap {
             heap,
             base_address,
             increment_size: incr,
-            capacity: info.num_descriptors * incr,
+            capacity: num_descriptors * incr,
             offset: incr, // resverve the first element as null
             free_list: FreeList::new(),
             drop_list: DropList::new(),
