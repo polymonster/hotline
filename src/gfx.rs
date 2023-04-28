@@ -388,8 +388,9 @@ pub enum DescriptorType {
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ShaderVisibility {
+    #[default]
     All,
     Vertex,
     Fragment,
@@ -1222,7 +1223,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         start_instance: u32,
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
-    fn dispatch(&self, group_count: Size3, thread_count: Size3);
+    fn dispatch(&self, group_count: Size3, numthreads: Size3);
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
         &self,

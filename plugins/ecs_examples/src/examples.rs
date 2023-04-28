@@ -1150,18 +1150,27 @@ pub fn render_meshes_cbuffer_instanced(
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let camera = pmfx.get_camera_constants(&view.camera)?;
-
+        
     for (instance_batch, mesh, pipeline) in &instance_draw_query {
-        // set pipeline per mesh
+        // set pipeline per batch
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         view.cmd_buf.set_render_pipeline(pipeline);
         view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-        view.cmd_buf.set_binding(pipeline, instance_batch.heap.as_ref().unwrap(), 1, 0);
-        
+        // bind the constant buffer (cbv) on the slot for b1, space0 specified in the shader
+        let pipeline_slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ConstantBuffer);
+        if let Some(pipeline_slot) = pipeline_slot {
+            view.cmd_buf.set_binding(
+                pipeline, 
+                instance_batch.heap.as_ref().unwrap(), 
+                pipeline_slot.slot, 
+                instance_batch.buffer.get_cbv_index().unwrap()
+            );
+        }
+
+        // bind vb, ib and draw instanced
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
     }
 
@@ -1539,27 +1548,14 @@ pub fn setup_draw_material(
 }
 
 ///
-/// draw_indirect_gpu_frustum_culling
+/// gpu_frustum_culling
 /// 
 
-// cpu 80ms, gpu 20ms
-// 22503776 ia verts
-// 7501392 ia primitives
-// 13924796 vs invocations
-
-// copy data to a uav buffer in shader
-
-// struct of world matrix, local aabb?
-// compute frustum cull + build uav
-// aabb from meshes
-
-// - CopyBufferRegion to clear the UAV counter
-// - buffer counter passed to execute indirect
-
+#[repr(packed)]
 pub struct DrawIndirectArgs {
     pub vertex_buffer: gfx::VertexBufferView,
     pub index_buffer: gfx::IndexBufferView,
-    pub draw_id: u32,
+    pub ids: Vec4u,
     pub args: gfx::DrawIndexedArguments,
 }
 
@@ -1578,15 +1574,17 @@ pub struct DrawIndirectComponent {
 }
 
 #[no_mangle]
-pub fn draw_indirect_gpu_frustum_culling(
+pub fn gpu_frustum_culling(
     client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
-            "setup_draw_indirect_gpu_frustum_culling"
+            "setup_gpu_frustum_culling"
         ],
         update: systems![
             "swirling_meshes",
+            "batch_material_instances",
+            "batch_lights",
             "batch_bindless_draw_data"
         ],
         render_graph: "mesh_draw_indirect_culling"
@@ -1594,7 +1592,7 @@ pub fn draw_indirect_gpu_frustum_culling(
 }
 
 #[no_mangle]
-pub fn setup_draw_indirect_gpu_frustum_culling(
+pub fn setup_gpu_frustum_culling(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) {
@@ -1630,6 +1628,24 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
     ];
     let mesh_dist = rand::distributions::Uniform::from(0..meshes.len());
 
+    let materials = vec![
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/angled-tiled-floor")).unwrap(),
+        
+        
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/antique-grate1")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/cracking-painted-asphalt")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/dirty-padded-leather")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/green-ceramic-tiles")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/office-carpet-fabric1")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/rusting-lined-metal2")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/simple-basket-weave")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/stone-block-wall")).unwrap(),
+        load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/worn-painted-cement")).unwrap()
+    ];
+    let material_dist = rand::distributions::Uniform::from(0..materials.len());
+
+    let num_lights = 16;
+
     let irc = 128;
     let size = 10.0;
     let frc = 1.0 / irc as f32;
@@ -1638,6 +1654,10 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
 
     let pipeline = pmfx.get_render_pipeline("mesh_test_indirect").unwrap();
     
+    // creates an idirect command signature, 
+    // we change index and vertex buffer each draw
+    // we push the draw_id and material_id unique for each draw
+    // and we make a draw inexed call
     let command_signature = device.create_indirect_render_command::<DrawIndirectArgs>(
         vec![
             gfx::IndirectArgument{
@@ -1658,7 +1678,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
                     push_constants: gfx::IndirectPushConstantsArguments {
                         slot: pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().slot,
                         offset: 0,
-                        num_values: 1
+                        num_values: 4
                     }
                 })
             },
@@ -1671,15 +1691,17 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
     ).unwrap();
 
     let mut indirect_args = Vec::new();
+    let range = 900.0;
 
     let mut i = 0;
     for y in 0..irc {
         for x in 0..irc {
-            let offset = rng.gen::<f32>() * 750.0;
+            let offset = rng.gen::<f32>() * range;
             let mut iter_pos = vec3f(cos(x as f32 / frc), sin(y as f32 / frc), sin(x as f32 / frc)) * (1000.0 - offset);
             iter_pos.y += 1000.0;
             let imesh = mesh_dist.sample(&mut rng);
             let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::two_pi();
+            let mat_id = material_dist.sample(&mut rng) as u32;
             commands.spawn((
                 Position(iter_pos),
                 Rotation(Quatf::from_euler_angles(rot.x, rot.y, rot.z)),
@@ -1691,7 +1713,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
                 }
             ));
             indirect_args.push(DrawIndirectArgs {
-                draw_id: i,
+                ids: Vec4u::new(i, mat_id, 0, 0),
                 vertex_buffer: meshes[imesh].vb.get_vbv().unwrap(),
                 index_buffer: meshes[imesh].ib.get_ibv().unwrap(),
                 args: gfx::DrawIndexedArguments {
@@ -1726,6 +1748,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
         num_elements: indirect_args.len(),
     }, hotline_rs::data![], &mut pmfx.shader_heap).unwrap();
 
+    // create a buffer with 0, so we can clear the counter each frame by copy buffer rgion
     let counter_reset = device.create_buffer_with_heap(&gfx::BufferInfo{
         usage: gfx::BufferUsage::NONE,
         cpu_access: gfx::CpuAccessFlags::NONE,
@@ -1735,13 +1758,7 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
         num_elements: 1,
     }, hotline_rs::data![gfx::as_u8_slice(&0)], &mut pmfx.shader_heap).unwrap();
 
-    pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
-        draw_capacity: entity_count as usize,
-        extent_capacity: entity_count as usize,
-        camera_capacity: 1 as usize, // main camera
-        ..Default::default()
-    });
-
+    // spwan the indirect draw entity, which will draw all of the entities
     commands.spawn((
         DrawIndirectComponent {
             signature: command_signature,
@@ -1753,11 +1770,64 @@ pub fn setup_draw_indirect_gpu_frustum_culling(
         MeshComponent(meshes[0].clone())
     ));
 
+    // allocate world buffers
+    pmfx.reserve_world_buffers(&mut device, WorldBufferReserveInfo {
+        draw_capacity: entity_count as usize,
+        extent_capacity: entity_count as usize,
+        camera_capacity: 1 as usize, // main camera
+        material_capacity: materials.len(),
+        point_light_capacity: num_lights,
+        ..Default::default()
+    });
+
+    // add lights
+    let light_buffer = &mut pmfx.get_world_buffers_mut().point_light;
+    light_buffer.clear();
+
+    for _ in 0..num_lights {
+        let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
+        let col = rgba8_to_vec4(0xffffffff);
+        commands.spawn((
+            Position(pos),
+            Colour(col),
+            LightComponent {
+                light_type: LightType::Point,
+                radius: 128.0,
+                ..Default::default()
+            }
+        ));
+        light_buffer.push(&PointLightData{
+            pos: pos,
+            radius: 64.0,
+            colour: col
+        });
+    }
+
+    // add materials
+    let material_buffer = &mut pmfx.get_world_buffers_mut().material;
+    material_buffer.clear();
+
+    for material in &materials {
+        material_buffer.push(
+            &MaterialData {
+                albedo_id: material.albedo.get_srv_index().unwrap() as u32,
+                normal_id: material.normal.get_srv_index().unwrap() as u32,
+                roughness_id: material.roughness.get_srv_index().unwrap() as u32,
+                padding: 0
+            }
+        );
+    }
+
     // keep hold of meshes
     for mesh in meshes {
         commands.spawn(
             MeshComponent(mesh.clone())
         );
+    }
+
+    // keep hold of materials
+    for material in materials {
+        commands.spawn(material);
     }
 }
 
@@ -1766,16 +1836,10 @@ pub fn swirling_meshes(
     time: Res<TimeRes>, 
     mut mesh_query: Query<(&mut Rotation, &mut Position)>) {
 
-    let mut i = 0.0;
     for (mut rotation, mut position) in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
-    
         let pr = rotate_2d(position.0.xz(), time.0.delta);
         position.0.set_xz(pr);
-        
-        position.0.y += sin(time.0.delta + i / f32::tau()) * 2.0;
-
-        i += 1.0;
     }
 }
 
@@ -1817,7 +1881,7 @@ pub fn dispatch_compute_frustum_cull(
                 gfx::as_u8_slice(&indirect_draw.dynamic_buffer.get_uav_index().unwrap()));
 
             // input srv
-            pass.cmd_buf.push_compute_constants(slot.slot, 1, 1, 
+            pass.cmd_buf.push_compute_constants(slot.slot, 1, 4, 
                 gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
         }
         
@@ -1833,11 +1897,11 @@ pub fn dispatch_compute_frustum_cull(
 
         pass.cmd_buf.dispatch(
             gfx::Size3 {
-                x: indirect_draw.max_count / pass.thread_count.x,
-                y: pass.thread_count.y,
-                z: pass.thread_count.z
+                x: indirect_draw.max_count / pass.numthreads.x,
+                y: pass.numthreads.y,
+                z: pass.numthreads.z
             },
-            pass.thread_count
+            pass.numthreads
         );
 
         // transition to `IndirectArgument`

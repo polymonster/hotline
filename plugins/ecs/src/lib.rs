@@ -70,6 +70,45 @@ fn update_main_camera_config(
     }
 }
 
+/*
+fn create_perspective_projection_lh_yup_reverse_z_internal<T: Float + FloatOps<T>>(left: T, right: T, bottom: T, top: T, near: T, far: T) -> Mat4<T> {
+    Mat4::new(
+        (T::two() * near) / (right - left), 
+        T::zero(), 
+        (right + left) / (right - left), 
+        T::zero(),
+
+        T::zero(), 
+        (T::two() * near) / (top - bottom), 
+        (top + bottom) / (top - bottom), 
+        T::zero(),
+
+        T::zero(), 
+        T::zero(),
+
+        //(-far - near) / (far - near),
+        (-near) / (near - far),
+
+        //(-(T::two() * near) * far) / (far - near),
+        (-near * far) / (near - far),
+
+        T::zero(), 
+        T::zero(), 
+        T::minus_one(), 
+        T::zero()
+    )
+}
+
+fn create_perspective_projection_lh_yup_reverse_z<T: Float + FloatOps<T>>(fov: T, aspect: T, near: T, far: T) -> Mat4<T> {
+    let tfov = T::tan(fov * T::point_five());
+    let right = tfov * aspect * near;
+    let left = -right;
+    let top = tfov * near;
+    let bottom = -top;
+    create_perspective_projection_lh_yup_reverse_z_internal(left, right, bottom, top, near, far)
+}
+*/
+
 pub fn camera_constants_from_fly(pos: &Position, rot: &Vec3f, aspect: f32, fov_degrees: f32) -> CameraConstants {
     // rotational matrix
     let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
@@ -289,8 +328,7 @@ impl BevyPlugin {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
                 let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfig>>(function_name.as_bytes());
-                if hook.is_ok() {
-                    let hook_fn = hook.unwrap();
+                if let Ok(hook_fn) = hook {
                     let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
                         return desc;

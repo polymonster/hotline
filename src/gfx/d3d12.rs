@@ -948,9 +948,9 @@ fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo, id: u16) -> Heap {
         Heap {
             heap,
             base_address,
-            increment_size: device.GetDescriptorHandleIncrementSize(d3d12_type) as usize,
+            increment_size: incr,
             capacity: info.num_descriptors * incr,
-            offset: 0,
+            offset: incr, // resverve the first element as null
             free_list: FreeList::new(),
             drop_list: DropList::new(),
             id
@@ -1207,11 +1207,12 @@ impl Device {
         #[derive(Default)]
         struct RangeInfo {
             ranges: Vec<D3D12_DESCRIPTOR_RANGE>,
-            info: Vec<DescriptorBinding>
+            info: Vec<DescriptorBinding>,
+            visibility: super::ShaderVisibility
         }
 
         let mut visibility_map: 
-            HashMap<super::ShaderVisibility, RangeInfo> = HashMap::new();
+            HashMap<u64, RangeInfo> = HashMap::new();
 
         let mut descriptor_root_params = Vec::new();
         if let Some(bindings) = &layout.bindings {
@@ -1236,12 +1237,17 @@ impl Device {
                     OffsetInDescriptorsFromTableStart: 0,
                 };
 
-                let entry = visibility_map.entry(binding.visibility).or_default();
+                let mut h = DefaultHasher::new();
+                binding.visibility.hash(&mut h);
+                binding.shader_register.hash(&mut h);
+                binding.binding_type.hash(&mut h);
+
+                let entry = visibility_map.entry(h.finish()).or_default();
                 entry.ranges.push(range);
                 entry.info.push(binding.clone());
             }
 
-            for (visibility, range_info) in visibility_map.iter() {
+            for range_info in visibility_map.values() {
                 root_params.push(D3D12_ROOT_PARAMETER {
                     ParameterType: D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE,
                     Anonymous: D3D12_ROOT_PARAMETER_0 {
@@ -1250,7 +1256,7 @@ impl Device {
                             pDescriptorRanges: range_info.ranges.as_ptr() as *mut D3D12_DESCRIPTOR_RANGE,
                         },
                     },
-                    ShaderVisibility: to_d3d12_shader_visibility(visibility),
+                    ShaderVisibility: to_d3d12_shader_visibility(&range_info.visibility),
                 });
                 descriptor_root_params.push(slot_iter);
 
@@ -3551,7 +3557,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch(&self, group_count: Size3, _thread_count: Size3) {
+    fn dispatch(&self, group_count: Size3, _numthreads: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
         }

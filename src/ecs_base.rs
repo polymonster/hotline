@@ -340,7 +340,13 @@ macro_rules! compute_func_closure {
                         let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
                         if let Some(slot) = using_slot {
                             for i in 0..pass.use_indices.len() {
-                                pass.cmd_buf.push_compute_constants(0, 1, i as u32, gfx::as_u8_slice(&pass.use_indices[i]));
+                                let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
+                                pass.cmd_buf.push_compute_constants(
+                                    0, 
+                                    num_constants, 
+                                    i as u32 * num_constants, 
+                                    gfx::as_u8_slice(&pass.use_indices[i])
+                                );
                             }
                         }
 
@@ -348,7 +354,7 @@ macro_rules! compute_func_closure {
                         
                         pass.cmd_buf.dispatch(
                             pass.group_count,
-                            pass.thread_count
+                            pass.numthreads
                         );
                         pass.cmd_buf.end_event();
 
