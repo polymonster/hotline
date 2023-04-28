@@ -18,13 +18,22 @@ use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min, ceil, num::Base, Mat34f, Vec2f, Vec3f, Vec4f, Mat4f};
+use maths_rs::{max, min, ceil, num::Base, Mat34f, Vec2f, Vec3f, Vec4f, Mat4f, Vec3u};
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
 
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
+
+/// To lookup resources in a shader, these are passed to compute shaders:
+/// index = srv (read), uav (write)
+/// dimension is the resource dimension where 2d textures will be (w, h, 1) and 3d will be (w, h, d)
+#[repr(C)]
+pub struct ResourceUse {
+    pub index: u32,
+    pub dimension: Vec3u
+} 
 
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
@@ -53,7 +62,7 @@ pub struct View<D: gfx::Device> {
     // A vector of resource view indices supplied by info inside the `uses` section
     // they will be supplied in order they are specified in the `pmfx` file
     // and may be srv or uav depending on `ResourceUsage`
-    pub use_indices: Vec<u32>,
+    pub use_indices: Vec<ResourceUse>,
 }
 pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
@@ -67,14 +76,14 @@ pub struct ComputePass<D: gfx::Device> {
     pub name_hash: PmfxHash,
     /// Colour hash (for debug markers, derived from name)
     pub colour_hash: u32,
+    /// The number of threads specified in the shader
+    pub numthreads: gfx::Size3,
     /// We can calulcate this based on resource dimension / thread count
     pub group_count: gfx::Size3,
-    /// The number of threads specified in the shader
-    pub thread_count: gfx::Size3,
     // An vector of resource view indices supplied by info inside the `uses` section
     // they will be supplied in order they are specified in the `pmfx` file
     // and may be srv or uav depending on `ResourceUsage`
-    pub use_indices: Vec<u32>
+    pub use_indices: Vec<ResourceUse>
 }
 pub type ComputePassRef<D> = Arc<Mutex<ComputePass<D>>>;
 
@@ -321,8 +330,9 @@ struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
     cs: Option<String>,
+    numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
-    descriptor_layout: gfx::PipelineLayout,
+    pipeline_layout: gfx::PipelineLayout,
     depth_stencil_state: Option<String>,
     raster_state: Option<String>,
     blend_state: Option<String>,
@@ -369,7 +379,7 @@ struct GraphPassInfo {
     /// Array of resources we wish to use during this pass, which can be passed to a shader (to know the srv indices)
     uses: Option<Vec<(String, ResourceUsage)>>,
     /// For compute passes the number of threads
-    thread_count: Option<(u32, u32, u32)>,
+    numthreads: Option<(u32, u32, u32)>,
     /// The name of a resource a compute shader wil distrubute work into
     target_dimension: Option<String>
 }
@@ -401,7 +411,7 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
 
     /// Swap buffers once a frame for safe CPU writes an GPU in flight reads
     pub fn swap(&mut self) {
-        // self.bb = (self.bb + 1) % self.num_buffers
+        self.bb = (self.bb + 1) % self.num_buffers
     }
 
     /// Access the internal buffer to write to this frame, for safe CPU writes an GPU in flight reads
@@ -1132,9 +1142,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    /// Return 2d or 3d texture dimension where applicable with 1 default in unused dimension and zero if the texture is not found
+    pub fn get_texture_dimension(&self, texture_name: &str) -> Vec3u {
+        if self.textures.contains_key(texture_name) {
+            let size = self.textures[texture_name].1.size;
+            Vec3u::new(size.0 as u32, size.1 as u32, size.2)
+        }
+        else {
+            Vec3u::zero()
+        }
+    }
+
     /// Retruns a vector of resource use indices specified in `pmfx` pass and based on `ResourceUsage`
     /// creates resources that do not yet exist
-    fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<u32>, super::Error> {
+    fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<ResourceUse>, super::Error> {
         // create textures we may use
         let mut use_indices = Vec::new();
         if let Some(uses) = &info.uses {
@@ -1160,7 +1181,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             .unwrap()
                     }
                 };
-                use_indices.push(index as u32);
+                use_indices.push(ResourceUse {
+                    index: index as u32,
+                    dimension: self.get_texture_dimension(resource)
+                });
             }
         }
         Ok(use_indices)
@@ -1260,7 +1284,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             //
             let use_indices = self.get_resource_use_indices(device, info)?;
 
-            // get blit dimension, tbh this shoudl probably be a rect
+            // get blit dimension, tbh this should probably be a rect
             let target_size = if let Some(target) = &info.target_dimension {
                 if let Some(dim) = self.get_texture_2d_size(target) {
                     dim
@@ -1356,11 +1380,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
         };
 
         // get the thread count
-        let thread_count = if let Some(threads) = info.thread_count {
+        let numthreads = if let Some(threads) = info.numthreads {
             threads
         }
         else {
-            (1, 1, 1)
+            let pipeline = self.pmfx.pipelines.get(&pass_pipeline).unwrap();
+            if let Some(num_threads) = pipeline["0"].numthreads {
+                num_threads
+            }
+            else {
+                (1, 1, 1)
+            }
         };
 
         // hashes
@@ -1379,14 +1409,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
             name_hash,
             colour_hash,
             group_count: gfx::Size3 {
-                x: ceil(target_size.0 as f32 / thread_count.0 as f32) as u32,
-                y: ceil(target_size.1 as f32 / thread_count.1 as f32) as u32,
-                z: ceil(target_size.2 as f32 / thread_count.2 as f32) as u32,
+                x: ceil(target_size.0 as f32 / numthreads.0 as f32) as u32,
+                y: ceil(target_size.1 as f32 / numthreads.1 as f32) as u32,
+                z: ceil(target_size.2 as f32 / numthreads.2 as f32) as u32,
             },
-            thread_count: gfx::Size3 {
-                x: thread_count.0,
-                y: thread_count.1,
-                z: thread_count.2,
+            numthreads: gfx::Size3 {
+                x: numthreads.0,
+                y: numthreads.1,
+                z: numthreads.2,
             },
             use_indices
         };
@@ -1727,7 +1757,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 if let Some(cs) = cs {
                     let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
                         cs,
-                        pipeline_layout: pipeline.descriptor_layout.clone(),
+                        pipeline_layout: pipeline.pipeline_layout.clone(),
                     })?;
                     println!("hotline_rs::pmfx:: compiled compute pipeline: {}", pipeline_name);
 
@@ -1775,7 +1805,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         vs: self.get_shader(&pipeline.vs),
                         fs: self.get_shader(&pipeline.ps),
                         input_layout: vertex_layout.to_vec(),
-                        pipeline_layout: pipeline.descriptor_layout.clone(),
+                        pipeline_layout: pipeline.pipeline_layout.clone(),
                         raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
                         depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
                         blend_info: blend_info_from_state(

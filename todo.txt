@@ -1,16 +1,15 @@
 // TODO:
 
 // THIS WEEK:
-// - rename descriptor layout
-// - per demo settings
-// - fix tests
+// - add lights to swirling trash
+
 // - finish blog
 // - update docs with examples
-// - pass output dimensions to compute (fix mrt)
+// - publish
 
-// pmfx-shader
-// - minimise shader duplication caused via pmfx includes
-// - allow pipelines to drive the num thread in compute shaders and vice/versa
+// Shaders
+// - minimise shader duplication caused via pmfx includes, organise shaders better
+// - resource names with name: (without space) cause probs
 
 // material system
 // - area light
@@ -20,6 +19,7 @@
 // - cascaded shadow map
 
 // engine
+// - reverse depth
 // - HDR pipeline
 // - buffers in pmfx
 // - glft
@@ -30,7 +30,6 @@
 // - resolves fully data driven
 // - clear buffer (uav)
 // - clear buffers for compute
-// - reverse depth
 // - example triangle culling via execute indirect
 
 // gfx
@@ -42,11 +41,19 @@
 // - API for fence?
 
 // ui / debug
+// - per demo settings
 // - thread stats
 // - view menu + saving state
 // - imgui not tracked within draw call stats
 
 // DONE:
+// x fix light buffer 0 issue?
+// x update default configs for users
+// x allow pipelines to drive the num thread in compute shaders and vice/versa
+// x pass output dimensions to compute (fix mrt)
+// x rename descriptor layout
+// x pmfx
+// x fix tests
 // x apply maps / material properties + lights
 // x serialise plugin data is badly formatted (needs expanding per plugin / demo)
 // x render grid not tracked

@@ -676,7 +676,7 @@ r#"
         ],
         "zoom": 101.0
         },
-        "draw_indirect_gpu_frustum_culling": {
+        "gpu_frustum_culling": {
         "aspect": 0.9342105388641357,
         "camera_type": "Orbit",
         "focus": [
@@ -1093,8 +1093,8 @@ fn draw_indirect() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
-fn draw_indirect_gpu_frustum_culling() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_indirect_gpu_frustum_culling")
+fn gpu_frustum_culling() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("gpu_frustum_culling")
 }
 
 #[test]

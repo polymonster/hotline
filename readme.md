@@ -69,19 +69,19 @@ To make things more convenient during development and keep the `plugins`, `clien
 
 ```text
 // show aavailable build profiles
-.\hotline-data\pmbuild.cmd -help
+.\hotline-data\pmbuild -help
 
 // build release
-.\hotline-data\pmbuild.cmd win32-release
+.\hotline-data\pmbuild win32-release
 
 // build debug
-.\hotline-data\pmbuild.cmd win32-debug
+.\hotline-data\pmbuild win32-debug
 
 // run the client 
-.\hotline-data\pmbuild.cmd win32-debug -run
+.\hotline-data\pmbuild win32-debug -run
 
 // build and run the client 
-.\hotline-data\pmbuild.cmd win32-release -all -run
+.\hotline-data\pmbuild win32-release -all -run
 ```
 
 ### Building from Visual Studio Code
@@ -204,9 +204,9 @@ You can specify render graphs in `pmfx` that set up `views`, which get dispatche
 ```rust
 #[no_mangle]
 pub fn render_meshes(
-    pmfx: &bevy_ecs::prelude::Res<PmfxRes>,
+    pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: bevy_ecs::prelude::Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
@@ -253,12 +253,12 @@ fn update_cameras(
 
 Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them.  
 
-You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `bevy_ecs::SystemDescriptor` of systems that can then be looked up by name. The ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
+You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `SystemDescriptor` of systems that can then be looked up by name. The ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
 
 ```rust
 /// Register demo names
 #[no_mangle]
-pub fn get_demos_ecs_demos() -> Vec<String> {
+pub fn get_demos_ecs_examples() -> Vec<String> {
     demos![
         "primitives",
         "draw_indexed",
@@ -270,7 +270,7 @@ pub fn get_demos_ecs_demos() -> Vec<String> {
 
 /// Register plugin system functions
 #[no_mangle]
-pub fn get_system_ecs_demos(name: String, view_name: String) -> Option<SystemDescriptor> {
+pub fn get_system_ecs_examples(name: String, view_name: String) -> Option<SystemDescriptor> {
     match name.as_str() {
         // setup functions
         "setup_draw_indexed" => system_func![setup_draw_indexed],
@@ -463,7 +463,7 @@ let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
             step_rate: 0,
         },
     ],
-    descriptor_layout: gfx::DescriptorLayout::default(),
+    pipeline_layout: gfx::PipelineLayout::default(),
     raster_info: gfx::RasterInfo::default(),
     depth_stencil_info: gfx::DepthStencilInfo::default(),
     blend_info: gfx::BlendInfo {

@@ -381,7 +381,7 @@ pub fn blit(
             msg: "blit expects a single read resource specified in the `pmfx` uses".to_string()
         });
     }
-    let srv = view.use_indices[0];
+    let srv = view.use_indices[0].index;
 
     view.cmd_buf.set_render_pipeline(pipeline);
 
@@ -422,7 +422,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "draw_push_constants_texture",
         "draw_material",
         "draw_indirect",
-        "draw_indirect_gpu_frustum_culling",
+        "gpu_frustum_culling",
 
         // render tests
         "test_raster_states",
@@ -464,7 +464,7 @@ pub fn get_system_ecs_examples(name: String, pass_name: String) -> Option<System
         "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
         "setup_draw_material" => system_func![setup_draw_material],
         "setup_draw_indirect" => system_func![setup_draw_indirect],
-        "setup_draw_indirect_gpu_frustum_culling" => system_func![setup_draw_indirect_gpu_frustum_culling],
+        "setup_gpu_frustum_culling" => system_func![setup_gpu_frustum_culling],
 
         // render state tests
         "setup_raster_test" => system_func![setup_raster_test],
