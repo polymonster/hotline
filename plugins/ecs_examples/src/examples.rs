@@ -1782,21 +1782,44 @@ pub fn setup_gpu_frustum_culling(
     let light_buffer = &mut pmfx.get_world_buffers_mut().point_light;
     light_buffer.clear();
 
-    for _ in 0..num_lights {
-        let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
-        let col = rgba8_to_vec4(0xffffffff);
+    let cols : [Vec4f; 4] = [
+        rgba8_to_vec4(0x6c698dff),
+        rgba8_to_vec4(0xd4d2d5ff),
+        rgba8_to_vec4(0xbfafa6ff),
+        rgba8_to_vec4(0xe7cee3ff)
+    ];
+    let col_dist = rand::distributions::Uniform::from(0..cols.len());
+
+    for l in 0..num_lights {
+        let mut pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
+        
+        let mut radius = 64.0;
+        let mut col = cols[col_dist.sample(&mut rng)];
+
+        if l == 0 {
+            radius = 256.0;
+            pos = vec3f(0.0, range, 0.0);
+            col = rgba8_to_vec4(0xffffffff);
+        }
+
+        if l == 1 {
+            radius = 256.0;
+            pos = vec3f(0.0, 0.0, 0.0);
+            col = rgba8_to_vec4(0xffffffff);
+        }
+        
         commands.spawn((
             Position(pos),
             Colour(col),
             LightComponent {
                 light_type: LightType::Point,
-                radius: 128.0,
+                radius: radius,
                 ..Default::default()
             }
         ));
         light_buffer.push(&PointLightData{
             pos: pos,
-            radius: 64.0,
+            radius: radius,
             colour: col
         });
     }
