@@ -1163,7 +1163,7 @@ pub fn render_meshes_cbuffer_instanced(
             view.cmd_buf.set_binding(
                 pipeline, 
                 instance_batch.heap.as_ref().unwrap(), 
-                pipeline_slot.slot, 
+                pipeline_slot.index, 
                 instance_batch.buffer.get_cbv_index().unwrap()
             );
         }
@@ -1644,7 +1644,7 @@ pub fn setup_gpu_frustum_culling(
 
     let num_lights = 16;
 
-    let irc = 128;
+    let irc = 180;
     let size = 10.0;
     let frc = 1.0 / irc as f32;
     let mut rng = rand::thread_rng();
@@ -1674,7 +1674,7 @@ pub fn setup_gpu_frustum_culling(
                 argument_type: gfx::IndirectArgumentType::PushConstants,
                 arguments: Some(gfx::IndirectTypeArguments {
                     push_constants: gfx::IndirectPushConstantsArguments {
-                        slot: pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().slot,
+                        slot: pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants).unwrap().index,
                         offset: 0,
                         num_values: 4
                     }
@@ -1875,11 +1875,11 @@ pub fn dispatch_compute_frustum_cull(
         let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             // output uav
-            pass.cmd_buf.push_compute_constants(slot.slot, 1, 0, 
+            pass.cmd_buf.push_compute_constants(slot.index, 1, 0, 
                 gfx::as_u8_slice(&indirect_draw.dynamic_buffer.get_uav_index().unwrap()));
 
             // input srv
-            pass.cmd_buf.push_compute_constants(slot.slot, 1, 4, 
+            pass.cmd_buf.push_compute_constants(slot.index, 1, 4, 
                 gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
         }
         
@@ -1888,7 +1888,7 @@ pub fn dispatch_compute_frustum_cull(
         let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             pass.cmd_buf.push_compute_constants(
-                slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
+                slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
         }
 
         pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
@@ -1931,7 +1931,7 @@ pub fn draw_meshes_indirect_culling(
     let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(
-            slot.slot, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
+            slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
 
     view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);

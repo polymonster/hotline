@@ -414,7 +414,7 @@ pub struct PushConstantInfo {
 #[derive(Clone)]
 pub struct PipelineSlotInfo {
     /// The slot in the pipeline layout to bind to
-    pub slot: u32,
+    pub index: u32,
     /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
     pub count: Option<u32>
 }

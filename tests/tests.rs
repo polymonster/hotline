@@ -420,7 +420,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     assert!(slots.is_some());
 
     if let Some(slots) = slots {
-        assert_eq!(slots.slot, 2);
+        assert_eq!(slots.index, 2);
     }
 
     // colour_pipeline has no textures
@@ -1058,6 +1058,11 @@ fn test_tangent_space_normal_maps() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
+fn draw() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw")
+}
+
+#[test]
 fn draw_indexed() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("draw_indexed")
 }
@@ -1125,4 +1130,9 @@ fn test_texture3d() -> Result<(), hotline_rs::Error> {
 #[test]
 fn test_compute() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_compute")
+}
+
+#[test]
+fn test_multiple_render_targets() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_multiple_render_targets")
 }
