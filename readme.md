@@ -610,25 +610,25 @@ cargo run --example triangle
 
 ### Triangle
 
-[triangle_example_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/triangle.png" width="100%"/>
 
 This is a standalone example, outside of the `ecs` system. It directly uses the `gfx` API to set up and render a triangle. This gives a good overview of the low-level graphics setup and can serve as a first port of call for any porting work to other platforms.
 
 ### Bindless
 
-[bindless_example_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/bindless.png" width="100%"/>
 
 The second standalone example is used to test render targets, compute shaders, image loading, and bindless texture sampling. A few render passes are configured and compute shader writes to a read-write texture before everything is composited to screen in 4 quadrants.
 
 ### ImGui Demo
 
-[imgui_example_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/imgui_demo.png" width="100%"/>
 
 Test for implementing and verifying the imgui backend - this demonstrates the entire feature set of imgui with docking, viewports and mouse cursors.
 
 ### Play Video
 
-[play_video_example_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/play_video.png" width="100%"/>
 
 A standalone example of video playback, it allows you to load a video file from disk so it can be used to test compatibility of different video formats. The current implementation uses windows media foundation and Direct3D12 device to perform video decoding. The `av` API provides access to decoded video frames as a native `gfx::Texture` and performs all decoding on the GPU.
 
@@ -638,125 +638,127 @@ More advanced examples are implemented using the `ecs` and `plugin` system. The 
 
 ### Draw
 
-[draw_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw.png" width="100%"/>
 
 The first and most basic `ecs` driven example draws a triangle mesh entity using `cmd_buf.draw_instanced` call. This is a non-indexed draw call and just there to serve as a test for the `draw_instanced` function. Push constants are used to push the camera matrices but the mesh itself is drawn from raw vertex data.
 
 ### Draw Indexed
 
-[draw_indexed_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed.png" width="100%"/>
 
 Similar to the `draw_instanced` call but this time we draw a cube mesh with `draw_indexed_instanced` with an index buffer. All of the meshes created as part of the [primitives] API come with index buffers and once I get round to implementing a model loader, they will also have index buffers so `draw_indexed_instanced` will likely be used more than `draw_instanced`, but it's necessary to support and test both of them.
 
 ### Draw Indexed Push Constants
 
-[draw_indexed_push_constants_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_push_constants.png" width="100%"/>
 
 Building on from the draw indexed example, this one adds extra per-entity draw information of a world matrix to position them.
 
 ### Draw Indirect
 
-[draw_indirect_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indirect.png" width="100%"/>
 
 This is a very simple and not very useful example of `execute_indirect`; it creates 2 indirect `CommandSignatures` (one for `Draw` and one for `DrawIndexed`) and then the `IndirectArguments` are populated on the CPU. The entities are drawn by calling `cmd_buf.execute_indirect`. Later this functionality becomes much more powerful as command buffers can be populated on the GPU, but this is here as a very basic unit-test just to make sure everything is hooked up and indirect draws can be made.
 
 ### Geometry Primitives
 
-[geometry_primitives_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/geometry_primitives.png" width="100%"/>
 
 A basic sample showcasing all of the available procedurally generated geometry primitives.
 
 ### Draw Indexed Vertex Buffer Instanced
 
-[draw_indexed_vertex_buffer_instances_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_vertex_buffer_instanced.png" width="100%"/>
 
 This example uses 2 vertex streams, one of which contains vertex data and the second containing a per entity world matrix. The entity world matrices are updated batched together into a single vertex buffer each frame on the CPU. Instance striding is driven by the vertex layout.
 
 ### Draw Indexed Cbuffer Instanced
 
-[draw_indexed_cbuffer_instanced_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_cbuffer_instanced.png" width="100%"/>
 
 This example provides instanced draws by updating entity world matrices on the CPU and batching them into a larger constant buffer. The constant buffer is bound onto the pipeline slot and the vertex shader semantic `SV_InstanceID` is used to index into the constant buffer to obtain a per instance world matrix.
 
 ### Draw Push Constants Texture
 
-[draw_push_constants_texture_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_push_constants_texture.png" width="100%"/>
 
 Simple bindless texturing example - uses push constants to push a per draw call texture id for each entity. The texture id (shader resource view index) is used to lookup the texture inside an unbounded descriptor array in the fragment shader. 
 
 ### Tangent Space Normal Maps
 
-[tangent_space_normal_maps_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/tangent_space_normal_maps.png" width="100%"/>
 
 A test bed to verify the correctness of the shaders, geometry, and normal map textures performing tangent space normal map transformations.
 
 ### Draw Material
 
-[draw_material_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_material.png" width="100%"/>
 
 Bindless material setup example. Instance batches are created for the draw calls, the instance buffer consists of a `uint4` which has packed draw id and material id for each entity. The world matrix for each entity is looked up inside an unbounded descriptor array and so is the material. The material data consists of texture ids which are passed to the fragment shader. In the fragment shader we use the texture ids to look up albedo, normal, and roughness textures again stored in unbounded descriptor arrays.
 
 ### GPU Frustum Culling
 
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/gpu_frustum_culling.png" width="100%"/>
+
 This sample utilises `execute_indirect` and a compute shader to perform AABB vs frustum culling on the GPU. A structured buffer is populated with all draw call information for the scene and a secondary structured buffer with unordered access is created with a counter and used on the GPU as an `AppendStructuredBuffer`. Entity extents are looked up in the compute shader and culling is performed by testing the entity AABB extents against the camera frustum planes. Entities that are inside or intersecting the frustum have their draw call data copied from the full structured buffer and appended into the draw indirect structured buffer. The draw indirect structured buffer is used to drive the `execute_indirect` call. The sample draws 64k entities all with unique vertex and index buffers, running at 16ms on the CPU, where making the equivalent number of draw calls via `draw_indexed` takes well over 80ms.
 
 ### Point Lights
 
-[point_lights_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/point_lights.png" width="100%"/>
 
 A quick demo and visualisation created by using point lights, spheres, and a plane. The shader applies cook-torrance specular with lambertian diffuse. It also demonstrates how light entities can be added and manipulated and how data is passed to the GPU in the form of light data, with the lookups into the light array being driven by bindless ID lookups.
 
 ### Spot Lights
 
-[spot_lights_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/spot_lights.png" width="100%"/>
 
 Similar to the point lights demo, this showcases spot lights, which are processed in a separate loop to point lights and have their data stored in a separate structured buffer.
 
 ### Directional Lights
 
-[directional_lights_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/directional_lights.png" width="100%"/>
 
 Another light type example, directional lights are processed and stored in a separate structured buffer to the point and spot lights.
 
 ### Test Raster States
 
-[test_raster_states_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_raster_states.png" width="100%"/>
 
 A basic test which verifies the correctness of rasterizer state data being supplied in `.pmfx` config files. A few primitives are rendered with front-face, back-face and no culling, and another draw call with wireframe fill mode.
 
 ### Test Blend States
 
-[test_blend_states_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_blend_states.png" width="100%"/>
 
 This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
 
 ### Test Cubemap
 
-[test_cubemap_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_cubemap.png" width="100%"/>
 
 A test to verify the correctness of the texture pipeline and cubemap loading. `texturec` is used to take 6 input face images stored in a folder and pack them into a `.dds` image with convolved mip-map levels. The mip-map levels are looked up individually by the different sphere draw calls to verify the mips and faces have loaded correctly and serves as a starting point of how to use a cubemap convolution for image based lighting.
 
 ### Test Texture2DArray
 
-[test_texture2d_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_texture2d_array.png" width="100%"/>
 
 A simple test to verify the correctness of the data pipeline for loading 2D texture arrays. A simple animation is applied to the texture array to roll through the various array slices and the camera distance will select mip-map levels automatically based on hardware mip-map selection.
 
 ### Test Texture3D
 
-[test_texture3d_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_texture3d.png" width="100%"/>
 
 The sample loads and renders a 3D texture which contains signed distance field data. The image itself was generated in my C++ engine [pmtech] and this sample serves as a test to ensure 3D texture loading works correctly. It also provides a simple demonstration of how to visualise / ray march a signed distance field volume.
 
 ### Test Compute
 
-[test_compute_image]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_compute.png" width="100%"/>
 
 A simple example to showcase how to configure compute passes through the `pmfx` and `ecs` systems. We setup a basic compute pass which writes some noise into a 3D read-write texture and then use a basic 3D ray march to trace the volume in a rasterization pass.
 
 ### Test Multiple Render Targets
 
-[test_multiple_render_targets_setup]
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_multiple_render_targets.png" width="100%"/>
 
 This sample demonstrates and tests multiple render target outputs. It renders to multiple textures as you would for a g-buffer deferred setup. The targets are MSAA enabled, and then in a compute shader we sample directly from the MSAA resources, outputting one of the MSAA fragments and splitting the screen into 4 quadrants to show the different outputs from the MRT setup.
 
