@@ -225,7 +225,7 @@ pub struct Texture {
     uav_index: Option<usize>,
     subresource_uav_index: Vec<usize>,
     shared_handle: Option<HANDLE>,
-    // free list for srv, uav and resolved srv
+    // drop list for srv, uav and resolved srv
     drop_list: Option<DropListRef>,
     // the id of the shader heap for (uav, srv etc)
     shader_heap_id: Option<u16>
@@ -282,6 +282,7 @@ impl FreeList {
     }
 }
 
+/// Structure to track resources and resoure view allocations in `Drop` traits
 struct DropResource {
     resources: Vec<ID3D12Resource>,
     frame: usize,
@@ -1198,7 +1199,7 @@ impl Device {
                 // track the slots push constants occupy
                 let h = get_binding_descriptor_hash(constants.shader_register, constants.register_space, super::DescriptorType::PushConstants);
                 lookup.insert(h, PipelineSlotInfo {
-                    slot: slot_iter,
+                    index: slot_iter,
                     count: Some(constants.num_values)
                 });
                 slot_iter += 1;
@@ -1265,7 +1266,7 @@ impl Device {
                 for binding in &range_info.info {
                     let h = get_binding_descriptor_hash(binding.shader_register, binding.register_space, binding.binding_type);
                     lookup.entry(h).or_insert(PipelineSlotInfo {
-                        slot: slot_iter,
+                        index: slot_iter,
                         count: binding.num_descriptors
                     });
                 }
@@ -1578,7 +1579,7 @@ impl super::Device for Device {
                 if let Some(debug) = D3D12GetDebugInterface(&mut debug).ok().and(debug) {
                     debug.EnableDebugLayer();
 
-                    // slower but more detailed
+                    // slower but more detailed GPU validation
                     if GPU_VALIDATION {
                         let debug1 : ID3D12Debug1 = debug.cast().unwrap();
                         debug1.SetEnableGPUBasedValidation(true);
@@ -3698,8 +3699,8 @@ impl super::CmdBuf<Device> for CmdBuf {
                 for i in 1..desc.MipLevels as usize {
                     let using_slot = pipeline.get_pipeline_slot(0, 0, super::DescriptorType::PushConstants);
                     if let Some(slot) = using_slot {
-                        self.push_compute_constants(slot.slot, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i]));
-                        self.push_compute_constants(slot.slot, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i+1]));
+                        self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i]));
+                        self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i+1]));
                     }
                     self.dispatch(
                         Size3 {
