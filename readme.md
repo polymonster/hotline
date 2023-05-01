@@ -52,7 +52,7 @@ You can run the binary `client` which allows code to be reloaded through `plugin
 cargo build
 
 // build the data
-.\hotline-data\pmbuild.cmd win32-data
+.\hotline-data\pmbuild win32-data
 
 // then build plugins
 cargo build --manifest-path plugins/Cargo.toml
@@ -181,8 +181,8 @@ You can supply `setup` systems to add entities into a scene, when a dynamic code
 ```rust
 #[no_mangle]
 pub fn setup_cube(
-    mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut device: ResMut<DeviceRes>,
+    mut commands: Commands) {
 
     let pos = Mat4f::from_translation(Vec3f::unit_y() * 10.0);
     let scale = Mat4f::from_scale(splat3f(10.0));
@@ -634,7 +634,7 @@ A standalone example of video playback, it allows you to load a video file from 
 
 ## Ecs Examples
 
-More advanced examples are implemented using the `ecs` and `plugin` system. The can be found in [plugins/ecs_examples/examples.rs](https://github.com/polymonster/hotline/blob/master/plugins/ecs_examples/src/examples.rs)
+More advanced examples are implemented using the `ecs` and `plugin` system. They can be found in [plugins/ecs_examples/examples.rs](https://github.com/polymonster/hotline/blob/master/plugins/ecs_examples/src/examples.rs)
 
 ### Draw
 
@@ -664,7 +664,7 @@ This is a very simple and not very useful example of `execute_indirect`; it crea
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/geometry_primitives.png" width="100%"/>
 
-A basic sample showcasing all of the available procedurally generated geometry primitives.
+A sample showcasing all of the available procedurally generated geometry primitives.
 
 ### Draw Indexed Vertex Buffer Instanced
 
@@ -682,7 +682,7 @@ This example provides instanced draws by updating entity world matrices on the C
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_push_constants_texture.png" width="100%"/>
 
-Simple bindless texturing example - uses push constants to push a per draw call texture id for each entity. The texture id (shader resource view index) is used to lookup the texture inside an unbounded descriptor array in the fragment shader. 
+Bindless texturing example - uses push constants to push a per draw call texture id for each entity. The texture id (shader resource view index) is used to lookup the texture inside an unbounded descriptor array in the fragment shader. 
 
 ### Tangent Space Normal Maps
 
@@ -706,7 +706,7 @@ This sample utilises `execute_indirect` and a compute shader to perform AABB vs 
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/point_lights.png" width="100%"/>
 
-A quick demo and visualisation created by using point lights, spheres, and a plane. The shader applies cook-torrance specular with lambertian diffuse. It also demonstrates how light entities can be added and manipulated and how data is passed to the GPU in the form of light data, with the lookups into the light array being driven by bindless ID lookups.
+A demo and visualisation created by using point lights, spheres, and a plane. The shader applies cook-torrance specular with lambertian diffuse. It also demonstrates how light entities can be added and manipulated and how data is passed to the GPU in the form of light data, with the lookups into the light array being driven by bindless ID lookups.
 
 ### Spot Lights
 
@@ -724,13 +724,13 @@ Another light type example, directional lights are processed and stored in a sep
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_raster_states.png" width="100%"/>
 
-A basic test which verifies the correctness of rasterizer state data being supplied in `.pmfx` config files. A few primitives are rendered with front-face, back-face and no culling, and another draw call with wireframe fill mode.
+A test which verifies the correctness of rasterizer state data being supplied in `.pmfx` config files. A few primitives are rendered with front-face, back-face and no culling, and another draw call with wireframe fill mode.
 
 ### Test Blend States
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_blend_states.png" width="100%"/>
 
-This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
+This test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
 
 ### Test Cubemap
 
@@ -742,7 +742,7 @@ A test to verify the correctness of the texture pipeline and cubemap loading. `t
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_texture2d_array.png" width="100%"/>
 
-A simple test to verify the correctness of the data pipeline for loading 2D texture arrays. A simple animation is applied to the texture array to roll through the various array slices and the camera distance will select mip-map levels automatically based on hardware mip-map selection.
+A test to verify the correctness of the data pipeline for loading 2D texture arrays. A simple animation is applied to the texture array to roll through the various array slices and the camera distance will select mip-map levels automatically based on hardware mip-map selection.
 
 ### Test Texture3D
 
@@ -754,7 +754,7 @@ The sample loads and renders a 3D texture which contains signed distance field d
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_compute.png" width="100%"/>
 
-A simple example to showcase how to configure compute passes through the `pmfx` and `ecs` systems. We setup a basic compute pass which writes some noise into a 3D read-write texture and then use a basic 3D ray march to trace the volume in a rasterization pass.
+An example to showcase how to configure compute passes through the `pmfx` and `ecs` systems. We setup a basic compute pass which writes some noise into a 3D read-write texture and then use a basic 3D ray march to trace the volume in a rasterization pass.
 
 ### Test Multiple Render Targets
 
