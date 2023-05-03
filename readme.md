@@ -52,7 +52,7 @@ You can run the binary `client` which allows code to be reloaded through `plugin
 cargo build
 
 // build the data
-.\hotline-data\pmbuild win32-data
+hotline-data\pmbuild win32-data
 
 // then build plugins
 cargo build --manifest-path plugins/Cargo.toml
@@ -69,19 +69,19 @@ To make things more convenient during development and keep the `plugins`, `clien
 
 ```text
 // show aavailable build profiles
-.\hotline-data\pmbuild -help
+hotline-data\pmbuild -help
 
 // build release
-.\hotline-data\pmbuild win32-release
+hotline-data\pmbuild win32-release
 
 // build debug
-.\hotline-data\pmbuild win32-debug
+hotline-data\pmbuild win32-debug
 
 // run the client 
-.\hotline-data\pmbuild win32-debug -run
+hotline-data\pmbuild win32-debug -run
 
 // build and run the client 
-.\hotline-data\pmbuild win32-release -all -run
+hotline-data\pmbuild win32-release -all -run
 ```
 
 ### Building from Visual Studio Code
@@ -638,7 +638,7 @@ There are a few standalone examples of how to use the lower level components of 
 cargo build --examples
 
 // make sure to build data
-.\hotline-data\pmbuild.cmd win32-data
+hotline-data\pmbuild win32-data
 
 // run a single sample
 cargo run --example triangle
@@ -670,7 +670,13 @@ A standalone example of video playback, it allows you to load a video file from 
 
 ## Ecs Examples
 
-More advanced examples are implemented using the `ecs` and `plugin` system. They can be found in [plugins/ecs_examples/examples.rs](https://github.com/polymonster/hotline/blob/master/plugins/ecs_examples/src/examples.rs)
+More advanced examples are implemented using the `ecs` and `plugin` system. You can build and run them as follows:
+
+```text
+hotline-data\pmbuild win32-debug -all -run
+```
+
+The source code can be located in this [directory](https://github.com/polymonster/hotline/tree/master/plugins/ecs_examples/src) and the shaders / pmfx configs are located in the hotline-data [repository](https://github.com/polymonster/hotline-data/tree/master/src/shaders).
 
 ### Draw
 
