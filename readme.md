@@ -16,10 +16,10 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render configuration, code).
+- Hardware accelerated video decoding.
 - [gfx](#gfx) - Concise low level graphics api...
 - [pmfx](#pmfx) - High level data driven graphics api for ease of use and speed.
-- A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
-- Hardware accelerated video decoding.
+- [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Prerequisites
 
@@ -149,9 +149,25 @@ hotline_plugin![EmptyPlugin];
 
 There is a core `ecs` plugin which builds on top of [bevy_ecs](https://docs.rs/bevy_ecs/latest/bevy_ecs/). It allows you to supply your own systems and build schedules dynamically. It is possible to load and find new `ecs` systems in different dynamic libraries. You can register and instantiate `demos` which are collections of `setup`, `update` and `render` systems.
 
-#### Initialisation Functions
+#### Registering Demos
 
-You can set up a new ecs demo by providing an initialisation function named after the demo this returns a `ScheduleInfo` for which systems to run:
+Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>`.
+
+```rust
+/// Register demo names
+#[no_mangle]
+pub fn get_demos_ecs_examples() -> Vec<String> {
+    demos![
+        "primitives",
+        "draw_indexed",
+        "draw_indexed_push_constants",
+
+        // ..
+    ]
+}
+```
+
+You can then provide an initialisation function named after the demo this returns a `ScheduleInfo` for which systems to run:
 
 ```rust
 /// Init function for primitives demo
@@ -174,15 +190,18 @@ pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -
 }
 ```
 
+The `setup`, `update` and `render` systems are tagged with the attribute macro `#[export_update_fn]`, `#[export_render_fn]` or `#[export_compute_fn]`.
+
 #### Setup Systems
 
 You can supply `setup` systems to add entities into a scene, when a dynamic code reload happens the world will be cleared and the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple `setup` systems and they will be executed concurrently.
 
 ```rust
 #[no_mangle]
+#[export_update_fn]
 pub fn setup_cube(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
-    mut commands: bevy_ecs::system::Commands) {
+    mut commands: bevy_ecs::system::Commands) -> Result<(), hotline_rs::Error> {
 
     let pos = Mat4f::from_translation(Vec3f::unit_y() * 10.0);
     let scale = Mat4f::from_scale(splat3f(10.0));
@@ -194,6 +213,27 @@ pub fn setup_cube(
         MeshComponent(cube_mesh.clone()),
         WorldMatrix(pos * scale)
     ));
+
+    Ok(())
+}
+```
+
+#### Update Systems
+
+You can also supply your own `update` systems to animate and move your entities, these too are all executed concurrently.
+
+```rust
+#[no_mangle]
+#[export_update_fn]
+fn update_cameras(
+    app: Res<AppRes>, 
+    main_window: Res<MainWindowRes>, 
+    mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>
+) -> Result<(), {    
+    let app = &app.0;
+    for (mut position, mut rotation, mut view_proj) in &mut query {
+        // ..
+    }
 }
 ```
 
@@ -203,6 +243,7 @@ You can specify render graphs in `pmfx` that set up `views`, which get dispatche
 
 ```rust
 #[no_mangle]
+#[export_render_fn]
 pub fn render_meshes(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
@@ -233,54 +274,42 @@ pub fn render_meshes(
 }
 ```
 
-#### Update Systems
+### Compute Systems
 
-You can also supply your own `update` systems to animate and move your entities, these too are all executed concurrently.
-
-```rust
-fn update_cameras(
-    app: Res<AppRes>, 
-    main_window: Res<MainWindowRes>, 
-    mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>) {    
-    let app = &app.0;
-    for (mut position, mut rotation, mut view_proj) in &mut query {
-        // ..
-    }
-}
-```
-
-#### Registering Systems
-
-Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. In time I hope to be able to remove this baggage and be able to `#[derive()]` them.  
-
-You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>` and `get_system_<lib_name>` to return `SystemDescriptor` of systems that can then be looked up by name. The ecs plugin will search for systems by name within all other loaded plugins, so you can build and share functionality.
+Compute systems work similarly to `render` systems. They get passed a `pmfx::ComputePass` which has information about the compute workload that has been specified in pmfx files. The `dispatch_compute` function in the `ecs_examples` could be used for many purposes without needing to supply any new code because it allows generic dispatched based data that is configured in the `.pmfx` file.
 
 ```rust
-/// Register demo names
 #[no_mangle]
-pub fn get_demos_ecs_examples() -> Vec<String> {
-    demos![
-        "primitives",
-        "draw_indexed",
-        "draw_indexed_push_constants",
+#[export_compute_fn]
+pub fn dispatch_compute(
+    pmfx: &Res<PmfxRes>,
+    pass: &pmfx::ComputePass<gfx_platform::Device>
+) -> Result<(), hotline_rs::Error> {
 
-        // ..
-    ]
-}
+    let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
+    pass.cmd_buf.set_compute_pipeline(&pipeline);
 
-/// Register plugin system functions
-#[no_mangle]
-pub fn get_system_ecs_examples(name: String, view_name: String) -> Option<SystemDescriptor> {
-    match name.as_str() {
-        // setup functions
-        "setup_draw_indexed" => system_func![setup_draw_indexed],
-        "setup_primitives" => system_func![setup_primitives],
-        "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
-        // render functions
-        "render_meshes" => render_func![render_meshes, view_name],
-        "render_wireframe" => render_func![render_wireframe, view_name],
-        _ => std::hint::black_box(None)
+    let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = using_slot {
+        for i in 0..pass.use_indices.len() {
+            let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
+            pass.cmd_buf.push_compute_constants(
+                0, 
+                num_constants, 
+                i as u32 * num_constants, 
+                gfx::as_u8_slice(&pass.use_indices[i])
+            );
+        }
     }
+
+    pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    
+    pass.cmd_buf.dispatch(
+        pass.group_count,
+        pass.numthreads
+    );
+
+    Ok(())
 }
 ```
 
@@ -295,18 +324,25 @@ By default all systems in a particular group will be executed asyncronsly and th
 Any render functions are automatically added to the `Render` system set, but you can choose to create your own sets or add things into the pre-defined `SystemSets`. There are some core oprations which will happen but you can define your own and order execution as follows:
 
 ```rust
-// updates
-"rotate_meshes" => system_func![
-    rotate_meshes
-        .in_base_set(CustomSystemSet::Animate)
-        .after(SystemSets::Update)
-],
+// custom base set
+#[no_mangle]
+#[export_update_fn(in_base_set(MyCustsomSet::CustomUpdate))]
+fn update_cameras() {
+    // ..
+}
 
-// batches
-"batch_world_matrix_instances" => system_func![
-    draw::batch_world_matrix_instances
-        .after(SystemSets::Batch)
-],
+#[no_mangle]
+#[export_update_fn(after(MyCustsomSet::CustomUpdate))]
+fn update_batch() {
+    // ..
+}
+
+// in base set after render
+#[no_mangle]
+#[export_update_fn(in_base_set(MyCustsomSet::PostStep).before(SystemSets::Render))]
+fn finalise() {
+    // ..
+}
 ```
 
 ### Serialising Plugin Data
@@ -648,7 +684,7 @@ The first and most basic `ecs` driven example draws a triangle mesh entity using
 
 Similar to the `draw_instanced` call but this time we draw a cube mesh with `draw_indexed_instanced` with an index buffer. All of the meshes created as part of the [primitives] API come with index buffers and once I get round to implementing a model loader, they will also have index buffers so `draw_indexed_instanced` will likely be used more than `draw_instanced`, but it's necessary to support and test both of them.
 
-### Draw Indexed Push Constants
+### Draw Push Constants
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_push_constants.png" width="100%"/>
 
@@ -666,19 +702,19 @@ This is a very simple and not very useful example of `execute_indirect`; it crea
 
 A basic sample showcasing all of the available procedurally generated geometry primitives.
 
-### Draw Indexed Vertex Buffer Instanced
+### Draw Vertex Buffer Instanced
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_vertex_buffer_instanced.png" width="100%"/>
 
 This example uses 2 vertex streams, one of which contains vertex data and the second containing a per entity world matrix. The entity world matrices are updated batched together into a single vertex buffer each frame on the CPU. Instance striding is driven by the vertex layout.
 
-### Draw Indexed Cbuffer Instanced
+### Draw cbuffer Instanced
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_indexed_cbuffer_instanced.png" width="100%"/>
 
 This example provides instanced draws by updating entity world matrices on the CPU and batching them into a larger constant buffer. The constant buffer is bound onto the pipeline slot and the vertex shader semantic `SV_InstanceID` is used to index into the constant buffer to obtain a per instance world matrix.
 
-### Draw Push Constants Texture
+### Bindless Texture
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_push_constants_texture.png" width="100%"/>
 
@@ -690,17 +726,11 @@ Simple bindless texturing example - uses push constants to push a per draw call 
 
 A test bed to verify the correctness of the shaders, geometry, and normal map textures performing tangent space normal map transformations.
 
-### Draw Material
+### Bindless Material
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_material.png" width="100%"/>
 
 Bindless material setup example. Instance batches are created for the draw calls, the instance buffer consists of a `uint4` which has packed draw id and material id for each entity. The world matrix for each entity is looked up inside an unbounded descriptor array and so is the material. The material data consists of texture ids which are passed to the fragment shader. In the fragment shader we use the texture ids to look up albedo, normal, and roughness textures again stored in unbounded descriptor arrays.
-
-### GPU Frustum Culling
-
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/gpu_frustum_culling.png" width="100%"/>
-
-This sample utilises `execute_indirect` and a compute shader to perform AABB vs frustum culling on the GPU. A structured buffer is populated with all draw call information for the scene and a secondary structured buffer with unordered access is created with a counter and used on the GPU as an `AppendStructuredBuffer`. Entity extents are looked up in the compute shader and culling is performed by testing the entity AABB extents against the camera frustum planes. Entities that are inside or intersecting the frustum have their draw call data copied from the full structured buffer and appended into the draw indirect structured buffer. The draw indirect structured buffer is used to drive the `execute_indirect` call. The sample draws 64k entities all with unique vertex and index buffers, running at 16ms on the CPU, where making the equivalent number of draw calls via `draw_indexed` takes well over 80ms.
 
 ### Point Lights
 
@@ -720,47 +750,53 @@ Similar to the point lights demo, this showcases spot lights, which are processe
 
 Another light type example, directional lights are processed and stored in a separate structured buffer to the point and spot lights.
 
-### Test Raster States
+### GPU Frustum Culling
 
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_raster_states.png" width="100%"/>
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/gpu_frustum_culling.png" width="100%"/>
 
-A basic test which verifies the correctness of rasterizer state data being supplied in `.pmfx` config files. A few primitives are rendered with front-face, back-face and no culling, and another draw call with wireframe fill mode.
+This sample utilises `execute_indirect` and a compute shader to perform AABB vs frustum culling on the GPU. A structured buffer is populated with all draw call information for the scene and a secondary structured buffer with unordered access is created with a counter and used on the GPU as an `AppendStructuredBuffer`. Entity extents are looked up in the compute shader and culling is performed by testing the entity AABB extents against the camera frustum planes. Entities that are inside or intersecting the frustum have their draw call data copied from the full structured buffer and appended into the draw indirect structured buffer. The draw indirect structured buffer is used to drive the `execute_indirect` call. The sample draws 64k entities all with unique vertex and index buffers, running at 16ms on the CPU, where making the equivalent number of draw calls via `draw_indexed` takes well over 80ms.
 
-### Test Blend States
-
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_blend_states.png" width="100%"/>
-
-This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
-
-### Test Cubemap
+### Cubemap
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_cubemap.png" width="100%"/>
 
 A test to verify the correctness of the texture pipeline and cubemap loading. `texturec` is used to take 6 input face images stored in a folder and pack them into a `.dds` image with convolved mip-map levels. The mip-map levels are looked up individually by the different sphere draw calls to verify the mips and faces have loaded correctly and serves as a starting point of how to use a cubemap convolution for image based lighting.
 
-### Test Texture2DArray
+### Texture2DArray
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_texture2d_array.png" width="100%"/>
 
 A simple test to verify the correctness of the data pipeline for loading 2D texture arrays. A simple animation is applied to the texture array to roll through the various array slices and the camera distance will select mip-map levels automatically based on hardware mip-map selection.
 
-### Test Texture3D
+### Texture3D
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_texture3d.png" width="100%"/>
 
 The sample loads and renders a 3D texture which contains signed distance field data. The image itself was generated in my C++ engine [pmtech] and this sample serves as a test to ensure 3D texture loading works correctly. It also provides a simple demonstration of how to visualise / ray march a signed distance field volume.
 
-### Test Compute
+### Read Write Texture
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_compute.png" width="100%"/>
 
 A simple example to showcase how to configure compute passes through the `pmfx` and `ecs` systems. We setup a basic compute pass which writes some noise into a 3D read-write texture and then use a basic 3D ray march to trace the volume in a rasterization pass.
 
-### Test Multiple Render Targets
+### Multiple Render Targets
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_multiple_render_targets.png" width="100%"/>
 
 This sample demonstrates and tests multiple render target outputs. It renders to multiple textures as you would for a g-buffer deferred setup. The targets are MSAA enabled, and then in a compute shader we sample directly from the MSAA resources, outputting one of the MSAA fragments and splitting the screen into 4 quadrants to show the different outputs from the MRT setup.
+
+### Raster States
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_raster_states.png" width="100%"/>
+
+A basic test which verifies the correctness of rasterizer state data being supplied in `.pmfx` config files. A few primitives are rendered with front-face, back-face and no culling, and another draw call with wireframe fill mode.
+
+### Blend States
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_blend_states.png" width="100%"/>
+
+This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
 
 ## Tests
 

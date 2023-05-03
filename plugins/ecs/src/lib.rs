@@ -324,6 +324,28 @@ fn update_cameras(
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
     fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfig> {
+        // find by export name
+        for (_, lib) in &client.libs {
+            unsafe {
+                let exported_function_name = format!("export_{}", name);
+                if view_name.is_empty() {
+                    // function with () no args
+                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfig>(exported_function_name.as_bytes());
+                    if let Ok(hook_fn) = hook {
+                        return Some(hook_fn());
+                    }
+                }
+                else {
+                    // function with pass name args
+                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfig>(exported_function_name.as_bytes());
+                    if let Ok(hook_fn) = hook {
+                        return Some(hook_fn(view_name.to_string()));
+                    }
+                }
+            }
+        }
+        
+        // deprecated using get_system function
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
