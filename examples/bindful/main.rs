@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::*;
+use hotline_rs::{*, prelude::{Pipeline, Texture}};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
@@ -15,7 +15,7 @@ struct Vertex {
 fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
-        name: String::from("bindless"),
+        name: String::from("bindful"),
         window: false,
         num_buffers: 0,
         dpi_aware: true,
@@ -34,7 +34,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // window
     let mut win = app.create_window(os::WindowInfo {
-        title: String::from("bindless"),
+        title: String::from("bindful"),
         rect: os::Rect {
             x: 100,
             y: 100,
@@ -102,164 +102,33 @@ fn main() -> Result<(), hotline_rs::Error> {
         num_elements: 6,
         initial_state: gfx::ResourceState::IndexBuffer
     };
-
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
-
-    pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
-    pmfx.create_compute_pipeline(&dev, "compute_rw")?;
-    pmfx.create_render_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
+    pmfx.load(&hotline_rs::get_data_path("shaders/bindful"))?;
+    pmfx.create_render_pipeline(&dev, "bindful", swap_chain.get_backbuffer_pass())?;
     
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
-    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
-    let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
+    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
 
     let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
     let files = vec![
-        hotline_rs::get_src_data_path("textures/redchecker01.png"),
-        hotline_rs::get_src_data_path("textures/blend_test_fg.png"),
         hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_001.png"),
-        hotline_rs::get_src_data_path("textures/bluechecker01.png"),
+        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_004.png"),
+        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_008.png"),
+        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_012.png"),
     ];
     for file in files {
         let image = image::load_from_file(&file)?;
         let tex = dev.create_texture(&image.info, data![image.data.as_slice()])?;
         textures.push(tex);
     }
-
-    // push constants
-    let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
-
-    // constant buffer
-    let mut cbuffer: [f32; 64] = [0.0; 64];
-    cbuffer[0] = 1.0;
-    cbuffer[1] = 0.0;
-    cbuffer[2] = 1.0;
-    cbuffer[3] = 1.0;
-
-    let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::CONSTANT_BUFFER,
-        cpu_access: gfx::CpuAccessFlags::NONE,
-        format: gfx::Format::Unknown,
-        stride: cbuffer.len() * 4,
-        num_elements: 1,
-        initial_state: gfx::ResourceState::VertexConstantBuffer
-    };
-
-    let _constant_buffer = dev.create_buffer(&info, data![gfx::as_u8_slice(&cbuffer)]);
-
-    // render target
-    let rt_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    let render_target = dev.create_texture(&rt_info, data![]).unwrap();
-
-    // depth stencil target
-    let ds_info = gfx::TextureInfo {
-        format: gfx::Format::D24nS8u,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::DEPTH_STENCIL,
-        initial_state: gfx::ResourceState::DepthStencil,
-    };
-    let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
-
-    // pass for render target with depth stencil
-    let render_target_pass = dev
-        .create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![&render_target],
-            rt_clear: Some(gfx::ClearColour {
-                r: 1.0,
-                g: 0.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil: Some(&depth_stencil),
-            ds_clear: Some(gfx::ClearDepthStencil {
-                depth: Some(1.0),
-                stencil: None,
-            }),
-            resolve: false,
-            discard: false,
-        })
-        .unwrap();
-
-    // unordered access rw texture
-    let rw_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    let _rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
-
     // ..
     let mut ci = 0;
     while app.run() {
         win.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
-
-        // compute pass
-        cmdbuffer.set_marker(0xff00ffff, "Frame Start");
-
-        cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
-        cmdbuffer.set_compute_pipeline(pso_compute);
-        cmdbuffer.set_heap(pso_compute, dev.get_shader_heap());
-        cmdbuffer.dispatch(
-            gfx::Size3 {
-                x: 512 / 16,
-                y: 512 / 16,
-                z: 1,
-            },
-            gfx::Size3 {
-                x: 512,
-                y: 512,
-                z: 1,
-            },
-        );
-        cmdbuffer.end_event();
-
-        // render target pass
-        cmdbuffer.begin_event(0xff0000ff, "Render Target Pass");
-        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::ShaderResource,
-            state_after: gfx::ResourceState::RenderTarget,
-        });
-
-        cmdbuffer.begin_render_pass(&render_target_pass);
-        cmdbuffer.end_render_pass();
-
-        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
-            state_after: gfx::ResourceState::ShaderResource,
-        });
-        cmdbuffer.end_event();
 
         // main pass
         cmdbuffer.begin_event(0xff0000ff, "Main Pass");
@@ -279,16 +148,38 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-
         cmdbuffer.set_render_pipeline(pso_pmfx);
-        
+
         cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
 
+        // set bindings
+        let srv0 =  textures[0].get_srv_index().unwrap();
+        let srv1 =  textures[1].get_srv_index().unwrap();
+        let srv2 =  textures[2].get_srv_index().unwrap();
+        let srv3 =  textures[3].get_srv_index().unwrap();
+
+        // this looks up register t0, space0
+        if let Some(t0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
+            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t0.index, srv0);
+        }
+
+        // this looks up register t1, space0
+        if let Some(t1) = pso_pmfx.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource) {
+            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t1.index, srv1);
+        }
+
+        // this looks up register t2, space0
+        if let Some(t2) = pso_pmfx.get_pipeline_slot(2, 0, gfx::DescriptorType::ShaderResource) {
+            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t2.index, srv2);
+        }
+
+        // this looks up register t3, space0
+        if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
+            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t3.index, srv3);
+        }
+        
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
-
-        cmdbuffer.push_render_constants(0, 4, 0, constants.as_slice());
-
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
         cmdbuffer.end_render_pass();

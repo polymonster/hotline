@@ -26,6 +26,7 @@
 
     // ensure -run always comes last
     post_build_order: [
+        "cargo_examples"
         "run"
     ]
 
@@ -155,12 +156,21 @@
             ]
         }
     }
-
     // win32 release client, plugins and data
     win32-release(win32-debug): {
         jsn_vars: {
             config_flags: "--release"
             config: "release"
+        }
+    }
+
+    // win32 examples
+    win32-examples(win32-data): {
+        cargo_examples: {
+            type: shell
+            commands: [
+                "cargo build --examples"
+            ]
         }
     }
 

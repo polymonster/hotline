@@ -2,29 +2,20 @@
 	"version": "2.0.0",
 	"tasks": [
 		{
-			"type": "cargo",
-			"command": "build",
-			"args": [
-				"--examples"
-			],
-			"problemMatcher": [
-				"$rustc"
-			],
-			"group": {
-				"kind": "build",
-				"isDefault": true
-			},
-			"label": "examples"
+			"label": "examples",
+			"command": "hotline-data/pmbuild", // Could be any other shell command
+			"args": ["win32-examples"],
+			"type": "shell"
 		},
 		{
 			"label": "pmbuild-debug",
-			"command": "./hotline-data/pmbuild.cmd", // Could be any other shell command
+			"command": "hotline-data/pmbuild", // Could be any other shell command
 			"args": ["win32-debug"],
 			"type": "shell"
 		},
 		{
 			"label": "pmbuild-release",
-			"command": "./hotline-data/pmbuild.cmd", // Could be any other shell command
+			"command": "hotline-data/pmbuild", // Could be any other shell command
 			"args": ["win32-release"],
 			"type": "shell"
 		}

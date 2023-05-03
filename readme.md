@@ -656,6 +656,12 @@ This is a standalone example, outside of the `ecs` system. It directly uses the 
 
 The second standalone example is used to test render targets, compute shaders, image loading, and bindless texture sampling. A few render passes are configured and compute shader writes to a read-write texture before everything is composited to screen in 4 quadrants.
 
+### Bindful
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/bindful.png" width="100%"/>
+
+This example shows how a bindful rendering model is possible in place of or side by side with a bindless rendering model
+
 ### ImGui Demo
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/imgui_demo.png" width="100%"/>
