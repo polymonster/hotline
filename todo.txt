@@ -1,9 +1,7 @@
 // TODO:
 
 // - resolves fully data driven
-// - update docs
 // - buffers in pmfx
-// - bindful example
 // - update docs
 
 // material system
@@ -39,6 +37,8 @@
 // - imgui not tracked within draw call stats
 
 // DONE:
+// x update docs
+// x bindful example
 // x minimise shader duplication caused via pmfx includes, organise shaders better
 // x barriers for compute
 // x resource names with name: (without space) cause probs
