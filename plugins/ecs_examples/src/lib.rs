@@ -2,24 +2,95 @@
 #![cfg(target_os = "windows")]
 
 /// Contains basic examples and unit tests of rendering and ecs functionality
-mod examples;
+mod error_tests;
+mod draw;
+mod draw_indexed;
+mod draw_push_constants;
+mod draw_indirect;
+mod geometry_primitives;
+mod draw_vertex_buffer_instanced;
+mod draw_cbuffer_instanced;
+mod bindless_texture;
+mod tangent_space_normal_maps;
+mod bindless_material;
+mod point_lights;
+mod spot_lights;
+mod directional_lights;
+mod gpu_frustum_culling;
+mod cubemap;
+mod texture2d_array;
+mod texture3d;
+mod read_write_texture;
+mod multiple_render_targets;
+mod raster_states;
+mod blend_states;
 
+use export_macros::export_compute_fn;
+use export_macros::export_render_fn;
+
+use export_macros::export_update_fn;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
 
-use crate::examples::*;
+pub fn load_material(
+    device: &mut gfx_platform::Device,
+    pmfx: &mut Pmfx<gfx_platform::Device>,
+    dir: &str) -> Result<MaterialResources, hotline_rs::Error> {
+    let maps = vec![
+        "_albedo.dds",
+        "_normal.dds",
+        "_roughness.dds"
+    ];
+
+    let mut textures = Vec::new();
+    for map in maps {
+        let paths = std::fs::read_dir(dir).unwrap();
+        let map_path = paths.into_iter()
+            .filter(|p| p.as_ref().unwrap().file_name().to_string_lossy().ends_with(map))
+            .map(|p| String::from(p.as_ref().unwrap().file_name().to_string_lossy()))
+            .collect::<Vec<_>>();
+
+        if !map_path.is_empty() {
+            textures.push(
+                image::load_texture_from_file(
+                    device, 
+                    &format!("{}/{}", dir, map_path[0]), 
+                    Some(&mut pmfx.shader_heap)
+                ).unwrap()
+            );
+        }
+    }
+
+    if textures.len() != 3 {
+        return Err(hotline_rs::Error {
+            msg: format!(
+                "hotline_rs::ecs:: error: material '{}' does not contain enough maps ({}/3)", 
+                dir,
+                textures.len()
+            )
+        });
+    }
+
+    Ok(MaterialResources {
+        albedo: textures.remove(0),
+        normal: textures.remove(0),
+        roughness: textures.remove(0)
+    })
+}
 
 #[no_mangle]
+#[export_update_fn(in_base_set(SystemSets::Batch))]
 pub fn batch_lights(
     mut pmfx: ResMut<PmfxRes>,
-    light_query: Query<(&Position, &Colour, &LightComponent)>) {
+    light_query: Query<(&Position, &Colour, &LightComponent)>) -> Result<(), hotline_rs::Error> {
 
     let world_buffers = pmfx.get_world_buffers_mut();
     world_buffers.point_light.clear();
     world_buffers.spot_light.clear();
     world_buffers.directional_light.clear();
+
     for (pos, colour, light) in &light_query {
         match light.light_type {
             LightType::Point => {
@@ -46,13 +117,16 @@ pub fn batch_lights(
             }
         }
     }
+
+    Ok(())
 }
 
 /// Batch updates instance world matrices into the `InstanceBuffer`
 #[no_mangle]
+#[export_update_fn(in_base_set(SystemSets::Batch))]
 pub fn batch_world_matrix_instances(
     instances_query: Query<(&Parent, &WorldMatrix)>,
-    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) -> Result<(), hotline_rs::Error> {
     for (entity, mut instance_batch) in &mut instance_batch_query {
         let mut mats = Vec::new();
         for (parent, world_matrix) in &instances_query {
@@ -62,13 +136,16 @@ pub fn batch_world_matrix_instances(
         }
         instance_batch.buffer.update(0, &mats).unwrap();
     }
+
+    Ok(())
 }
 
 /// Batch updates lookup id's into the instance buffer
 #[no_mangle]
+#[export_update_fn(in_base_set(SystemSets::Batch))]
 pub fn batch_material_instances(
     mut instances_query: Query<(&Parent, &InstanceIds)>,
-    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) {
+    mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) -> Result<(), hotline_rs::Error> {
     for (entity, mut instance_batch) in &mut instance_batch_query {
         let mut indices = Vec::new();
         for (parent, ids) in &mut instances_query {
@@ -78,6 +155,8 @@ pub fn batch_material_instances(
         }
         instance_batch.buffer.update(0, &indices).unwrap();
     }
+
+    Ok(())
 }
 
 const fn unit_aabb_corners() -> [Vec3f; 8] {
@@ -99,9 +178,10 @@ const fn unit_aabb_corners() -> [Vec3f; 8] {
 /// Batches draw calls into a structured buffer which can be looked up into, and also batches extents
 /// to perform GPU culling
 #[no_mangle]
+#[export_update_fn(in_base_set(SystemSets::Batch))]
 pub fn batch_bindless_draw_data(
     mut pmfx: ResMut<PmfxRes>,
-    draw_query: Query<(&WorldMatrix, &Extents)>) {
+    draw_query: Query<(&WorldMatrix, &Extents)>) -> Result<(), hotline_rs::Error> {
     
     let world_buffers = pmfx.get_world_buffers_mut();    
     world_buffers.draw.clear();
@@ -129,10 +209,13 @@ pub fn batch_bindless_draw_data(
             extent: extent
         });
     }
+
+    Ok(())
 }
 
 /// Renders all scene instance batches with vertex instance buffer
 #[no_mangle]
+#[export_render_fn]
 pub fn render_meshes_bindless_material(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
@@ -194,6 +277,7 @@ pub fn render_meshes_bindless_material(
 
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
 #[no_mangle]
+#[export_render_fn]
 pub fn render_meshes(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
@@ -260,19 +344,44 @@ pub fn render_meshes(
     Ok(())
 }
 
-///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
+/// Renders all scene meshes with a pipeline component, binding a new pipeline each draw
 #[no_mangle]
+#[export_render_fn]
+pub fn render_meshes_pipeline(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>,
+    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    for (world_matrix, mesh, pipeline) in &mesh_draw_query {
+        // set pipeline per mesh
+        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
+        view.cmd_buf.set_render_pipeline(&pipeline);
+        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        
+        view.cmd_buf.set_index_buffer(&mesh.0.ib);
+        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+    }
+
+    Ok(())
+}
+
+/// Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
+#[no_mangle]
+#[export_render_fn]
 pub fn render_debug(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
-    args: (
-        ResMut<ImDrawRes>,
-        ResMut<DeviceRes>,
-        Res<SessionInfo>,
-        Query<(&WorldMatrix, &Extents)>
-    )
+    mut imdraw: ResMut<ImDrawRes>,
+    mut device: ResMut<DeviceRes>,
+    session_info: ResMut<SessionInfo>,
+    draw_query: Query<(&WorldMatrix, &Extents)>
 ) -> Result<(), hotline_rs::Error> {
-    let (mut imdraw, mut device, session_info, draw_query) = args;
 
     // skip over rendering if we supply no flags
     if session_info.debug_draw_flags.is_empty() {
@@ -339,37 +448,12 @@ pub fn render_debug(
     Ok(())
 }
 
-/// Renders all scene meshes with a pipeline component, binding a new pipeline each draw
+/// Blit a single fullscreen texture into the render target
 #[no_mangle]
-pub fn render_meshes_pipeline(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    for (world_matrix, mesh, pipeline) in &mesh_draw_query {
-        // set pipeline per mesh
-        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
-#[no_mangle]
+#[export_render_fn]
 pub fn blit(
     pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    _: Query<()>) -> Result<(), hotline_rs::Error> {
+    view: &pmfx::View<gfx_platform::Device>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
@@ -401,38 +485,67 @@ pub fn blit(
     Ok(())
 }
 
-/// Register demos / examples by name... this assuems a function exists of the same name
+/// Generic compute dispatch which binds usage information supplied in pmfx files
+#[no_mangle]
+#[export_compute_fn]
+pub fn dispatch_compute(
+    pmfx: &Res<PmfxRes>,
+    pass: &pmfx::ComputePass<gfx_platform::Device>
+) -> Result<(), hotline_rs::Error> {
+
+    let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
+    pass.cmd_buf.set_compute_pipeline(&pipeline);
+
+    let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = using_slot {
+        for i in 0..pass.use_indices.len() {
+            let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
+            pass.cmd_buf.push_compute_constants(
+                0, 
+                num_constants, 
+                i as u32 * num_constants, 
+                gfx::as_u8_slice(&pass.use_indices[i])
+            );
+        }
+    }
+
+    pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    
+    pass.cmd_buf.dispatch(
+        pass.group_count,
+        pass.numthreads
+    );
+
+    Ok(())
+}
+
+/// Register demos / examples by name... this assumes a function exists of the same name
 #[no_mangle]
 pub fn get_demos_ecs_examples() -> Vec<String> {
     demos![
-        // primitive entities
+        "draw",
+        "draw_indexed",
+        "draw_push_constants",
+        "draw_indirect",
         "geometry_primitives",
+        "draw_vertex_buffer_instanced",
+        "draw_cbuffer_instanced",
+        "bindless_texture",
+        "tangent_space_normal_maps",
+        "bindless_material",
         "point_lights",
         "spot_lights",
         "directional_lights",
-        "tangent_space_normal_maps",
-
-        // draw tests
-        "draw",
-        "draw_indexed",
-        "draw_indexed_push_constants",
-        "draw_indexed_vertex_buffer_instanced",
-        "draw_indexed_cbuffer_instanced",
-        "draw_push_constants_texture",
-        "draw_material",
-        "draw_indirect",
         "gpu_frustum_culling",
+        "cubemap",
+        "texture2d_array",
+        "texture3d",
+        "read_write_texture",
+        "multiple_render_targets",
+        "raster_states",
+        "blend_states"
 
-        // render tests
-        "test_raster_states",
-        "test_blend_states",
-        "test_cubemap",
-        "test_texture2d_array",
-        "test_texture3d",
-        "test_compute",
-        "test_multiple_render_targets",
-        
-        // basic tests
+        /*
         "test_missing_demo",
         "test_missing_systems",
         "test_missing_render_graph",
@@ -440,176 +553,20 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "test_missing_pipeline",
         "test_failing_pipeline",
         "test_missing_camera"
+        */
     ]
 }
 
-/// Register plugin system functions
-#[no_mangle]
-pub fn get_system_ecs_examples(name: String, pass_name: String) -> Option<SystemConfig> {
-    match name.as_str() {
-        // primitive setup functions
-        "setup_geometry_primitives" => system_func![setup_geometry_primitives],
-        "setup_point_lights" => system_func![setup_point_lights],
-        "setup_spot_lights" => system_func![setup_spot_lights],
-        "setup_directional_lights" => system_func![setup_directional_lights],
-        "setup_tangent_space_normal_maps" => system_func![setup_tangent_space_normal_maps],
-
-        // draw tests
-        "setup_draw" => system_func![setup_draw],
-        "setup_draw_indexed" => system_func![setup_draw_indexed],
-        "setup_draw_indexed_push_constants" => system_func![setup_draw_indexed_push_constants],
-        "setup_draw_indexed_vertex_buffer_instanced" => system_func![setup_draw_indexed_vertex_buffer_instanced],
-        "setup_draw_indexed_cbuffer_instanced" => system_func![setup_draw_indexed_cbuffer_instanced],
-        "setup_draw_push_constants_texture" => system_func![setup_draw_push_constants_texture],
-        "setup_draw_material" => system_func![setup_draw_material],
-        "setup_draw_indirect" => system_func![setup_draw_indirect],
-        "setup_gpu_frustum_culling" => system_func![setup_gpu_frustum_culling],
-
-        // render state tests
-        "setup_raster_test" => system_func![setup_raster_test],
-        "setup_blend_test" => system_func![setup_blend_test],
-        "setup_cubemap_test" => system_func![setup_cubemap_test],
-        "setup_texture2d_array_test" => system_func![setup_texture2d_array_test],
-        "setup_texture3d_test" => system_func![setup_texture3d_test],
-        "setup_compute_test" => system_func![setup_compute_test],
-        "setup_multiple_render_targets_test" => system_func![setup_multiple_render_targets_test],
-        
-        // updates
-        "rotate_meshes" => system_func![rotate_meshes.in_base_set(SystemSets::Update)],
-        "animate_textures" => system_func![animate_textures.in_base_set(SystemSets::Update)],
-        "animate_lights" => system_func![animate_lights.in_base_set(SystemSets::Update)],
-        "animate_lights2" => system_func![animate_lights2.in_base_set(SystemSets::Update)],
-        "animate_lights3" => system_func![animate_lights3.in_base_set(SystemSets::Update)],
-        "swirling_meshes" => system_func![swirling_meshes.in_base_set(SystemSets::Update)],
-
-        // batches
-        "batch_bindless_draw_data" => system_func![
-            batch_bindless_draw_data.in_base_set(SystemSets::Batch)
-        ],
-        "batch_world_matrix_instances" => system_func![
-            batch_world_matrix_instances.in_base_set(SystemSets::Batch)
-        ],
-        "batch_material_instances" => system_func![
-            batch_material_instances.in_base_set(SystemSets::Batch)
-        ],
-        "batch_lights" => system_func![
-            batch_lights.in_base_set(SystemSets::Batch)
-        ],
-
-        // render functions
-        "render_debug" => render_func![
-            render_debug, 
-            pass_name,
-            (
-                ResMut<ImDrawRes>,
-                ResMut<DeviceRes>,
-                Res<SessionInfo>,
-                Query<(&WorldMatrix, &Extents)>
-            )
-        ],
-        "blit" => render_func![
-            blit, 
-            pass_name,
-            Query<()>
-        ],
-        "render_meshes_bindless_material" => render_func![
-            render_meshes_bindless_material, 
-            pass_name,
-            (
-                Query<(&InstanceBuffer, &MeshComponent)>,
-                Query<(&MeshComponent, &WorldMatrix), Without<InstanceBuffer>>
-            )
-        ],
-        "draw_meshes" => render_func![
-            draw_meshes, 
-            pass_name,
-            Query<(&WorldMatrix, &MeshComponent)>
-        ],
-        "draw_meshes_indirect" => render_func![
-            draw_meshes_indirect, 
-            pass_name,
-            Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>
-        ],
-        "draw_meshes_indirect_culling" => render_func![
-            draw_meshes_indirect_culling, 
-            pass_name,
-            Query<&DrawIndirectComponent>
-        ],
-        "render_meshes" => render_func![
-            render_meshes, 
-            pass_name,
-            (
-                Query<(&WorldMatrix, &MeshComponent), Without<Billboard>>,
-                Query<(&WorldMatrix, &MeshComponent), (With<Billboard>, Without<CylindricalBillboard>)>,
-                Query<(&WorldMatrix, &MeshComponent), With<CylindricalBillboard>>,
-            )
-        ],
-        "render_meshes_pipeline" => render_func![
-            render_meshes_pipeline, 
-            pass_name, 
-            Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>
-        ],
-        "render_meshes_pipeline_coloured" => render_func![
-            render_meshes_pipeline_coloured, 
-            pass_name, 
-            Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>
-        ],
-        "render_meshes_vertex_buffer_instanced" => render_func![
-            render_meshes_vertex_buffer_instanced, 
-            pass_name, 
-            Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
-        ],
-        "render_meshes_cbuffer_instanced" => render_func![
-            render_meshes_cbuffer_instanced, 
-            pass_name, 
-            Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
-        ],
-        "render_meshes_push_constants_texture" => render_func![
-            render_meshes_push_constants_texture, 
-            pass_name, 
-            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
-        ],
-        "render_meshes_debug_tangent_space" => render_func![
-            render_meshes_debug_tangent_space,
-            pass_name, 
-            (
-                Query<&TextureComponent>,
-                Query<(&WorldMatrix, &MeshComponent)>
-            )
-        ],
-        "render_meshes_cubemap_test" => render_func![
-            render_meshes_cubemap_test,
-            pass_name,
-            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
-        ],
-        "render_meshes_texture2d_array_test" => render_func![
-            render_meshes_texture2d_array_test,
-            pass_name,
-            Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>
-        ],
-        "render_meshes_texture3d_test" => render_func![
-            render_meshes_texture3d_test,
-            pass_name,
-            Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>
-        ],
-        "dispatch_compute" => compute_func!(pass_name),
-        "dispatch_compute_frustum_cull" => compute_func_query![
-            dispatch_compute_frustum_cull,
-            pass_name,
-            Query<&DrawIndirectComponent>
-        ],
-        
-        // basic tests
-        "render_missing_camera" => render_func![
-            render_missing_camera, 
-            pass_name,
-            Query::<(&WorldMatrix, &MeshComponent)>
-        ],
-        "render_missing_pipeline" => render_func![
-            render_missing_pipeline, 
-            pass_name,
-            Query::<(&WorldMatrix, &MeshComponent)>
-        ],
-        _ => std::hint::black_box(None)
-    }
+pub mod prelude {
+    #[doc(hidden)]
+    pub use hotline_rs::prelude::*;
+    pub use maths_rs::prelude::*;
+    pub use rand::prelude::*;
+    pub use bevy_ecs::prelude::*;
+    pub use bevy_ecs::schedule::SystemConfig;
+    pub use export_macros;
+    pub use export_macros::export_update_fn;
+    pub use export_macros::export_render_fn;
+    pub use export_macros::export_compute_fn;
+    pub use crate::load_material;
 }

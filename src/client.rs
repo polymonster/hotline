@@ -1,5 +1,4 @@
 use crate::gfx;
-use crate::gfx::Heap;
 use crate::gfx::ReadBackRequest;
 use crate::os;
 use crate::imgui;
@@ -11,7 +10,7 @@ use crate::plugin;
 use crate::reloader;
 use crate::image;
 
-use gfx::{SwapChain, CmdBuf, Texture, RenderPass};
+use gfx::{SwapChain, CmdBuf, Texture, RenderPass, Heap};
 
 use os::Window;
 use imgui::UserInterface;
@@ -575,7 +574,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         }
 
         // plugins inside the main repro can have the abs path truncated so they are portable
-        let hotline_path = super::get_data_path("..");
+        let hotline_path = super::get_data_path("../..").replace('\\', "/");
         let path = abs_path.replace(&hotline_path, "").replace('\\', "/");
 
         if let Some(plugin_info) = &mut self.user_config.plugins {

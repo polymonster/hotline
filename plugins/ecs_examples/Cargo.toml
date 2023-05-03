@@ -8,6 +8,7 @@ crate-type = ["rlib", "dylib"]
 
 [dependencies]
 hotline-rs = { path = "../.." }
+export_macros = { path = "../export_macros" }
 maths-rs = "0.2.1"
 bevy_ecs = "0.10.0"
 rand = "0.8.5"

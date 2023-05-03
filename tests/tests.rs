@@ -407,12 +407,12 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     ctx.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples"))?;
 
     // create pipelines
-    ctx.pmfx.create_render_pipeline(&ctx.device, "texture2d_array_test", ctx.swap_chain.get_backbuffer_pass())?;
+    ctx.pmfx.create_render_pipeline(&ctx.device, "texture2d_array", ctx.swap_chain.get_backbuffer_pass())?;
     ctx.pmfx.create_render_pipeline(&ctx.device, "blend_additive", ctx.swap_chain.get_backbuffer_pass())?;
 
     // test getting pass for format
     let fmt = ctx.swap_chain.get_backbuffer_pass().get_format_hash();
-    let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array_test", fmt)?;
+    let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array", fmt)?;
     
     // texture array pipeline has 2 sets of push constants, so the resources bind onto 2
     // t0, space9 is Texture2DArray
@@ -542,438 +542,6 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
     ctx.run_once()
 }
 
-/// default values for examples
-const fn examples_config_defaults() -> &'static str {
-r#"
-{
-    "debug_draw_flags": {
-        "bits": 1
-    },
-    "default_cameras": {
-        "directional_lights": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            249.39102172851562,
-            365.6768493652344,
-            232.56088256835938
-        ],
-        "rot": [
-            -47.0,
-            47.0,
-            0.0
-        ],
-        "zoom": 500.0
-        },
-        "draw": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            0.3299350440502167,
-            1.5006731748580933,
-            -2.6871063709259033
-        ],
-        "rot": [
-            -29.0,
-            173.0,
-            0.0
-        ],
-        "zoom": 3.0953867435455322
-        },
-        "draw_indexed": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            4.720995903015137,
-            6.772276401519775,
-            -7.269696235656738
-        ],
-        "rot": [
-            -38.0,
-            147.0,
-            0.0
-        ],
-        "zoom": 11.0
-        },
-        "draw_indexed_cbuffer_instanced": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            101.81123352050781,
-            123.74796295166016,
-            121.33390808105469
-        ],
-        "rot": [
-            -38.0,
-            40.0,
-            0.0
-        ],
-        "zoom": 201.0
-        },
-        "draw_indexed_push_constants": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            101.81123352050781,
-            123.74796295166016,
-            121.33390808105469
-        ],
-        "rot": [
-            -38.0,
-            40.0,
-            0.0
-        ],
-        "zoom": 201.0
-        },
-        "draw_indirect": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -36.38866424560547,
-            67.58219146728516,
-            -65.6468734741211
-        ],
-        "rot": [
-            -42.0,
-            209.0,
-            0.0
-        ],
-        "zoom": 101.0
-        },
-        "gpu_frustum_culling": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -135.22999572753906,
-            2188.942626953125,
-            -186.128173828125
-        ],
-        "rot": [
-            -84.0,
-            216.0,
-            0.0
-        ],
-        "zoom": 2201.0
-        },
-        "draw_material": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Fly",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -184.70013427734375,
-            346.8671875,
-            205.2322235107422
-        ],
-        "rot": [
-            -50.0,
-            1401.0,
-            0.0
-        ],
-        "zoom": 401.0
-        },
-        "draw_push_constants_texture": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            51.158878326416016,
-            62.18181228637695,
-            60.968780517578125
-        ],
-        "rot": [
-            -38.0,
-            40.0,
-            0.0
-        ],
-        "zoom": 101.0
-        },
-        "geometry_primitives": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            129.87283325195312,
-            208.39752197265625,
-            172.3470916748047
-        ],
-        "rot": [
-            -44.0,
-            37.0,
-            0.0
-        ],
-        "zoom": 300.0
-        },
-        "point_lights": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            315.1270446777344,
-            4168.69384765625,
-            403.34423828125
-        ],
-        "rot": [
-            -83.0,
-            38.0,
-            0.0
-        ],
-        "zoom": 4200.0
-        },
-        "spot_lights": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            315.1270446777344,
-            4168.69384765625,
-            403.34423828125
-        ],
-        "rot": [
-            -83.0,
-            38.0,
-            0.0
-        ],
-        "zoom": 4200.0
-        },
-        "tangent_space_normal_maps": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            152.46359252929688,
-            185.31411743164062,
-            181.69903564453125
-        ],
-        "rot": [
-            -38.0,
-            40.0,
-            0.0
-        ],
-        "zoom": 301.0
-        },
-        "test_blend_states": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            75.20877838134766,
-            149.3721160888672,
-            111.50161743164062
-        ],
-        "rot": [
-            -48.0,
-            34.0,
-            0.0
-        ],
-        "zoom": 201.0
-        },
-        "test_compute": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -77.8858642578125,
-            167.95074462890625,
-            129.62384033203125
-        ],
-        "rot": [
-            -48.0,
-            -31.0,
-            0.0
-        ],
-        "zoom": 226.0
-        },
-        "test_cubemap": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            75.20877838134766,
-            149.3721160888672,
-            111.50161743164062
-        ],
-        "rot": [
-            -48.0,
-            34.0,
-            0.0
-        ],
-        "zoom": 201.0
-        },
-        "test_multiple_render_targets": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            1012.0797119140625,
-            1288.74560546875,
-            1012.0797119140625
-        ],
-        "rot": [
-            -42.0,
-            45.0,
-            0.0
-        ],
-        "zoom": 1926.0
-        },
-        "test_raster_states": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -28.536039352416992,
-            80.66219329833984,
-            53.66848373413086
-        ],
-        "rot": [
-            -53.0,
-            -28.0,
-            0.0
-        ],
-        "zoom": 101.0
-        },
-        "test_texture2d_array": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            61.213871002197266,
-            62.5814208984375,
-            287.9886169433594
-        ],
-        "rot": [
-            -12.0,
-            12.0,
-            0.0
-        ],
-        "zoom": 301.0
-        },
-        "test_texture3d": {
-        "aspect": 0.9342105388641357,
-        "camera_type": "Orbit",
-        "focus": [
-            0.0,
-            0.0,
-            0.0
-        ],
-        "fov": 60.0,
-        "pos": [
-            -68.53109741210938,
-            70.45830535888672,
-            78.83601379394531
-        ],
-        "rot": [
-            -34.0,
-            -41.0,
-            0.0
-        ],
-        "zoom": 126.0
-        }
-    }
-}
-"#
-}
 
 /// Boots the client with the ecs plugin and ecs_demos with the primitives sample active
 fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error> {
@@ -994,16 +562,35 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
         });
     }
 
-    if let Some(plugin_data) = &mut config.plugin_data {
-        let mut plugin_defaults : serde_json::Value = serde_json::from_str(examples_config_defaults())?;
-        
-        // activate the current demo
-        plugin_defaults.as_object_mut().unwrap().insert(
-            "active_demo".to_string(), 
-            serde_json::Value::String(demo_name.to_string())
-        );
+    let user_config = hotline_rs::get_data_path("../user_config.json");
+    let user_config = std::fs::read(user_config)?;
+    let user_config : serde_json::Value = serde_json::from_slice(&user_config)?;
 
-        plugin_data.insert("ecs".to_string(), plugin_defaults);
+    if let Some(plugin_data) = &mut config.plugin_data {
+
+        if let Some(user_config) = user_config.as_object() {
+            if let Some(user_plugin_data) = user_config.get("plugin_data") {
+                if let Some(ecs) = user_plugin_data.get("ecs") {
+
+                    // take copy of the ecs plugin defaults
+                    let mut plugin_defaults = ecs.clone();
+
+                    // activate the current demo
+                    plugin_defaults.as_object_mut().unwrap().insert(
+                        "active_demo".to_string(), 
+                        serde_json::Value::String(demo_name.to_string())
+                    );
+
+                    // remove serialised camera
+                    if let Some(main_cam) = plugin_defaults.get_mut("main_camera") {
+                        *main_cam = serde_json::Value::Null;
+                    }
+
+                    // insert the plugin defaults
+                    plugin_data.insert("ecs".to_string(), plugin_defaults.clone());
+                }
+            }
+        }
     }
 
     // create client
@@ -1017,45 +604,48 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
     ctx.run_once()
 }
 
+//
+// error tests
+// 
+
 #[test]
-fn missing_demo() -> Result<(), hotline_rs::Error> {
+fn test_missing_demo() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_demo")
 }
 
 #[test]
-fn missing_render_graph() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_missing_render_graph")
+fn test_missing_systems() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_systems")
 }
 
 #[test]
-fn missing_render_view() -> Result<(), hotline_rs::Error> {
+fn test_missing_view() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_view")
 }
 
 #[test]
-fn geometry_primitives() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("geometry_primitives")
+fn test_missing_pipeline() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_pipeline")
 }
 
 #[test]
-fn test_point_lights() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("point_lights")
+fn test_missing_render_graph() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_render_graph")
 }
 
 #[test]
-fn test_spot_lights() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("spot_lights")
+fn test_failing_pipeline() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_failing_pipeline")
 }
 
 #[test]
-fn test_directional_lights() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("directional_lights")
+fn test_missing_camera() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("test_missing_camera")
 }
 
-#[test]
-fn test_tangent_space_normal_maps() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("tangent_space_normal_maps")
-}
+//
+// ecs examples
+//
 
 #[test]
 fn draw() -> Result<(), hotline_rs::Error> {
@@ -1068,28 +658,8 @@ fn draw_indexed() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
-fn draw_indexed_push_constants() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_indexed_push_constants")
-}
-
-#[test]
-fn draw_indexed_vertex_buffer_instanced() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_indexed_vertex_buffer_instanced")
-}
-
-#[test]
-fn draw_indexed_cbuffer_instanced() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_indexed_cbuffer_instanced")
-}
-
-#[test]
-fn draw_push_constants_texture() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_push_constants_texture")
-}
-
-#[test]
-fn draw_material() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_material")
+fn draw_push_constants() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_push_constants")
 }
 
 #[test]
@@ -1098,41 +668,87 @@ fn draw_indirect() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
+fn geometry_primitives() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("geometry_primitives")
+}
+
+#[test]
+fn draw_vertex_buffer_instanced() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_vertex_buffer_instanced")
+}
+
+#[test]
+fn draw_cbuffer_instanced() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_cbuffer_instanced")
+}
+
+#[test]
+fn bindless_texture() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("bindless_texture")
+}
+
+#[test]
+fn tangent_space_normal_maps() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("tangent_space_normal_maps")
+}
+
+#[test]
+fn bindless_material() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("bindless_material")
+}
+
+#[test]
+fn point_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("point_lights")
+}
+
+#[test]
+fn spot_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("spot_lights")
+}
+
+#[test]
+fn directional_lights() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("directional_lights")
+}
+
+#[test]
 fn gpu_frustum_culling() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("gpu_frustum_culling")
 }
 
 #[test]
-fn test_raster_states() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_raster_states")
+fn cubemap() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("cubemap")
 }
 
 #[test]
-fn test_blend_states() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_blend_states")
+fn texture2d_array() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("texture2d_array")
 }
 
 #[test]
-fn test_cubemap() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_cubemap")
+fn texture3d() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("texture3d")
 }
 
 #[test]
-fn test_texture2d_array() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_texture2d_array")
+fn read_write_texture() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("read_write_texture")
 }
 
 #[test]
-fn test_texture3d() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_texture3d")
+fn multiple_render_targets() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("multiple_render_targets")
 }
 
 #[test]
-fn test_compute() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_compute")
+fn raster_states() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("raster_states")
 }
 
+
 #[test]
-fn test_multiple_render_targets() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("test_multiple_render_targets")
+fn blend_states() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("blend_states")
 }

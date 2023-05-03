@@ -1,15 +1,10 @@
 // TODO:
 
-// THIS WEEK:
-// - add lights to swirling trash
-
-// - finish blog
-// - update docs with examples
-// - publish
-
-// Shaders
-// - minimise shader duplication caused via pmfx includes, organise shaders better
-// - resource names with name: (without space) cause probs
+// - resolves fully data driven
+// - update docs
+// - buffers in pmfx
+// - bindful example
+// - update docs
 
 // material system
 // - area light
@@ -19,17 +14,15 @@
 // - cascaded shadow map
 
 // engine
+// - clear buffer (uav)
+// - clear buffers for compute
+// - copy texture region
 // - reverse depth
 // - HDR pipeline
-// - buffers in pmfx
 // - glft
 // - set name on resources
 // - lazy init print function
 // - texture load image from file into pmfx
-// - barriers for compute
-// - resolves fully data driven
-// - clear buffer (uav)
-// - clear buffers for compute
 // - example triangle culling via execute indirect
 
 // gfx
@@ -37,7 +30,6 @@
 // - Stencil Ref / Buffer
 // - Texture Formats (BC etc)
 // - API for copies and clears?
-//      copy texture region
 // - API for fence?
 
 // ui / debug
@@ -47,6 +39,13 @@
 // - imgui not tracked within draw call stats
 
 // DONE:
+// x minimise shader duplication caused via pmfx includes, organise shaders better
+// x barriers for compute
+// x resource names with name: (without space) cause probs
+// x add lights to swirling trash
+// x finish blog
+// x update docs with examples
+// x publish
 // x fix light buffer 0 issue?
 // x update default configs for users
 // x allow pipelines to drive the num thread in compute shaders and vice/versa

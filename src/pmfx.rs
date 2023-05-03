@@ -1157,6 +1157,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// creates resources that do not yet exist
     fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<ResourceUse>, super::Error> {
         // create textures we may use
+        // TODO: error if missing
         let mut use_indices = Vec::new();
         if let Some(uses) = &info.uses {
             for (resource, usage) in uses {
@@ -1660,6 +1661,30 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             continue;
                         }
                     }
+
+                    if let Some(uses) = &instance.uses {
+                        // check resource uses
+                        for u in uses {
+                            let res_state = match u.1 {
+                                ResourceUsage::Write => {
+                                    ResourceState::UnorderedAccess
+                                },
+                                ResourceUsage::Read => {
+                                    ResourceState::ShaderResource
+                                },
+                                ResourceUsage::ReadMsaa => {
+                                    ResourceState::ShaderResource
+                                },
+                            };
+
+                            self.create_texture_transition_barrier(
+                                device, 
+                                &mut barriers, 
+                                &graph_pass_name, 
+                                &u.0,
+                                res_state)?;
+                        }
+                    }
                     
                     if let Some(view) = &instance.view {
                         // create transitions by inspecting view info
@@ -1714,16 +1739,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 if result.is_err() {
                     // TODO: tell user without spewing out errors
                 }
-
-                // TODO: data driven
-                /*
-                if name == "main_colour" {
-                    let result = self.generate_mip_maps(device, &name);
-                    if let Err(e) = result {
-                        println!("{}", e.msg);
-                    }
-                }
-                */
 
                 self.create_texture_transition_barrier(
                     device, &mut barriers, "eof", &name, ResourceState::ShaderResource)?;
