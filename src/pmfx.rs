@@ -1575,6 +1575,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     },
                     Subresource::ResolveResource
                 );
+
                 cmd_buf.end_event();
 
                 // insert barrier
@@ -1623,7 +1624,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.barriers.insert(barrier_name, cmd_buf);
     
                 // update track state
-                texture_barriers.remove(texture_name    );
+                texture_barriers.remove(texture_name);
                 texture_barriers.insert(texture_name.to_string(), target_state);
             }
         }
@@ -1706,19 +1707,32 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     if let Some(uses) = &instance.uses {
                         // check resource uses
-                        let mut try_resolve = false;
-                        let mut gen_mips = false;
                         for u in uses {
+                            let mut resolve = false;
+                            let mut gen_mips = false;
+
+                            let resolvable = if let Some(tex) = self.get_texture(&u.0) {
+                                if tex.is_resolvable() {
+                                    true
+                                }
+                                else {
+                                    false
+                                }
+                            }
+                            else {
+                                false
+                            };
+
                             let res_state = match u.1 {
                                 ResourceUsage::Write => {
                                     ResourceState::UnorderedAccess
                                 },
                                 ResourceUsage::Read => {
-                                    try_resolve = true;
+                                    resolve = resolvable;
                                     ResourceState::ShaderResource
                                 },
                                 ResourceUsage::ReadMips => {
-                                    try_resolve = true;
+                                    resolve = resolvable;
                                     gen_mips = true;
                                     ResourceState::ShaderResource
                                 },
@@ -1727,22 +1741,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
                                 },
                             };
 
-                            if try_resolve {
-                                if let Some(tex) = self.get_texture(&u.0) {
-                                    if tex.is_resolvable() {
-                                        self.create_resolve_transition(
-                                            device, 
-                                            &mut barriers, 
-                                            &graph_pass_name, 
-                                            &u.0,
-                                            ResourceState::ShaderResource
-                                        )?;
-                                    }
-                                }
+                            // resolve and generate mips
+                            if resolve {
+                                self.create_resolve_transition(
+                                    device, 
+                                    &mut barriers, 
+                                    &graph_pass_name, 
+                                    &u.0,
+                                    ResourceState::ShaderResource,
+                                )?;
                             }
-
+                            
+                            // generate mips on non msaa resources
                             if gen_mips {
-                                // resource is expected to be ResourceState::ShaderResource before generate mips
+
+                                // generate_mip_maps mips expects us to be in ShaderResource state
                                 self.create_texture_transition_barrier(
                                     device, 
                                     &mut barriers, 
@@ -1752,23 +1765,17 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                                 self.generate_mip_maps(device, &u.0)?;
 
-                                if res_state != ResourceState::ShaderResource {
-                                    self.create_texture_transition_barrier(
-                                        device, 
-                                        &mut barriers, 
-                                        &graph_pass_name, 
-                                        &u.0,
-                                        res_state)?;
-                                }
+                                // generate_mip_maps transitions to ShaderResource
+                                *barriers.get_mut(&u.0).unwrap() = ResourceState::ShaderResource;
                             }
-                            else {
-                                self.create_texture_transition_barrier(
-                                    device, 
-                                    &mut barriers, 
-                                    &graph_pass_name, 
-                                    &u.0,
-                                    res_state)?;
-                            }
+
+                            // transition to target state
+                            self.create_texture_transition_barrier(
+                                device, 
+                                &mut barriers, 
+                                &graph_pass_name, 
+                                &u.0,
+                                res_state)?;
                         }
                     }
                     

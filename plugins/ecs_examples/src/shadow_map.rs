@@ -35,18 +35,36 @@ pub fn fit_shadow_camera_to_extents(light_dir: Vec3f, min_extent: Vec3f, max_ext
     let view = Mat34f::from((
         Vec4f::from((right, 0.0)),
         Vec4f::from((up, 0.0)),
-        Vec4f::from((-light_dir, 0.0))
+        Vec4f::from((light_dir, 0.0))
     ));
 
+    let view = Mat4f::from((
+        Vec4f::from((right, 0.0)),
+        Vec4f::from((up, 0.0)),
+        Vec4f::from((-light_dir, 0.0)),
+        Vec4f::from((0.0, 0.0, 0.0, 1.0)),
+    ));
+
+    /*
     let (cmin, cmax) = corners
         .iter()
-        .fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, x| min_max(view * x, acc));
+        .fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, x|
+    );
+    */
 
+    let mut cmin = Vec3f::max_value();
+    let mut cmax =-Vec3f::max_value();
+
+    for corner in corners {
+        let mut p = view * corner;
+        p.z *= -1.0;
+        (cmin, cmax) = min_max(p, (cmin, cmax));
+    }
 
     let proj = Mat4f::create_ortho_matrix(cmin.x, cmax.x, cmin.y, cmax.y, cmin.z, cmax.z).transpose();
 
     CameraConstants {
-        view_matrix: Mat4f::from(view),
+        view_matrix: view,
         view_projection_matrix: proj * view,
         view_position: Vec4f::from(((cmin + cmax) * 0.5, 0.0))
     }

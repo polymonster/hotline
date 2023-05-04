@@ -13,10 +13,10 @@
   },
   "plugins": {
     "ecs_examples": {
-      "path": "C:/Users/alex_/dev/hotline/plugins"
+      "path": "/plugins"
     },
     "ecs": {
-      "path": "C:/Users/alex_/dev/hotline/plugins"
+      "path": "/plugins"
     }
   },
   "plugin_data": {
@@ -341,6 +341,27 @@
           ],
           "zoom": 401.0
         },
+        "generate_mip_maps": {
+          "aspect": 0.9342105388641357,
+          "camera_type": "Orbit",
+          "focus": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "fov": 60.0,
+          "pos": [
+            338.67730712890625,
+            556.4214477539062,
+            -466.1479187011719
+          ],
+          "rot": [
+            -404.0,
+            1944.0,
+            0.0
+          ],
+          "zoom": 801.0
+        },
         "geometry_primitives": {
           "aspect": 0.9342105388641357,
           "camera_type": "Orbit",
@@ -466,6 +487,27 @@
             0.0
           ],
           "zoom": 241.0
+        },
+        "shadow_map": {
+          "aspect": 0.9342105388641357,
+          "camera_type": "Orbit",
+          "focus": [
+            -84.5775146484375,
+            -24.918657302856445,
+            -41.637569427490234
+          ],
+          "fov": 60.0,
+          "pos": [
+            -218.3501739501953,
+            230.34385681152344,
+            45.23550796508789
+          ],
+          "rot": [
+            -418.0,
+            7143.0,
+            0.0
+          ],
+          "zoom": 301.0
         },
         "spot_lights": {
           "aspect": 0.9342105388641357,

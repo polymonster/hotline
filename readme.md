@@ -808,7 +808,19 @@ A basic test which verifies the correctness of rasterizer state data being suppl
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/test_blend_states.png" width="100%"/>
 
-This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops. 
+This basic test shows a variety of different blend modes. It covers the common cases: no blending, alpha blending, and additive blending, as well as some more esoteric ones such as reverse subtract and min / max blend ops.
+
+### Generate Mip Maps
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/generate_mip_maps.png" width="100%"/>
+
+This demonstrates the functionality in the low level gfx API to generate a mip chain at run time for an MSAA render target. The pmfx system is utilised to specify `ReadMips`in the `uses:` section of a render graph pass. After the render target is rendered into but before it is read int the shader the target is resolved and the mip chain is generated.
+
+### Shadow Map
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/shadow_map.png" width="100%"/>
+
+A sample to demonstrate how to configure a single shadow map, a vertex shader only render pipeline which only outputs depth to the depth stencil unit. A `SamplerComparsionState` is sued in the shader to read shadow samples and a 9-tap PCF filter is also applied.
 
 ## Tests
 
