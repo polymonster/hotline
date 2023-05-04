@@ -1204,7 +1204,6 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
-
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
         &self,
@@ -1237,7 +1236,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 
-    fn generate_mip_maps(&self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
+    fn generate_mip_maps(&mut self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
     /// Copy from one buffer to another with offsets

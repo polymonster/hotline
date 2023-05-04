@@ -64,10 +64,11 @@ impl Default for CameraInfo {
 bitflags! {
     #[derive(Serialize, Deserialize, Resource, Default)]
     pub struct DebugDrawFlags: u32 {
-        const NONE = 0b00000000;
-        const GRID = 0b00000001;
-        const AABB = 0b00000010;
-        const OBB  = 0b00000100;
+        const NONE      = 0b00000000;
+        const GRID      = 0b00000001;
+        const AABB      = 0b00000010;
+        const OBB       = 0b00000100;
+        const CAMERAS   = 0b00001000;
     }
 }
 
@@ -224,7 +225,8 @@ pub struct LightComponent {
     pub direction: Vec3f,
     pub cutoff: f32,
     pub falloff: f32,
-    pub radius: f32
+    pub radius: f32,
+    pub shadow_map_info: pmfx::ShadowMapInfo
 }
 
 impl Default for LightComponent {
@@ -234,7 +236,8 @@ impl Default for LightComponent {
             direction: vec3f(0.0, -1.0, 0.0),
             cutoff: f32::pi() / 8.0,
             falloff: 0.5,
-            radius: 64.0
+            radius: 64.0,
+            shadow_map_info: pmfx::ShadowMapInfo::default()
         }
     }
 }
@@ -337,7 +340,7 @@ macro_rules! compute_func_closure {
                         pass.cmd_buf.begin_event(0xffffff, &$pass_name);
                         pass.cmd_buf.set_compute_pipeline(&pipeline);
 
-                        let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+                        let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
                         if let Some(slot) = using_slot {
                             for i in 0..pass.use_indices.len() {
                                 let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);

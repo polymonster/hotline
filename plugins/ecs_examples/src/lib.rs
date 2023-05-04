@@ -24,15 +24,10 @@ mod read_write_texture;
 mod multiple_render_targets;
 mod raster_states;
 mod blend_states;
+mod generate_mip_maps;
+mod shadow_map;
 
-use export_macros::export_compute_fn;
-use export_macros::export_render_fn;
-
-use export_macros::export_update_fn;
-use hotline_rs::prelude::*;
-use maths_rs::prelude::*;
-use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::SystemConfig;
+use prelude::*;
 
 pub fn load_material(
     device: &mut gfx_platform::Device,
@@ -97,7 +92,8 @@ pub fn batch_lights(
                 world_buffers.point_light.push(&PointLightData{
                     pos: pos.0,
                     radius: light.radius,
-                    colour: colour.0
+                    colour: colour.0,
+                    shadow_map_info: light.shadow_map_info
                 });
             },
             LightType::Spot => {
@@ -107,12 +103,14 @@ pub fn batch_lights(
                     dir: light.direction,
                     falloff: light.falloff,
                     colour: colour.0,
+                    shadow_map_info: light.shadow_map_info
                 });
             },
             LightType::Directional => {
                 world_buffers.directional_light.push(&DirectionalLightData{
-                    dir: Vec4f::from((light.direction, 0.0)),
-                    colour: colour.0
+                    dir: light.direction,
+                    colour: colour.0,
+                    shadow_map_info: light.shadow_map_info
                 });
             }
         }
@@ -213,10 +211,10 @@ pub fn batch_bindless_draw_data(
     Ok(())
 }
 
-/// Renders all scene instance batches with vertex instance buffer
+/// Renders all meshes, either instanced or single calls providing bindless lookup info
 #[no_mangle]
 #[export_render_fn]
-pub fn render_meshes_bindless_material(
+pub fn render_meshes_bindless(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     queries: (
@@ -247,6 +245,20 @@ pub fn render_meshes_bindless_material(
     if let Some(slot) = slot {
         view.cmd_buf.push_render_constants(
             slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
+    }
+
+    // bind resource uses
+    let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = using_slot {
+        for i in 0..view.use_indices.len() {
+            let num_constants = gfx::num_32bit_constants(&view.use_indices[i]);
+            view.cmd_buf.push_compute_constants(
+                0, 
+                num_constants, 
+                i as u32 * num_constants, 
+                gfx::as_u8_slice(&view.use_indices[i])
+            );
+        }
     }
 
     // bind the shader resource heap
@@ -344,33 +356,6 @@ pub fn render_meshes(
     Ok(())
 }
 
-/// Renders all scene meshes with a pipeline component, binding a new pipeline each draw
-#[no_mangle]
-#[export_render_fn]
-pub fn render_meshes_pipeline(
-    pmfx: &Res<PmfxRes>,
-    view: &pmfx::View<gfx_platform::Device>,
-    mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent)>) -> Result<(), hotline_rs::Error> {
-        
-    let pmfx = &pmfx;
-    let fmt = view.pass.get_format_hash();
-    let camera = pmfx.get_camera_constants(&view.camera)?;
-
-    for (world_matrix, mesh, pipeline) in &mesh_draw_query {
-        // set pipeline per mesh
-        let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(&pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-    }
-
-    Ok(())
-}
-
 /// Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
 #[no_mangle]
 #[export_render_fn]
@@ -380,7 +365,8 @@ pub fn render_debug(
     mut imdraw: ResMut<ImDrawRes>,
     mut device: ResMut<DeviceRes>,
     session_info: ResMut<SessionInfo>,
-    draw_query: Query<(&WorldMatrix, &Extents)>
+    draw_query: Query<(&WorldMatrix, &Extents)>,
+    camera_query: Query<(&Name, &Camera)>
 ) -> Result<(), hotline_rs::Error> {
 
     // skip over rendering if we supply no flags
@@ -434,6 +420,14 @@ pub fn render_debug(
             let emax = extents.aabb_max;
             let obb = corners.iter().map(|x| world_matrix.0 * (emin + (emax - emin) * x)).collect::<Vec<Vec3f>>();
             imdraw.add_obb_3d(obb, Vec4f::green());
+        }
+    }
+
+    // cameras
+    if session_info.debug_draw_flags.contains(DebugDrawFlags::CAMERAS) {
+        for (name, camera) in &camera_query {
+            let constants = pmfx.get_camera_constants(name)?;
+            imdraw.add_frustum(constants.view_projection_matrix, Vec4f::white());
         }
     }
     
@@ -496,12 +490,12 @@ pub fn dispatch_compute(
     let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
     pass.cmd_buf.set_compute_pipeline(&pipeline);
 
-    let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+    let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
     if let Some(slot) = using_slot {
         for i in 0..pass.use_indices.len() {
             let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
             pass.cmd_buf.push_compute_constants(
-                0, 
+                slot.index, 
                 num_constants, 
                 i as u32 * num_constants, 
                 gfx::as_u8_slice(&pass.use_indices[i])
@@ -543,17 +537,9 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "read_write_texture",
         "multiple_render_targets",
         "raster_states",
-        "blend_states"
-
-        /*
-        "test_missing_demo",
-        "test_missing_systems",
-        "test_missing_render_graph",
-        "test_missing_view",    
-        "test_missing_pipeline",
-        "test_failing_pipeline",
-        "test_missing_camera"
-        */
+        "blend_states",
+        "generate_mip_maps",
+        "shadow_map"
     ]
 }
 
@@ -569,4 +555,5 @@ pub mod prelude {
     pub use export_macros::export_render_fn;
     pub use export_macros::export_compute_fn;
     pub use crate::load_material;
+    pub use hotline_rs::pmfx::ShadowMapInfo;
 }

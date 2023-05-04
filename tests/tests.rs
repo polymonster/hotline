@@ -416,7 +416,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     
     // texture array pipeline has 2 sets of push constants, so the resources bind onto 2
     // t0, space9 is Texture2DArray
-    let slots = texture_pipeline.get_pipeline_slot(0, 9, gfx::DescriptorType::ShaderResource);
+    let slots = texture_pipeline.get_pipeline_slot(0, 10, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_some());
 
     if let Some(slots) = slots {
@@ -425,9 +425,10 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
 
     // colour_pipeline has no textures
     let colour_pipeline = ctx.pmfx.get_render_pipeline_for_format("blend_additive", fmt)?;
-    let slots = colour_pipeline.get_pipeline_slot(0, 6, gfx::DescriptorType::ShaderResource);
+    let slots = colour_pipeline.get_pipeline_slot(0, 7, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_none());
 
+    // using resource
     let slots = colour_pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
     assert!(slots.is_some());
 
@@ -747,8 +748,17 @@ fn raster_states() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("raster_states")
 }
 
-
 #[test]
 fn blend_states() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("blend_states")
+}
+
+#[test]
+fn generate_mip_maps() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("generate_mip_maps")
+}
+
+#[test]
+fn shadow_map() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("shadow_map")
 }

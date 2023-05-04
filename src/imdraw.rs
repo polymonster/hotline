@@ -2,11 +2,7 @@ use crate::gfx;
 use gfx::Buffer;
 use gfx::CmdBuf;
 
-use maths_rs::Vec2f;
-use maths_rs::Vec3f;
-use maths_rs::Vec4f;
-use maths_rs::vec::*;
-use maths_rs::num::*;
+use maths_rs::prelude::*;
 
 /// A coherent cpu/gpu buffer back by multiple gpu buffers to allow cpu writes while gpu is inflight 
 struct DynamicBuffer<D: gfx::Device> {
@@ -192,6 +188,29 @@ impl<D> ImDraw<D> where D: gfx::Device {
         self.add_line_3d(vec3f(obb[5].x, obb[5].y, obb[5].z), vec3f(obb[1].x, obb[1].y, obb[1].z), col);
         self.add_line_3d(vec3f(obb[6].x, obb[6].y, obb[6].z), vec3f(obb[2].x, obb[2].y, obb[2].z), col);
         self.add_line_3d(vec3f(obb[7].x, obb[7].y, obb[7].z), vec3f(obb[3].x, obb[3].y, obb[3].z), col);
+    }
+
+    pub fn add_frustum(&mut self, view_proj: Mat4f, col: Vec4f) {
+        let corners = view_proj.get_frustum_corners();
+        let mut obb = Vec::new();
+        for c in corners {
+            obb.push(c);
+        }
+
+        self.add_line_3d(obb[0], obb[1], col);
+        self.add_line_3d(obb[1], obb[3], col);
+        self.add_line_3d(obb[3], obb[2], col);
+        self.add_line_3d(obb[2], obb[0], col);
+
+        self.add_line_3d(obb[4], obb[5], col);
+        self.add_line_3d(obb[5], obb[7], col);
+        self.add_line_3d(obb[7], obb[6], col);
+        self.add_line_3d(obb[6], obb[4], col);
+        
+        self.add_line_3d(obb[0], obb[4], col);
+        self.add_line_3d(obb[1], obb[5], col);
+        self.add_line_3d(obb[2], obb[6], col);
+        self.add_line_3d(obb[3], obb[7], col);
     }
 
     pub fn submit(&mut self, device: &mut D, buffer_index: usize) -> Result<(), super::Error> {
