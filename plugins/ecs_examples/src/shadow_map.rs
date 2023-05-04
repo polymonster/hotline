@@ -45,13 +45,6 @@ pub fn fit_shadow_camera_to_extents(light_dir: Vec3f, min_extent: Vec3f, max_ext
         Vec4f::from((0.0, 0.0, 0.0, 1.0)),
     ));
 
-    /*
-    let (cmin, cmax) = corners
-        .iter()
-        .fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, x|
-    );
-    */
-
     let mut cmin = Vec3f::max_value();
     let mut cmax =-Vec3f::max_value();
 

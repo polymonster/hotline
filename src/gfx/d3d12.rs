@@ -4075,6 +4075,11 @@ impl Drop for Texture {
                 if let Some(resolved_srv) = self.resolved_srv_index {
                     drop_res.heap_allocs.push(resolved_srv);
                 }
+                // mip chain uav
+                for uav in &self.subresource_uav_index {
+                    drop_res.heap_allocs.push(*uav);
+                }
+                self.subresource_uav_index.clear();
                 drop_list.push(drop_res);
             }
             // texture target views

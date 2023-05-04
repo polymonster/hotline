@@ -1105,19 +1105,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let pmfx_tex = &self.pmfx.textures[texture_name];
             let size = self.get_texture_size_from_ratio(pmfx_tex)?;
             
-            // select heap.
-            let heap = if texture_name == "main_colour" || texture_name == "main_depth" {
-                None
-            }
-            else {
-                Some(&mut self.shader_heap)
-            };
-
             // create resources
             let tex = device.create_texture_with_heaps::<u8>(
                 &to_gfx_texture_info(pmfx_tex, size),
                 gfx::TextureHeapInfo {
-                    shader: heap,
+                    shader: Some(&mut self.shader_heap),
                     ..Default::default()
                 },
                 None
@@ -1533,7 +1525,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         target_state: ResourceState) -> Result<(), super::Error> {
         if texture_barriers.contains_key(texture_name) {
             let state = texture_barriers[texture_name];
-            let barrier_name = format!("barrier_resolve-{}-{}", view_name, texture_name);
+            let barrier_name = format!("barrier_resolve-{}-{} ({:?})", view_name, texture_name, target_state);
             if let Some(tex) = self.get_texture(texture_name) {
                 // prevent resolving non msaa surfaces
                 if !tex.is_resolvable() {
@@ -1604,7 +1596,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let state = texture_barriers[texture_name];
             if state != target_state {
                 // add barrier placeholder in the command_queue
-                let barrier_name = format!("barrier_{}-{}", view_name, texture_name);
+                let barrier_name = format!("barrier_{}-{} ({:?})", view_name, texture_name, target_state);
                 self.command_queue.push(barrier_name.to_string());          
 
                 // create a command buffer
@@ -2442,7 +2434,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
     fn show_ui(&mut self, imgui: &mut imgui::ImGui<D, A>, open: bool) -> bool {
         if open {
             let mut imgui_open = open;
-            if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::NONE) {
+            if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::ALWAYS_HORIZONTAL_SCROLLBAR) {
                 for texture in self.textures.values() {
                     
                     let thumb_size = 256.0;
@@ -2459,7 +2451,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
             }
             imgui.end();
 
-            if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::NONE) {
+            if imgui.begin("pmfx", &mut imgui_open, imgui::WindowFlags::ALWAYS_HORIZONTAL_SCROLLBAR) {
                 imgui.text("Shaders");
                 imgui.separator();
                 for shader in self.pmfx.shaders.keys() {
