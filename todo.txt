@@ -1,34 +1,34 @@
 // TODO:
 
-// - resolves fully data driven
-// - buffers in pmfx
-// - update docs
+// - gen mips is a frame behind
 
-// material system
-// - area light
-// - disney brdf
 // - shadow map
-// - omni shadow map
-// - cascaded shadow map
-
-// engine
+// - buffers in pmfx
+// - texture load image from file into pmfx
 // - clear buffer (uav)
 // - clear buffers for compute
 // - copy texture region
+
+// material system
+// - perspective shadow map
+// - omni shadow map
+// - cascaded shadow map
+// - area light
+// - disney brdf
+
+// engine
 // - reverse depth
 // - HDR pipeline
 // - glft
 // - set name on resources
 // - lazy init print function
-// - texture load image from file into pmfx
 // - example triangle culling via execute indirect
 
 // gfx
 // - Alpha to coverage
 // - Stencil Ref / Buffer
 // - Texture Formats (BC etc)
-// - API for copies and clears?
-// - API for fence?
+// - API for fence
 
 // ui / debug
 // - per demo settings
@@ -37,6 +37,7 @@
 // - imgui not tracked within draw call stats
 
 // DONE:
+// x resolves fully data driven
 // x update docs
 // x bindful example
 // x minimise shader duplication caused via pmfx includes, organise shaders better

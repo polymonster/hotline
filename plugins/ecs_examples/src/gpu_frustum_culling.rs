@@ -277,7 +277,8 @@ pub fn setup_gpu_frustum_culling(
         light_buffer.push(&PointLightData{
             pos: pos,
             radius: radius,
-            colour: col
+            colour: col,
+            shadow_map_info: ShadowMapInfo::default()
         });
     }
 
@@ -358,7 +359,7 @@ pub fn dispatch_compute_frustum_cull(
         pass.cmd_buf.set_compute_pipeline(pipeline);
 
         // resource index info for looking up input (draw all info) / output (culled draw call info)
-        let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+        let slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             // output uav
             pass.cmd_buf.push_compute_constants(slot.index, 1, 0, 

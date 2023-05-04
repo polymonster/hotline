@@ -824,7 +824,7 @@ This is wrapped into `pmbuild` so you can also run:
 pmbuild test
 ```
 
-### Future Plans
+## Future Plans
 
 - Linux
 - Vulkan

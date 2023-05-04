@@ -356,14 +356,16 @@ struct ViewInfo {
 }
 
 /// Resoure uage for a graph pass
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, Clone, Debug)]
 enum ResourceUsage {
     /// Write to an un-ordeded access resource or rneder target resource
     Write,
     /// Read from the primary (resovled) resource
     Read,
     /// Read from an MSAA resource
-    ReadMsaa
+    ReadMsaa,
+    /// Read from resource and signal we want to read generated mip maps
+    ReadMips
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -526,8 +528,10 @@ pub struct DynamicWorldBuffers<D: gfx::Device> {
     pub spot_light: DynamicBuffer<D, SpotLightData>,
     // Structured buffer containing `DirectionalLightData`
     pub directional_light: DynamicBuffer<D, DirectionalLightData>,
+    /// Structured buffer for shadow map matrices
+    pub shadow_matrix: DynamicBuffer<D, Mat4f>,
     /// Constant buffer containing camera info
-    pub camera: DynamicBuffer<D, CameraData>
+    pub camera: DynamicBuffer<D, CameraData>,
 }
 
 impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
@@ -539,7 +543,8 @@ impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
             point_light: DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             spot_light: DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             directional_light: DynamicBuffer::<D, DirectionalLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            camera: DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3)
+            camera: DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3),
+            shadow_matrix: DynamicBuffer::<D, Mat4f>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
         }
     }
 }
@@ -553,7 +558,8 @@ pub struct WorldBufferReserveInfo {
     pub point_light_capacity: usize,
     pub spot_light_capacity: usize,
     pub directional_light_capacity: usize,
-    pub camera_capacity: usize
+    pub camera_capacity: usize,
+    pub shadow_matrix_capacity: usize
 }
 
 /// GPU friendly structure containing camera view information
@@ -593,21 +599,31 @@ pub struct MaterialData {
     pub padding: u32
 }
 
+/// GPU lookup for shadow map srv and matrix index. to look into textures and shadows matrix in world buffers
+#[repr(packed)]
+#[derive(Clone, Copy, Default)]
+pub struct ShadowMapInfo {
+    pub srv_index: u32,
+    pub matrix_index: u32
+}
+
 /// GPU friendly structure for point lights
 #[repr(C)]
 #[derive(Clone)]
 pub struct PointLightData {
     pub pos: Vec3f,
     pub radius: f32,
-    pub colour: Vec4f
+    pub colour: Vec4f,
+    pub shadow_map_info: ShadowMapInfo
 }
 
 /// GPU friendly structure for directional lights
 #[repr(C)]
 #[derive(Clone)]
 pub struct DirectionalLightData {
-    pub dir: Vec4f,
-    pub colour: Vec4f
+    pub dir: Vec3f,
+    pub colour: Vec4f,
+    pub shadow_map_info: ShadowMapInfo
 }
 
 /// GPU friendly structure for spot lights
@@ -619,6 +635,7 @@ pub struct SpotLightData {
     pub dir: Vec3f,
     pub falloff: f32,
     pub colour: Vec4f,
+    pub shadow_map_info: ShadowMapInfo
 }
 
 /// GPU friendly structure for cameras
@@ -655,7 +672,9 @@ pub struct WorldBufferInfo {
     /// srv index of the directional light buffer
     pub directional_light: GpuBufferLookup,
     /// cbv index of the camera
-    pub camera: GpuBufferLookup
+    pub camera: GpuBufferLookup,
+    /// srv index of shadow matrices
+    pub shadow_matrix: GpuBufferLookup
 }
 
 /// creates a shader from an option of filename, returning optional shader back
@@ -899,6 +918,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.world_buffers.spot_light.reserve(device, &mut self.shader_heap, info.spot_light_capacity);
         self.world_buffers.directional_light.reserve(device, &mut self.shader_heap, info.directional_light_capacity);
         self.world_buffers.camera.reserve(device, &mut self.shader_heap, info.camera_capacity);
+        self.world_buffers.shadow_matrix.reserve(device, &mut self.shader_heap, info.shadow_matrix_capacity);
     }
 
     /// Returns a mutable refernce to the the world buffers, these are persistently mapped GPU buffers which can be
@@ -919,6 +939,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             spot_light: self.world_buffers.spot_light.get_lookup(),
             directional_light: self.world_buffers.directional_light.get_lookup(),
             camera: self.world_buffers.camera.get_lookup(),
+            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup()
         }
     }
 
@@ -1156,30 +1177,51 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Retruns a vector of resource use indices specified in `pmfx` pass and based on `ResourceUsage`
     /// creates resources that do not yet exist
     fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<ResourceUse>, super::Error> {
-        // create textures we may use
-        // TODO: error if missing
+        // create textures we may use        
         let mut use_indices = Vec::new();
         if let Some(uses) = &info.uses {
             for (resource, usage) in uses {
                 self.create_texture(device, resource)?;
+
+                let tex = if let Some(tex) = self.get_texture(resource) {
+                    tex
+                }
+                else {
+                    return Err(super::Error{
+                        msg: format!("missing texture: {} with usage: {:?}", resource, usage)
+                    });
+                };
+
                 let index = match usage {
                     ResourceUsage::Write => {
-                        self.get_texture(resource)
-                            .unwrap()
-                            .get_uav_index()
-                            .unwrap()
+                        if let Some(uav) = tex.get_uav_index() {
+                            uav
+                        }
+                        else {
+                            return Err(super::Error{
+                                msg: format!("error: texture: {} was not created with TextureUsage::UNORDERED_ACCESS for usage: {:?}", resource, usage)
+                            });
+                        }
                     }
-                    ResourceUsage::Read => {
-                         self.get_texture(resource)
-                            .unwrap()
-                            .get_srv_index()
-                            .unwrap()
+                    ResourceUsage::Read | ResourceUsage::ReadMips => {
+                        if let Some(srv) = tex.get_srv_index() {
+                            srv
+                        }
+                        else {
+                            return Err(super::Error{
+                                msg: format!("error: texture: {} was not created with TextureUsage::SHADER_RESOURCE for usage: {:?}", resource, usage)
+                            });
+                        }
                     }
                     ResourceUsage::ReadMsaa => {
-                        self.get_texture(resource)
-                            .unwrap()
-                            .get_msaa_srv_index()
-                            .unwrap()
+                        if let Some(srv) = tex.get_msaa_srv_index() {
+                            srv
+                        }
+                        else {
+                            return Err(super::Error{
+                                msg: format!("error: texture: {} was not created samples > 1 for usage: {:?}", resource, usage)
+                            });
+                        }
                     }
                 };
                 use_indices.push(ResourceUse {
@@ -1472,7 +1514,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             let mut cmd_buf = device.create_cmd_buf(1);
             let barrier_name = format!("barrier_generate_mip_maps-{}", texture_name);
             cmd_buf.begin_event(0xffdc789a, &format!("generate_mip_maps: {}", &texture_name));
-            cmd_buf.generate_mip_maps(tex, device, device.get_shader_heap())?;
+            cmd_buf.generate_mip_maps(tex, device, &self.shader_heap)?;
             cmd_buf.end_event();
             cmd_buf.close()?;
             self.barriers.insert(barrier_name.to_string(), cmd_buf);
@@ -1664,12 +1706,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                     if let Some(uses) = &instance.uses {
                         // check resource uses
+                        let mut try_resolve = false;
+                        let mut gen_mips = false;
                         for u in uses {
                             let res_state = match u.1 {
                                 ResourceUsage::Write => {
                                     ResourceState::UnorderedAccess
                                 },
                                 ResourceUsage::Read => {
+                                    try_resolve = true;
+                                    ResourceState::ShaderResource
+                                },
+                                ResourceUsage::ReadMips => {
+                                    try_resolve = true;
+                                    gen_mips = true;
                                     ResourceState::ShaderResource
                                 },
                                 ResourceUsage::ReadMsaa => {
@@ -1677,12 +1727,48 @@ impl<D> Pmfx<D> where D: gfx::Device {
                                 },
                             };
 
-                            self.create_texture_transition_barrier(
-                                device, 
-                                &mut barriers, 
-                                &graph_pass_name, 
-                                &u.0,
-                                res_state)?;
+                            if try_resolve {
+                                if let Some(tex) = self.get_texture(&u.0) {
+                                    if tex.is_resolvable() {
+                                        self.create_resolve_transition(
+                                            device, 
+                                            &mut barriers, 
+                                            &graph_pass_name, 
+                                            &u.0,
+                                            ResourceState::ShaderResource
+                                        )?;
+                                    }
+                                }
+                            }
+
+                            if gen_mips {
+                                // resource is expected to be ResourceState::ShaderResource before generate mips
+                                self.create_texture_transition_barrier(
+                                    device, 
+                                    &mut barriers, 
+                                    &graph_pass_name, 
+                                    &u.0,
+                                    ResourceState::ShaderResource)?;
+
+                                self.generate_mip_maps(device, &u.0)?;
+
+                                if res_state != ResourceState::ShaderResource {
+                                    self.create_texture_transition_barrier(
+                                        device, 
+                                        &mut barriers, 
+                                        &graph_pass_name, 
+                                        &u.0,
+                                        res_state)?;
+                                }
+                            }
+                            else {
+                                self.create_texture_transition_barrier(
+                                    device, 
+                                    &mut barriers, 
+                                    &graph_pass_name, 
+                                    &u.0,
+                                    res_state)?;
+                            }
                         }
                     }
                     

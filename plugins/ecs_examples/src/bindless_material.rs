@@ -148,7 +148,8 @@ pub fn setup_bindless_material(
         light_buffer.push(&PointLightData{
             pos: pos,
             radius: 64.0,
-            colour: col
+            colour: col,
+            shadow_map_info: ShadowMapInfo::default()
         });
     }
 

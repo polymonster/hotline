@@ -2772,7 +2772,10 @@ impl super::Device for Device {
 
         // hash together the rt, ds and sample count to get a unique hash for format combo
         let mut fmthash = DefaultHasher::new();
-        sample_count.unwrap().hash(&mut fmthash);
+
+        let isample_count = if let Some(i) = sample_count { i } else { 1 };
+        isample_count.hash(&mut fmthash);
+
         ds_format.0.hash(&mut fmthash);
         for rt in &formats {
             rt.0.hash(&mut fmthash);
@@ -2783,7 +2786,7 @@ impl super::Device for Device {
             ds,
             ds_format,
             rt_formats: formats,
-            sample_count: sample_count.unwrap(),
+            sample_count: isample_count,
             format_hash: fmthash.finish()
         })
     }
@@ -3671,7 +3674,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
 
-    fn generate_mip_maps(&self, texture: &Texture, device: &Device, heap: &Heap) -> result::Result<(), super::Error> {
+    fn generate_mip_maps(&mut self, texture: &Texture, device: &Device, heap: &Heap) -> result::Result<(), super::Error> {
         unsafe {
             // select between reslve resource and the main resource
             let desc = if let Some(resolved) = &texture.resolved_resource {
@@ -3687,20 +3690,40 @@ impl super::CmdBuf<Device> for CmdBuf {
                 })
             }
             else if let Some(pipeline) = &device.generate_mip_maps_pipeline {
+                let bb = self.bb_index;
+
                 self.set_compute_pipeline(pipeline);
 
                 // bind heap
                 self.set_heap(pipeline, heap);
 
+                // transition to uav
+                let barrier = if let Some(resolved) = &texture.resolved_resource {
+                    transition_barrier(
+                        resolved,
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                    )
+                }
+                else {
+                    transition_barrier(
+                        texture.resource.as_ref().unwrap(),
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                    )
+                };
+                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+                self.in_flight_barriers[bb].push(barrier);
+
                 // multi-pass down sample
                 let mut mipw = (desc.Width / 2).max(1);
-                let mut miph = (desc.Width / 2).max(1);
+                let mut miph = (desc.Height / 2).max(1);
 
                 for i in 1..desc.MipLevels as usize {
                     let using_slot = pipeline.get_pipeline_slot(0, 0, super::DescriptorType::PushConstants);
                     if let Some(slot) = using_slot {
-                        self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i]));
-                        self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i+1]));
+                        self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i-1]));
+                        self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i]));
                     }
                     self.dispatch(
                         Size3 {
@@ -3717,7 +3740,25 @@ impl super::CmdBuf<Device> for CmdBuf {
 
                     mipw = (mipw / 2).max(1);
                     miph = (miph / 2).max(1);
-                }                
+                }
+
+                // transition to shader_res
+                let barrier = if let Some(resolved) = &texture.resolved_resource {
+                    transition_barrier(
+                        resolved,
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                    )
+                }
+                else {
+                    transition_barrier(
+                        texture.resource.as_ref().unwrap(),
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                    )
+                };
+                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+                self.in_flight_barriers[bb].push(barrier);
 
                 Ok(())
             }

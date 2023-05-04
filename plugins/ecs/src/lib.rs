@@ -70,45 +70,6 @@ fn update_main_camera_config(
     }
 }
 
-/*
-fn create_perspective_projection_lh_yup_reverse_z_internal<T: Float + FloatOps<T>>(left: T, right: T, bottom: T, top: T, near: T, far: T) -> Mat4<T> {
-    Mat4::new(
-        (T::two() * near) / (right - left), 
-        T::zero(), 
-        (right + left) / (right - left), 
-        T::zero(),
-
-        T::zero(), 
-        (T::two() * near) / (top - bottom), 
-        (top + bottom) / (top - bottom), 
-        T::zero(),
-
-        T::zero(), 
-        T::zero(),
-
-        //(-far - near) / (far - near),
-        (-near) / (near - far),
-
-        //(-(T::two() * near) * far) / (far - near),
-        (-near * far) / (near - far),
-
-        T::zero(), 
-        T::zero(), 
-        T::minus_one(), 
-        T::zero()
-    )
-}
-
-fn create_perspective_projection_lh_yup_reverse_z<T: Float + FloatOps<T>>(fov: T, aspect: T, near: T, far: T) -> Mat4<T> {
-    let tfov = T::tan(fov * T::point_five());
-    let right = tfov * aspect * near;
-    let left = -right;
-    let top = tfov * near;
-    let bottom = -top;
-    create_perspective_projection_lh_yup_reverse_z_internal(left, right, bottom, top, near, far)
-}
-*/
-
 pub fn camera_constants_from_fly(pos: &Position, rot: &Vec3f, aspect: f32, fov_degrees: f32) -> CameraConstants {
     // rotational matrix
     let mat_rot_x = Mat4f::from_x_rotation(f32::deg_to_rad(rot.x));
@@ -812,6 +773,18 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 }
                 else {
                     self.session_info.debug_draw_flags &= !DebugDrawFlags::OBB;
+                }
+            }
+
+            // camera
+            client.imgui.same_line();
+            let mut dd = self.session_info.debug_draw_flags.contains(DebugDrawFlags::CAMERAS);
+            if client.imgui.checkbox("Cameras", &mut dd) {
+                if dd {
+                    self.session_info.debug_draw_flags |= DebugDrawFlags::CAMERAS;
+                }
+                else {
+                    self.session_info.debug_draw_flags &= !DebugDrawFlags::CAMERAS;
                 }
             }
 
