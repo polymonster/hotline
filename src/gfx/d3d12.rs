@@ -409,11 +409,21 @@ fn to_d3d12_sampler_boarder_colour(col: Option<u32>) -> D3D12_STATIC_BORDER_COLO
     r
 }
 
-const fn to_d3d12_filter(filter: super::SamplerFilter) -> D3D12_FILTER {
-    match filter {
-        super::SamplerFilter::Point => D3D12_FILTER_MIN_MAG_MIP_POINT,
-        super::SamplerFilter::Linear => D3D12_FILTER_MIN_MAG_MIP_LINEAR,
-        super::SamplerFilter::Anisotropic => D3D12_FILTER_ANISOTROPIC,
+const fn to_d3d12_filter(filter: super::SamplerFilter, func: Option<super::ComparisonFunc>) -> D3D12_FILTER {
+    if func.is_some() {
+        match filter {
+            super::SamplerFilter::Point => D3D12_FILTER_COMPARISON_MIN_MAG_MIP_POINT,
+            super::SamplerFilter::Linear => D3D12_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR,
+            super::SamplerFilter::Anisotropic => D3D12_FILTER_COMPARISON_ANISOTROPIC,
+        }
+    }
+    else {
+        match filter {
+            super::SamplerFilter::Point => D3D12_FILTER_MIN_MAG_MIP_POINT,
+            super::SamplerFilter::Linear => D3D12_FILTER_MIN_MAG_MIP_LINEAR,
+            super::SamplerFilter::Anisotropic => D3D12_FILTER_ANISOTROPIC,
+        }
+
     }
 }
 
@@ -1279,7 +1289,7 @@ impl Device {
         if let Some(samplers) = &layout.static_samplers {
             for sampler in samplers {
                 static_samplers.push(D3D12_STATIC_SAMPLER_DESC {
-                    Filter: to_d3d12_filter(sampler.sampler_info.filter),
+                    Filter: to_d3d12_filter(sampler.sampler_info.filter, sampler.sampler_info.comparison),
                     AddressU: to_d3d12_address_mode(sampler.sampler_info.address_u),
                     AddressV: to_d3d12_address_mode(sampler.sampler_info.address_v),
                     AddressW: to_d3d12_address_mode(sampler.sampler_info.address_w),
@@ -3698,7 +3708,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 self.set_heap(pipeline, heap);
 
                 // transition to uav
-                let barrier = if let Some(resolved) = &texture.resolved_resource {
+                let barrier_write = if let Some(resolved) = &texture.resolved_resource {
                     transition_barrier(
                         resolved,
                         to_d3d12_resource_state(super::ResourceState::ShaderResource),
@@ -3712,19 +3722,39 @@ impl super::CmdBuf<Device> for CmdBuf {
                         to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
                     )
                 };
-                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
-                self.in_flight_barriers[bb].push(barrier);
+
+                // transition to shader_res
+                let barrier_read = if let Some(resolved) = &texture.resolved_resource {
+                    transition_barrier(
+                        resolved,
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                    )
+                }
+                else {
+                    transition_barrier(
+                        texture.resource.as_ref().unwrap(),
+                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
+                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
+                    )
+                };
 
                 // multi-pass down sample
                 let mut mipw = (desc.Width / 2).max(1);
                 let mut miph = (desc.Height / 2).max(1);
 
                 for i in 1..desc.MipLevels as usize {
+                    // write barrier
+                    let bw = barrier_write.clone();
+                    self.command_list[bb].ResourceBarrier(&[bw.clone()]);
+                    self.in_flight_barriers[bb].push(bw);
+
                     let using_slot = pipeline.get_pipeline_slot(0, 0, super::DescriptorType::PushConstants);
                     if let Some(slot) = using_slot {
                         self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i-1]));
                         self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i]));
                     }
+                    
                     self.dispatch(
                         Size3 {
                             x: (mipw as f32 / 32.0).ceil() as u32,
@@ -3740,25 +3770,12 @@ impl super::CmdBuf<Device> for CmdBuf {
 
                     mipw = (mipw / 2).max(1);
                     miph = (miph / 2).max(1);
-                }
 
-                // transition to shader_res
-                let barrier = if let Some(resolved) = &texture.resolved_resource {
-                    transition_barrier(
-                        resolved,
-                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
-                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
-                    )
+                    // read barrier
+                    let br = barrier_read.clone();
+                    self.command_list[bb].ResourceBarrier(&[br.clone()]);
+                    self.in_flight_barriers[bb].push(br);
                 }
-                else {
-                    transition_barrier(
-                        texture.resource.as_ref().unwrap(),
-                        to_d3d12_resource_state(super::ResourceState::UnorderedAccess),
-                        to_d3d12_resource_state(super::ResourceState::ShaderResource),
-                    )
-                };
-                self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
-                self.in_flight_barriers[bb].push(barrier);
 
                 Ok(())
             }

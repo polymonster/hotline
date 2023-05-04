@@ -1,13 +1,10 @@
 // TODO:
 
-// - gen mips is a frame behind
-
-// - shadow map
-// - buffers in pmfx
-// - texture load image from file into pmfx
 // - clear buffer (uav)
-// - clear buffers for compute
 // - copy texture region
+// - buffers in pmfx
+// - clear buffers for compute
+// - texture load image from file into pmfx
 
 // material system
 // - perspective shadow map
@@ -37,6 +34,8 @@
 // - imgui not tracked within draw call stats
 
 // DONE:
+// - gen mips is a frame behind
+// x shadow map
 // x resolves fully data driven
 // x update docs
 // x bindful example
