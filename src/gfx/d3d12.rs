@@ -368,6 +368,14 @@ const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
         super::Format::D32f => DXGI_FORMAT_D32_FLOAT,
         super::Format::D24nS8u => DXGI_FORMAT_D24_UNORM_S8_UINT,
         super::Format::D16n => DXGI_FORMAT_D16_UNORM,
+        super::Format::BC1n => DXGI_FORMAT_BC1_UNORM,
+        super::Format::BC1nSRGB => DXGI_FORMAT_BC1_UNORM_SRGB,
+        super::Format::BC2n => DXGI_FORMAT_BC2_UNORM,
+        super::Format::BC2nSRGB => DXGI_FORMAT_BC2_UNORM_SRGB,
+        super::Format::BC3n => DXGI_FORMAT_BC3_UNORM,
+        super::Format::BC3nSRGB => DXGI_FORMAT_BC3_UNORM_SRGB,
+        super::Format::BC4n => DXGI_FORMAT_BC4_UNORM,
+        super::Format::BC5n => DXGI_FORMAT_BC5_UNORM,
     }
 }
 
@@ -797,7 +805,6 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                 shader_type: super::ShaderType::Compute,
                 compile_info: None
             }, 
-            //&d3d12_embeded::CS_MIP_CHAIN_TEXTURE2D
             &shader_data
         )?,
         pipeline_layout: PipelineLayout { 
@@ -1381,12 +1388,17 @@ impl Device {
         dxgi_format: DXGI_FORMAT,
         resource: &ID3D12Resource,
         upload_resources: &mut Vec<ID3D12Resource>) -> std::result::Result<(), super::Error> {
+        
+        let tpb = super::texels_per_block_for_format(format);
+        let align_width = width.max(tpb);
+        let align_height = height.max(tpb);
+
         // create upload buffer
         let row_pitch = super::row_pitch_for_format(format, width);
         let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
-        let upload_size = height * upload_pitch * depth as u64;
+        let upload_size = align_height * upload_pitch * depth as u64;
         let src_size = super::size_for_format(format, width, height, depth);
-
+        
         unsafe {
             let mut upload: Option<ID3D12Resource> = None;
             self.device.CreateCommittedResource(
@@ -1448,8 +1460,8 @@ impl Device {
                     PlacedFootprint: D3D12_PLACED_SUBRESOURCE_FOOTPRINT {
                         Offset: 0,
                         Footprint: D3D12_SUBRESOURCE_FOOTPRINT {
-                            Width: width as u32,
-                            Height: height as u32,
+                            Width: align_width as u32,
+                            Height: align_height as u32,
                             Depth: depth,
                             Format: dxgi_format,
                             RowPitch: upload_pitch as u32,
@@ -3802,6 +3814,63 @@ impl super::CmdBuf<Device> for CmdBuf {
                 src_buffer.resource.as_ref().unwrap(), 
                 src_offset  as u64,
                 num_bytes as u64
+            );
+        }
+    }
+
+    fn copy_texture_region(
+        &mut self,
+        dst_texture: &Texture,
+        subresource_index: u32,
+        dst_x: u32,
+        dst_y: u32,
+        dst_z: u32,
+        src_texture: &Texture,
+        src_region: Option<Region>
+    ) {
+        unsafe {
+            let d3d12_box = if let Some(src_region) = src_region {
+                D3D12_BOX {
+                    left: src_region.left,
+                    top: src_region.top,
+                    front: src_region.front,
+                    right: src_region.right,
+                    bottom: src_region.bottom,
+                    back: src_region.back
+                }
+            }
+            else {
+                D3D12_BOX {
+                    ..Default::default()
+                }
+            };
+
+            let option_box = if src_region.is_some() {
+                Some(&d3d12_box as *const D3D12_BOX)
+            }
+            else {
+                None
+            };
+
+            self.cmd().CopyTextureRegion(
+                &D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: std::mem::transmute_copy(dst_texture.resource.as_ref().unwrap()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        SubresourceIndex: subresource_index
+                    }
+                },
+                dst_x,
+                dst_y,
+                dst_z,
+                &D3D12_TEXTURE_COPY_LOCATION {
+                    pResource: std::mem::transmute_copy(src_texture.resource.as_ref().unwrap()),
+                    Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                    Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                        SubresourceIndex: subresource_index
+                    }
+                },
+                option_box
             );
         }
     }
