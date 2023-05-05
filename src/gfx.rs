@@ -38,6 +38,17 @@ pub struct Size3 {
     pub z: u32,
 }
 
+/// 3-Dimensional region used for copying resources
+#[derive(Copy, Clone)]
+pub struct Region {
+    pub left: u32,
+    pub top: u32,
+    pub front: u32,
+    pub right: u32,
+    pub bottom: u32,
+    pub back: u32
+}
+
 /// Structure to specify viewport coordinates on a `CmdBuf`.
 #[derive(Copy, Clone)]
 pub struct Viewport {
@@ -110,6 +121,14 @@ pub enum Format {
     D32f,
     D24nS8u,
     D16n,
+    BC1n,
+    BC1nSRGB,
+    BC2n,
+    BC2nSRGB,
+    BC3n,
+    BC3nSRGB,
+    BC4n,
+    BC5n,
 }
 
 /// Information to create a device, it contains default heaps for resource views
@@ -1248,6 +1267,18 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         src_offset: usize,
         num_bytes: usize
     );
+    /// Copy from one texture to another with offsets, if `None` is specified for `src_region`
+    /// it will copy the full size of src 
+    fn copy_texture_region(
+        &mut self,
+        dst_texture: &D::Texture,
+        subresource_index: u32,
+        dst_x: u32,
+        dst_y: u32,
+        dst_z: u32,
+        src_texture: &D::Texture,
+        src_region: Option<Region>
+    );
 }
 
 /// An opaque Buffer type used for vertex, index, constant or unordered access.
@@ -1358,7 +1389,7 @@ pub fn slice_as_u8_slice<T: Sized>(p: &[T]) -> &[u8] {
 }
 
 /// Returns the 'block size' (texel, compressed block of texels or single buffer element) for a given format
-pub fn block_size_for_format(format: Format) -> u32 {
+pub const fn block_size_for_format(format: Format) -> u32 {
     match format {
         Format::Unknown => 0,
         Format::R16n => 2,
@@ -1395,11 +1426,34 @@ pub fn block_size_for_format(format: Format) -> u32 {
         Format::D32f => 16,
         Format::D24nS8u => 32,
         Format::D16n => 2,
+        Format::BC1n => 8,
+        Format::BC1nSRGB => 8,
+        Format::BC2n => 4,
+        Format::BC2nSRGB => 4,
+        Format::BC3n => 16,
+        Format::BC3nSRGB => 16,
+        Format::BC4n => 8,
+        Format::BC5n => 16,
+    }
+}
+
+/// Returns the number of texels (texel x texel) in each block for the specified texture format
+pub const fn texels_per_block_for_format(format: Format) -> u64 {
+    match format {
+        Format::BC1n => 4,
+        Format::BC1nSRGB => 4,
+        Format::BC2n => 4,
+        Format::BC2nSRGB => 4,
+        Format::BC3n => 4,
+        Format::BC3nSRGB => 4,
+        Format::BC4n => 4,
+        Format::BC5n => 4,
+        _ => 1,
     }
 }
 
 /// Returns the number of components for a given format. ie RGBA = 4 and RGB = 3
-pub fn components_for_format(format: Format) -> u32 {
+pub const fn components_for_format(format: Format) -> u32 {
     match format {
         Format::Unknown => 0,
         Format::R16n => 1,
@@ -1436,23 +1490,35 @@ pub fn components_for_format(format: Format) -> u32 {
         Format::D32f => 1,
         Format::D24nS8u => 2,
         Format::D16n => 1,
+        Format::BC1n => 4,
+        Format::BC1nSRGB => 4,
+        Format::BC2n => 3,
+        Format::BC2nSRGB => 3,
+        Format::BC3n => 4,
+        Format::BC3nSRGB => 4,
+        Format::BC4n => 1,
+        Format::BC5n => 2,
     }
 }
 
 /// Returns the row pitch of an image in bytes: width * block size
 pub fn row_pitch_for_format(format: Format, width: u64) -> u64 {
-    block_size_for_format(format) as u64 * width
+    let tpb = texels_per_block_for_format(format);
+    block_size_for_format(format) as u64 * (width / tpb).max(1)
 }
 
 /// Returns the slice pitch of an image in bytes: width * height * block size, a slice is a single 2D image
 /// or a single slice of a 3D texture or texture array
 pub fn slice_pitch_for_format(format: Format, width: u64, height: u64) -> u64 {
-    block_size_for_format(format) as u64 * width * height
+    let tpb = texels_per_block_for_format(format);
+    block_size_for_format(format) as u64 * (width / tpb).max(1) * (height / tpb).max(1)
 }
 
 /// Return the size in bytes of a 3 dimensional resource: width * height * depth block size
 pub fn size_for_format(format: Format, width: u64, height: u64, depth: u32) -> u64 {
-    block_size_for_format(format) as u64 * width * height * depth as u64
+    let tpb = texels_per_block_for_format(format);
+
+    block_size_for_format(format) as u64 * (width / tpb).max(1) * (height / tpb).max(1) * depth as u64
 }
 
 /// Return the size in bytes of up to dimensional resource: width * height * depth block size
@@ -1463,7 +1529,7 @@ pub fn size_for_format_mipped(format: Format, width: u64, height: u64, depth: u3
     let mut mip_height = height;
     let mut mip_depth = depth;
     for _ in 0..mips {
-        total += block_size_for_format(format) as u64 * mip_width * mip_height * mip_depth as u64 * array_layers as u64;
+        total += size_for_format(format, mip_width, mip_height, mip_depth) * array_layers as u64;
         mip_width = max(mip_width / 2, 1);
         mip_height = max(mip_height / 2, 1);
         mip_depth = max(mip_depth / 2, 1);

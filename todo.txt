@@ -1,10 +1,8 @@
 // TODO:
 
 // - clear buffer (uav)
-// - copy texture region
 // - buffers in pmfx
 // - clear buffers for compute
-// - texture load image from file into pmfx
 
 // material system
 // - perspective shadow map
@@ -24,7 +22,6 @@
 // gfx
 // - Alpha to coverage
 // - Stencil Ref / Buffer
-// - Texture Formats (BC etc)
 // - API for fence
 
 // ui / debug
@@ -34,7 +31,10 @@
 // - imgui not tracked within draw call stats
 
 // DONE:
-// - gen mips is a frame behind
+// x texture formats (BC etc)
+// x texture load image from file into pmfx
+// x copy texture region
+// x gen mips is a frame behind
 // x shadow map
 // x resolves fully data driven
 // x update docs

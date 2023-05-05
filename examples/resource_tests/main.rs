@@ -15,7 +15,7 @@ struct Vertex {
 fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
-        name: String::from("bindful"),
+        name: String::from("resource_tests"),
         window: false,
         num_buffers: 0,
         dpi_aware: true,
@@ -34,7 +34,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // window
     let mut win = app.create_window(os::WindowInfo {
-        title: String::from("bindful"),
+        title: String::from("resource_tests"),
         rect: os::Rect {
             x: 100,
             y: 100,
@@ -104,25 +104,30 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
-    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
-    pmfx.load(&hotline_rs::get_data_path("shaders/bindful"))?;
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 64);
+    pmfx.load(&hotline_rs::get_data_path("shaders/resource_tests"))?;
     pmfx.create_render_pipeline(&dev, "bindful", swap_chain.get_backbuffer_pass())?;
+
+    // create resources that are defined in resource_tests.pmfx
+    pmfx.create_texture(&mut dev, "bear_frame")?;
+    pmfx.create_texture(&mut dev, "copy_dest")?;
+    
+    pmfx.create_texture(&mut dev, "compressed_bc1")?;
+    pmfx.create_texture(&mut dev, "compressed_bc5")?;
+    pmfx.create_texture(&mut dev, "compressed_bc3")?;
     
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
 
-    let mut textures: Vec<gfx_platform::Texture> = Vec::new();
-    let files = vec![
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_001.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_004.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_008.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_012.png"),
+    // loads textures that are supplied in the pmfx file
+    let textures = vec![
+        pmfx.get_texture("bear_frame").unwrap(),
+        pmfx.get_texture("copy_dest").unwrap(),
+        pmfx.get_texture("compressed_bc1").unwrap(),
+        pmfx.get_texture("compressed_bc5").unwrap(),
+        pmfx.get_texture("compressed_bc3").unwrap(),
     ];
-    for file in files {
-        let image = image::load_from_file(&file)?;
-        let tex = dev.create_texture(&image.info, data![image.data.as_slice()])?;
-        textures.push(tex);
-    }
+
     // ..
     let mut ci = 0;
     while app.run() {
@@ -135,6 +140,51 @@ fn main() -> Result<(), hotline_rs::Error> {
         let vp_rect = win.get_viewport_rect();
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
+
+        // copy texture region 
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(textures[1]),
+            buffer: None,
+            state_before: gfx::ResourceState::ShaderResource,
+            state_after: gfx::ResourceState::CopyDst,
+        });
+
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(textures[0]),
+            buffer: None,
+            state_before: gfx::ResourceState::ShaderResource,
+            state_after: gfx::ResourceState::CopySrc,
+        });
+
+        cmdbuffer.copy_texture_region(
+            textures[1],
+            0, 0, 0, 0,
+            textures[0],
+            Some(gfx::Region{
+                left: 380, 
+                top: 380, 
+                front: 0,
+                right: 380 + 512,
+                bottom: 380 + 512,
+                back: 1,
+            })
+        );
+
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(textures[1]),
+            buffer: None,
+            state_before: gfx::ResourceState::CopyDst,
+            state_after: gfx::ResourceState::ShaderResource,
+        });
+
+        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(textures[0]),
+            buffer: None,
+            state_before: gfx::ResourceState::CopySrc,
+            state_after: gfx::ResourceState::ShaderResource,
+        });
+
+        // render
 
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
@@ -150,32 +200,32 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_render_pipeline(pso_pmfx);
 
-        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
+        cmdbuffer.set_heap(pso_pmfx, &pmfx.shader_heap);
 
         // set bindings
-        let srv0 =  textures[0].get_srv_index().unwrap();
-        let srv1 =  textures[1].get_srv_index().unwrap();
-        let srv2 =  textures[2].get_srv_index().unwrap();
-        let srv3 =  textures[3].get_srv_index().unwrap();
+        let srv0 =  textures[1].get_srv_index().unwrap();
+        let srv1 =  textures[2].get_srv_index().unwrap();
+        let srv2 =  textures[3].get_srv_index().unwrap();
+        let srv3 =  textures[4].get_srv_index().unwrap();
 
         // this looks up register t0, space0
         if let Some(t0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t0.index, srv0);
+            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t0.index, srv0);
         }
 
         // this looks up register t1, space0
         if let Some(t1) = pso_pmfx.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t1.index, srv1);
+            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t1.index, srv1);
         }
 
         // this looks up register t2, space0
         if let Some(t2) = pso_pmfx.get_pipeline_slot(2, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t2.index, srv2);
+            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t2.index, srv2);
         }
 
         // this looks up register t3, space0
         if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t3.index, srv3);
+            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t3.index, srv3);
         }
         
         cmdbuffer.set_index_buffer(&index_buffer);

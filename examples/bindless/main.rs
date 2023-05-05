@@ -115,7 +115,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
     let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
 
-    let mut textures: Vec<gfx::d3d12::Texture> = Vec::new();
+    let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
         hotline_rs::get_src_data_path("textures/redchecker01.png"),
         hotline_rs::get_src_data_path("textures/blend_test_fg.png"),

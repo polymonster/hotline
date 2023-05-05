@@ -5,6 +5,7 @@ use crate::gfx::PipelineStatistics;
 use crate::os;
 use crate::gfx;
 use crate::primitives;
+use crate::image;
 
 use crate::gfx::{ResourceState, RenderPass, CmdBuf, Subresource, QueryHeap, SwapChain, Texture};
 use crate::reloader::{ReloadState, Reloader, ReloadResponder};
@@ -305,6 +306,7 @@ struct TextureInfo {
     ratio: Option<TextureSizeRatio>,
     generate_mips: Option<bool>,
     filepath: Option<String>,
+    src_data: Option<bool>,
     width: u64,
     height: u64,
     depth: u32,
@@ -1103,17 +1105,42 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // create texture from info specified in .pmfx file
             println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
             let pmfx_tex = &self.pmfx.textures[texture_name];
-            let size = self.get_texture_size_from_ratio(pmfx_tex)?;
-            
-            // create resources
-            let tex = device.create_texture_with_heaps::<u8>(
-                &to_gfx_texture_info(pmfx_tex, size),
-                gfx::TextureHeapInfo {
-                    shader: Some(&mut self.shader_heap),
-                    ..Default::default()
-                },
-                None
-            )?;
+
+            let (tex, size) = if let Some(filepath) = &pmfx_tex.filepath {
+                // load texture from file
+                let data_path = if let Some(src_data) = pmfx_tex.src_data {
+                    if src_data {
+                        super::get_src_data_path(filepath)
+                    }
+                    else {
+                        super::get_data_path(filepath)
+                    }
+                }
+                else {
+                    super::get_data_path(filepath)
+                };
+
+                let img = image::load_from_file(&data_path)?;
+                (device.create_texture_with_heaps::<u8>(
+                    &img.info,
+                    gfx::TextureHeapInfo {
+                        shader: Some(&mut self.shader_heap),
+                        ..Default::default()
+                    },
+                    super::data![&img.data]
+                )?, (img.info.width, img.info.height))
+            }
+            else {
+                // create a new empty texture
+                let size = self.get_texture_size_from_ratio(pmfx_tex)?;
+                (device.create_texture_with_heaps::<u8>(
+                    &to_gfx_texture_info(pmfx_tex, size),
+                    gfx::TextureHeapInfo {
+                        shader: Some(&mut self.shader_heap),
+                        ..Default::default()
+                    },
+                    None)?, size)
+            };
 
             self.textures.insert(texture_name.to_string(), (pmfx_tex.hash, TrackedTexture {
                 texture: tex,
