@@ -447,7 +447,7 @@ pub fn main() -> Result<(), hotline_rs::Error> {
 
 ### os
 
-The os API provides an abstraction of operating system related functionality. You can use this to create windows, file dialogs and obtain user input.
+The [os](https://docs.rs/hotline-rs/latest/hotline_rs/os/index.html) API provides an abstraction of operating system related functionality. You can use this to create windows, file dialogs and obtain user input.
 
 ```rust
 
@@ -594,7 +594,7 @@ swap_chain.swap(&device);
 
 ### pmfx
 
-Pmfx builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html) module and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
+The [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html)] module builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the API and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
 
 You can supply [jsn](https://github.com/polymonster/jsnr) config files to specify render pipelines, textures (render targets), views (render pass with cameras) and render graphs. Useful defaults are supplied for all fields and combined with jsn inheritance it can aid creating many different render strategies with minimal repetition.
 
@@ -673,7 +673,7 @@ When pmfx is built, shader source is generated along with an [info file](https:/
 
 ### av
 
-The av API can be used to decode and playback audio and video streams with hardware accelleration. Video frames are decoded into native GPU texture formats with no CPU copy overhead.
+The [av](https://docs.rs/hotline-rs/latest/hotline_rs/av/index.html) API can be used to decode and playback audio and video streams with hardware accelleration. Video frames are decoded into native GPU texture formats with no CPU copy overhead.
 
 ```rust
 // create a player
@@ -705,7 +705,7 @@ while app.run() {
 
 ### imgui
 
-Dear ImGui support with docking and viewports (multiple windows). The widget API is not fully complete in safe Rust. I have been adding these on a case by case basis as I need them.
+Dear ImGui support with docking and viewports (multiple windows) through the [imgui](https://docs.rs/hotline-rs/latest/hotline_rs/imgui/index.html) module. The widget API is not fully complete in safe Rust. I have been adding these on a case by case basis as I need them.
 
 ```rust
 
