@@ -594,7 +594,7 @@ swap_chain.swap(&device);
 
 ### pmfx
 
-The [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html)] module builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the API and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
+The [pmfx](https://docs.rs/hotline-rs/latest/hotline_rs/pmfx/index.html) module builds on top of the `gfx` module to make render configuration more ergonomic, data driven and quicker to develop with. You can use the API and `pmfx` data to configure render pipelines in a data driven way. The [pmfx-shader](https://github.com/polymonster/pmfx-shader) repository has more detailed information and is currently undergoing changes and improvements but it now supports a decent range of features.
 
 You can supply [jsn](https://github.com/polymonster/jsnr) config files to specify render pipelines, textures (render targets), views (render pass with cameras) and render graphs. Useful defaults are supplied for all fields and combined with jsn inheritance it can aid creating many different render strategies with minimal repetition.
 
