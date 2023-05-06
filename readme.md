@@ -16,16 +16,19 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render configuration, code).
-- Hardware accelerated video decoding.
-- [gfx](#gfx) - Concise low level graphics api...
-- [pmfx](#pmfx) - High level data driven graphics api for ease of use and speed.
+- [os](#os) - Operating system api; window, input, etc.
+- [gfx](#gfx) - Concise low level graphics api.
+- [pmfx](#pmfx) - Higher level, data driven graphics api.
+- [av](#av) - Hardware accelerated av decoding.
+- [ecs](#ecs) - Entity component system using `bevy_ecs`.
+- [Plugin Archtecture] - 
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Prerequisites
 
 Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan and more over time.
 
-## Using the Client / Examples
+## Using the Client
 
 For the time being it is recommended to use the repository from GitHub if you want to use the example `plugins` or standalone `examples`. If you just want to use the library then `crates.io` is suitable. There are some difficulties with publishing data and plugins which I hope to iron out in time.
 
