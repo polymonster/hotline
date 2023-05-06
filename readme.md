@@ -21,7 +21,6 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 - [pmfx](#pmfx) - Higher level, data driven graphics api.
 - [av](#av) - Hardware accelerated av decoding.
 - [ecs](#ecs) - Entity component system using `bevy_ecs`.
-- [Plugin Archtecture] - 
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Prerequisites
