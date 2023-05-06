@@ -276,7 +276,7 @@ pub fn render_meshes(
 }
 ```
 
-### Compute Systems
+#### Compute Systems
 
 Compute systems work similarly to `render` systems. They get passed a `pmfx::ComputePass` which has information about the compute workload that has been specified in pmfx files. The `dispatch_compute` function in the `ecs_examples` could be used for many purposes without needing to supply any new code because it allows generic dispatched based data that is configured in the pmfx file.
 
