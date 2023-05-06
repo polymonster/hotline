@@ -6,7 +6,7 @@
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
 [![Discord](https://img.shields.io/discord/807665639845789796.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/3yjXwJ8wJC)
 
-Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, and render configs without restarting the application. It provides a `client` application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic `plugins` and render configs can be edited and hot reloaded through `pmfx` files.
+Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, and render configs without restarting the application. It provides a client application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic plugins and render configs can be edited and hot reloaded through pmfx files.
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom3.gif" width="100%"/>  
 
@@ -16,16 +16,20 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 
 - An easy to use cross platform graphics/compute/os api for rapid development.
 - Hot reloadable, live coding environment (shaders, render configuration, code).
-- [os](#os) - Operating system api; window, input, etc.
-- [gfx](#gfx) - Concise low level graphics api.
-- [pmfx](#pmfx) - Higher level, data driven graphics api.
+- Plugin architexture, flexible and extendible.
+- [os](#os) - Operating system API; window, input, etc.
+- [gfx](#gfx) - Concise low level graphics API.
+- [pmfx](#pmfx) - High level, data driven, ergonomic graphics API.
 - [av](#av) - Hardware accelerated av decoding.
+- [imgui](#imgui) - Full featured dear ImGui implementation with viewports and docking.
 - [ecs](#ecs) - Entity component system using `bevy_ecs`.
+- [Client](#Using the Client) - Live reloading coding environment client application.
+- [Standalone Library](#Using as a library) - Use as a standalone library and integrate into your own applications.
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Prerequisites
 
-Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan and more over time.
+Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan, WASM and WebGPU in future.
 
 ## Using the Client
 
@@ -147,9 +151,9 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
 hotline_plugin![EmptyPlugin];
 ```
 
-### Ecs Plugin
+### ecs
 
-There is a core `ecs` plugin which builds on top of [bevy_ecs](https://docs.rs/bevy_ecs/latest/bevy_ecs/). It allows you to supply your own systems and build schedules dynamically. It is possible to load and find new `ecs` systems in different dynamic libraries. You can register and instantiate `demos` which are collections of `setup`, `update` and `render` systems.
+There is a core entity component system plugin which builds on top of [bevy_ecs](https://docs.rs/bevy_ecs/latest/bevy_ecs/). It allows you to supply your own systems and build schedules dynamically. It is possible to load and find new `ecs` systems in different dynamic libraries. You can register and instantiate `demos` which are collections of `setup`, `update` and `render` systems.
 
 #### Registering Demos
 
@@ -196,7 +200,7 @@ The `setup`, `update` and `render` systems are tagged with the attribute macro `
 
 #### Setup Systems
 
-You can supply `setup` systems to add entities into a scene, when a dynamic code reload happens the world will be cleared and the setup systems will be re-executed. This allows changes to setup systems to appear in the live `client`. You can add multiple `setup` systems and they will be executed concurrently.
+You can supply `setup` systems to add entities and set up a scene, these will be executed once at startup and then anytime when a dynamic code reload happens the world will be cleared and the setup systems will be re-executed. This allows changes to setup systems to appear in the live client. You can add multiple setup systems and they will be executed concurrently.
 
 ```rust
 #[no_mangle]
@@ -222,7 +226,7 @@ pub fn setup_cube(
 
 #### Update Systems
 
-You can also supply your own `update` systems to animate and move your entities, these too are all executed concurrently.
+You can also supply your own `update` systems to animate and move your entities.
 
 ```rust
 #[no_mangle]
@@ -255,10 +259,6 @@ pub fn render_meshes(
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    // setup pass
-    view.cmd_buf.begin_render_pass(&view.pass);
-    view.cmd_buf.set_viewport(&view.viewport);
-    view.cmd_buf.set_scissor_rect(&view.scissor_rect);
     view.cmd_buf.set_render_pipeline(&mesh_debug);
     view.cmd_buf.push_render_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
@@ -278,7 +278,7 @@ pub fn render_meshes(
 
 ### Compute Systems
 
-Compute systems work similarly to `render` systems. They get passed a `pmfx::ComputePass` which has information about the compute workload that has been specified in pmfx files. The `dispatch_compute` function in the `ecs_examples` could be used for many purposes without needing to supply any new code because it allows generic dispatched based data that is configured in the `.pmfx` file.
+Compute systems work similarly to `render` systems. They get passed a `pmfx::ComputePass` which has information about the compute workload that has been specified in pmfx files. The `dispatch_compute` function in the `ecs_examples` could be used for many purposes without needing to supply any new code because it allows generic dispatched based data that is configured in the pmfx file.
 
 ```rust
 #[no_mangle]
@@ -317,7 +317,7 @@ pub fn dispatch_compute(
 
 #### System Execute Order
 
-By default all systems in a particular group will be executed asyncronsly and the groups will be executed in-order:
+By default all systems in a particular group will be executed asyncronsly and the groups will be executed in-order, there are some predefined, core system sets:
 
 - `SystemSets::Update` - Use this to animate and move entities, perform logic adn so forth.
 - `SystemSets::Batch` - Use this to batch data such as baking world matrices, culling or update buffers ready for rendering.
@@ -373,9 +373,11 @@ fn update_user_config(&mut self) {
 
 ## Using as a library
 
-You can use hotline as a library inside the plugin system or on its own to use the low level abstractions and modules to create windowed applications with a graphics api backend. Here is a small example:
+You can use hotline as a library inside the plugin system or on its own to use the low level abstractions and modules to create windowed applications with a graphics api backend. You can easily add to your projects using cargo and install the package from [crates.io](https://crates.io/crates/hotline-rs).
 
 ### Basic Application
+
+A quick example of a basic application setup:
 
 ```rust
 // include prelude for convenience
@@ -440,6 +442,44 @@ pub fn main() -> Result<(), hotline_rs::Error> {
     // must wait for the final frame to be completed so it is safe to drop GPU resources.
     swap_chain.wait_for_last_frame();
     Ok(());
+}
+```
+
+### os
+
+The os API provides an abstraction of operating system related functionality. You can use this to create windows, file dialogs and obtain user input.
+
+```rust
+
+// create window
+let mut app = os_platform::App::create(os::AppInfo {
+    name: String::from("triangle"),
+    window: false,
+    num_buffers: 0,
+    dpi_aware: true,
+});
+
+// get mouse input
+let drag = app.get_mouse_pos_delta();
+let wheel = app.get_mouse_wheel();
+let buttons = app.get_mouse_buttons();
+
+// keyboard input
+let keys = app.get_keys_down();
+if keys['A' as usize] {
+    // held 'A'
+}
+
+let keys = client.app.get_keys_pressed();
+let toggle = if keys['B'] {
+    // pressed 'B'
+}
+
+// open file dialog for 'txt' files
+if let Ok(files) = os_platform::App::open_file_dialog(os::OpenFileDialogFlags::FILES, vec![".txt"]) {
+    if !files.is_empty() {
+        player.set_source(files[0].to_string())?;
+    }
 }
 ```
 
@@ -565,13 +605,13 @@ textures: {
             window: "main_window",
             scale: 1.0
         }
-        format: "RGBA8n"
-        usage: ["ShaderResource", "RenderTarget"]
+        format: RGBA8n
+        usage: [ShaderResource, RenderTarget]
         samples: 8
     }
     main_depth(main_colour): {
-        format: "D24nS8u"
-        usage: ["ShaderResource", "DepthStencil"]
+        format: D24nS8u
+        usage: [ShaderResource, DepthStencil]
         samples: 8
     }
 }
@@ -603,7 +643,7 @@ pipelines: {
         ]
         depth_stencil_state: depth_test_less
         raster_state: cull_back
-        topology: "TriangleList"
+        topology: TriangleList
     }
 }
 render_graphs: {
@@ -630,6 +670,91 @@ render_graphs: {
 ```
 
 When pmfx is built, shader source is generated along with an [info file](https://github.com/polymonster/pmfx-shader/blob/master/examples/outputs/v2_info.json) that contains useful reflection information to be used at runtime. Based on shader inputs and usage, descriptor layouts and vertex layouts are automatically generated.
+
+### av
+
+The av API can be used to decode and playback audio and video streams with hardware accelleration. Video frames are decoded into native GPU texture formats with no CPU copy overhead.
+
+```rust
+// create a player
+let mut player = av_platform::VideoPlayer::create(&dev).unwrap();
+
+// load a video and play
+player.set_source("video.mp4")?;
+player.play()?;
+
+// ..
+let mut player_open = true;
+while app.run() {
+
+    // poll update
+    player.update(&mut dev)?;
+
+    if player.is_ended() {
+        // .. handle case where video is ended
+    }
+    
+    // get texture
+    if let Some(video_tex) = &player.get_texture() {
+        let size = player.get_size();
+        
+        // .. render
+    }
+}
+```
+
+### imgui
+
+Dear ImGui support with docking and viewports (multiple windows). The widget API is not fully complete in safe Rust. I have been adding these on a case by case basis as I need them.
+
+```rust
+
+// create imgui instance
+let font_path = asset_path
+    .join("data/fonts/roboto_medium.ttf")
+    .to_str()
+    .unwrap()
+    .to_string();
+
+let mut imgui_info = imgui::ImGuiInfo {
+    device: &mut dev,
+    swap_chain: &mut swap_chain,
+    main_window: &win,
+    fonts: vec![imgui::FontInfo {
+        filepath: font_path,
+        glyph_ranges: None
+    }],
+};
+let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
+
+while app.run() {
+
+    // ..
+
+    // imgui
+    imgui.new_frame(&mut app, &mut win, &mut dev);
+
+    // button with size
+    imgui.button_size(font_awesome::strs::EYE, 32.0, 0.0);
+
+    // same line checkbox
+    imgui.same_line();
+    let mut dd = self.session_info.debug_draw_flags.contains(DebugDrawFlags::GRID);
+    if imgui.checkbox("Grid", &mut dd) {
+        if dd {
+            self.session_info.debug_draw_flags |= DebugDrawFlags::GRID;
+        }
+        else {
+            self.session_info.debug_draw_flags &= !DebugDrawFlags::GRID;
+        }
+    }
+
+    // combo
+    let (_, selected) = imgui.combo_list("Camera", &camera_types, &selected);
+
+    imgui.render(&mut app, &mut win, &mut dev, &mut cmdbuffer, &Vec::new());
+}
+```
 
 ## Examples
 
@@ -677,8 +802,6 @@ Test for implementing and verifying the imgui backend - this demonstrates the en
 A standalone example of video playback, it allows you to load a video file from disk so it can be used to test compatibility of different video formats. The current implementation uses windows media foundation and Direct3D12 device to perform video decoding. The `av` API provides access to decoded video frames as a native `gfx::Texture` and performs all decoding on the GPU.
 
 ### Resource Tests
-
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/resource_tests.png" width="100%"/>
 
 This provides a testbed for loading different resource types, it loads some compressed texture formats and displays them to the screen to verify the texture build pipeline and the texture loading pipeline. It also tests the `copy_texture_region` API by copying a texture file specified in a `pmfx` into an empty texture also declared inside the `pmfx` config. This sample can be used in future as more resources are added.
 
@@ -843,16 +966,6 @@ This is wrapped into `pmbuild` so you can also run:
 ```text
 pmbuild test
 ```
-
-## Future Plans
-
-- Linux
-- Vulkan
-- macOS
-- Metal
-- AV Foundation
-- WASM
-- WebGPU
 
 ## Contributing
 
