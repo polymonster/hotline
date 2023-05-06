@@ -23,8 +23,8 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 - [av](#av) - Hardware accelerated av decoding.
 - [imgui](#imgui) - Full featured dear ImGui implementation with viewports and docking.
 - [ecs](#ecs) - Entity component system using `bevy_ecs`.
-- [Client](#Using the Client) - Live reloading coding environment client application.
-- [Standalone Library](#Using as a library) - Use as a standalone library and integrate into your own applications.
+- [Client](#using-the-client) - Live reloading coding environment client application.
+- [Standalone Library](##using-as-a-library) - Use as a standalone library and integrate into your own applications.
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Prerequisites
