@@ -196,6 +196,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             }),
             resolve: false,
             discard: false,
+            array_slice: 0
         })
         .unwrap();
 
