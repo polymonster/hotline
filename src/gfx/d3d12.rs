@@ -218,8 +218,8 @@ pub struct Texture {
     resource: Option<ID3D12Resource>,
     resolved_resource: Option<ID3D12Resource>,
     resolved_format: DXGI_FORMAT,
-    rtv: Option<TextureTarget>,
-    dsv: Option<TextureTarget>,
+    rtv: Vec<TextureTarget>,
+    dsv: Vec<TextureTarget>,
     srv_index: Option<usize>,
     resolved_srv_index: Option<usize>,
     uav_index: Option<usize>,
@@ -1007,14 +1007,14 @@ fn create_swap_chain_rtv(
             device.device.CreateRenderTargetView(&render_target, None, h);
             textures.push(Texture {
                 resource: Some(render_target.clone()),
-                rtv: Some(TextureTarget{
+                rtv: vec![TextureTarget{
                     ptr: h,
                     index: device.rtv_heap.get_handle_index(&h),
                     drop_list: device.rtv_heap.drop_list.clone()
-                }),
+                }],
                 resolved_resource: None,
                 resolved_format: DXGI_FORMAT_UNKNOWN,
-                dsv: None,
+                dsv: Vec::new(),
                 srv_index: None,
                 resolved_srv_index: None,
                 uav_index: None,
@@ -1369,6 +1369,7 @@ impl Device {
                     ds_clear: None,
                     resolve: false,
                     discard: false,
+                    array_slice: 0
                 })
                 .unwrap(),
             );
@@ -2543,27 +2544,79 @@ impl super::Device for Device {
             }
 
             // create rtv
-            let mut rtv = None;
+            let mut rtv = Vec::new();
             if info.usage.contains(super::TextureUsage::RENDER_TARGET) {
-                let h = rtv_heap.allocate();
-                self.device.CreateRenderTargetView(&resource, None, h);
-                rtv = Some(TextureTarget{
-                    ptr: h,
-                    index: self.rtv_heap.get_handle_index(&h),
-                    drop_list: self.rtv_heap.drop_list.clone()
-                })
+                match info.tex_type {
+                    super::TextureType::Texture2DArray | super::TextureType::TextureCube => {
+                        for i in 0..depth_or_array_size {
+                            let h = rtv_heap.allocate();
+                            self.device.CreateRenderTargetView(&resource, Some(&D3D12_RENDER_TARGET_VIEW_DESC{
+                                Format: to_dxgi_format(info.format),
+                                ViewDimension: D3D12_RTV_DIMENSION_TEXTURE2DARRAY,
+                                Anonymous: D3D12_RENDER_TARGET_VIEW_DESC_0 {
+                                    Texture2DArray: D3D12_TEX2D_ARRAY_RTV {
+                                        MipSlice: 0,
+                                        FirstArraySlice: i,
+                                        ArraySize: 1,
+                                        PlaneSlice: 0
+                                    }
+                                }
+                            }), h);
+                            rtv.push(TextureTarget{
+                                ptr: h,
+                                index: rtv_heap.get_handle_index(&h),
+                                drop_list: rtv_heap.drop_list.clone()
+                            });
+                        }
+                    }
+                    _ => {
+                        let h = rtv_heap.allocate();
+                        self.device.CreateRenderTargetView(&resource, None, h);
+                        rtv.push(TextureTarget{
+                            ptr: h,
+                            index: rtv_heap.get_handle_index(&h),
+                            drop_list: rtv_heap.drop_list.clone()
+                        });
+                    }
+                }
             }
 
             // create dsv
-            let mut dsv = None;
+            let mut dsv = Vec::new();
             if info.usage.contains(super::TextureUsage::DEPTH_STENCIL) {
-                let h = dsv_heap.allocate();
-                self.device.CreateDepthStencilView(&resource, None, h);
-                dsv = Some(TextureTarget{
-                    ptr: h,
-                    index: self.dsv_heap.get_handle_index(&h),
-                    drop_list: self.dsv_heap.drop_list.clone()
-                })
+                match info.tex_type {
+                    super::TextureType::Texture2DArray | super::TextureType::TextureCube => {
+                        for i in 0..depth_or_array_size {
+                            let h = dsv_heap.allocate();
+                            self.device.CreateDepthStencilView(&resource, Some(&D3D12_DEPTH_STENCIL_VIEW_DESC{
+                                Format: to_dxgi_format(info.format),
+                                ViewDimension: D3D12_DSV_DIMENSION_TEXTURE2DARRAY,
+                                Anonymous: D3D12_DEPTH_STENCIL_VIEW_DESC_0 {
+                                    Texture2DArray: D3D12_TEX2D_ARRAY_DSV {
+                                        MipSlice: 0,
+                                        FirstArraySlice: i,
+                                        ArraySize: 1
+                                    }
+                                },
+                                Flags: D3D12_DSV_FLAG_NONE
+                            }), h);
+                            dsv.push(TextureTarget{
+                                ptr: h,
+                                index: dsv_heap.get_handle_index(&h),
+                                drop_list: dsv_heap.drop_list.clone()
+                            });
+                        }
+                    }
+                    _ => {
+                        let h = dsv_heap.allocate();
+                        self.device.CreateDepthStencilView(&resource, None, h);
+                        dsv.push(TextureTarget{
+                            ptr: h,
+                            index: dsv_heap.get_handle_index(&h),
+                            drop_list: dsv_heap.drop_list.clone()
+                        });
+                    }
+                }
             }
 
             // create uav
@@ -2693,7 +2746,7 @@ impl super::Device for Device {
             };
             formats.push(dxgi_format);
             rt.push(D3D12_RENDER_PASS_RENDER_TARGET_DESC {
-                cpuDescriptor: target.rtv.as_ref().unwrap().ptr,
+                cpuDescriptor: target.rtv[info.array_slice].ptr,
                 BeginningAccess: begin,
                 EndingAccess: end,
             })
@@ -2784,7 +2837,7 @@ impl super::Device for Device {
 
             // TODO: if no dsv
             ds = Some(D3D12_RENDER_PASS_DEPTH_STENCIL_DESC {
-                cpuDescriptor: depth_stencil.dsv.as_ref().unwrap().ptr,
+                cpuDescriptor: depth_stencil.dsv[info.array_slice].ptr,
                 DepthBeginningAccess: depth_begin,
                 StencilBeginningAccess: stencil_begin,
                 DepthEndingAccess: depth_end,
@@ -3128,7 +3181,7 @@ impl super::SwapChain<Device> for SwapChain {
 
                 // add the rtv's to free list
                 for tex in &self.backbuffer_textures {
-                    if let Some(rtv) = &tex.rtv {
+                    for rtv in &tex.rtv {
                         device.rtv_heap.deallocate(rtv.index);
                     }
                 }
@@ -4152,7 +4205,7 @@ impl Drop for Texture {
                 drop_list.push(drop_res);
             }
             // texture target views
-            if let Some(rtv) = &self.rtv {
+            for rtv in &self.rtv {
                 let mut drop_list = rtv.drop_list.list.lock().unwrap();
                 let drop_res = DropResource {
                     resources: res_vec.to_vec(),
@@ -4162,7 +4215,7 @@ impl Drop for Texture {
                 drop_list.push(drop_res);
                 res_vec.clear();
             }
-            if let Some(dsv) = &self.dsv {
+            for dsv in &self.dsv {
                 let mut drop_list = dsv.drop_list.list.lock().unwrap();
                 let drop_res = DropResource {
                     resources: res_vec.to_vec(),

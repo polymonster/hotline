@@ -1,12 +1,13 @@
 // TODO:
 
+// - omni shadow map
+
 // - clear buffer (uav)
 // - buffers in pmfx
 // - clear buffers for compute
 
 // material system
 // - perspective shadow map
-// - omni shadow map
 // - cascaded shadow map
 // - area light
 // - disney brdf
