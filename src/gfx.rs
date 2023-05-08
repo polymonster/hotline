@@ -801,6 +801,8 @@ pub struct RenderPassInfo<'stack, D: Device> {
     pub resolve: bool,
     /// (must also specify None to clear). This can save having to Load conents from main memory
     pub discard: bool,
+    /// Array layer, depth slice or cubemap face to render to
+    pub array_slice: usize
 }
 
 /// Transitions are required to be performed to switch resources from reading to writing or into different formats

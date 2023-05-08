@@ -26,6 +26,8 @@ mod raster_states;
 mod blend_states;
 mod generate_mip_maps;
 mod shadow_map;
+mod omni_shadow_map;
+mod dynamic_cubemap;
 
 use prelude::*;
 
@@ -539,7 +541,9 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "raster_states",
         "blend_states",
         "generate_mip_maps",
-        "shadow_map"
+        "shadow_map",
+        "dynamic_cubemap",
+        "omni_shadow_map"
     ]
 }
 

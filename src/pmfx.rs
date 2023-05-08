@@ -19,7 +19,7 @@ use std::sync::Mutex;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use maths_rs::{max, min, ceil, num::Base, Mat34f, Vec2f, Vec3f, Vec4f, Mat4f, Vec3u};
+use maths_rs::prelude::*;
 
 /// Hash type for quick checks of changed resources from pmfx
 pub type PmfxHash = u64;
@@ -110,7 +110,9 @@ struct TrackedTexture<D: gfx::Device>  {
     /// Optional ratio, which will contain window name and scale info if present
     ratio: Option<TextureSizeRatio>,
     /// Tuple of (width, height, depth) to track the current size of the texture and compare for updates
-    size: (u64, u64, u32)
+    size: (u64, u64, u32),
+    /// Track texture type
+    _tex_type: gfx::TextureType,
 }
 
 /// Information to track changes to 
@@ -313,6 +315,7 @@ struct TextureInfo {
     mip_levels: u32,
     array_layers: u32,
     samples: u32,
+    cubemap: bool,
     format: gfx::Format,
     usage: Vec<ResourceState>,
     hash: u64,
@@ -385,7 +388,9 @@ struct GraphPassInfo {
     /// For compute passes the number of threads
     numthreads: Option<(u32, u32, u32)>,
     /// The name of a resource a compute shader wil distrubute work into
-    target_dimension: Option<String>
+    target_dimension: Option<String>,
+    /// Signify we want cubemap rendering
+    cubemap: Option<bool>
 }
 
 /// A GPU buffer type which can resize and stretch like a vector
@@ -679,6 +684,50 @@ pub struct WorldBufferInfo {
     pub shadow_matrix: GpuBufferLookup
 }
 
+pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> CameraConstants {
+    let at = [
+        vec3f(-1.0, 0.0, 0.0), //+x
+        vec3f(1.0, 0.0, 0.0),  //-x
+        vec3f(0.0, -1.0, 0.0), //+y
+        vec3f(0.0, 1.0, 0.0),  //-y
+        vec3f(0.0, 0.0, 1.0),  //+z
+        vec3f(0.0, 0.0, -1.0)  //-z
+    ];
+
+    let right = [
+        vec3f(0.0, 0.0, 1.0),
+        vec3f(0.0, 0.0, -1.0),
+        vec3f(1.0, 0.0, 0.0),
+        vec3f(1.0, 0.0, 0.0),
+        vec3f(1.0, 0.0, 0.0),
+        vec3f(-1.0, 0.0, -0.0)
+    ];
+
+    let up = [
+        vec3f(0.0, 1.0, 0.0),
+        vec3f(0.0, 1.0, 0.0),
+        vec3f(0.0, 0.0, 1.0),
+        vec3f(0.0, 0.0, -1.0),
+        vec3f(0.0, 1.0, 0.0),
+        vec3f(0.0, 1.0, 0.0)
+    ];
+
+    let view = Mat4f::from((
+        Vec4f::from((right[face as usize], pos.x)),
+        Vec4f::from((up[face as usize], pos.y)),
+        Vec4f::from((at[face as usize], pos.z)),
+        Vec4f::new(0.0, 0.0, 0.0, 1.0),
+    ));
+
+    let proj = Mat4f::create_perspective_projection_lh_yup(deg_to_rad(90.0), 1.0, near, far);
+
+    CameraConstants {
+        view_matrix: view,
+        view_projection_matrix: proj * view,
+        view_position: Vec4f::from((pos, 1.0))
+    }
+}
+
 /// creates a shader from an option of filename, returning optional shader back
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {
     if let Some(shader) = file {
@@ -755,7 +804,10 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo, ratio_size: (u64, u64)) -> gf
     let (width, height) = ratio_size;
 
     // infer texture type from dimensions
-    let tex_type = if pmfx_texture.depth > 1 {
+    let tex_type = if pmfx_texture.cubemap { 
+        gfx::TextureType::TextureCube
+    } 
+    else if pmfx_texture.depth > 1 {
         gfx::TextureType::Texture3D
     }
     else if height > 1 {
@@ -1106,7 +1158,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             println!("hotline_rs::pmfx:: creating texture: {}", texture_name);
             let pmfx_tex = &self.pmfx.textures[texture_name];
 
-            let (tex, size) = if let Some(filepath) = &pmfx_tex.filepath {
+            let (tex, size, tex_type) = if let Some(filepath) = &pmfx_tex.filepath {
                 // load texture from file
                 let data_path = if let Some(src_data) = pmfx_tex.src_data {
                     if src_data {
@@ -1128,24 +1180,26 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         ..Default::default()
                     },
                     super::data![&img.data]
-                )?, (img.info.width, img.info.height))
+                )?, (img.info.width, img.info.height), gfx::TextureType::Texture2D)
             }
             else {
                 // create a new empty texture
                 let size = self.get_texture_size_from_ratio(pmfx_tex)?;
+                let gfx_info = to_gfx_texture_info(pmfx_tex, size);
                 (device.create_texture_with_heaps::<u8>(
-                    &to_gfx_texture_info(pmfx_tex, size),
+                    &gfx_info,
                     gfx::TextureHeapInfo {
                         shader: Some(&mut self.shader_heap),
                         ..Default::default()
                     },
-                    None)?, size)
+                    None)?, size, gfx_info.tex_type)
             };
 
             self.textures.insert(texture_name.to_string(), (pmfx_tex.hash, TrackedTexture {
                 texture: tex,
                 ratio: self.pmfx.textures[texture_name].ratio.clone(),
-                size: (size.0, size.1, pmfx_tex.depth)
+                size: (size.0, size.1, pmfx_tex.depth),
+                _tex_type: tex_type
             }));
         }
         Ok(())
@@ -1252,6 +1306,150 @@ impl<D> Pmfx<D> where D: gfx::Device {
         Ok(use_indices)
     }
 
+    fn create_view_pass_inner(
+        &mut self, device: 
+        &mut D, view_name: &str, 
+        graph_pass_name: &str, 
+        info: &GraphPassInfo,
+        pmfx_view: &ViewInfo,
+        array_slice: usize,
+        cubemap: bool
+    ) -> Result<(), super::Error> {
+        
+        // make a custom name for multi pass
+        let graph_pass_multi_name = if array_slice > 0 {
+            format!("{}_{}", graph_pass_name, array_slice)
+        }
+        else {
+            graph_pass_name.to_string()
+        };
+
+        // array of targets by name
+        let mut size = (0, 0);
+        let mut render_targets = Vec::new();
+        for name in &pmfx_view.render_target {
+            render_targets.push(self.get_texture(name).unwrap());
+            size = self.get_texture_2d_size(name).unwrap();
+        }
+
+        // get depth stencil by name
+        let depth_stencil = if !pmfx_view.depth_stencil.is_empty() {
+            let name = &pmfx_view.depth_stencil[0];
+            size = self.get_texture_2d_size(name).unwrap();
+            Some(self.get_texture(name).unwrap())
+        }
+        else {
+            None
+        };
+
+        // pass for render targets with depth stencil
+        let render_target_pass = device
+        .create_render_pass(&gfx::RenderPassInfo {
+            render_targets: render_targets.to_vec(),
+            rt_clear: to_gfx_clear_colour(pmfx_view.clear_colour.clone()),
+            depth_stencil,
+            ds_clear: to_gfx_clear_depth_stencil(pmfx_view.clear_depth, pmfx_view.clear_stencil),
+            resolve: false,
+            discard: false,
+            array_slice: array_slice
+        })?;
+
+        // assing a view pipleine (if we supply 1 pipeline) for all draw calls in the view, otherwise leave it emptu
+        let view_pipeline = if let Some(pipelines) = &info.pipelines {
+            if pipelines.len() == 1 {
+                pipelines[0].to_string()
+            }
+            else {
+                String::new()
+            }
+        }
+        else {
+            String::new()
+        };
+
+        // hashes
+        let mut hash = DefaultHasher::new();
+        graph_pass_multi_name.hash(&mut hash);
+        let name_hash : PmfxHash = hash.finish();
+
+        // colour hash
+        let mut hash = DefaultHasher::new();
+        view_name.hash(&mut hash);
+        let colour_hash : u32 = hash.finish() as u32 | 0xff000000;
+
+        // validate viewport f32 count
+        if pmfx_view.viewport.len() != 6 {
+            return Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: viewport expects array of 6 floats, found {}", pmfx_view.viewport.len())
+            });
+        }
+
+        // validate scissor f32 count
+        if pmfx_view.scissor.len() != 4 {
+            return Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: scissor expects array of 4 floats, found {}", pmfx_view.viewport.len())
+            });
+        }
+
+        //
+        let use_indices = self.get_resource_use_indices(device, info)?;
+
+        // get blit dimension, tbh this should probably be a rect
+        let target_size = if let Some(target) = &info.target_dimension {
+            if let Some(dim) = self.get_texture_2d_size(target) {
+                dim
+            }
+            else {
+                (0, 0)
+            }
+        }
+        else {
+            (0, 0)
+        };
+
+        let camera_name = if cubemap {
+            format!("{}_{}", pmfx_view.camera.to_string(), array_slice)
+        }
+        else {
+            pmfx_view.camera.to_string()
+        };
+
+        let view = View::<D> {
+            graph_pass_name: graph_pass_multi_name.to_string(),
+            pmfx_view_name: view_name.to_string(),
+            name_hash,
+            colour_hash,
+            pass: render_target_pass,
+            viewport: gfx::Viewport {
+                x: size.0 as f32 * pmfx_view.viewport[0],
+                y: size.1 as f32 * pmfx_view.viewport[1],
+                width: size.0 as f32 * pmfx_view.viewport[2],
+                height: size.1 as f32 * pmfx_view.viewport[3],
+                min_depth: pmfx_view.viewport[4],
+                max_depth: pmfx_view.viewport[5],
+            },
+            scissor_rect: gfx::ScissorRect {
+                left: (size.0 as f32 * pmfx_view.scissor[0]) as i32,
+                top: (size.1 as f32 * pmfx_view.scissor[1]) as i32,
+                right: (size.0 as f32 * pmfx_view.scissor[2]) as i32,
+                bottom: (size.1 as f32 * pmfx_view.scissor[3]) as i32
+            },
+            cmd_buf: device.create_cmd_buf(2),
+            camera: camera_name,
+            view_pipeline,
+            use_indices,
+            blit_dimension: Vec2f::from((target_size.0 as f32, target_size.1 as f32))
+        };
+
+        self.views.insert(graph_pass_multi_name.to_string(), 
+            (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
+
+        // create stats
+        self.pass_stats.insert(graph_pass_multi_name.to_string(), PassStats::new(device, 2));
+
+        Ok(())
+    }   
+
     /// Create a view pass from information specified in pmfx file
     fn create_view_pass(&mut self, device: &mut D, view_name: &str, graph_pass_name: &str, info: &GraphPassInfo) -> Result<(), super::Error> {
         if !self.views.contains_key(graph_pass_name) && self.pmfx.views.contains_key(view_name) {
@@ -1261,136 +1459,35 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
 
-            // create textures for targets
-            let mut render_targets = Vec::new();
+            // create textures for 
+            let mut cubemap = false;
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
                 self.view_texture_refs.entry(name.to_string())
                     .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
+
+                if self.pmfx.textures[name].cubemap {
+                    println!("cubeaaa");
+                    cubemap = true;
+                }
             }
 
             // create textures for depth stencils
             for name in &pmfx_view.depth_stencil {
                 self.create_texture(device, name)?;
-
                 self.view_texture_refs.entry(name.to_string())
                 .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
             }
 
-            let mut size = (0, 0);
-
-            // array of targets by name
-            for name in &pmfx_view.render_target {
-                render_targets.push(self.get_texture(name).unwrap());
-                size = self.get_texture_2d_size(name).unwrap();
+            let mut pass_count = 1;
+            if cubemap {
+                pass_count = 6;
             }
 
-            // get depth stencil by name
-            let depth_stencil = if !pmfx_view.depth_stencil.is_empty() {
-                let name = &pmfx_view.depth_stencil[0];
-                size = self.get_texture_2d_size(name).unwrap();
-                Some(self.get_texture(name).unwrap())
+            for i in 0..pass_count {
+                self.create_view_pass_inner(
+                    device, view_name, graph_pass_name, info, &pmfx_view, i, cubemap)?;
             }
-            else {
-                None
-            };
-
-            // pass for render targets with depth stencil
-            let render_target_pass = device
-            .create_render_pass(&gfx::RenderPassInfo {
-                render_targets,
-                rt_clear: to_gfx_clear_colour(pmfx_view.clear_colour),
-                depth_stencil,
-                ds_clear: to_gfx_clear_depth_stencil(pmfx_view.clear_depth, pmfx_view.clear_stencil),
-                resolve: false,
-                discard: false,
-            })?;
-
-            // assing a view pipleine (if we supply 1 pipeline) for all draw calls in the view, otherwise leave it emptu
-            let view_pipeline = if let Some(pipelines) = &info.pipelines {
-                if pipelines.len() == 1 {
-                    pipelines[0].to_string()
-                }
-                else {
-                    String::new()
-                }
-            }
-            else {
-                String::new()
-            };
-
-            // hashes
-            let mut hash = DefaultHasher::new();
-            graph_pass_name.hash(&mut hash);
-            let name_hash : PmfxHash = hash.finish();
-
-            // colour hash
-            let mut hash = DefaultHasher::new();
-            view_name.hash(&mut hash);
-            let colour_hash : u32 = hash.finish() as u32 | 0xff000000;
-
-            // validate viewport f32 count
-            if pmfx_view.viewport.len() != 6 {
-                return Err(super::Error {
-                    msg: format!("hotline_rs::pmfx:: viewport expects array of 6 floats, found {}", pmfx_view.viewport.len())
-                });
-            }
-
-            // validate scissor f32 count
-            if pmfx_view.scissor.len() != 4 {
-                return Err(super::Error {
-                    msg: format!("hotline_rs::pmfx:: scissor expects array of 4 floats, found {}", pmfx_view.viewport.len())
-                });
-            }
-
-            //
-            let use_indices = self.get_resource_use_indices(device, info)?;
-
-            // get blit dimension, tbh this should probably be a rect
-            let target_size = if let Some(target) = &info.target_dimension {
-                if let Some(dim) = self.get_texture_2d_size(target) {
-                    dim
-                }
-                else {
-                    (0, 0)
-                }
-            }
-            else {
-                (0, 0)
-            };
-
-            let view = View::<D> {
-                graph_pass_name: graph_pass_name.to_string(),
-                pmfx_view_name: view_name.to_string(),
-                name_hash,
-                colour_hash,
-                pass: render_target_pass,
-                viewport: gfx::Viewport {
-                    x: size.0 as f32 * pmfx_view.viewport[0],
-                    y: size.1 as f32 * pmfx_view.viewport[1],
-                    width: size.0 as f32 * pmfx_view.viewport[2],
-                    height: size.1 as f32 * pmfx_view.viewport[3],
-                    min_depth: pmfx_view.viewport[4],
-                    max_depth: pmfx_view.viewport[5],
-                },
-                scissor_rect: gfx::ScissorRect {
-                    left: (size.0 as f32 * pmfx_view.scissor[0]) as i32,
-                    top: (size.1 as f32 * pmfx_view.scissor[1]) as i32,
-                    right: (size.0 as f32 * pmfx_view.scissor[2]) as i32,
-                    bottom: (size.1 as f32 * pmfx_view.scissor[3]) as i32
-                },
-                cmd_buf: device.create_cmd_buf(2),
-                camera: pmfx_view.camera.to_string(),
-                view_pipeline,
-                use_indices,
-                blit_dimension: Vec2f::from((target_size.0 as f32, target_size.1 as f32))
-            };
-
-            self.views.insert(graph_pass_name.to_string(), 
-                (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
-
-            // create stats
-            self.pass_stats.insert(graph_pass_name.to_string(), PassStats::new(device, 2));
         }
 
         Ok(())
@@ -1773,7 +1870,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             
                             // generate mips on non msaa resources
                             if gen_mips {
-
                                 // generate_mip_maps mips expects us to be in ShaderResource state
                                 self.create_texture_transition_barrier(
                                     device, 
@@ -1832,10 +1928,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         }
                     }
 
+                    // add single pass
+                    self.command_queue.push(graph_pass_name.to_string());
+
+                    // add additional 5 passes for cubemaps
+                    if let Some(cubemap) = instance.cubemap {
+                        if cubemap {
+                            for i in 1..6 {
+                                self.command_queue.push(format!("{}_{}", graph_pass_name, i));
+                            }
+                        }
+                    }
+
                     // push a view on
                     added += 1;
                     dependencies.insert(graph_pass_name.to_string());
-                    self.command_queue.push(graph_pass_name.to_string());
                 }
             }
             
@@ -2295,6 +2402,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
         *self.cameras.entry(name.to_string()).or_insert(constants.clone()) = constants.clone();
     }
 
+    /// Update camera constants for the named camera, will create a new entry if one does not exist
+    pub fn update_cubemap_camera_constants(&mut self, name: &str, pos: Vec3f, near: f32, far: f32) {
+        // add a camera for each face
+        for i in 0..6 {
+            let name = format!("{}_{}", name, i);
+            let constants = cubemap_camera_face(i, pos, near, far);
+            *self.cameras.entry(name.to_string()).or_insert(constants.clone()) = constants.clone();
+        }
+    }
+
     /// Borrow camera constants to push into a command buffer, return `None` if they do not exist
     pub fn get_camera_constants(&self, name: &str) -> Result<&CameraConstants, super::Error> {
         if let Some(cam) = &self.cameras.get(name) {
@@ -2377,9 +2494,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// which is called as so: `function_name(view)` so functions can be re-used for different views
     pub fn get_render_graph_function_info(&self, render_graph: &str) -> Vec<(String, String)> {
         if self.pmfx.render_graphs.contains_key(render_graph) {
-            self.pmfx.render_graphs[render_graph].iter().map(|graph|{
-                (graph.1.function.to_string(), graph.0.to_string())
-            }).collect()
+            let mut passes = Vec::new();
+            for (name, pass) in &self.pmfx.render_graphs[render_graph] {
+                passes.push((pass.function.to_string(), name.to_string()));
+                // add additional cubemap passes
+                if let Some(cubemap) = pass.cubemap {
+                    if cubemap {
+                        for i in 1..6 {
+                            passes.push((pass.function.to_string(), format!("{}_{}", name, i).to_string()));
+                        }
+                    }
+                }
+            }
+            passes
         }
         else {
             Vec::new()
