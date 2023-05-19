@@ -441,7 +441,7 @@ impl BevyPlugin {
             let render_functions = client.pmfx.get_render_graph_function_info(graph);
             let mut render_function_names = Vec::new();
             for v in render_functions {
-                render_function_names.push(v.0);
+                render_function_names.push(format!("{}: {}", v.0, v.1));
             }
             self.status_ui_category(
                 &mut client.imgui, 

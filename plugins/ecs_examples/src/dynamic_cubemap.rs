@@ -8,14 +8,19 @@
 use crate::prelude::*;
 use hotline_rs::pmfx::CameraConstants;
 
-
+#[derive(Component)]
+pub struct Probe;
 
 #[no_mangle]
 pub fn dynamic_cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(hotline_rs::get_data_path("shaders/util").as_str()).unwrap();
     client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
             "setup_dynamic_cubemap"
+        ],
+        update: systems![
+            "orbit_meshes"
         ],
         render_graph: "dynamic_cubemap",
         ..Default::default()
@@ -42,7 +47,8 @@ pub fn setup_dynamic_cubemap(
         Rotation(Quatf::identity()),
         MeshComponent(sphere_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
-        TextureInstance(srv)
+        TextureInstance(srv),
+        Probe
     ));
 
     // orbiting primitives
@@ -60,19 +66,34 @@ pub fn setup_dynamic_cubemap(
     let num_primitves = 32; 
     for i in 0..num_primitves {
         let rv = normalize(vec3f(rng.gen(), rng.gen(), rng.gen()) * 2.0 - 1.0);
+        let rr = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::tau();
         let offset : f32 = 20.0 + rng.gen::<f32>() * 20.0;
         let mi = dist.sample(&mut rng);
 
         commands.spawn((
             Position(rv * (sphere_size + offset)),
             Scale(splat3f(5.0)),
-            Rotation(Quatf::identity()),
+            Rotation(Quatf::from_euler_angles(rr.x, rr.y, rr.z)),
             MeshComponent(orbit_meshes[mi].clone()),
             WorldMatrix(Mat34f::identity())
         ));
     }
 
     pmfx.update_cubemap_camera_constants("cubemap_camera", Vec3f::zero(), 0.1, 1000.0);
+
+    Ok(())
+}
+
+#[no_mangle]
+#[export_update_fn]
+pub fn orbit_meshes(
+    time: Res<TimeRes>, 
+    mut mesh_query: Query<(&mut Rotation, &mut Position), Without<Probe>>) -> Result<(), hotline_rs::Error> {
+
+    for (mut rotation, mut position) in &mut mesh_query {
+        rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
+        position.0 = Quat::from_euler_angles(0.0, f32::pi() * time.0.delta * 0.2, 0.0) * position.0;
+    }
 
     Ok(())
 }
@@ -106,7 +127,6 @@ pub fn render_orbit_meshes(
     Ok(())
 }
 
-/// Renders all scene meshes with a cubemap applied and samples the separate mip levels in the shader per entity
 #[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_cubemap_reflect(
@@ -135,6 +155,45 @@ pub fn render_meshes_cubemap_reflect(
 
         mip += 1;
     }
+
+    Ok(())
+}
+
+/// Blit a single fullscreen texture into the render target
+#[no_mangle]
+#[export_render_fn]
+pub fn cubemap_clear(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format("cubemap_clear", fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    if view.use_indices.len() != 1 {
+        return Err(hotline_rs::Error {
+            msg: "blit expects a single read resource specified in the `pmfx` uses".to_string()
+        });
+    }
+    let srv = view.use_indices[0].index;
+
+    view.cmd_buf.set_render_pipeline(pipeline);
+
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = slot {
+        let inv = camera.view_projection_matrix.inverse();
+        view.cmd_buf.push_render_constants(slot.index, 16, 0, &inv);
+    }
+
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
+    }
+
+    view.cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
+    view.cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
+    view.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
 
     Ok(())
 }
