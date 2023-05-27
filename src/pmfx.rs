@@ -1459,7 +1459,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
 
-            // create textures for 
+            // create textures for view 
             let mut cubemap = false;
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
@@ -1467,7 +1467,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
 
                 if self.pmfx.textures[name].cubemap {
-                    println!("cubeaaa");
                     cubemap = true;
                 }
             }
@@ -1477,6 +1476,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_texture(device, name)?;
                 self.view_texture_refs.entry(name.to_string())
                 .or_insert(HashSet::new()).insert(graph_pass_name.to_string());
+
+                if self.pmfx.textures[name].cubemap {
+                    cubemap = true;
+                }
             }
 
             let mut pass_count = 1;
