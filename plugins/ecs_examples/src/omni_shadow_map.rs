@@ -16,6 +16,7 @@ pub fn omni_shadow_map(client: &mut Client<gfx_platform::Device, os_platform::Ap
             "setup_omni_shadow_map"
         ],
         update: systems![
+            "animate_omni_shadow",
             "batch_lights"
         ],
         render_graph: "mesh_lit_omni_shadow_map",
@@ -47,6 +48,7 @@ pub fn setup_omni_shadow_map(
     let light_radius = 256.0;
     commands.spawn((
         Position(light_pos),
+        Velocity(Vec3f::unit_z()),
         Colour(vec4f(0.5, 0.25, 0.125, 1.0)),
         LightComponent {
             light_type: LightType::Point,
@@ -98,7 +100,47 @@ pub fn setup_omni_shadow_map(
         WorldMatrix(Mat34f::identity())
     ));
     
-    pmfx.update_cubemap_camera_constants("omni_shadow_camera", -light_pos, 0.1, light_radius * 2.0);
+    pmfx.update_cubemap_camera_constants("omni_shadow_camera", light_pos, 0.1, light_radius * 2.0);
+
+    Ok(())
+}
+
+#[no_mangle]
+#[export_update_fn]
+pub fn animate_omni_shadow (
+    time: Res<TimeRes>, 
+    mut pmfx: ResMut<PmfxRes>,
+    mut light_query: Query<(&mut Position, &mut Velocity, &LightComponent)>) -> Result<(), hotline_rs::Error> {
+
+    let dim = 32;
+    let dim2 = dim / 2;
+    let tile_size = 10.0;
+    let spacing = 16.0;
+
+    let extent = (tile_size + spacing) * 3.0 * 6.0;
+
+    for (mut position, mut velocity, component) in &mut light_query {
+        
+        position.0 += velocity.0 * time.delta * 400.0;
+
+        if position.z > extent {
+            velocity.0 = Vec3f::unit_x();
+        }
+        
+        if position.x > extent {
+            velocity.0 = -Vec3f::unit_z();
+        }
+        
+        if position.z < -extent {
+            velocity.0 = -Vec3f::unit_x();
+        }
+        
+        if position.x < -extent {
+            velocity.0 = Vec3f::unit_z();
+        }
+
+        pmfx.update_cubemap_camera_constants("omni_shadow_camera", position.0, 0.1, component.radius * 2.0);
+    }
 
     Ok(())
 }
