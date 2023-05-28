@@ -686,17 +686,17 @@ pub struct WorldBufferInfo {
 
 pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> CameraConstants {
     let at = [
-        vec3f(-1.0, 0.0, 0.0), //+x
-        vec3f(1.0, 0.0, 0.0),  //-x
-        vec3f(0.0, -1.0, 0.0), //+y
-        vec3f(0.0, 1.0, 0.0),  //-y
-        vec3f(0.0, 0.0, 1.0),  //+z
-        vec3f(0.0, 0.0, -1.0)  //-z
+        vec3f(1.0, 0.0, 0.0),   //+x
+        vec3f(-1.0, 0.0, 0.0),  //-x
+        vec3f(0.0, 1.0, 0.0),   //+y
+        vec3f(0.0, -1.0, 0.0),  //-y        
+        vec3f(0.0, 0.0, 1.0),   //+z
+        vec3f(0.0, 0.0, -1.0)   //-z
     ];
 
     let right = [
-        vec3f(0.0, 0.0, 1.0),
         vec3f(0.0, 0.0, -1.0),
+        vec3f(0.0, 0.0, 1.0),
         vec3f(1.0, 0.0, 0.0),
         vec3f(1.0, 0.0, 0.0),
         vec3f(1.0, 0.0, 0.0),
@@ -706,8 +706,8 @@ pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> Came
     let up = [
         vec3f(0.0, 1.0, 0.0),
         vec3f(0.0, 1.0, 0.0),
-        vec3f(0.0, 0.0, 1.0),
         vec3f(0.0, 0.0, -1.0),
+        vec3f(0.0, 0.0, 1.0),
         vec3f(0.0, 1.0, 0.0),
         vec3f(0.0, 1.0, 0.0)
     ];
@@ -721,6 +721,7 @@ pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> Came
 
     let proj = Mat4f::create_perspective_projection_lh_yup(deg_to_rad(90.0), 1.0, near, far);
 
+    let view = view.inverse();
     CameraConstants {
         view_matrix: view,
         view_projection_matrix: proj * view,
