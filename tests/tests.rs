@@ -762,3 +762,8 @@ fn generate_mip_maps() -> Result<(), hotline_rs::Error> {
 fn shadow_map() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("shadow_map")
 }
+
+#[test]
+fn dynamic_cubemap() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("dynamic_cubemap")
+}

@@ -953,6 +953,12 @@ This demonstrates the functionality in the low level gfx API to generate a mip c
 
 A sample to demonstrate how to configure a single shadow map with a vertex shader only render pipeline that only outputs depth to the depth stencil unit. A `SamplerComparsionState` is used in the lighting shader to read shadow samples and a 9-tap PCF filter is also applied.
 
+### Dynamic Cubemap
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/dynamic_cubemap.png" width="100%"/>
+
+Demonstrates how multiple cubemap faces can be render to with cubemap cameras and then sampled from to create dynamic environment mapped reflections. A single `pmfx` view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
+
 ## Tests
 
 There are standalone tests and client/plugin tests to test graphics API features. This requires a test runner which has a GPU and is not headless, so I am using my home machine as a self-hosted actions runner. You can run the tests yourself but because of the requirement of a GPU device and plugin loading the tests need to be ran single threaded. 
