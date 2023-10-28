@@ -28,6 +28,7 @@ mod generate_mip_maps;
 mod shadow_map;
 mod omni_shadow_map;
 mod dynamic_cubemap;
+mod pbr;
 
 use prelude::*;
 
@@ -481,6 +482,45 @@ pub fn blit(
     Ok(())
 }
 
+/// Blit a single fullscreen texture into the render target
+#[no_mangle]
+#[export_render_fn]
+pub fn cubemap_clear(
+    pmfx: &Res<PmfxRes>,
+    view: &pmfx::View<gfx_platform::Device>) -> Result<(), hotline_rs::Error> {
+        
+    let pmfx = &pmfx;
+    let fmt = view.pass.get_format_hash();
+    let pipeline = pmfx.get_render_pipeline_for_format("cubemap_clear", fmt)?;
+    let camera = pmfx.get_camera_constants(&view.camera)?;
+
+    if view.use_indices.len() != 1 {
+        return Err(hotline_rs::Error {
+            msg: "blit expects a single read resource specified in the `pmfx` uses".to_string()
+        });
+    }
+    let srv = view.use_indices[0].index;
+
+    view.cmd_buf.set_render_pipeline(pipeline);
+
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+    if let Some(slot) = slot {
+        let inv = camera.view_projection_matrix.inverse();
+        view.cmd_buf.push_render_constants(slot.index, 16, 0, &inv);
+    }
+
+    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource);
+    if let Some(slot) = slot {
+        view.cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
+    }
+
+    view.cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
+    view.cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
+    view.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
+
+    Ok(())
+}
+
 /// Generic compute dispatch which binds usage information supplied in pmfx files
 #[no_mangle]
 #[export_compute_fn]
@@ -543,7 +583,8 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "generate_mip_maps",
         "shadow_map",
         "dynamic_cubemap",
-        "omni_shadow_map"
+        "omni_shadow_map",
+        "pbr"
     ]
 }
 
