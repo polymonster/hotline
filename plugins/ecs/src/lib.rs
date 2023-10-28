@@ -417,6 +417,8 @@ impl BevyPlugin {
         // warn of missing demo
         if self.errors.contains_key("active_demo") {
             client.imgui.colour_text(&format!("warning: missing demo function: {}, using default schedule.", self.session_info.active_demo), warning_col);
+            client.imgui.colour_text(&format!("  tip: make sure 'mod {};' is added to a plugins lib.rs file", self.session_info.active_demo), default_col);
+            client.imgui.colour_text(&format!("  tip: make sure \"{}\" is added to a plugins 'demos!' array inside the 'get_demos_..()' function", self.session_info.active_demo), default_col);
         }
 
         self.status_ui_category(&mut client.imgui, "Setup:", &self.schedule_info.setup);

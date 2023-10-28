@@ -957,7 +957,7 @@ A sample to demonstrate how to configure a single shadow map with a vertex shade
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/dynamic_cubemap.png" width="100%"/>
 
-Demonstrates how multiple cubemap faces can be render to with cubemap cameras and then sampled from to create dynamic environment mapped reflections. A single `pmfx` view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
+Demonstrates how multiple cubemap faces can be rendered using cubemap cameras and then sampled from to create dynamic environment mapped reflections. A single `pmfx` view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
 
 ## Tests
 
