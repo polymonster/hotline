@@ -36,14 +36,14 @@ pub fn setup_pbr(
     let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64);
 
     // square number of rows and columns
-    let rc = 5.0;
+    let rc = 8.0;
     let irc = (rc + 0.5) as i32; 
 
     let size = 10.0;
     let half_size = size * 0.5;    
-    let step = size * half_size;
+    let step = size * half_size * 0.5;
     let half_extent = (rc-1.0) * step * 0.5;
-    let start_pos = vec3f(-half_extent, -half_extent, 0.0);
+    let start_pos = vec3f(-half_extent, -(2.0-1.0) * step * 0.5, 0.0);
 
     let cubemap_filepath = hotline_rs::get_data_path("textures/cubemap.dds");
     let cubemap = image::load_texture_from_file(&mut device.0, &cubemap_filepath, Some(&mut pmfx.shader_heap)).unwrap();
@@ -54,7 +54,7 @@ pub fn setup_pbr(
     let lut_srv = lut.get_srv_index().unwrap() as u32;
     let cubemap_srv = cubemap.get_srv_index().unwrap() as u32;
 
-    for y in 0..irc {
+    for y in 0..2 {
         for x in 0..irc {
             let iter_pos = start_pos + vec3f(x as f32 * step, y as f32 * step, 0.0);
             commands.spawn((
@@ -103,12 +103,17 @@ pub fn render_meshes_pbr(
 
     view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
+    let rc = 8;
     let mut i = 0;
-    let min_roughness = 1.0 / 5.0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
 
-        let roughness = min_roughness + ((i % 5).as_f32() / 6.0);
-        let metalness = floor((i / 5).as_f32()) / 5.0;
+        let roughness = ((i % rc).as_f32() / rc as f32);
+        let metalness = if i >= 8 {
+            1.0
+        }
+        else {
+            0.0
+        };
 
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.push_render_constants(1, 4, 12, gfx::as_u8_slice(&[roughness, metalness, 0.0, 0.0]));
