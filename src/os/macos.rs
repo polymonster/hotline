@@ -3,7 +3,7 @@ extern crate objc;
 use std::time::Duration;
 
 use winit::{
-    event::{Event, WindowEvent}, event_loop::ControlFlow, platform::pump_events::EventLoopExtPumpEvents, raw_window_handle::{HasWindowHandle, RawWindowHandle}
+    event::{Event, WindowEvent}, event_loop::ControlFlow, platform::pump_events::{EventLoopExtPumpEvents, PumpStatus}, raw_window_handle::{HasWindowHandle, RawWindowHandle}
 };
 
 use cocoa::{appkit::NSView, base::id as cocoa_id};
@@ -58,10 +58,25 @@ impl super::App for App {
 
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool {
+        let mut resume = true;
         let status = self.event_loop.pump_events(Some(Duration::ZERO), |event, elwt| {
+            match event {
+                Event::WindowEvent { event, .. } => match event {
+                    WindowEvent::CloseRequested => {
+                        resume = false;
+                    }
+                    _ => {
+
+                    }
+                }
+                _ => {
+
+                }
+            }
+
             println!("{}", "inside");
         });
-        true
+        resume
     }
 
     /// Request to exit the application
