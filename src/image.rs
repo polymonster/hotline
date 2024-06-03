@@ -29,7 +29,7 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     let mut f = fs::File::open(path).expect("hotline_rs::image:: File not found");
     // dds file
     if filename.ends_with(".dds") {
-        let dds = DDS::read(f)?;        
+        let dds = DDS::read(f)?;
         Ok(ImageData {
             info: TextureInfo {
                 tex_type: to_gfx_texture_type(&dds),
@@ -72,7 +72,7 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
                 let data_size_bytes = x * y * 4;
                 data_out.resize(data_size_bytes as usize, 0);
                 std::ptr::copy_nonoverlapping(img, data_out.as_mut_ptr(), data_size_bytes as usize);
-        
+
                 // cleanup
                 stb_image_rust::c_runtime::free(img);
 
@@ -103,7 +103,7 @@ pub fn load_texture_from_file(
     heap: Option<&mut crate::gfx_platform::Heap>) -> Result<crate::gfx_platform::Texture, super::Error> {
     let image = load_from_file(file)?;
     device.create_texture_with_heaps(
-        &image.info, 
+        &image.info,
         gfx::TextureHeapInfo {
             shader: heap,
             ..Default::default()
@@ -391,7 +391,7 @@ fn to_gfx_format(dds: &DDS) -> gfx::Format {
             DxgiFormat::Y216 => panic!(),
             DxgiFormat::NV11 => panic!(),
             DxgiFormat::AI44 => panic!(),
-            DxgiFormat::IA44 => panic!(), 
+            DxgiFormat::IA44 => panic!(),
             DxgiFormat::P8 => panic!(),
             DxgiFormat::A8P8 => panic!(),
             DxgiFormat::B4G4R4A4_UNorm => panic!(),

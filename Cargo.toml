@@ -56,6 +56,12 @@ features = [
     "Win32_UI_WindowsAndMessaging",
 ]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+metal = "0.28.0"
+winit = "0.29"
+objc = "0.2.4"
+cocoa = "0.25.0"
+
 [lib]
 crate-type = ["rlib", "dylib"]
 

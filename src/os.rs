@@ -2,6 +2,10 @@
 #[cfg(target_os = "windows")]
 pub mod win32;
 
+// Implements this interface for macos
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 
@@ -141,7 +145,7 @@ bitflags! {
 
     /// Flags to control the open file dialog window
     pub struct OpenFileDialogFlags : u32 {
-        /// Open dialog to look for files 
+        /// Open dialog to look for files
         const FILES = 1<<0;
         /// Open dialog to look for folders
         const FOLDERS = 1<<1;
@@ -172,7 +176,7 @@ pub trait NativeHandle<A: App> {
 }
 
 /// An interface which all platforms need to implement for general operating system calls
-pub trait App: 'static + Any + Sized + Send + Sync + Clone {
+pub trait App: 'static + Any + Sized + Send + Sync {
     // A platform specific concrete window type
     type Window: Window<Self>;
     /// A platform specific handle to window (or other os handles) ie `HWND`
@@ -226,7 +230,7 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
 }
 
 /// An instance of an operating system window
-pub trait Window<A: App>: 'static + Send + Sync + Any + Sized + Clone {
+pub trait Window<A: App>: 'static + Send + Sync + Any + Sized {
     /// Bring window to front and draw ontop of all others
     fn bring_to_front(&self);
     /// Show window, specify true to show window or false to hide
