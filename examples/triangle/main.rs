@@ -11,6 +11,8 @@ use std::fs;
 
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
+
+#[cfg(target_os = "windows")]
 use gfx::d3d12 as gfx_platform;
 
 #[repr(C)]
@@ -78,7 +80,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         initial_state: gfx::ResourceState::VertexConstantBuffer
     };
 
-    let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;   
+    let vertex_buffer = device.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
 
     let vsc_filepath = hotline_rs::get_data_path("shaders/triangle/vs_main.vsc");
     let psc_filepath = hotline_rs::get_data_path("shaders/triangle/ps_main.psc");
@@ -91,7 +93,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         compile_info: None
     };
     let vs = device.create_shader(&vsc_info, &vsc_data)?;
-    
+
     let psc_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
         compile_info: None

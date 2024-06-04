@@ -1,3 +1,5 @@
+#![cfg(target_os = "macos")]
+
 extern crate objc;
 
 use std::time::Duration;
