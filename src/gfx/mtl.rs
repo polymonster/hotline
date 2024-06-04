@@ -12,6 +12,7 @@ use std::result;
 
 #[derive(Clone)]
 pub struct Device {
+    metal_device: metal::Device,
     shader_heap: Heap,
     adapter_info: AdapterInfo
 }
@@ -393,6 +394,7 @@ impl super::Device for Device {
 
     fn create(info: &super::DeviceInfo) -> Device {
         Device {
+            metal_device: metal::Device::system_default().expect("hotline_rs::gfx::mtl: failed to create metal device"),
             shader_heap: Heap {
 
             },

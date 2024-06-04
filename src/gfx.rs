@@ -10,7 +10,7 @@ pub mod d3d12;
 
 /// Implemets this interface with a Metal backend.
 #[cfg(target_os = "macos")]
-pub mod metal;
+pub mod mtl;
 
 type Error = super::Error;
 
