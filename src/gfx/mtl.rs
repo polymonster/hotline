@@ -1,6 +1,10 @@
 #![cfg(target_os = "macos")]
 
+use crate::os_platform;
+use crate::os::Window;
+
 use bevy_ecs::system::lifetimeless::Read;
+use metal::TextureDescriptor;
 
 use super::*;
 use super::Device as SuperDevice;
@@ -10,18 +14,32 @@ use super::Pipeline as SuperPipleline;
 
 use std::result;
 
+use cocoa::{appkit::NSView, base::id as cocoa_id};
+use core_graphics_types::geometry::CGSize;
+
 #[derive(Clone)]
 pub struct Device {
     metal_device: metal::Device,
+    command_queue: metal::CommandQueue,
     shader_heap: Heap,
     adapter_info: AdapterInfo
 }
 
 #[derive(Clone)]
 pub struct SwapChain {
-    backbuffer_textures: Vec<Texture>,
-    backbuffer_passes: Vec<RenderPass>,
-    backbuffer_passes_no_clear: Vec<RenderPass>,
+    layer: metal::MetalLayer,
+    drawable: metal::MetalDrawable,
+    view: *mut objc::runtime::Object,
+    backbuffer_clear: Option<ClearColour>,
+    backbuffer_texture: Texture,
+    backbuffer_pass: RenderPass,
+    backbuffer_pass_no_clear: RenderPass,
+}
+
+impl SwapChain {
+    fn create_backbuffer_passes() {
+
+    }
 }
 
 impl super::SwapChain<Device> for SwapChain {
@@ -40,6 +58,20 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
+        let draw_size = window.get_size();
+        self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
+
+        let drawable = self.layer.next_drawable()
+            .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
+
+        self.drawable = drawable.to_owned();
+
+        self.backbuffer_texture = Texture {
+            metal_texture: drawable.texture().new_texture_view(drawable.texture().pixel_format())
+        };
+
+        self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
+        self.backbuffer_pass_no_clear = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, None);
     }
 
     fn get_backbuffer_index(&self) -> u32 {
@@ -47,26 +79,29 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_backbuffer_texture(&self) -> &Texture {
-        &self.backbuffer_textures[0]
+        &self.backbuffer_texture
     }
 
     fn get_backbuffer_pass(&self) -> &RenderPass {
-        &self.backbuffer_passes[0]
+        &self.backbuffer_pass
     }
 
     fn get_backbuffer_pass_mut(&mut self) -> &mut RenderPass {
-        &mut self.backbuffer_passes[0]
+        &mut self.backbuffer_pass
     }
 
     fn get_backbuffer_pass_no_clear(&self) -> &RenderPass {
-        &self.backbuffer_passes_no_clear[0]
+        &self.backbuffer_pass_no_clear
     }
 
     fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut RenderPass {
-        &mut self.backbuffer_passes_no_clear[0]
+        &mut self.backbuffer_pass_no_clear
     }
 
     fn swap(&mut self, device: &Device) {
+        let cmd = device.command_queue.new_command_buffer();
+        cmd.present_drawable(&self.drawable);
+        cmd.commit();
     }
 }
 
@@ -277,7 +312,7 @@ impl super::RenderPipeline<Device> for RenderPipeline {}
 
 #[derive(Clone)]
 pub struct Texture {
-
+    metal_texture: metal::Texture
 }
 
 impl super::Texture<Device> for Texture {
@@ -299,7 +334,7 @@ impl super::Texture<Device> for Texture {
 
     fn clone_inner(&self) -> Texture {
         Texture {
-
+            metal_texture: self.metal_texture.clone()
         }
     }
 
@@ -378,6 +413,24 @@ pub struct CommandSignature {
 
 }
 
+impl Device {
+    fn create_render_pass_for_swap_chain(
+        &self,
+        texture: &Texture,
+        clear_col: Option<ClearColour>
+    ) -> RenderPass {
+        self.create_render_pass(&RenderPassInfo {
+            render_targets: vec![texture],
+            rt_clear: clear_col,
+            depth_stencil: None,
+            ds_clear: None,
+            resolve: false,
+            discard: false,
+            array_slice: 0
+        }).unwrap()
+    }
+}
+
 impl super::Device for Device {
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
@@ -393,10 +446,13 @@ impl super::Device for Device {
     type CommandSignature = CommandSignature;
 
     fn create(info: &super::DeviceInfo) -> Device {
+        let device = metal::Device::system_default()
+            .expect("hotline_rs::gfx::mtl: failed to create metal device");
+        let command_queue = device.new_command_queue();
         Device {
-            metal_device: metal::Device::system_default().expect("hotline_rs::gfx::mtl: failed to create metal device"),
+            metal_device: device,
+            command_queue: command_queue,
             shader_heap: Heap {
-
             },
             adapter_info: AdapterInfo {
                 name: "".to_string(),
@@ -426,11 +482,42 @@ impl super::Device for Device {
         info: &super::SwapChainInfo,
         win: &A::Window,
     ) -> result::Result<SwapChain, super::Error> {
-        Ok(SwapChain {
-            backbuffer_textures: vec![],
-            backbuffer_passes: vec![],
-            backbuffer_passes_no_clear: vec![],
-        })
+        unsafe {
+            // layer
+            let layer = metal::MetalLayer::new();
+            layer.set_device(&self.metal_device);
+            layer.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+            layer.set_presents_with_transaction(false);
+
+            // view
+            let macos_win = std::mem::transmute::<&A::Window, &os::macos::Window>(win);
+            let view = os::macos::nsview_from_window(macos_win);
+            view.setWantsLayer(objc::runtime::YES);
+            view.setLayer(std::mem::transmute(layer.as_ref()));
+
+            let draw_size = win.get_size();
+            layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
+
+            let drawable = layer.next_drawable()
+                .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
+
+            let backbuffer_texture = Texture {
+                metal_texture: drawable.texture().new_texture_view(drawable.texture().pixel_format())
+            };
+            let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
+            let render_pass_no_clear = self.create_render_pass_for_swap_chain(&backbuffer_texture, None);
+
+            // create swap chain object
+            Ok(SwapChain {
+                layer: layer.clone(),
+                view: view,
+                drawable: drawable.to_owned(),
+                backbuffer_clear: info.clear_colour,
+                backbuffer_texture: backbuffer_texture,
+                backbuffer_pass: render_pass,
+                backbuffer_pass_no_clear: render_pass_no_clear,
+            })
+        }
     }
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
@@ -493,8 +580,12 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
-        Ok(Texture{
 
+        let desc = TextureDescriptor::new();
+        let tex = self.metal_device.new_texture(&desc);
+
+        Ok(Texture{
+            metal_texture: tex
         })
     }
 
@@ -504,8 +595,11 @@ impl super::Device for Device {
         heaps: TextureHeapInfo<Self>,
         data: Option<&[T]>,
     ) -> result::Result<Self::Texture, super::Error> {
-        Ok(Texture{
+        let desc = TextureDescriptor::new();
+        let tex = self.metal_device.new_texture(&desc);
 
+        Ok(Texture{
+            metal_texture: tex
         })
     }
 
@@ -513,6 +607,26 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPassInfo<Device>,
     ) -> result::Result<RenderPass, super::Error> {
+        /*
+        fn prepare_render_pass_descriptor(descriptor: &RenderPassDescriptorRef, texture: &TextureRef) {
+        let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+
+        color_attachment.set_texture(Some(texture));
+        color_attachment.set_load_action(MTLLoadAction::Clear);
+        color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
+        color_attachment.set_store_action(MTLStoreAction::Store);
+        */
+
+        let descriptor = metal::RenderPassDescriptor::new();
+        for rt in &info.render_targets {
+            let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+            // color_attachment.set_texture(Some(texture));
+
+            color_attachment.set_load_action(metal::MTLLoadAction::Clear);
+            color_attachment.set_clear_color(metal::MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
+            color_attachment.set_store_action(metal::MTLStoreAction::Store);
+        }
+
         Ok(RenderPass{
 
         })

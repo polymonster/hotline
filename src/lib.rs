@@ -136,7 +136,7 @@ fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
         }
         else {
             files.push(path.to_str().unwrap().to_string());
-        }   
+        }
     }
     files
 }
@@ -153,7 +153,6 @@ pub use gfx::d3d12 as gfx_platform;
 #[cfg(target_os = "windows")]
 pub use av::wmf as av_platform;
 
-
 /// Most commonly used re-exported types.
 #[cfg(target_os = "windows")]
 pub mod prelude {
@@ -168,7 +167,7 @@ pub mod prelude {
         imgui,
         image,
 
-        // platform specific 
+        // platform specific
         gfx_platform,
         os_platform,
         av_platform,
@@ -201,6 +200,14 @@ pub mod prelude {
     };
 }
 
+/// This is a hardcoded compile time selection of os backend for windows as win32
+#[cfg(target_os = "macos")]
+pub use os::macos as os_platform;
+
+/// This is a hardcoded compile time selection of os backend for windows as d3d12
+#[cfg(target_os = "macos")]
+pub use gfx::mtl as gfx_platform;
+
 #[cfg(not(target_os = "windows"))]
 pub mod prelude {
     #[doc(hidden)]
@@ -208,10 +215,13 @@ pub mod prelude {
         // modules
         gfx,
         os,
-        client,
-        plugin,
+        // client,
+        // plugin,
         pmfx,
         imgui,
+
+        gfx_platform,
+        os_platform,
 
         // traits
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
@@ -219,8 +229,8 @@ pub mod prelude {
         pmfx::Pmfx,
         imgui::ImGui,
         imdraw::ImDraw,
-        client::{Client, HotlineInfo, PluginInfo},
-        plugin::{Plugin},
+        //client::{Client, HotlineInfo, PluginInfo},
+        //plugin::{Plugin},
         av::{VideoPlayer},
     };
 }

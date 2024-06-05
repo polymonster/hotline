@@ -29,6 +29,16 @@ pub struct NativeHandle {
 
 }
 
+pub fn nsview_from_window(window: &Window) -> *mut objc::runtime::Object {
+    if let Ok(RawWindowHandle::AppKit(rw)) = window.winit_window.window_handle().map(|wh| wh.as_raw()) {
+        let view = rw.ns_view.as_ptr() as cocoa_id;
+        view
+    }
+    else {
+        std::ptr::null_mut()
+    }
+}
+
 impl super::App for App {
     type Window = Window;
     type NativeHandle = NativeHandle;
@@ -75,8 +85,6 @@ impl super::App for App {
 
                 }
             }
-
-            println!("{}", "inside");
         });
         resume
     }
@@ -252,37 +260,43 @@ impl super::Window<App> for Window {
 
     /// Returns the screen position for the top-left corner of the window
     fn get_pos(&self) -> super::Point<i32> {
+        let pos = self.winit_window.outer_position().unwrap();
         super::Point {
-            x: 0,
-            y: 0
+            x: pos.x,
+            y: pos.y
         }
     }
 
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> super::Rect<i32> {
+        let pos = self.winit_window.outer_position().unwrap();
+        let size = self.winit_window.inner_size();
         super::Rect {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0
+            x: pos.x,
+            y: pos.y,
+            width: size.width as i32,
+            height: size.height as i32
         }
     }
 
     /// Returns the screen position for the top-left corner of the window
     fn get_size(&self) -> super::Size<i32> {
+        let size = self.winit_window.inner_size();
         super::Size {
-            x: 0,
-            y: 0
+            x: size.width as i32,
+            y: size.height as i32
         }
     }
 
     /// Returns the screen rect of the window screen pos x, y , size x, y.
     fn get_window_rect(&self) -> super::Rect<i32> {
+        let pos = self.winit_window.outer_position().unwrap();
+        let size = self.winit_window.inner_size();
         super::Rect {
-            x: 0,
-            y: 0,
-            width: 0,
-            height: 0
+            x: pos.x,
+            y: pos.y,
+            width: size.width as i32,
+            height: size.height as i32
         }
     }
 

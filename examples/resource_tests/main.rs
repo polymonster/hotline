@@ -111,11 +111,11 @@ fn main() -> Result<(), hotline_rs::Error> {
     // create resources that are defined in resource_tests.pmfx
     pmfx.create_texture(&mut dev, "bear_frame")?;
     pmfx.create_texture(&mut dev, "copy_dest")?;
-    
+
     pmfx.create_texture(&mut dev, "compressed_bc1")?;
     pmfx.create_texture(&mut dev, "compressed_bc5")?;
     pmfx.create_texture(&mut dev, "compressed_bc3")?;
-    
+
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
 
@@ -141,7 +141,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         let viewport = gfx::Viewport::from(vp_rect);
         let scissor = gfx::ScissorRect::from(vp_rect);
 
-        // copy texture region 
+        // copy texture region
         cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(textures[1]),
             buffer: None,
@@ -161,8 +161,8 @@ fn main() -> Result<(), hotline_rs::Error> {
             0, 0, 0, 0,
             textures[0],
             Some(gfx::Region{
-                left: 380, 
-                top: 380, 
+                left: 380,
+                top: 380,
                 front: 0,
                 right: 380 + 512,
                 bottom: 380 + 512,
@@ -227,7 +227,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
             cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t3.index, srv3);
         }
-        
+
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);

@@ -1,3 +1,6 @@
+// currently windows only because here we need a concrete gfx and os implementation
+#![cfg(target_os = "windows")]
+
 use crate::gfx;
 use crate::gfx::ReadBackRequest;
 use crate::os;
@@ -42,7 +45,7 @@ pub struct HotlineInfo {
     /// Number of buffers in the swap chain (2 for double buffered, 3 for tripple etc)
     pub num_buffers: u32,
     /// Size of the default device heap for shader resources (textures, buffers, etc)
-    pub shader_heap_size: usize, 
+    pub shader_heap_size: usize,
     /// Size of the default device heap for render targets
     pub render_target_heap_size: usize,
     /// Size of the default device heap for depth stencil targets
@@ -169,7 +172,7 @@ enum PluginState {
     Unload,
 }
 
-/// Container data describing a plugin 
+/// Container data describing a plugin
 struct PluginCollection {
     name: String,
     reloader: reloader::Reloader,
@@ -195,10 +198,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 plugins: None
             }
         };
-        
+
         // override by the supplied user config
         let user_config = info.user_config.unwrap_or(saved_user_config);
-        
+
         // app
         let mut app = A::create(os::AppInfo {
             name: info.name.to_string(),
@@ -209,7 +212,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         if let Some(console_rect) = user_config.console_window_rect {
             app.set_console_window_rect(console_rect);
         }
-    
+
         // device
         let mut device = D::create(&gfx::DeviceInfo {
             adapter_name: info.adapter_name,
@@ -217,7 +220,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             render_target_heap_size: info.render_target_heap_size,
             depth_stencil_heap_size: info.depth_stencil_heap_size,
         });
-    
+
         // main window
         let main_window = app.create_window(os::WindowInfo {
             title: info.name.to_string(),
@@ -225,7 +228,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             style: os::WindowStyleFlags::NONE,
             parent_handle: None,
         });
-    
+
         // swap chain
         let swap_chain_info = gfx::SwapChainInfo {
             num_buffers: info.num_buffers,
@@ -241,7 +244,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         };
         let imdraw : imdraw::ImDraw<D> = imdraw::ImDraw::create(&imdraw_info).unwrap();
 
-        // imgui    
+        // imgui
         let mut imgui_info = imgui::ImGuiInfo::<D, A> {
             device: &mut device,
             swap_chain: &mut swap_chain,
@@ -303,7 +306,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 client.add_plugin_lib(name, &info.path)
             }
         }
-   
+
         Ok(client)
     }
 
@@ -315,7 +318,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         if let Ok(elapsed) = elapsed {
             // raw delta each frame
             self.time.raw_delta = elapsed.as_secs_f32();
-            
+
             // track delta
             if !self.time.delta_paused {
                 self.time.delta = elapsed.as_secs_f32() * self.time.time_scale;
@@ -328,7 +331,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 if self.delta_history.len() > SMOOTH_DELTA_FRAMES {
                     self.delta_history.pop_back();
                 }
-    
+
                 // calculate smooth delta
                 let sum : f32 = self.delta_history.iter().sum();
                 self.time.smooth_delta = sum / self.delta_history.len() as f32;
@@ -362,7 +365,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // check for focus on the dock
         let dock_input = self.imgui.main_dock_hovered();
         self.app.set_input_enabled(
-            !self.imgui.want_capture_keyboard() || dock_input, 
+            !self.imgui.want_capture_keyboard() || dock_input,
             !self.imgui.want_capture_mouse() || dock_input);
 
         let size = self.main_window.get_size();
@@ -395,12 +398,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         std::fs::File::create(&user_config_path).unwrap();
         std::fs::write(&user_config_path, user_config_file_text).unwrap();
     }
-    
+
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
     fn update_user_config_windows(&mut self) {
         // track any changes and write once
         let mut invalidated = false;
-        
+
         // main window pos / size
         let current = self.main_window.get_window_rect();
         if current.x > 0 && current.y > 0 && self.user_config.main_window_rect != current {
@@ -442,14 +445,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             state_before: gfx::ResourceState::Present,
             state_after: gfx::ResourceState::RenderTarget,
         });
-        
+
         // clear window
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
         self.cmd_buf.end_render_pass();
 
         // blit
         self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
-       
+
         // get srv index of the pmfx target to blit to the window, if the target exists
         if let Some(tex) = self.pmfx.get_texture(blit_view_name) {
             // blit to main window
@@ -465,9 +468,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
             self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
-            
+
             self.cmd_buf.set_binding(pipeline, heap, 1, srv);
-            
+
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
             self.cmd_buf.draw_indexed_instanced(6, 1, 0, 0, 0);
@@ -480,19 +483,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
         // render imgui
         self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
-        
+
         self.imgui.render(
-            &mut self.app, 
-            &mut self.main_window, 
-            &mut self.device, 
+            &mut self.app,
+            &mut self.main_window,
+            &mut self.device,
             &mut self.cmd_buf,
             &image_heaps
         );
-        
+
         self.cmd_buf.end_event();
 
         self.cmd_buf.end_render_pass();
-        
+
         // transition to present
         self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(self.swap_chain.get_backbuffer_texture()),
@@ -522,7 +525,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             .join("target")
             .join(crate::get_config_name())
             .to_str().unwrap().to_string();
-        
+
         let src_path = PathBuf::from(abs_path.to_string())
             .join(name)
             .join("src")
@@ -548,7 +551,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         unsafe {
             // create instance if it is a Plugin trait
             let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
-            
+
             let instance = if let Ok(create) = create {
                 // create function returns pointer to instance
                 create()
@@ -557,11 +560,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 // allow null instances, in plugins which only export function calls and not plugin traits
                 std::ptr::null_mut()
             };
-            
+
             // keep hold of everything for updating
             self.plugins.push( PluginCollection {
                 name: name.to_string(),
-                instance, 
+                instance,
                 reloader: Reloader::create(Box::new(plugin)),
                 state: PluginState::Setup
             });
@@ -588,9 +591,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     /// Intenral core-ui function, it displays the main menu bar in the main window and
     /// A plugin menu which allows users to reload or unload live plugins.
     fn core_ui(&mut self) {
-        // main menu bar 
+        // main menu bar
         if self.imgui.begin_main_menu_bar() {
-            
+
             if self.imgui.begin_menu("File") {
                 // allow us to add plugins from files (libs)
                 if self.imgui.menu_item("Open") {
@@ -688,7 +691,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
                 // time scaling
                 self.imgui.input_float("Time Scale", &mut self.time.time_scale);
-                
+
                 self.imgui.end_menu();
             }
 
@@ -701,7 +704,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let cpu_ms = self.time.raw_delta * 1000.0;
             let gpu_ms = self.pmfx.get_total_stats().gpu_time_ms;
             self.imgui.text(
-                &format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)", 
+                &format!("fps: {} | cpu: {:.2}(ms) | gpu: {:.2}(ms)",
                 fps, cpu_ms, gpu_ms
             ));
             self.imgui.same_line();
@@ -768,7 +771,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         if reload {
             for plugin in &mut plugins {
                 if plugin.state == PluginState::None {
-                    plugin.state = PluginState::Setup 
+                    plugin.state = PluginState::Setup
                 }
             }
         }
@@ -804,10 +807,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 break;
             }
         }
-        
+
         // reload, actual reloading the lib of any libs which had changes
         for plugin in &mut plugins {
-            if plugin.state == PluginState::Reload {                        
+            if plugin.state == PluginState::Reload {
                 // wait for lib reloader itself
                 let lib = self.libs.get_mut(&plugin.name).expect("hotline::client: lib missing for plugin");
                 let start = SystemTime::now();
@@ -849,7 +852,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 }
             }
         }
-        
+
         // update
         if !self.time.paused {
             for plugin in &mut plugins {
@@ -919,11 +922,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             T::default()
         }
     }
-    
+
     /// Very simple run loop which can take control of your application, you could roll your own
     pub fn run(mut self) -> Result<(), super::Error> {
         while self.app.run() {
-            
+
             self.new_frame()?;
 
             self.core_ui();
@@ -968,19 +971,19 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     pub fn run_once(mut self) -> Result<(), super::Error> {
         for i in 0..3 {
             self.new_frame()?;
-        
+
             self.core_ui();
             self.pmfx.show_ui(&mut self.imgui, true);
-    
+
             self = self.update_plugins();
-    
+
             if let Some(tex) = self.pmfx.get_texture("main_colour") {
                 self.imgui.image_window("main_dock", tex);
             }
-            
+
             // execute pmfx command buffers first
             self.pmfx.execute(&mut self.device);
-    
+
             // main pass
             self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
                 texture: Some(self.swap_chain.get_backbuffer_texture()),
@@ -988,33 +991,33 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 state_before: gfx::ResourceState::Present,
                 state_after: gfx::ResourceState::RenderTarget,
             });
-    
+
             // clear window
             self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_mut());
             self.cmd_buf.end_render_pass();
-    
+
             // blit
             self.cmd_buf.begin_render_pass(self.swap_chain.get_backbuffer_pass_no_clear());
-    
+
             // render imgui
             self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
 
             let image_heaps = vec![
                 &self.pmfx.shader_heap
             ];
-            
+
             self.imgui.render(
-                &mut self.app, 
-                &mut self.main_window, 
-                &mut self.device, 
+                &mut self.app,
+                &mut self.main_window,
+                &mut self.device,
                 &mut self.cmd_buf,
                 &image_heaps
             );
-            
+
             self.cmd_buf.end_event();
-    
+
             self.cmd_buf.end_render_pass();
-    
+
             // transition to present
             self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
                 texture: Some(self.swap_chain.get_backbuffer_texture()),
@@ -1022,11 +1025,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 state_before: gfx::ResourceState::RenderTarget,
                 state_after: gfx::ResourceState::Present,
             });
-    
+
             let readback_request = self.cmd_buf.read_back_backbuffer(&self.swap_chain)?;
-    
+
             self.cmd_buf.close().unwrap();
-    
+
             // execute the main window command buffer + swap
             self.device.execute(&self.cmd_buf);
             self.swap_chain.swap(&self.device);
@@ -1040,15 +1043,15 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                     read_start: 0,
                     read_end: usize::MAX
                 })?;
-        
+
                 let output_dir = "target/test_output";
                 if !std::path::PathBuf::from(output_dir.to_string()).exists() {
                     std::fs::create_dir(output_dir)?;
                 }
-                
+
                 let output_filepath = format!("{}/{}.png", output_dir, &self.instance_name);
                 image::write_to_file_from_gpu(&output_filepath, &data)?;
-        
+
                 readback_request.unmap();
             }
         }

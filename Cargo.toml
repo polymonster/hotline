@@ -61,6 +61,7 @@ metal = "0.28.0"
 winit = "0.29"
 objc = "0.2.4"
 cocoa = "0.25.0"
+core-graphics-types = "0.1.3"
 
 [lib]
 crate-type = ["rlib", "dylib"]
