@@ -1187,9 +1187,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// to complete, this value indicates the buffer number you should `write` to during the current frame
     fn get_backbuffer_index(&self) -> u32;
     /// Begins a render pass, end must be called
-    fn begin_render_pass(&self, render_pass: &D::RenderPass);
+    fn begin_render_pass(&mut self, render_pass: &D::RenderPass);
     /// End a render pass must be called after `begin_render_pass` has been called
-    fn end_render_pass(&self);
+    fn end_render_pass(&mut self);
     /// Begin a names marker event which will be visible in tools such as PIX or RenderDoc
     fn begin_event(&mut self, colour: u32, name: &str);
     /// End an event that was started with `begin_event`

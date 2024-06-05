@@ -36,12 +36,6 @@ pub struct SwapChain {
     backbuffer_pass_no_clear: RenderPass,
 }
 
-impl SwapChain {
-    fn create_backbuffer_passes() {
-
-    }
-}
-
 impl super::SwapChain<Device> for SwapChain {
     fn new_frame(&mut self) {
     }
@@ -109,14 +103,20 @@ impl super::SwapChain<Device> for SwapChain {
 
 #[derive(Clone)]
 pub struct CmdBuf {
-
+    cmd_queue: metal::CommandQueue,
+    cmd: Option<metal::CommandBuffer>,
+    render_encoder: Option<metal::RenderCommandEncoder>,
+    compute_encoder: Option<metal::ComputeCommandEncoder>
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
+        self.cmd = Some(self.cmd_queue.new_command_buffer().to_owned());
     }
 
     fn close(&mut self) -> result::Result<(), super::Error> {
+        self.cmd.as_ref().expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before close").commit();
+        self.cmd = None;
         Ok(())
     }
 
@@ -124,10 +124,25 @@ impl super::CmdBuf<Device> for CmdBuf {
         0
     }
 
-    fn begin_render_pass(&self, render_pass: &RenderPass) {
+    fn begin_render_pass(&mut self, render_pass: &RenderPass) {
+        // catch double begin
+        assert!(self.render_encoder.is_none(),
+            "hotline_rs::gfx::mtl begin_render_pass called without matching CmdBuf::end_render_pass");
+
+        // catch mismatched close/reset
+        let render_encoder = self.cmd.as_ref()
+            .expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset after close")
+            .new_render_command_encoder(&render_pass.desc).to_owned();
+
+        // new encoder
+        self.render_encoder = Some(render_encoder);
     }
 
-    fn end_render_pass(&self) {
+    fn end_render_pass(&mut self) {
+        self.render_encoder.as_ref()
+            .expect("hotline_rs::gfx::mtl end_render_pass called without matching begin")
+            .end_encoding();
+        self.render_encoder = None;
     }
 
     fn begin_event(&mut self, colour: u32, name: &str) {
@@ -372,7 +387,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 
 #[derive(Clone)]
 pub struct RenderPass {
-
+    desc: metal::RenderPassDescriptor
 }
 
 impl super::RenderPass<Device> for RenderPass {
@@ -524,7 +539,10 @@ impl super::Device for Device {
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
         CmdBuf {
-
+            cmd_queue: self.command_queue.clone(),
+            cmd: None,
+            render_encoder: None,
+            compute_encoder: None
         }
     }
 
@@ -609,28 +627,29 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPassInfo<Device>,
     ) -> result::Result<RenderPass, super::Error> {
-        /*
-        fn prepare_render_pass_descriptor(descriptor: &RenderPassDescriptorRef, texture: &TextureRef) {
-        let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
-
-        color_attachment.set_texture(Some(texture));
-        color_attachment.set_load_action(MTLLoadAction::Clear);
-        color_attachment.set_clear_color(MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-        color_attachment.set_store_action(MTLStoreAction::Store);
-        */
-
+        // new desc
         let descriptor = metal::RenderPassDescriptor::new();
+
+        // colour attachments
         for rt in &info.render_targets {
             let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
-            // color_attachment.set_texture(Some(texture));
+            color_attachment.set_texture(Some(&rt.metal_texture));
 
-            color_attachment.set_load_action(metal::MTLLoadAction::Clear);
-            color_attachment.set_clear_color(metal::MTLClearColor::new(0.2, 0.2, 0.25, 1.0));
-            color_attachment.set_store_action(metal::MTLStoreAction::Store);
+            if let Some(cc) = info.rt_clear {
+                color_attachment.set_load_action(metal::MTLLoadAction::Clear);
+                color_attachment.set_clear_color(metal::MTLClearColor::new(cc.r as f64, cc.g as f64, cc.b as f64, 1.0));
+                color_attachment.set_store_action(metal::MTLStoreAction::Store);
+            }
+            else {
+                color_attachment.set_load_action(metal::MTLLoadAction::Load);
+                color_attachment.set_store_action(metal::MTLStoreAction::Store);
+            }
         }
 
-        Ok(RenderPass{
+        // TODO: depth
 
+        Ok(RenderPass{
+            desc: descriptor.to_owned()
         })
     }
 
