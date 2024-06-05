@@ -99,9 +99,11 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn swap(&mut self, device: &Device) {
-        let cmd = device.command_queue.new_command_buffer();
-        cmd.present_drawable(&self.drawable);
-        cmd.commit();
+        objc::rc::autoreleasepool(|| {
+            let cmd = device.command_queue.new_command_buffer();
+            cmd.present_drawable(&self.drawable);
+            cmd.commit();
+        });
     }
 }
 
