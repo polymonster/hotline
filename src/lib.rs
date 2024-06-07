@@ -115,7 +115,7 @@ pub fn get_data_path(asset: &str) -> String {
         }
         else {
             // unable to locate data
-            panic!()
+            panic!("hotline_rs:: failed to find data path! ensure cloning and building of the hotline-data submodule");
         }
     }
 }

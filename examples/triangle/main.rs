@@ -15,6 +15,12 @@ use os::win32 as os_platform;
 #[cfg(target_os = "windows")]
 use gfx::d3d12 as gfx_platform;
 
+#[cfg(target_os = "macos")]
+use os::macos as os_platform;
+
+#[cfg(target_os = "macos")]
+use gfx::mtl as gfx_platform;
+
 #[repr(C)]
 struct Vertex {
     position: [f32; 3],
@@ -22,6 +28,7 @@ struct Vertex {
 }
 
 fn main() -> Result<(), hotline_rs::Error> {
+    // create app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("triangle"),
         window: false,
@@ -29,14 +36,15 @@ fn main() -> Result<(), hotline_rs::Error> {
         dpi_aware: true,
     });
 
+    // create gfx device
     let num_buffers : u32 = 2;
-
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers as usize,
         ..Default::default()
     });
     println!("{}", device.get_adapter_info());
 
+    //
     let mut window = app.create_window(os::WindowInfo {
         title: String::from("triangle!"),
         ..Default::default()
@@ -58,15 +66,15 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let vertices = [
         Vertex {
-            position: [0.0, 0.25, 0.0],
+            position: [0.0, 0.5, 0.0],
             color: [1.0, 0.0, 0.0, 1.0],
         },
         Vertex {
-            position: [0.25, -0.25, 0.0],
+            position: [-0.25, -0.25, 0.0],
             color: [0.0, 1.0, 0.0, 1.0],
         },
         Vertex {
-            position: [-0.25, -0.25, 0.0],
+            position: [0.25, -0.25, 0.0],
             color: [0.0, 0.0, 1.0, 1.0],
         },
     ];
@@ -154,8 +162,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         });
 
         cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
-        cmd.set_viewport(&viewport);
-        cmd.set_scissor_rect(&scissor);
+        // cmd.set_viewport(&viewport);
+        // cmd.set_scissor_rect(&scissor);
         cmd.set_render_pipeline(&pso);
         cmd.set_vertex_buffer(&vertex_buffer, 0);
         cmd.draw_instanced(3, 1, 0, 0);

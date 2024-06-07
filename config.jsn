@@ -6,6 +6,10 @@
         pmfx_dev: "../pmfx-shader/pmfx.py"
     }
 
+    tools<mac>: {
+        pmfx_dev: "python3 ../pmfx-shader/pmfx.py"
+    }
+
     tools_help: {
         pmfx: {
             help_arg: "-help"
@@ -15,7 +19,7 @@
         }
         pmfx_dev(pmfx): {}
     }
-    
+
     tools_update: {
         pmfx: {
             tag_name: latest
@@ -125,6 +129,23 @@
             explicit: true
             args: [
                 "-shader_platform hlsl"
+                "-shader_version 6_0"
+                "-i ${src_data_dir}/shaders/"
+                "-o ${data_dir}/shaders"
+                "-t ${temp_dir}/shaders"
+                "-num_threads 1"
+                "-f"
+                "-args"
+                "-Zpr"
+            ]
+        }
+    }
+
+    mac-data(base): {
+        pmfx_dev: {
+            explicit: true
+            args: [
+                "-shader_platform metal"
                 "-shader_version 6_0"
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"

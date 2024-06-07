@@ -4,7 +4,13 @@ use crate::os_platform;
 use crate::os::Window;
 
 use bevy_ecs::system::lifetimeless::Read;
+use cocoa::foundation::NSUInteger;
+use metal::MTLScissorRect;
+use metal::MTLStepFunction;
+use metal::MTLVertexFormat;
+use metal::MTLViewport;
 use metal::TextureDescriptor;
+use metal::VertexAttributeDescriptorArray;
 
 use super::*;
 use super::Device as SuperDevice;
@@ -16,6 +22,38 @@ use std::result;
 
 use cocoa::{appkit::NSView, base::id as cocoa_id};
 use core_graphics_types::geometry::CGSize;
+
+const fn to_mtl_vertex_format(format: super::Format) -> MTLVertexFormat {
+    match format {
+        super::Format::Unknown => MTLVertexFormat::Invalid,
+        super::Format::R16n => MTLVertexFormat::ShortNormalized,
+        super::Format::R16u => MTLVertexFormat::UShort,
+        super::Format::R16i => MTLVertexFormat::Short,
+        super::Format::R16f => MTLVertexFormat::Half,
+        super::Format::R32u => MTLVertexFormat::UInt,
+        super::Format::R32i => MTLVertexFormat::Int,
+        super::Format::R32f => MTLVertexFormat::Float,
+        super::Format::RG16u => MTLVertexFormat::UShort2,
+        super::Format::RG16i => MTLVertexFormat::Short2,
+        super::Format::RG16f => MTLVertexFormat::Half2,
+        super::Format::RG32u => MTLVertexFormat::UInt2,
+        super::Format::RG32i => MTLVertexFormat::Int2,
+        super::Format::RG32f => MTLVertexFormat::Float2,
+        super::Format::RGB32u => MTLVertexFormat::UInt3,
+        super::Format::RGB32i => MTLVertexFormat::Int3,
+        super::Format::RGB32f => MTLVertexFormat::Float3,
+        super::Format::RGBA8n => MTLVertexFormat::Char4Normalized,
+        super::Format::RGBA8u => MTLVertexFormat::UChar4,
+        super::Format::RGBA8i => MTLVertexFormat::Char4,
+        super::Format::RGBA16u => MTLVertexFormat::UShort4,
+        super::Format::RGBA16i => MTLVertexFormat::Short4,
+        super::Format::RGBA16f => MTLVertexFormat::Half4,
+        super::Format::RGBA32u => MTLVertexFormat::UInt4,
+        super::Format::RGBA32i => MTLVertexFormat::Int4,
+        super::Format::RGBA32f => MTLVertexFormat::Float4,
+        _ => panic!("hotline_rs::gfx::mtl unsupported vertex format")
+    }
+}
 
 #[derive(Clone)]
 pub struct Device {
@@ -61,7 +99,7 @@ impl super::SwapChain<Device> for SwapChain {
         self.drawable = drawable.to_owned();
 
         self.backbuffer_texture = Texture {
-            metal_texture: drawable.texture().new_texture_view(drawable.texture().pixel_format())
+            metal_texture: drawable.texture().to_owned()
         };
 
         self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
@@ -168,18 +206,46 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_viewport(&self, viewport: &super::Viewport) {
+        self.render_encoder
+        .as_ref()
+        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+        .set_viewport(MTLViewport {
+            originX: viewport.x as f64,
+            originY: viewport.y as f64,
+            width: viewport.width as f64,
+            height: viewport.height as f64,
+            znear: viewport.min_depth as f64,
+            zfar: viewport.max_depth as f64,
+        });
     }
 
     fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
+        self.render_encoder
+        .as_ref()
+        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+        .set_scissor_rect(MTLScissorRect {
+            x: scissor_rect.left as u64,
+            y: scissor_rect.top as u64,
+            width: (scissor_rect.right - scissor_rect.left) as u64,
+            height: (scissor_rect.bottom - scissor_rect.top) as u64,
+        });
     }
 
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
+        self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+            .set_vertex_buffer(slot as NSUInteger, Some(&buffer.metal_buffer), 0);
     }
 
     fn set_index_buffer(&self, buffer: &Buffer) {
     }
 
     fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
+        self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+            .set_render_pipeline_state(&pipeline.pipeline_state);
     }
 
     fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
@@ -207,6 +273,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         start_vertex: u32,
         start_instance: u32,
     ) {
+        self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+            .draw_primitives_instanced_base_instance(
+                metal::MTLPrimitiveType::TriangleStrip,
+                start_vertex as u64,
+                vertex_count as u64,
+                instance_count as u64,
+                start_instance as u64
+            );
     }
 
     fn draw_indexed_instanced(
@@ -271,7 +347,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 pub struct Buffer {
-
+    metal_buffer: metal::Buffer
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -316,13 +392,13 @@ impl super::Buffer<Device> for Buffer {
 }
 
 pub struct Shader {
-
+    function: metal::Function
 }
 
 impl super::Shader<Device> for Shader {}
 
 pub struct RenderPipeline {
-
+    pipeline_state: metal::RenderPipelineState
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
@@ -466,19 +542,23 @@ impl super::Device for Device {
         let device = metal::Device::system_default()
             .expect("hotline_rs::gfx::mtl: failed to create metal device");
         let command_queue = device.new_command_queue();
+
+        // adapter info
+        let adapter_info = AdapterInfo {
+            name: device.name().to_string(),
+            description: "".to_string(),
+            dedicated_video_memory: device.recommended_max_working_set_size() as usize,
+            dedicated_system_memory: 0,
+            shared_system_memory: 0,
+            available: vec![]
+        };
+
         Device {
             metal_device: device,
             command_queue: command_queue,
             shader_heap: Heap {
             },
-            adapter_info: AdapterInfo {
-                name: "".to_string(),
-                description: "".to_string(),
-                dedicated_video_memory: 0,
-                dedicated_system_memory: 0,
-                shared_system_memory: 0,
-                available: vec![]
-            }
+            adapter_info: adapter_info
         }
     }
 
@@ -519,7 +599,7 @@ impl super::Device for Device {
                 .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
 
             let backbuffer_texture = Texture {
-                metal_texture: drawable.texture().new_texture_view(drawable.texture().pixel_format())
+                metal_texture: drawable.texture().to_owned()
             };
             let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
             let render_pass_no_clear = self.create_render_pass_for_swap_chain(&backbuffer_texture, None);
@@ -550,8 +630,50 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        Ok(RenderPipeline {
+        let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
+        if let Some(vs) = info.vs {
+            pipeline_state_descriptor.set_vertex_function(Some(&vs.function));
+        };
+        if let Some(fs) = info.fs {
+            pipeline_state_descriptor.set_fragment_function(Some(&fs.function));
+        };
 
+        // vertex attribs
+        let vertex_desc = metal::VertexDescriptor::new();
+        let mut attrib_index = 0;
+        for element in &info.input_layout {
+            let attribute = metal::VertexAttributeDescriptor::new();
+            attribute.set_format(to_mtl_vertex_format(element.format));
+            attribute.set_buffer_index(element.input_slot as NSUInteger);
+            attribute.set_offset(element.aligned_byte_offset as NSUInteger);
+            vertex_desc.attributes().set_object_at(attrib_index, Some(&attribute));
+            attrib_index += 1;
+        }
+
+        // vertex layouts; TODO: generate
+        let layout_desc = metal::VertexBufferLayoutDescriptor::new();
+        layout_desc.set_step_function(metal::MTLVertexStepFunction::PerVertex);
+        layout_desc.set_stride(16 + 12);
+        vertex_desc.layouts().set_object_at(0, Some(&layout_desc));
+
+        pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
+
+        let attachment = pipeline_state_descriptor
+            .color_attachments()
+            .object_at(0)
+            .unwrap();
+        attachment.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+
+        attachment.set_blending_enabled(false);
+        attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
+        attachment.set_alpha_blend_operation(metal::MTLBlendOperation::Add);
+        attachment.set_source_rgb_blend_factor(metal::MTLBlendFactor::SourceAlpha);
+        attachment.set_source_alpha_blend_factor(metal::MTLBlendFactor::SourceAlpha);
+        attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+        attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+
+        Ok(RenderPipeline {
+            pipeline_state: self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?
         })
     }
 
@@ -560,9 +682,20 @@ impl super::Device for Device {
         info: &super::ShaderInfo,
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
-        Ok(Shader{
-
-        })
+        let lib = self.metal_device.new_library_with_data(slice_as_u8_slice(src))?;
+        let names = lib.function_names();
+        if names.len() == 1 {
+            Ok(Shader{
+                function: lib.get_function(names[0].as_str(), None)?
+            })
+        }
+        else {
+            Err(super::Error {
+                msg: format!(
+                    "hotline_rs::gfx::mtl expected a shader with single entry point but shader has {} functions", names.len()
+                ),
+            })
+        }
     }
 
     fn create_buffer_with_heap<T: Sized>(
@@ -571,8 +704,21 @@ impl super::Device for Device {
         data: Option<&[T]>,
         heap: &mut Heap
     ) -> result::Result<Buffer, super::Error> {
-        Ok(Buffer{
+        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+            metal::MTLResourceOptions::StorageModeManaged;
 
+        let byte_len = (info.stride * info.num_elements) as NSUInteger;
+
+        let buf = if let Some(data) = data {
+            let bytes = data.as_ptr() as *const std::ffi::c_void;
+            self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
+        }
+        else {
+            self.metal_device.new_buffer(byte_len, opt)
+        };
+
+        Ok(Buffer{
+            metal_buffer: buf
         })
     }
 
@@ -581,8 +727,21 @@ impl super::Device for Device {
         info: &super::BufferInfo,
         data: Option<&[T]>,
     ) -> result::Result<Buffer, super::Error> {
-        Ok(Buffer{
+        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+            metal::MTLResourceOptions::StorageModeManaged;
 
+        let byte_len = (info.stride * info.num_elements) as NSUInteger;
+
+        let buf = if let Some(data) = data {
+            let bytes = data.as_ptr() as *const std::ffi::c_void;
+            self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
+        }
+        else {
+            self.metal_device.new_buffer(byte_len, opt)
+        };
+
+        Ok(Buffer{
+            metal_buffer: buf
         })
     }
 
@@ -590,8 +749,14 @@ impl super::Device for Device {
         &mut self,
         size: usize,
     ) -> result::Result<Self::Buffer, super::Error> {
-        Ok(Buffer{
+        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+            metal::MTLResourceOptions::StorageModeManaged;
 
+        let byte_len = size as NSUInteger;
+        let buf = self.metal_device.new_buffer(byte_len, opt);
+
+        Ok(Buffer{
+            metal_buffer: buf
         })
     }
 

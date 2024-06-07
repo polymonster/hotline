@@ -269,11 +269,10 @@ impl super::Window<App> for Window {
 
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> super::Rect<i32> {
-        let pos = self.winit_window.outer_position().unwrap();
         let size = self.winit_window.inner_size();
         super::Rect {
-            x: pos.x,
-            y: pos.y,
+            x: 0,
+            y: 0,
             width: size.width as i32,
             height: size.height as i32
         }
