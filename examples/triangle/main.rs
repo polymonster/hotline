@@ -162,8 +162,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         });
 
         cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
-        // cmd.set_viewport(&viewport);
-        // cmd.set_scissor_rect(&scissor);
+        cmd.set_viewport(&viewport);
+        cmd.set_scissor_rect(&scissor);
         cmd.set_render_pipeline(&pso);
         cmd.set_vertex_buffer(&vertex_buffer, 0);
         cmd.draw_instanced(3, 1, 0, 0);

@@ -224,7 +224,7 @@ pub mod prelude {
         os_platform,
 
         // traits
-        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,

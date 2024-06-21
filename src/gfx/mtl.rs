@@ -90,20 +90,22 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
-        let draw_size = window.get_size();
-        self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
+        objc::rc::autoreleasepool(|| {
+            let draw_size = window.get_size();
+            self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
 
-        let drawable = self.layer.next_drawable()
-            .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
+            let drawable = self.layer.next_drawable()
+                .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
 
-        self.drawable = drawable.to_owned();
+            self.drawable = drawable.to_owned();
 
-        self.backbuffer_texture = Texture {
-            metal_texture: drawable.texture().to_owned()
-        };
+            self.backbuffer_texture = Texture {
+                metal_texture: drawable.texture().to_owned()
+            };
 
-        self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
-        self.backbuffer_pass_no_clear = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, None);
+            self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
+            self.backbuffer_pass_no_clear = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, None);
+        });
     }
 
     fn get_backbuffer_index(&self) -> u32 {
@@ -144,18 +146,24 @@ pub struct CmdBuf {
     cmd_queue: metal::CommandQueue,
     cmd: Option<metal::CommandBuffer>,
     render_encoder: Option<metal::RenderCommandEncoder>,
-    compute_encoder: Option<metal::ComputeCommandEncoder>
+    compute_encoder: Option<metal::ComputeCommandEncoder>,
+    bound_index_buffer: Option<metal::Buffer>,
+
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
-        self.cmd = Some(self.cmd_queue.new_command_buffer().to_owned());
+        objc::rc::autoreleasepool(|| {
+            self.cmd = Some(self.cmd_queue.new_command_buffer().to_owned());
+        });
     }
 
     fn close(&mut self) -> result::Result<(), super::Error> {
-        self.cmd.as_ref().expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before close").commit();
-        self.cmd = None;
-        Ok(())
+        objc::rc::autoreleasepool(|| {
+            self.cmd.as_ref().expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before close").commit();
+            self.cmd = None;
+            Ok(())
+        })
     }
 
     fn get_backbuffer_index(&self) -> u32 {
@@ -163,24 +171,28 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn begin_render_pass(&mut self, render_pass: &RenderPass) {
-        // catch double begin
-        assert!(self.render_encoder.is_none(),
-            "hotline_rs::gfx::mtl begin_render_pass called without matching CmdBuf::end_render_pass");
+        objc::rc::autoreleasepool(|| {
+            // catch double begin
+            assert!(self.render_encoder.is_none(),
+                "hotline_rs::gfx::mtl begin_render_pass called without matching CmdBuf::end_render_pass");
 
-        // catch mismatched close/reset
-        let render_encoder = self.cmd.as_ref()
-            .expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset after close")
-            .new_render_command_encoder(&render_pass.desc).to_owned();
+            // catch mismatched close/reset
+            let render_encoder = self.cmd.as_ref()
+                .expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset after close")
+                .new_render_command_encoder(&render_pass.desc).to_owned();
 
-        // new encoder
-        self.render_encoder = Some(render_encoder);
+            // new encoder
+            self.render_encoder = Some(render_encoder);
+        });
     }
 
     fn end_render_pass(&mut self) {
-        self.render_encoder.as_ref()
-            .expect("hotline_rs::gfx::mtl end_render_pass called without matching begin")
-            .end_encoding();
-        self.render_encoder = None;
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder.as_ref()
+                .expect("hotline_rs::gfx::mtl end_render_pass called without matching begin")
+                .end_encoding();
+            self.render_encoder = None;
+        });
     }
 
     fn begin_event(&mut self, colour: u32, name: &str) {
@@ -206,46 +218,55 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_viewport(&self, viewport: &super::Viewport) {
-        self.render_encoder
-        .as_ref()
-        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-        .set_viewport(MTLViewport {
-            originX: viewport.x as f64,
-            originY: viewport.y as f64,
-            width: viewport.width as f64,
-            height: viewport.height as f64,
-            znear: viewport.min_depth as f64,
-            zfar: viewport.max_depth as f64,
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+            .set_viewport(MTLViewport {
+                originX: viewport.x as f64,
+                originY: viewport.y as f64,
+                width: viewport.width as f64,
+                height: viewport.height as f64,
+                znear: viewport.min_depth as f64,
+                zfar: viewport.max_depth as f64,
+            });
         });
     }
 
     fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
-        self.render_encoder
-        .as_ref()
-        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-        .set_scissor_rect(MTLScissorRect {
-            x: scissor_rect.left as u64,
-            y: scissor_rect.top as u64,
-            width: (scissor_rect.right - scissor_rect.left) as u64,
-            height: (scissor_rect.bottom - scissor_rect.top) as u64,
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+            .set_scissor_rect(MTLScissorRect {
+                x: scissor_rect.left as u64,
+                y: scissor_rect.top as u64,
+                width: (scissor_rect.right - scissor_rect.left) as u64,
+                height: (scissor_rect.bottom - scissor_rect.top) as u64,
+            });
         });
     }
 
     fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
-        self.render_encoder
-            .as_ref()
-            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-            .set_vertex_buffer(slot as NSUInteger, Some(&buffer.metal_buffer), 0);
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+                .set_vertex_buffer(slot as NSUInteger, Some(&buffer.metal_buffer), 0);
+        });
     }
 
-    fn set_index_buffer(&self, buffer: &Buffer) {
+    fn set_index_buffer(&mut self, buffer: &Buffer) {
+        self.bound_index_buffer = Some(buffer.metal_buffer.clone());
     }
 
     fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
-        self.render_encoder
-            .as_ref()
-            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-            .set_render_pipeline_state(&pipeline.pipeline_state);
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+                .set_render_pipeline_state(&pipeline.pipeline_state);
+        });
     }
 
     fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
@@ -273,16 +294,18 @@ impl super::CmdBuf<Device> for CmdBuf {
         start_vertex: u32,
         start_instance: u32,
     ) {
-        self.render_encoder
-            .as_ref()
-            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-            .draw_primitives_instanced_base_instance(
-                metal::MTLPrimitiveType::TriangleStrip,
-                start_vertex as u64,
-                vertex_count as u64,
-                instance_count as u64,
-                start_instance as u64
-            );
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+                .draw_primitives_instanced_base_instance(
+                    metal::MTLPrimitiveType::TriangleStrip,
+                    start_vertex as u64,
+                    vertex_count as u64,
+                    instance_count as u64,
+                    start_instance as u64
+                );
+        });
     }
 
     fn draw_indexed_instanced(
@@ -293,6 +316,21 @@ impl super::CmdBuf<Device> for CmdBuf {
         base_vertex: i32,
         start_instance: u32,
     ) {
+        objc::rc::autoreleasepool(|| {
+            self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+                .draw_indexed_primitives_instanced_base_instance(
+                    metal::MTLPrimitiveType::TriangleStrip,
+                    index_count as u64,
+                    metal::MTLIndexType::UInt16,
+                    &self.bound_index_buffer.as_ref().unwrap(),
+                    start_index as u64,
+                    instance_count as u64,
+                    base_vertex as i64,
+                    start_instance as u64
+                );
+        })
     }
 
     fn dispatch(&self, group_count: Size3, _numthreads: Size3) {
@@ -398,10 +436,26 @@ pub struct Shader {
 impl super::Shader<Device> for Shader {}
 
 pub struct RenderPipeline {
-    pipeline_state: metal::RenderPipelineState
+    pipeline_state: metal::RenderPipelineState,
+    slots: Vec<u32>
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
+
+
+impl super::Pipeline for RenderPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        None
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Render
+    }
+}
 
 #[derive(Clone)]
 pub struct Texture {
@@ -473,7 +527,21 @@ impl super::RenderPass<Device> for RenderPass {
 }
 
 pub struct ComputePipeline {
+    slots: Vec<u32>
+}
 
+impl super::Pipeline for ComputePipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        None
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Compute
+    }
 }
 
 #[derive(Clone)]
@@ -512,15 +580,17 @@ impl Device {
         texture: &Texture,
         clear_col: Option<ClearColour>
     ) -> RenderPass {
-        self.create_render_pass(&RenderPassInfo {
-            render_targets: vec![texture],
-            rt_clear: clear_col,
-            depth_stencil: None,
-            ds_clear: None,
-            resolve: false,
-            discard: false,
-            array_slice: 0
-        }).unwrap()
+        objc::rc::autoreleasepool(|| {
+            self.create_render_pass(&RenderPassInfo {
+                render_targets: vec![texture],
+                rt_clear: clear_col,
+                depth_stencil: None,
+                ds_clear: None,
+                resolve: false,
+                discard: false,
+                array_slice: 0
+            }).unwrap()
+        })
     }
 }
 
@@ -539,27 +609,29 @@ impl super::Device for Device {
     type CommandSignature = CommandSignature;
 
     fn create(info: &super::DeviceInfo) -> Device {
-        let device = metal::Device::system_default()
-            .expect("hotline_rs::gfx::mtl: failed to create metal device");
-        let command_queue = device.new_command_queue();
+        objc::rc::autoreleasepool(|| {
+            let device = metal::Device::system_default()
+                .expect("hotline_rs::gfx::mtl: failed to create metal device");
+            let command_queue = device.new_command_queue();
 
-        // adapter info
-        let adapter_info = AdapterInfo {
-            name: device.name().to_string(),
-            description: "".to_string(),
-            dedicated_video_memory: device.recommended_max_working_set_size() as usize,
-            dedicated_system_memory: 0,
-            shared_system_memory: 0,
-            available: vec![]
-        };
+            // adapter info
+            let adapter_info = AdapterInfo {
+                name: device.name().to_string(),
+                description: "".to_string(),
+                dedicated_video_memory: device.recommended_max_working_set_size() as usize,
+                dedicated_system_memory: 0,
+                shared_system_memory: 0,
+                available: vec![]
+            };
 
-        Device {
-            metal_device: device,
-            command_queue: command_queue,
-            shader_heap: Heap {
-            },
-            adapter_info: adapter_info
-        }
+            Device {
+                metal_device: device,
+                command_queue: command_queue,
+                shader_heap: Heap {
+                },
+                adapter_info: adapter_info
+            }
+        })
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
@@ -580,100 +652,125 @@ impl super::Device for Device {
         win: &A::Window,
     ) -> result::Result<SwapChain, super::Error> {
         unsafe {
-            // layer
-            let layer = metal::MetalLayer::new();
-            layer.set_device(&self.metal_device);
-            layer.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
-            layer.set_presents_with_transaction(false);
+            objc::rc::autoreleasepool(|| {
+                // layer
+                let layer = metal::MetalLayer::new();
+                layer.set_device(&self.metal_device);
+                layer.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+                layer.set_presents_with_transaction(false);
 
-            // view
-            let macos_win = std::mem::transmute::<&A::Window, &os::macos::Window>(win);
-            let view = os::macos::nsview_from_window(macos_win);
-            view.setWantsLayer(objc::runtime::YES);
-            view.setLayer(std::mem::transmute(layer.as_ref()));
+                // view
+                let macos_win = std::mem::transmute::<&A::Window, &os::macos::Window>(win);
+                let view = os::macos::nsview_from_window(macos_win);
+                view.setWantsLayer(objc::runtime::YES);
+                view.setLayer(std::mem::transmute(layer.as_ref()));
 
-            let draw_size = win.get_size();
-            layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
+                let draw_size = win.get_size();
+                layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
 
-            let drawable = layer.next_drawable()
-                .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
+                let drawable = layer.next_drawable()
+                    .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
 
-            let backbuffer_texture = Texture {
-                metal_texture: drawable.texture().to_owned()
-            };
-            let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
-            let render_pass_no_clear = self.create_render_pass_for_swap_chain(&backbuffer_texture, None);
+                let backbuffer_texture = Texture {
+                    metal_texture: drawable.texture().to_owned()
+                };
+                let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
+                let render_pass_no_clear = self.create_render_pass_for_swap_chain(&backbuffer_texture, None);
 
-            // create swap chain object
-            Ok(SwapChain {
-                layer: layer.clone(),
-                view: view,
-                drawable: drawable.to_owned(),
-                backbuffer_clear: info.clear_colour,
-                backbuffer_texture: backbuffer_texture,
-                backbuffer_pass: render_pass,
-                backbuffer_pass_no_clear: render_pass_no_clear,
+                // create swap chain object
+                Ok(SwapChain {
+                    layer: layer.clone(),
+                    view: view,
+                    drawable: drawable.to_owned(),
+                    backbuffer_clear: info.clear_colour,
+                    backbuffer_texture: backbuffer_texture,
+                    backbuffer_pass: render_pass,
+                    backbuffer_pass_no_clear: render_pass_no_clear,
+                })
             })
         }
     }
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
-        CmdBuf {
-            cmd_queue: self.command_queue.clone(),
-            cmd: None,
-            render_encoder: None,
-            compute_encoder: None
-        }
+        objc::rc::autoreleasepool(|| {
+            CmdBuf {
+                cmd_queue: self.command_queue.clone(),
+                cmd: None,
+                render_encoder: None,
+                compute_encoder: None,
+                bound_index_buffer: None
+            }
+        })
     }
 
     fn create_render_pipeline(
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
-        if let Some(vs) = info.vs {
-            pipeline_state_descriptor.set_vertex_function(Some(&vs.function));
-        };
-        if let Some(fs) = info.fs {
-            pipeline_state_descriptor.set_fragment_function(Some(&fs.function));
-        };
+        objc::rc::autoreleasepool(|| {
+            let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
+            if let Some(vs) = info.vs {
+                pipeline_state_descriptor.set_vertex_function(Some(&vs.function));
+            };
+            if let Some(fs) = info.fs {
+                pipeline_state_descriptor.set_fragment_function(Some(&fs.function));
+            };
 
-        // vertex attribs
-        let vertex_desc = metal::VertexDescriptor::new();
-        let mut attrib_index = 0;
-        for element in &info.input_layout {
-            let attribute = metal::VertexAttributeDescriptor::new();
-            attribute.set_format(to_mtl_vertex_format(element.format));
-            attribute.set_buffer_index(element.input_slot as NSUInteger);
-            attribute.set_offset(element.aligned_byte_offset as NSUInteger);
-            vertex_desc.attributes().set_object_at(attrib_index, Some(&attribute));
-            attrib_index += 1;
-        }
+            // vertex attribs
+            let vertex_desc = metal::VertexDescriptor::new();
+            let mut attrib_index = 0;
 
-        // vertex layouts; TODO: generate
-        let layout_desc = metal::VertexBufferLayoutDescriptor::new();
-        layout_desc.set_step_function(metal::MTLVertexStepFunction::PerVertex);
-        layout_desc.set_stride(16 + 12);
-        vertex_desc.layouts().set_object_at(0, Some(&layout_desc));
+            // ..
+            let mut slot_strides = Vec::new();
+            for element in &info.input_layout {
+                if slot_strides.len() < (element.input_slot + 1) as usize {
+                    slot_strides.resize((element.input_slot + 1) as usize, 0);
+                }
+            }
 
-        pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
+            for element in &info.input_layout {
+                let attribute = metal::VertexAttributeDescriptor::new();
+                attribute.set_format(to_mtl_vertex_format(element.format));
+                attribute.set_buffer_index(element.input_slot as NSUInteger);
+                attribute.set_offset(element.aligned_byte_offset as NSUInteger);
+                vertex_desc.attributes().set_object_at(attrib_index, Some(&attribute));
+                attrib_index += 1;
 
-        let attachment = pipeline_state_descriptor
-            .color_attachments()
-            .object_at(0)
-            .unwrap();
-        attachment.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+                let stride = element.aligned_byte_offset + block_size_for_format(element.format);
+                slot_strides[element.input_slot as usize] = max(slot_strides[element.input_slot as usize], stride);
+            }
 
-        attachment.set_blending_enabled(false);
-        attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
-        attachment.set_alpha_blend_operation(metal::MTLBlendOperation::Add);
-        attachment.set_source_rgb_blend_factor(metal::MTLBlendFactor::SourceAlpha);
-        attachment.set_source_alpha_blend_factor(metal::MTLBlendFactor::SourceAlpha);
-        attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
-        attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+            // vertex layouts; TODO: generate
+            println!("layout stride {}", slot_strides[0]);
+            let layout_desc = metal::VertexBufferLayoutDescriptor::new();
+            layout_desc.set_step_function(metal::MTLVertexStepFunction::PerVertex);
+            layout_desc.set_stride(slot_strides[0] as NSUInteger);
+            vertex_desc.layouts().set_object_at(0, Some(&layout_desc));
 
-        Ok(RenderPipeline {
-            pipeline_state: self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?
+            pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
+
+            // TODO: attachments
+            let attachment = pipeline_state_descriptor
+                .color_attachments()
+                .object_at(0)
+                .unwrap();
+            attachment.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
+            attachment.set_blending_enabled(false);
+            attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
+            attachment.set_alpha_blend_operation(metal::MTLBlendOperation::Add);
+            attachment.set_source_rgb_blend_factor(metal::MTLBlendFactor::SourceAlpha);
+            attachment.set_source_alpha_blend_factor(metal::MTLBlendFactor::SourceAlpha);
+            attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+            attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+
+            // TODO: depth stencil
+
+            // TODO: raster
+
+            Ok(RenderPipeline {
+                pipeline_state: self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?,
+                slots: Vec::new()
+            })
         })
     }
 
@@ -682,20 +779,22 @@ impl super::Device for Device {
         info: &super::ShaderInfo,
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
-        let lib = self.metal_device.new_library_with_data(slice_as_u8_slice(src))?;
-        let names = lib.function_names();
-        if names.len() == 1 {
-            Ok(Shader{
-                function: lib.get_function(names[0].as_str(), None)?
-            })
-        }
-        else {
-            Err(super::Error {
-                msg: format!(
-                    "hotline_rs::gfx::mtl expected a shader with single entry point but shader has {} functions", names.len()
-                ),
-            })
-        }
+        objc::rc::autoreleasepool(|| {
+            let lib = self.metal_device.new_library_with_data(slice_as_u8_slice(src))?;
+            let names = lib.function_names();
+            if names.len() == 1 {
+                Ok(Shader{
+                    function: lib.get_function(names[0].as_str(), None)?
+                })
+            }
+            else {
+                Err(super::Error {
+                    msg: format!(
+                        "hotline_rs::gfx::mtl expected a shader with single entry point but shader has {} functions", names.len()
+                    ),
+                })
+            }
+        })
     }
 
     fn create_buffer_with_heap<T: Sized>(
@@ -704,21 +803,23 @@ impl super::Device for Device {
         data: Option<&[T]>,
         heap: &mut Heap
     ) -> result::Result<Buffer, super::Error> {
-        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
-            metal::MTLResourceOptions::StorageModeManaged;
+        objc::rc::autoreleasepool(|| {
+            let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+                metal::MTLResourceOptions::StorageModeManaged;
 
-        let byte_len = (info.stride * info.num_elements) as NSUInteger;
+            let byte_len = (info.stride * info.num_elements) as NSUInteger;
 
-        let buf = if let Some(data) = data {
-            let bytes = data.as_ptr() as *const std::ffi::c_void;
-            self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
-        }
-        else {
-            self.metal_device.new_buffer(byte_len, opt)
-        };
+            let buf = if let Some(data) = data {
+                let bytes = data.as_ptr() as *const std::ffi::c_void;
+                self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
+            }
+            else {
+                self.metal_device.new_buffer(byte_len, opt)
+            };
 
-        Ok(Buffer{
-            metal_buffer: buf
+            Ok(Buffer{
+                metal_buffer: buf
+            })
         })
     }
 
@@ -727,21 +828,23 @@ impl super::Device for Device {
         info: &super::BufferInfo,
         data: Option<&[T]>,
     ) -> result::Result<Buffer, super::Error> {
-        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
-            metal::MTLResourceOptions::StorageModeManaged;
+        objc::rc::autoreleasepool(|| {
+            let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+                metal::MTLResourceOptions::StorageModeManaged;
 
-        let byte_len = (info.stride * info.num_elements) as NSUInteger;
+            let byte_len = (info.stride * info.num_elements) as NSUInteger;
 
-        let buf = if let Some(data) = data {
-            let bytes = data.as_ptr() as *const std::ffi::c_void;
-            self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
-        }
-        else {
-            self.metal_device.new_buffer(byte_len, opt)
-        };
+            let buf = if let Some(data) = data {
+                let bytes = data.as_ptr() as *const std::ffi::c_void;
+                self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
+            }
+            else {
+                self.metal_device.new_buffer(byte_len, opt)
+            };
 
-        Ok(Buffer{
-            metal_buffer: buf
+            Ok(Buffer{
+                metal_buffer: buf
+            })
         })
     }
 
@@ -749,14 +852,16 @@ impl super::Device for Device {
         &mut self,
         size: usize,
     ) -> result::Result<Self::Buffer, super::Error> {
-        let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
-            metal::MTLResourceOptions::StorageModeManaged;
+        objc::rc::autoreleasepool(|| {
+            let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
+                metal::MTLResourceOptions::StorageModeManaged;
 
-        let byte_len = size as NSUInteger;
-        let buf = self.metal_device.new_buffer(byte_len, opt);
+            let byte_len = size as NSUInteger;
+            let buf = self.metal_device.new_buffer(byte_len, opt);
 
-        Ok(Buffer{
-            metal_buffer: buf
+            Ok(Buffer{
+                metal_buffer: buf
+            })
         })
     }
 
@@ -765,12 +870,12 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
-
-        let desc = TextureDescriptor::new();
-        let tex = self.metal_device.new_texture(&desc);
-
-        Ok(Texture{
-            metal_texture: tex
+        objc::rc::autoreleasepool(|| {
+            let desc = TextureDescriptor::new();
+            let tex = self.metal_device.new_texture(&desc);
+            Ok(Texture{
+                metal_texture: tex
+            })
         })
     }
 
@@ -780,11 +885,12 @@ impl super::Device for Device {
         heaps: TextureHeapInfo<Self>,
         data: Option<&[T]>,
     ) -> result::Result<Self::Texture, super::Error> {
-        let desc = TextureDescriptor::new();
-        let tex = self.metal_device.new_texture(&desc);
-
-        Ok(Texture{
-            metal_texture: tex
+        objc::rc::autoreleasepool(|| {
+            let desc = TextureDescriptor::new();
+            let tex = self.metal_device.new_texture(&desc);
+            Ok(Texture{
+                metal_texture: tex
+            })
         })
     }
 
@@ -792,29 +898,29 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPassInfo<Device>,
     ) -> result::Result<RenderPass, super::Error> {
-        // new desc
-        let descriptor = metal::RenderPassDescriptor::new();
+        objc::rc::autoreleasepool(|| {
+            // new desc
+            let descriptor = metal::RenderPassDescriptor::new();
 
-        // colour attachments
-        for rt in &info.render_targets {
-            let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
-            color_attachment.set_texture(Some(&rt.metal_texture));
+            // colour attachments
+            for rt in &info.render_targets {
+                let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+                color_attachment.set_texture(Some(&rt.metal_texture));
 
-            if let Some(cc) = info.rt_clear {
-                color_attachment.set_load_action(metal::MTLLoadAction::Clear);
-                color_attachment.set_clear_color(metal::MTLClearColor::new(cc.r as f64, cc.g as f64, cc.b as f64, 1.0));
-                color_attachment.set_store_action(metal::MTLStoreAction::Store);
+                if let Some(cc) = info.rt_clear {
+                    color_attachment.set_load_action(metal::MTLLoadAction::Clear);
+                    color_attachment.set_clear_color(metal::MTLClearColor::new(cc.r as f64, cc.g as f64, cc.b as f64, 1.0));
+                    color_attachment.set_store_action(metal::MTLStoreAction::Store);
+                }
+                else {
+                    color_attachment.set_load_action(metal::MTLLoadAction::Load);
+                    color_attachment.set_store_action(metal::MTLStoreAction::Store);
+                }
             }
-            else {
-                color_attachment.set_load_action(metal::MTLLoadAction::Load);
-                color_attachment.set_store_action(metal::MTLStoreAction::Store);
-            }
-        }
 
-        // TODO: depth
-
-        Ok(RenderPass{
-            desc: descriptor.to_owned()
+            Ok(RenderPass{
+                desc: descriptor.to_owned()
+            })
         })
     }
 
@@ -823,7 +929,7 @@ impl super::Device for Device {
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
         Ok(ComputePipeline{
-
+            slots: Vec::new()
         })
     }
 

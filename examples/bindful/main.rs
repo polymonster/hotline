@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::{*, prelude::{Pipeline, Texture}};
 
 use os::{App, Window};
@@ -11,6 +8,8 @@ struct Vertex {
     position: [f32; 3],
     color: [f32; 4],
 }
+
+use std::fs;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app
@@ -104,12 +103,66 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
 
+    // temp
+    let vsc_filepath = hotline_rs::get_data_path("shaders/bindful/vs_main.vsc");
+    let psc_filepath = hotline_rs::get_data_path("shaders/bindful/ps_main.psc");
+
+    let vsc_data = fs::read(vsc_filepath)?;
+    let psc_data = fs::read(psc_filepath)?;
+
+    let vsc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let vs = dev.create_shader(&vsc_info, &vsc_data)?;
+
+    let psc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let fs = dev.create_shader(&psc_info, &psc_data)?;
+
+    let pso_pmfx = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
+        vs: Some(&vs),
+        fs: Some(&fs),
+        input_layout: vec![
+            gfx::InputElementInfo {
+                semantic: String::from("POSITION"),
+                index: 0,
+                format: gfx::Format::RGB32f,
+                input_slot: 0,
+                aligned_byte_offset: 0,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            },
+            gfx::InputElementInfo {
+                semantic: String::from("COLOR"),
+                index: 0,
+                format: gfx::Format::RGBA32f,
+                input_slot: 0,
+                aligned_byte_offset: 12,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            },
+        ],
+        blend_info: gfx::BlendInfo {
+            alpha_to_coverage_enabled: false,
+            independent_blend_enabled: false,
+            render_target: vec![gfx::RenderTargetBlendInfo::default()],
+        },
+        topology: gfx::Topology::TriangleList,
+        pass: Some(swap_chain.get_backbuffer_pass()),
+        ..Default::default()
+    })?;
+
+    /*
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/bindful"))?;
     pmfx.create_render_pipeline(&dev, "bindful", swap_chain.get_backbuffer_pass())?;
-    
+
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
+    */
 
     let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
@@ -148,11 +201,12 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_render_pipeline(pso_pmfx);
+        cmdbuffer.set_render_pipeline(&pso_pmfx);
 
-        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
+        cmdbuffer.set_heap(&pso_pmfx, dev.get_shader_heap());
 
         // set bindings
+        /*
         let srv0 =  textures[0].get_srv_index().unwrap();
         let srv1 =  textures[1].get_srv_index().unwrap();
         let srv2 =  textures[2].get_srv_index().unwrap();
@@ -177,7 +231,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
             cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t3.index, srv3);
         }
-        
+        */
+
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);

@@ -1213,7 +1213,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Set the scissor rect on the rasterizer stage
     fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
     /// Set the index `buffer` to use for draw calls, the buffer should be created with `BufferUsage::INDEX`
-    fn set_index_buffer(&self, buffer: &D::Buffer);
+    fn set_index_buffer(&mut self, buffer: &D::Buffer);
     /// Set the index `buffer` on `slot` to use for draw calls, the buffer should be created with `BufferUsage::VERTEX`
     fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
     /// Set render pipeline for `draw` commands

@@ -70,23 +70,27 @@ impl super::App for App {
 
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool {
-        let mut resume = true;
-        let status = self.event_loop.pump_events(Some(Duration::ZERO), |event, elwt| {
-            match event {
-                Event::WindowEvent { event, .. } => match event {
-                    WindowEvent::CloseRequested => {
-                        resume = false;
+        objc::rc::autoreleasepool(|| {
+            let mut resume = true;
+            let status = self.event_loop.pump_events(Some(Duration::ZERO), |event, elwt| {
+                match event {
+                    Event::WindowEvent { event, .. } => match event {
+                        WindowEvent::CloseRequested => {
+                            resume = false;
+                        }
+                        WindowEvent::RedrawRequested => {
+                        }
+                        _ => {
+
+                        }
                     }
                     _ => {
 
                     }
                 }
-                _ => {
-
-                }
-            }
-        });
-        resume
+            });
+            resume
+        })
     }
 
     /// Request to exit the application

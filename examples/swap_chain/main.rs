@@ -113,6 +113,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             resolve: false,
             array_slice: 0
         })?;
+
         // render pass to clear
         cmd.reset(&swap_chain);
         cmd.begin_render_pass(&render_pass);
