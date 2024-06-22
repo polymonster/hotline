@@ -147,7 +147,7 @@
             args: [
                 "-shader_platform metal"
                 "-shader_version 6_0"
-                "-metal_version 2.0"
+                "-metal_version 2.3"
                 "-metal_sdk macosx"
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"

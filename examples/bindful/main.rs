@@ -145,6 +145,29 @@ fn main() -> Result<(), hotline_rs::Error> {
                 step_rate: 0,
             },
         ],
+        pipeline_layout: gfx::PipelineLayout {
+            bindings: None,
+            push_constants: None,
+            static_samplers: Some(vec![
+                gfx::SamplerBinding {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    shader_register: 0,
+                    register_space: 0,
+                    sampler_info: gfx::SamplerInfo {
+                        address_u: gfx::SamplerAddressMode::Wrap,
+                        address_v: gfx::SamplerAddressMode::Wrap,
+                        address_w: gfx::SamplerAddressMode::Wrap,
+                        filter: gfx::SamplerFilter::Linear,
+                        comparison: None,
+                        border_colour: None,
+                        mip_lod_bias: 0.0,
+                        max_aniso: 0,
+                        min_lod: 0.0,
+                        max_lod: 1000.0
+                    }
+                }
+            ])
+        },
         blend_info: gfx::BlendInfo {
             alpha_to_coverage_enabled: false,
             independent_blend_enabled: false,
@@ -207,10 +230,10 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // set bindings
         /*
-        let srv0 =  textures[0].get_srv_index().unwrap();
-        let srv1 =  textures[1].get_srv_index().unwrap();
-        let srv2 =  textures[2].get_srv_index().unwrap();
-        let srv3 =  textures[3].get_srv_index().unwrap();
+        let srv0 = textures[0].get_srv_index().unwrap();
+        let srv1 = textures[1].get_srv_index().unwrap();
+        let srv2 = textures[2].get_srv_index().unwrap();
+        let srv3 = textures[3].get_srv_index().unwrap();
 
         // this looks up register t0, space0
         if let Some(t0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
@@ -232,6 +255,12 @@ fn main() -> Result<(), hotline_rs::Error> {
             cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t3.index, srv3);
         }
         */
+
+        // ..
+        cmdbuffer.set_texture(&textures[0], 0);
+        cmdbuffer.set_texture(&textures[1], 1);
+        cmdbuffer.set_texture(&textures[2], 2);
+        cmdbuffer.set_texture(&textures[3], 3);
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);

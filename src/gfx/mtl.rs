@@ -266,6 +266,12 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .as_ref()
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .set_render_pipeline_state(&pipeline.pipeline_state);
+
+            // TODO: temp
+            for sampler in &pipeline.static_samplers {
+                self.render_encoder.as_ref().unwrap().set_fragment_sampler_state(
+                    sampler.slot as u64, Some(&sampler.sampler))
+            }
         });
     }
 
@@ -276,6 +282,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_binding<T: SuperPipleline>(&self, _: &T, heap: &Heap, slot: u32, offset: usize) {
+    }
+
+    fn set_texture(&mut self, texture: &Texture, slot: u32) {
+        self.render_encoder.as_ref().unwrap().set_fragment_texture(slot as u64, Some(&texture.metal_texture));
     }
 
     fn set_marker(&self, colour: u32, name: &str) {
@@ -435,8 +445,14 @@ pub struct Shader {
 
 impl super::Shader<Device> for Shader {}
 
+struct MetalSamplerBinding {
+    slot: u32,
+    sampler: metal::SamplerState
+}
+
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
+    static_samplers: Vec<MetalSamplerBinding>,
     slots: Vec<u32>
 }
 
@@ -767,9 +783,30 @@ impl super::Device for Device {
 
             // TODO: raster
 
+            // TODO: samplers?
+            let mut pipeline_static_samplers = Vec::new();
+            if let Some(static_samplers) = &info.pipeline_layout.static_samplers {
+                for sampler in static_samplers {
+                    let desc = metal::SamplerDescriptor::new();
+                    desc.set_address_mode_r(metal::MTLSamplerAddressMode::Repeat);
+                    desc.set_address_mode_s(metal::MTLSamplerAddressMode::Repeat);
+                    desc.set_address_mode_t(metal::MTLSamplerAddressMode::Repeat);
+                    desc.set_min_filter(metal::MTLSamplerMinMagFilter::Linear);
+                    desc.set_mag_filter(metal::MTLSamplerMinMagFilter::Linear);
+                    desc.set_mip_filter(metal::MTLSamplerMipFilter::Linear);
+
+                    // TODO:
+                    pipeline_static_samplers.push(MetalSamplerBinding {
+                        slot: sampler.shader_register,
+                        sampler: self.metal_device.new_sampler(&desc)
+                    })
+                }
+            }
+
             Ok(RenderPipeline {
                 pipeline_state: self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?,
-                slots: Vec::new()
+                slots: Vec::new(),
+                static_samplers: pipeline_static_samplers
             })
         })
     }
@@ -872,7 +909,38 @@ impl super::Device for Device {
     ) -> result::Result<Texture, super::Error> {
         objc::rc::autoreleasepool(|| {
             let desc = TextureDescriptor::new();
+            // TODO:
+            // tex_type
+            // format
+            // initial_state
+
+            // desc
+            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm); // TODO:
+            desc.set_width(info.width as NSUInteger);
+            desc.set_height(info.height as NSUInteger);
+            desc.set_depth(info.depth as NSUInteger);
+            desc.set_array_length(info.array_layers as NSUInteger);
+            desc.set_mipmap_level_count(info.mip_levels as NSUInteger);
+            desc.set_sample_count(info.samples as NSUInteger);
             let tex = self.metal_device.new_texture(&desc);
+
+            // data
+            if let Some(data) = data {
+                tex.replace_region(
+                    metal::MTLRegion {
+                        origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                        size: metal::MTLSize {
+                            width: info.width,
+                            height: info.height,
+                            depth: info.depth as u64,
+                        },
+                    },
+                    0,
+                    data.as_ptr() as _,
+                    info.width * 4, // TODO size from format
+                );
+            }
+
             Ok(Texture{
                 metal_texture: tex
             })
