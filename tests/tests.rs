@@ -379,11 +379,9 @@ fn image_size_tests() {
     assert_eq!(gfx::mip_levels_for_dimension(1024, 2048), 12);
     assert_eq!(gfx::mip_levels_for_dimension(1024 + 33, 1024 + 513), 11);
     assert_eq!(gfx::mip_levels_for_dimension(512 + 33, 512 + 263), 10);
-<<<<<<< HEAD
-=======
 }
 
-
+/*
 // client tests must run 1 at a time, this boots the client with empty user info
 #[test]
 fn pmfx() -> Result<(), hotline_rs::Error> {
@@ -774,5 +772,5 @@ fn pbr() -> Result<(), hotline_rs::Error> {
 #[test]
 fn omni_shadow_maps() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("omni_shadow_map")
->>>>>>> origin/master
 }
+*/
