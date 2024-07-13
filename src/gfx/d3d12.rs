@@ -26,7 +26,6 @@ use windows::{
     Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
     Win32::System::LibraryLoader::*, Win32::System::Threading::*,
     Win32::System::WindowsProgramming::*,
-    Win32::System::SystemServices::GENERIC_ALL
 };
 
 #[macro_export]

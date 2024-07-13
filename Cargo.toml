@@ -30,7 +30,7 @@ version = "0.9.0"
 features = ["docking"]
 
 [target.'cfg(windows)'.dependencies.windows]
-version = "0.44.0"
+version = "0.58.0"
 features = [
     "implement",
     "Win32_Foundation",
@@ -55,6 +55,9 @@ features = [
     "Win32_UI_Shell_Common",
     "Win32_UI_WindowsAndMessaging",
 ]
+
+[target.'cfg(windows)'.dependencies.windows-core]
+version = "0.58.0"
 
 [lib]
 crate-type = ["rlib", "dylib"]
