@@ -24,12 +24,12 @@ use std::ffi::CString;
 pub struct App {
     window_class: String,
     window_class_imgui: String,
-    hinstance: HINSTANCE,
+    hinstance: usize,
     mouse_pos: super::Point<i32>,
     mouse_pos_delta: super::Point<i32>,
     proc_data: ProcData,
-    events: HashMap<isize, super::WindowEventFlags>,
-    hwnd_flags: HashMap<isize, super::WindowStyleFlags>,
+    events: HashMap<usize, super::WindowEventFlags>,
+    hwnd_flags: HashMap<usize, super::WindowStyleFlags>,
     keyboard_input_enabled: bool,
     mouse_input_enabled: bool,
 }
@@ -37,7 +37,7 @@ pub struct App {
 impl ProcData {
     fn new() -> Self {
         ProcData {
-            mouse_hwnd: HWND(0),
+            mouse_hwnd: 0,
             mouse_tracked: false,
             mouse_down: [false; 5],
             mouse_wheel: 0.0,
@@ -55,7 +55,7 @@ impl ProcData {
 
 #[derive(Clone)]
 pub struct Window {
-    hwnd: HWND,
+    hwnd: usize,
     ws: WINDOW_STYLE,
     wsex: WINDOW_EX_STYLE,
     events: super::WindowEventFlags,
@@ -66,12 +66,12 @@ unsafe impl Sync for Window {}
 
 #[derive(Clone, Copy)]
 pub struct NativeHandle {
-    pub hwnd: HWND,
+    pub hwnd: usize,
 }
 
 #[derive(Clone)]
 struct ProcData {
-    mouse_hwnd: HWND,
+    mouse_hwnd: usize,
     mouse_tracked: bool,
     mouse_down: [bool; super::MouseButton::Count as usize],
     mouse_wheel: f32,
@@ -87,7 +87,7 @@ struct ProcData {
 
 impl super::NativeHandle<App> for NativeHandle {
     fn get_isize(&self) -> isize {
-        self.hwnd.0
+        self.hwnd as isize
     }
     fn copy(&self) -> NativeHandle {
         *self
@@ -96,17 +96,35 @@ impl super::NativeHandle<App> for NativeHandle {
 
 impl Window {
     pub fn get_hwnd(&self) -> HWND {
-        self.hwnd
+        unsafe {
+            std::mem::transmute(self.hwnd)
+        }
     }
+}
+
+fn as_hwnd(handle: usize) -> HWND {
+    unsafe { std::mem::transmute(handle) } 
+}
+
+fn as_hinstance(handle: usize) -> HINSTANCE {
+    unsafe { std::mem::transmute(handle) } 
+}
+
+fn hwnd_usize(h: HWND) -> usize {
+    unsafe { std::mem::transmute(h.0) } 
+}
+
+fn hinstance_usize(h: HINSTANCE) -> usize {
+    unsafe { std::mem::transmute(h.0) } 
 }
 
 impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
-            if GetCapture() == self.hwnd {
+            if GetCapture() == as_hwnd(self.hwnd) {
                 ReleaseCapture();
             }
-            DestroyWindow(self.hwnd);
+            DestroyWindow(as_hwnd(self.hwnd));
         }
     }
 }
@@ -114,7 +132,7 @@ impl Drop for Window {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassA(PCSTR(self.window_class.as_ptr() as _), self.hinstance);
+            UnregisterClassA(PCSTR(self.window_class.as_ptr() as _), as_hinstance(self.hinstance));
         }
     }
 }
@@ -297,10 +315,10 @@ impl App {
 
     fn wndproc(&mut self, window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
         unsafe {
-            let mut proc_data = &mut self.proc_data;
+            let proc_data = &mut self.proc_data;
             match message {
                 WM_MOUSEMOVE => {
-                    proc_data.mouse_hwnd = window;
+                    proc_data.mouse_hwnd = hwnd_usize(window);
                     if !proc_data.mouse_tracked {
                         // We need to call TrackMouseEvent in order to receive WM_MOUSELEAVE events
                         TrackMouseEvent(&mut TRACKMOUSEEVENT {
@@ -314,7 +332,7 @@ impl App {
                     LRESULT(0)
                 }
                 WM_MOUSELEAVE => {
-                    proc_data.mouse_hwnd = HWND(0);
+                    proc_data.mouse_hwnd = 0;
                     proc_data.mouse_tracked = false;
                     LRESULT(0)
                 }
@@ -432,12 +450,13 @@ impl App {
     }
     
     fn add_event(&mut self, window: HWND, flags: super::WindowEventFlags) {
-        if let Some(window_events) = self.events.get_mut(&window.0) {
+        let iwindow = hwnd_usize(window);
+        if let Some(window_events) = self.events.get_mut(&iwindow) {
             // or into existsing key
             *window_events |= flags;
         } else {
             // create new key
-            self.events.insert(window.0, flags);
+            self.events.insert(iwindow, flags);
         }
     }
     
@@ -469,7 +488,7 @@ impl App {
     fn set_capture(&mut self, window: HWND) {
         unsafe {
             let any_down = self.proc_data.mouse_down.iter().any(|v| v == &true);
-            if !any_down && GetCapture() == HWND(0) {
+            if !any_down && GetCapture() == HWND(std::ptr::null_mut()) {
                 SetCapture(window);
             }
         }
@@ -498,7 +517,8 @@ impl super::App for App {
             let window_class_imgui = info.name.to_string() + "_imgui\0";
 
             let instance = GetModuleHandleA(None).unwrap();
-            debug_assert!(instance.0 != 0);
+            debug_assert!(instance.0 != std::ptr::null_mut());
+            let instance = HINSTANCE(instance.0);
 
             if info.dpi_aware {
                 SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -536,7 +556,7 @@ impl super::App for App {
             App {
                 window_class_imgui,
                 window_class,
-                hinstance: instance,
+                hinstance: hinstance_usize(instance),
                 mouse_pos: super::Point::default(),
                 mouse_pos_delta: super::Point::default(),
                 proc_data: ProcData::new(),
@@ -556,9 +576,9 @@ impl super::App for App {
             let rect = adjust_window_rect(&info.rect, ws, wsex);
 
             let parent_hwnd = if info.parent_handle.is_some() {
-                Some(info.parent_handle.unwrap().hwnd)
+                as_hwnd(info.parent_handle.unwrap().hwnd)
             } else {
-                None
+                as_hwnd(0)
             };
 
             let class = if info.style.contains(super::WindowStyleFlags::IMGUI) {
@@ -581,14 +601,17 @@ impl super::App for App {
                 rect.height,
                 parent_hwnd,
                 None,
-                self.hinstance,
+                as_hinstance(self.hinstance),
                 None,
-            );
+            ).unwrap();
+
+            let ihwnd = hwnd_usize(hwnd);
+
             // track window style to send to correct wnd proc
-            self.hwnd_flags.insert(hwnd.0, info.style);
+            self.hwnd_flags.insert(ihwnd, info.style);
 
             Window {
-                hwnd,
+                hwnd: ihwnd,
                 ws,
                 wsex,
                 events: super::WindowEventFlags::NONE,
@@ -597,7 +620,7 @@ impl super::App for App {
     }
 
     fn destroy_window(&mut self, window: &Window) {
-        self.hwnd_flags.remove(&window.hwnd.0);
+        self.hwnd_flags.remove(&window.hwnd);
     }
 
     fn run(&mut self) -> bool {
@@ -612,7 +635,7 @@ impl super::App for App {
                     DispatchMessageA(&msg);
                     
                     // handle wnd proc on self functions, to avoid need for static mutable state
-                    if let Some(hwnd_flags) = self.hwnd_flags.get(&msg.hwnd.0) {
+                    if let Some(hwnd_flags) = self.hwnd_flags.get(&hwnd_usize(msg.hwnd)) {
                         if hwnd_flags.contains(super::WindowStyleFlags::IMGUI) {
                             self.imgui_wndproc(msg.hwnd, msg.message, msg.wParam, msg.lParam);
                         }
@@ -697,7 +720,7 @@ impl super::App for App {
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
             MONITOR_ENUM.clear();
-            EnumDisplayMonitors(HDC(0), None, Some(enum_func), LPARAM(0));
+            EnumDisplayMonitors(HDC::default(), None, Some(enum_func), LPARAM(0));
             let mut monitors: Vec<super::MonitorInfo> = Vec::new();
             for m in &MONITOR_ENUM {
                 monitors.push(m.clone());
@@ -708,17 +731,18 @@ impl super::App for App {
 
     fn set_cursor(&self, cursor: &super::Cursor) {
         unsafe {
+            let hinstance = as_hinstance(self.hinstance);
             match cursor {
-                super::Cursor::None => SetCursor(HCURSOR(0)),
-                super::Cursor::Arrow => SetCursor(LoadCursorW(self.hinstance, IDC_ARROW).unwrap()),
-                super::Cursor::TextInput => SetCursor(LoadCursorW(self.hinstance, IDC_IBEAM).unwrap()),
-                super::Cursor::ResizeAll => SetCursor(LoadCursorW(self.hinstance, IDC_SIZEALL).unwrap()),
-                super::Cursor::ResizeEW => SetCursor(LoadCursorW(self.hinstance, IDC_SIZEWE).unwrap()),
-                super::Cursor::ResizeNS => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENS).unwrap()),
-                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENESW).unwrap()),
-                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(self.hinstance, IDC_SIZENWSE).unwrap()),
-                super::Cursor::Hand => SetCursor(LoadCursorW(self.hinstance, IDC_HAND).unwrap()),
-                super::Cursor::NotAllowed => SetCursor(LoadCursorW(self.hinstance, IDC_NO).unwrap()),
+                super::Cursor::None => SetCursor(HCURSOR(std::ptr::null_mut())),
+                super::Cursor::Arrow => SetCursor(LoadCursorW(hinstance, IDC_ARROW).unwrap()),
+                super::Cursor::TextInput => SetCursor(LoadCursorW(hinstance, IDC_IBEAM).unwrap()),
+                super::Cursor::ResizeAll => SetCursor(LoadCursorW(hinstance, IDC_SIZEALL).unwrap()),
+                super::Cursor::ResizeEW => SetCursor(LoadCursorW(hinstance, IDC_SIZEWE).unwrap()),
+                super::Cursor::ResizeNS => SetCursor(LoadCursorW(hinstance, IDC_SIZENS).unwrap()),
+                super::Cursor::ResizeNESW => SetCursor(LoadCursorW(hinstance, IDC_SIZENESW).unwrap()),
+                super::Cursor::ResizeNWSE => SetCursor(LoadCursorW(hinstance, IDC_SIZENWSE).unwrap()),
+                super::Cursor::Hand => SetCursor(LoadCursorW(hinstance, IDC_HAND).unwrap()),
+                super::Cursor::NotAllowed => SetCursor(LoadCursorW(hinstance, IDC_NO).unwrap()),
             };
         }
     }
@@ -758,7 +782,7 @@ impl super::App for App {
                 open_dialog.SetFileTypes(&specs)?;
             }
             
-            open_dialog.Show(HWND(0))?;
+            open_dialog.Show(HWND::default())?;
             let results : IShellItemArray = open_dialog.GetResults()?;
 
             let mut output_results : Vec<String> = Vec::new();
@@ -793,7 +817,7 @@ impl super::App for App {
             let chwnd = GetConsoleWindow();
             SetWindowPos(
                 chwnd,
-                HWND(0),
+                HWND::default(),
                 rect.x,
                 rect.y,
                 rect.width,
@@ -806,12 +830,13 @@ impl super::App for App {
 
 impl super::Window<App> for Window {
     fn bring_to_front(&self) {
+        let hwnd = as_hwnd(self.hwnd);
         unsafe {
-            SetForegroundWindow(self.hwnd);
-            SetFocus(self.hwnd);
-            SetActiveWindow(self.hwnd);
-            BringWindowToTop(self.hwnd);
-            ShowWindow(self.hwnd, SW_RESTORE);
+            SetForegroundWindow(hwnd);
+            SetFocus(hwnd);
+            SetActiveWindow(hwnd);
+            BringWindowToTop(hwnd);
+            ShowWindow(hwnd, SW_RESTORE);
         }
     }
 
@@ -824,19 +849,21 @@ impl super::Window<App> for Window {
             }
         }
         unsafe {
-            ShowWindow(self.hwnd, cmd);
+            let hwnd = as_hwnd(self.hwnd);
+            ShowWindow(hwnd, cmd);
         }
     }
 
     fn close(&mut self) {
         unsafe {
-            DestroyWindow(self.hwnd);
+            let hwnd = as_hwnd(self.hwnd);
+            DestroyWindow(hwnd);
         }
     }
 
     fn update(&mut self, app: &mut App) {
         // take events
-        if let Some(window_events) = app.events.get_mut(&self.hwnd.0) {
+        if let Some(window_events) = app.events.get_mut(&self.hwnd) {
             self.events = *window_events;
             *window_events = super::WindowEventFlags::NONE;
         }
@@ -863,8 +890,9 @@ impl super::Window<App> for Window {
             self.ws = ws;
             self.wsex = wsex;
             unsafe {
-                SetWindowLongA(self.hwnd, GWL_STYLE, ws.0 as i32);
-                SetWindowLongA(self.hwnd, GWL_EXSTYLE, wsex.0 as i32);
+                let hwnd = as_hwnd(self.hwnd);
+                SetWindowLongA(hwnd, GWL_STYLE, ws.0 as i32);
+                SetWindowLongA(hwnd, GWL_EXSTYLE, wsex.0 as i32);
 
                 let mut rect = RECT {
                     left: rect.x,
@@ -875,7 +903,7 @@ impl super::Window<App> for Window {
                 AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
 
                 SetWindowPos(
-                    self.hwnd,
+                    hwnd,
                     insert_after,
                     rect.left,
                     rect.top,
@@ -884,7 +912,7 @@ impl super::Window<App> for Window {
                     swp_flag | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 );
 
-                ShowWindow(self.hwnd, SW_SHOWNA);
+                ShowWindow(hwnd, SW_SHOWNA);
                 self.events |= super::WindowEventFlags::MOVE;
                 self.events |= super::WindowEventFlags::SIZE;
             }
@@ -892,18 +920,19 @@ impl super::Window<App> for Window {
     }
 
     fn is_focused(&self) -> bool {
-        unsafe { GetForegroundWindow() == self.hwnd }
+        unsafe { GetForegroundWindow() == as_hwnd(self.hwnd) }
     }
 
     fn is_minimised(&self) -> bool {
-        unsafe { IsIconic(self.hwnd) == true }
+        unsafe { IsIconic(as_hwnd(self.hwnd)) == true }
     }
 
     fn set_focused(&self) {
         unsafe {
-            BringWindowToTop(self.hwnd);
-            SetForegroundWindow(self.hwnd);
-            SetFocus(self.hwnd);
+            let hwnd = as_hwnd(self.hwnd);
+            BringWindowToTop(hwnd);
+            SetForegroundWindow(hwnd);
+            SetFocus(hwnd);
         }
     }
 
@@ -911,14 +940,14 @@ impl super::Window<App> for Window {
         unsafe {
             let mut mouse_pos = POINT::default();
             GetCursorPos(&mut mouse_pos);
-            self.hwnd == WindowFromPoint(mouse_pos)
+            as_hwnd(self.hwnd) == WindowFromPoint(mouse_pos)
         }
     }
 
     fn set_title(&self, title: String) {
         unsafe {
             let mb = string_to_wide(title);
-            SetWindowTextW(self.hwnd, PCWSTR(mb.as_ptr() as _));
+            SetWindowTextW(as_hwnd(self.hwnd), PCWSTR(mb.as_ptr() as _));
         }
     }
 
@@ -932,8 +961,8 @@ impl super::Window<App> for Window {
         unsafe {
             AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
             SetWindowPos(
-                self.hwnd,
-                HWND(0),
+                as_hwnd(self.hwnd),
+                HWND::default(),
                 rect.left,
                 rect.top,
                 0,
@@ -953,8 +982,8 @@ impl super::Window<App> for Window {
         unsafe {
             AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
             SetWindowPos(
-                self.hwnd,
-                HWND(0),
+                as_hwnd(self.hwnd),
+                HWND::default(),
                 0,
                 0,
                 rect.right - rect.left,
@@ -967,7 +996,7 @@ impl super::Window<App> for Window {
     fn get_pos(&self) -> super::Point<i32> {
         unsafe {
             let mut pos = POINT { x: 0, y: 0 };
-            ClientToScreen(self.hwnd, &mut pos);
+            ClientToScreen(as_hwnd(self.hwnd), &mut pos);
             super::Point { x: pos.x, y: pos.y }
         }
     }
@@ -975,7 +1004,7 @@ impl super::Window<App> for Window {
     fn get_size(&self) -> super::Size<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetClientRect(self.hwnd, &mut rect);
+            GetClientRect(as_hwnd(self.hwnd), &mut rect);
             super::Size {
                 x: rect.right - rect.left,
                 y: rect.bottom - rect.top,
@@ -986,7 +1015,7 @@ impl super::Window<App> for Window {
     fn get_viewport_rect(&self) -> super::Rect<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetClientRect(self.hwnd, &mut rect);
+            GetClientRect(as_hwnd(self.hwnd), &mut rect);
             super::Rect::<i32> {
                 x: 0,
                 y: 0,
@@ -999,7 +1028,7 @@ impl super::Window<App> for Window {
     fn get_window_rect(&self) -> super::Rect<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetWindowRect(self.hwnd, &mut rect);
+            GetWindowRect(as_hwnd(self.hwnd), &mut rect);
 
             // this is adjusted to compensate for AdjustWindowRectEx on create
             let mut adj = RECT::default();
@@ -1026,14 +1055,14 @@ impl super::Window<App> for Window {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
             };
-            ScreenToClient(self.hwnd, &mut mp);
+            ScreenToClient(as_hwnd(self.hwnd), &mut mp);
             super::Point { x: mp.x, y: mp.y }
         }
     }
 
     fn get_dpi_scale(&self) -> f32 {
         unsafe {
-            let monitor = MonitorFromWindow(self.hwnd, MONITOR_DEFAULTTONEAREST);
+            let monitor = MonitorFromWindow(as_hwnd(self.hwnd), MONITOR_DEFAULTTONEAREST);
             let mut xdpi: u32 = 0;
             let mut ydpi: u32 = 0;
             if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_err() {
