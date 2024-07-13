@@ -959,6 +959,18 @@ A sample to demonstrate how to configure a single shadow map with a vertex shade
 
 Demonstrates how multiple cubemap faces can be rendered using cubemap cameras and then sampled from to create dynamic environment mapped reflections. A single `pmfx` view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
 
+### Omni Shadow Map
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/omni_shadow_map.png" width="100%"/>
+
+Demonstrates how multiple cubemap faces can be rendered using cubemap cameras and comparison sampled with PCF to create a point light shadow. A single `pmfx` depth only view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
+
+### PBR
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/pbr.png" width="100%"/>
+
+An implementation of physically based rendering with image based lighting. Note that currently the cubemap pre-filtering is just using the mip levels, in time there will be an improved pipeline to properly pre-filter.
+
 ## Tests
 
 There are standalone tests and client/plugin tests to test graphics API features. This requires a test runner which has a GPU and is not headless, so I am using my home machine as a self-hosted actions runner. You can run the tests yourself but because of the requirement of a GPU device and plugin loading the tests need to be ran single threaded. 
