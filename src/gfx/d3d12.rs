@@ -3086,12 +3086,10 @@ impl super::Device for Device {
         let size_bytes = Self::get_pipeline_statistics_size_bytes();
         let data = self.read_buffer(swap_chain, buffer, size_bytes, frame_written_fence);
         if let Some(data) = data {
-            let mut d3d12_query_stats = D3D12_QUERY_DATA_PIPELINE_STATISTICS {
-                ..Default::default()
+            let d3d12_query_stats: D3D12_QUERY_DATA_PIPELINE_STATISTICS = unsafe { 
+                std::ptr::read_unaligned(data.data.as_ptr() as *const _) 
             };
-            unsafe {
-                std::ptr::copy_nonoverlapping(data.data.as_ptr() as *mut _, &mut d3d12_query_stats, size_bytes);
-            }
+
             Some(super::PipelineStatistics{
                 input_assembler_vertices: d3d12_query_stats.IAVertices,
                 input_assembler_primitives: d3d12_query_stats.IAPrimitives,
