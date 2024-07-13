@@ -1,19 +1,29 @@
 // TODO:
 
-// - omni shadow map
+// issues
+// - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
 
+// samples
 // - clear buffer (uav)
 // - buffers in pmfx
 // - clear buffers for compute
 
-// material system
+// effects
 // - perspective shadow map
 // - cascaded shadow map
 // - area light
 // - disney brdf
 
+// platforms
+// - bring across macos shader compilation
+// - integrate macos changes and fixup win32/d3d12
+// - try update windows-rs
+
 // engine
 // - reverse depth
+// - visibility buffer
+// - mesh shader
+// - hello triangle (ray tracing)
 // - HDR pipeline
 // - glft
 // - set name on resources
@@ -31,7 +41,12 @@
 // - view menu + saving state
 // - imgui not tracked within draw call stats
 
+// build
+
 // DONE:
+// x test shader compilation with mac changes
+// x update pmbuild
+// x omni shadow map
 // x texture formats (BC etc)
 // x texture load image from file into pmfx
 // x copy texture region

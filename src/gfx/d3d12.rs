@@ -3325,6 +3325,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.drop_complete_in_flight_barriers(prev_bb);
     }
 
+    fn set_texture(&mut self, texture: &Texture, slot: u32) {
+
+    }
+
     fn close(&mut self) -> result::Result<(), super::Error> {
         let bb = self.bb_index;
         unsafe {
@@ -3345,7 +3349,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.bb_index as u32
     }
 
-    fn begin_render_pass(&self, render_pass: &RenderPass) {
+    fn begin_render_pass(&mut self, render_pass: &RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.BeginRenderPass(
@@ -3360,7 +3364,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn end_render_pass(&self) {
+    fn end_render_pass(&mut self) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.EndRenderPass();
@@ -3507,7 +3511,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_index_buffer(&self, buffer: &Buffer) {
+    fn set_index_buffer(&mut self, buffer: &Buffer) {
         let cmd = self.cmd();
         if buffer.ibv.is_some() {
             unsafe {
