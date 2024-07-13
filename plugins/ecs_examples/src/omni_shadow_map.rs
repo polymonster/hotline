@@ -17,6 +17,7 @@ pub fn omni_shadow_map(client: &mut Client<gfx_platform::Device, os_platform::Ap
         ],
         update: systems![
             "animate_omni_shadow",
+            "animate_meshes",
             "batch_lights"
         ],
         render_graph: "mesh_lit_omni_shadow_map",
@@ -32,24 +33,23 @@ pub fn setup_omni_shadow_map(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    let tourus_mesh = hotline_rs::primitives::create_tourus_mesh(&mut device.0, 32);
+    let helix_mesh = hotline_rs::primitives::create_helix_mesh(&mut device.0, 32, 4);
+    let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 32, 0, 32, true, true, 1.0, 0.66, 1.0);
+    let triangle_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 3, 0, 3, false, true, 0.33, 0.66, 1.0);
     
-    let dim = 32;
-    let dim2 = dim / 2;
-    let tile_size = 10.0;
-    let height = 100.0;
-    let spacing = 16.0;
-    let extent = dim as f32 * tile_size * spacing;
-    let half_extent = extent / 2.0;
+    let bounds = 100.0;
 
     let sm = pmfx.get_texture("single_omni_shadow_map").unwrap();
 
-    // spot light
-    let light_pos = vec3f(0.0, height * 0.5, 0.0);
+    // point light
+    let light_bounds = bounds * 0.75;
+    let light_pos = vec3f(light_bounds, light_bounds, 0.0);
     let light_radius = 256.0;
     commands.spawn((
         Position(light_pos),
         Velocity(Vec3f::unit_z()),
-        Colour(vec4f(0.5, 0.25, 0.125, 1.0)),
+        Colour(vec4f(0.125, 0.5, 0.25, 1.0)),
         LightComponent {
             light_type: LightType::Point,
             radius: light_radius,
@@ -68,36 +68,87 @@ pub fn setup_omni_shadow_map(
         ..Default::default()
     });
 
-    let offset = (tile_size + spacing) * 3.0;
-    let start = vec3f(-half_extent, height, -half_extent) + vec3f(offset, 0.0, offset);
-    let mut pos = start;
+    let shape_bounds = bounds * 0.6;
 
-    for y in 0..dim {    
-        pos.x = start.x;
-        for x in 0..dim {
-            commands.spawn((
-                Position(pos),
-                Scale(vec3f(tile_size, height, tile_size)),
-                Rotation(Quatf::identity()),
-                MeshComponent(cube_mesh.clone()),
-                WorldMatrix(Mat34f::identity())
-            ));
-
-            pos.x += tile_size * spacing;
-        }
-
-        pos.z += tile_size * spacing
-    }
-
-    // ground plane
-    let plane_mesh = hotline_rs::primitives::create_plane_mesh(&mut device.0, 1);
-
+    // tourus
+    let tourus_size = bounds * 0.1;
     commands.spawn((
-        Position(Vec3f::zero()),
-        Scale(vec3f(half_extent, 1.0, half_extent)),
+        Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
+        Scale(splat3f(tourus_size)),
         Rotation(Quatf::identity()),
-        MeshComponent(plane_mesh.clone()),
+        MeshComponent(tourus_mesh.clone()),
         WorldMatrix(Mat34f::identity())
+    ));
+
+    // helix
+    commands.spawn((
+        Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
+        Scale(splat3f(tourus_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(helix_mesh.clone()),
+        WorldMatrix(Mat34f::identity())
+    ));
+
+    // tube
+    commands.spawn((
+        Position(vec3f(shape_bounds * 1.0, shape_bounds * 0.1, shape_bounds * -1.0)),
+        Scale(splat3f(tourus_size)),
+        Rotation(Quatf::identity()),
+        MeshComponent(tube_mesh.clone()),
+        WorldMatrix(Mat34f::identity())
+    ));
+
+    // tri prsim
+    commands.spawn((
+        Position(vec3f(shape_bounds * 0.123, shape_bounds * -0.6, shape_bounds * -0.8)),
+        Scale(splat3f(tourus_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(triangle_mesh.clone()),
+        WorldMatrix(Mat34f::identity())
+    ));
+
+    // walls
+    let thickness = bounds * 0.1;
+    let face_size = bounds * 2.0;
+
+    // -y
+    commands.spawn((
+        Position(vec3f(0.0, -bounds, 0.0)),
+        Scale(vec3f(face_size, thickness, face_size)),
+        Rotation(Quatf::identity()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        Billboard
+    ));
+
+    // + y
+    commands.spawn((
+        Position(vec3f(0.0, bounds, 0.0)),
+        Scale(vec3f(face_size, thickness, face_size)),
+        Rotation(Quatf::identity()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        Billboard
+    ));
+
+    // -z
+    commands.spawn((
+        Position(vec3f(0.0, 0.0, -bounds)),
+        Scale(vec3f(face_size, face_size, thickness)),
+        Rotation(Quatf::identity()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        Billboard
+    ));
+
+    // -x
+    commands.spawn((
+        Position(vec3f(-bounds, 0.0, 0.0)),
+        Scale(vec3f(thickness, face_size, face_size)),
+        Rotation(Quatf::identity()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        Billboard
     ));
     
     pmfx.update_cubemap_camera_constants("omni_shadow_camera", light_pos, 0.1, light_radius * 2.0);
@@ -112,34 +163,27 @@ pub fn animate_omni_shadow (
     mut pmfx: ResMut<PmfxRes>,
     mut light_query: Query<(&mut Position, &mut Velocity, &LightComponent)>) -> Result<(), hotline_rs::Error> {
 
-    let dim = 32;
-    let dim2 = dim / 2;
-    let tile_size = 10.0;
-    let spacing = 16.0;
-
-    let extent = (tile_size + spacing) * 3.0 * 6.0;
+    let extent = 60.0;
 
     for (mut position, mut velocity, component) in &mut light_query {
         
-        position.0 += velocity.0 * time.delta * 400.0;
-
-        if position.z > extent {
-            velocity.0 = Vec3f::unit_x();
-        }
-        
-        if position.x > extent {
-            velocity.0 = -Vec3f::unit_z();
-        }
-        
-        if position.z < -extent {
-            velocity.0 = -Vec3f::unit_x();
-        }
-        
-        if position.x < -extent {
-            velocity.0 = Vec3f::unit_z();
-        }
+        position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
 
         pmfx.update_cubemap_camera_constants("omni_shadow_camera", position.0, 0.1, component.radius * 2.0);
+    }
+
+    Ok(())
+}
+
+#[no_mangle]
+#[export_update_fn]
+pub fn animate_meshes (
+    time: Res<TimeRes>, 
+    mut pmfx: ResMut<PmfxRes>,
+    mut mesh_query: Query<(&mut Rotation, &MeshComponent), Without<Billboard>>) -> Result<(), hotline_rs::Error> {
+
+    for (mut rotation, component) in &mut mesh_query {
+        rotation.0 *= Quat::from_euler_angles(f32::pi() * time.delta, f32::pi() * time.delta, f32::pi() * time.delta);
     }
 
     Ok(())

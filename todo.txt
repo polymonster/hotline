@@ -1,7 +1,7 @@
 // TODO:
 
+// samples
 // - omni shadow map
-
 // - clear buffer (uav)
 // - buffers in pmfx
 // - clear buffers for compute
@@ -12,8 +12,15 @@
 // - area light
 // - disney brdf
 
+// platforms
+// - integrate macos changes and fixup win32/d3d12
+// - test shader compilation with mac changes
+
 // engine
 // - reverse depth
+// - visibility buffer
+// - mesh shader
+// - hello triangle (ray tracing)
 // - HDR pipeline
 // - glft
 // - set name on resources
@@ -30,6 +37,9 @@
 // - thread stats
 // - view menu + saving state
 // - imgui not tracked within draw call stats
+
+// build
+// - update pmbuild
 
 // DONE:
 // x texture formats (BC etc)
