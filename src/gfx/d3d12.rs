@@ -856,8 +856,7 @@ pub fn get_hardware_adapter(
                 break;
             }
 
-            let mut desc = Default::default();
-            adapter.unwrap().GetDesc1(&mut desc)?;
+            let mut desc = adapter.unwrap().GetDesc1()?;
 
             // decode utf-16 dfescription
             let decoded1 = decode_utf16(desc.Description)
@@ -876,7 +875,7 @@ pub fn get_hardware_adapter(
                 }
             } else {
                 // auto select first non software adapter
-                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags);
+                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags as i32);
                 if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE && 
                     selected_index == -1 {
                     selected_index = i as i32;
@@ -891,8 +890,7 @@ pub fn get_hardware_adapter(
 
         let adapter = factory.EnumAdapters1(selected_index as u32)?;
         
-        let mut desc = Default::default();
-        adapter.GetDesc1(&mut desc)?;
+        let mut desc = adapter.GetDesc1()?;
 
         if D3D12CreateDevice(
             &adapter,
@@ -1532,7 +1530,7 @@ impl Device {
 
             self.command_list.Close()?;
     
-            let cmd = ID3D12CommandList::from(&self.command_list);
+            let cmd = Some(self.command_list.cast().unwrap());
             self.command_queue.ExecuteCommandLists(&[cmd]);
 
             let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
@@ -1609,11 +1607,11 @@ impl super::Device for Device {
 
                     println!("hotline_rs::gfx::d3d12: enabling debug layer");
                 }
-                dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG;
+                dxgi_factory_flags = DXGI_CREATE_FACTORY_DEBUG.0;
             }
 
             // create dxgi factory
-            let dxgi_factory = CreateDXGIFactory2(dxgi_factory_flags)
+            let dxgi_factory = CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(dxgi_factory_flags))
                 .expect("hotline_rs::gfx::d3d12: failed to create dxgi factory");
 
             // create adapter
@@ -1750,7 +1748,7 @@ impl super::Device for Device {
                 ..Default::default()
             };
 
-            let hwnd = HWND(win.get_native_handle().get_isize());
+            let hwnd : HWND = unsafe { std::mem::transmute(win.get_native_handle().get_isize()) };
 
             // create swap chain itself
             let swap_chain1 = self
@@ -2139,7 +2137,7 @@ impl super::Device for Device {
                 self.command_list.ResourceBarrier(&[barrier.clone()]);
                 self.command_list.Close()?;
 
-                let cmd = ID3D12CommandList::from(&self.command_list);
+                let cmd = Some(self.command_list.cast().unwrap());
                 self.command_queue.ExecuteCommandLists(&[cmd]);
                 self.command_queue.Signal(&fence, 1)?;
 
@@ -2637,7 +2635,7 @@ impl super::Device for Device {
                 let h = self.device.CreateSharedHandle(
                     &resource,
                     None,
-                    GENERIC_ALL,
+                    GENERIC_ALL.0,
                     PCWSTR(std::ptr::null())
                 );
                 shared_handle = Some(h?);
@@ -2922,7 +2920,7 @@ impl super::Device for Device {
                             D3D12_INDIRECT_ARGUMENT_DESC {
                                 Type: to_d3d12_indirect_argument_type(arg.argument_type),
                                 Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
-                                    VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_4 {
+                                    VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_5 {
                                         Slot: args.buffer.slot,
                                     }
                                 }
@@ -2969,7 +2967,7 @@ impl super::Device for Device {
 
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
-            let command_list = ID3D12CommandList::from(&cmd.command_list[cmd.bb_index]);
+            let command_list = Some(cmd.command_list[cmd.bb_index].cast().unwrap());
             self.command_queue.ExecuteCommandLists(&[command_list]);
         }
     }
@@ -3192,7 +3190,7 @@ impl super::SwapChain<Device> for SwapChain {
                         size.x as u32,
                         size.y as u32,
                         DXGI_FORMAT_UNKNOWN,
-                        self.flags,
+                        DXGI_SWAP_CHAIN_FLAG(self.flags as i32),
                     )
                     .expect("hotline_rs::gfx::d3d12: warning: present failed!");
 
@@ -3251,7 +3249,7 @@ impl super::SwapChain<Device> for SwapChain {
     fn swap(&mut self, device: &Device) {
         unsafe {
             // present
-            let hr = self.swap_chain.Present(1, 0);
+            let hr = self.swap_chain.Present(1, DXGI_PRESENT::default());
 
             if hr.is_err() {
                 panic!("hotline_rs::gfx::d3d12: warning: present failed! {}", hr);
@@ -3532,7 +3530,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
+            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let slots = pipeline.get_pipeline_slots();
             match T::get_pipeline_type() {
                 super::PipelineType::Render => {
@@ -3558,7 +3556,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_binding<T: SuperPipleline>(&self, _: &T, heap: &Heap, slot: u32, offset: usize) {
         unsafe {
-            self.cmd().SetDescriptorHeaps(&[heap.heap.clone()]);
+            self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
             base.ptr += (offset * heap.increment_size) as u64;
 
@@ -3987,7 +3985,7 @@ impl super::Buffer<Device> for Buffer {
         self.ibv.map(|ibv| IndexBufferView { 
             location: ibv.BufferLocation, 
             size_bytes: ibv.SizeInBytes, 
-            format: ibv.Format.0
+            format: ibv.Format.0 as u32
         })
     }
 
@@ -4150,7 +4148,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 
 impl From<os::win32::NativeHandle> for HWND {
     fn from(handle: os::win32::NativeHandle) -> HWND {
-        handle.hwnd
+        unsafe { std::mem::transmute(handle.hwnd) }
     }
 }
 
