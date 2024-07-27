@@ -122,6 +122,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     let fs = dev.create_shader(&psc_info, &psc_data)?;
 
+    /*
     let pso_pmfx = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(&vs),
         fs: Some(&fs),
@@ -177,15 +178,14 @@ fn main() -> Result<(), hotline_rs::Error> {
         pass: Some(swap_chain.get_backbuffer_pass()),
         ..Default::default()
     })?;
+    */
 
-    /*
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/bindful"))?;
     pmfx.create_render_pipeline(&dev, "bindful", swap_chain.get_backbuffer_pass())?;
 
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
-    */
 
     let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
@@ -224,9 +224,9 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
-        cmdbuffer.set_render_pipeline(&pso_pmfx);
+        cmdbuffer.set_render_pipeline(pso_pmfx);
 
-        cmdbuffer.set_heap(&pso_pmfx, dev.get_shader_heap());
+        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
 
         // set bindings
         /*

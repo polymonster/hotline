@@ -1,5 +1,15 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
+// TODO: bindless metal
+// create heap (device heap)
+//  - HHM: size is in bytes not 'resources' need to alloc size up front
+//  - OK: textures need to be new'd in heap (texture_with heap already solves)
+
+// create argument buffer per pipeline
+// - HMM: how to understand correct layout
+// - FUU: registering
+
+// bind argument buffer with heap
+// OK: already bind heap
+// OK: argument buffer can be part of a pipeline
 
 use hotline_rs::*;
 
@@ -11,6 +21,8 @@ struct Vertex {
     position: [f32; 3],
     color: [f32; 4],
 }
+
+use std::fs;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app
@@ -109,11 +121,87 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
     pmfx.create_compute_pipeline(&dev, "compute_rw")?;
+
     pmfx.create_render_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
-    
+
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
-    let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
+
+    let pso_pmfx2 = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
     let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
+
+    let vsc_filepath = hotline_rs::get_data_path("shaders/bindless/vs_main.vsc");
+    let psc_filepath = hotline_rs::get_data_path("shaders/bindless/ps_main.psc");
+
+    let vsc_data = fs::read(vsc_filepath)?;
+    let psc_data = fs::read(psc_filepath)?;
+
+    let vsc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+    let vs = dev.create_shader(&vsc_info, &vsc_data)?;
+
+    let psc_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: None
+    };
+    let fs = dev.create_shader(&psc_info, &psc_data)?;
+
+    let pso_pmfx = dev.create_render_pipeline(&gfx::RenderPipelineInfo {
+        vs: Some(&vs),
+        fs: Some(&fs),
+        input_layout: vec![
+            gfx::InputElementInfo {
+                semantic: String::from("POSITION"),
+                index: 0,
+                format: gfx::Format::RGB32f,
+                input_slot: 0,
+                aligned_byte_offset: 0,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            },
+            gfx::InputElementInfo {
+                semantic: String::from("COLOR"),
+                index: 0,
+                format: gfx::Format::RGBA32f,
+                input_slot: 0,
+                aligned_byte_offset: 12,
+                input_slot_class: gfx::InputSlotClass::PerVertex,
+                step_rate: 0,
+            },
+        ],
+        pipeline_layout: gfx::PipelineLayout {
+            bindings: None,
+            push_constants: None,
+            static_samplers: Some(vec![
+                gfx::SamplerBinding {
+                    visibility: gfx::ShaderVisibility::Fragment,
+                    shader_register: 0,
+                    register_space: 0,
+                    sampler_info: gfx::SamplerInfo {
+                        address_u: gfx::SamplerAddressMode::Wrap,
+                        address_v: gfx::SamplerAddressMode::Wrap,
+                        address_w: gfx::SamplerAddressMode::Wrap,
+                        filter: gfx::SamplerFilter::Linear,
+                        comparison: None,
+                        border_colour: None,
+                        mip_lod_bias: 0.0,
+                        max_aniso: 0,
+                        min_lod: 0.0,
+                        max_lod: 1000.0
+                    }
+                }
+            ])
+        },
+        blend_info: gfx::BlendInfo {
+            alpha_to_coverage_enabled: false,
+            independent_blend_enabled: false,
+            render_target: vec![gfx::RenderTargetBlendInfo::default()],
+        },
+        topology: gfx::Topology::TriangleList,
+        pass: Some(swap_chain.get_backbuffer_pass()),
+        ..Default::default()
+    })?;
 
     let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
@@ -222,6 +310,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 
+        /*
         // compute pass
         cmdbuffer.set_marker(0xff00ffff, "Frame Start");
 
@@ -261,6 +350,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::ShaderResource,
         });
         cmdbuffer.end_event();
+        */
 
         // main pass
         cmdbuffer.begin_event(0xff0000ff, "Main Pass");
@@ -281,9 +371,12 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_viewport(&viewport);
         cmdbuffer.set_scissor_rect(&scissor);
 
-        cmdbuffer.set_render_pipeline(pso_pmfx);
-        
-        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
+        //cmdbuffer.set_render_pipeline(&pso_pmfx);
+        //cmdbuffer.set_heap_render(&pso_pmfx, dev.get_shader_heap());
+
+        cmdbuffer.set_render_pipeline(pso_pmfx2);
+        cmdbuffer.set_heap_render(&pso_pmfx2, dev.get_shader_heap());
+        //cmdbuffer.set_heap(pso_pmfx2, dev.get_shader_heap());
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);

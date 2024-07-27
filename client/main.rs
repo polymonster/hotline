@@ -1,5 +1,5 @@
 // currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
+// #![cfg(target_os = "windows")]
 
 use hotline_rs::*;
 use hotline_rs::client::*;
