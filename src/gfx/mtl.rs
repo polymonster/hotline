@@ -289,10 +289,12 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .set_render_pipeline_state(&pipeline.pipeline_state);
 
             // TODO: temp samplers
+            /*
             for sampler in &pipeline.static_samplers {
                 self.render_encoder.as_ref().unwrap().set_fragment_sampler_state(
                     sampler.slot as u64, Some(&sampler.sampler))
             }
+            */
         });
     }
 
@@ -311,11 +313,15 @@ impl super::CmdBuf<Device> for CmdBuf {
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
             .use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
 
+        pipeline.argument_encoder.set_argument_buffer(&pipeline.argument_buffer, 0);
+
         // assign textures to slots
         heap.tex_slots.iter().enumerate().for_each(|(index, texture)| {
-            let offset = index as NSUInteger * pipeline.argument_encoder.encoded_length();
-            pipeline.argument_encoder.set_argument_buffer(&pipeline.argument_buffer, offset);
-            pipeline.argument_encoder.set_texture(0, texture);
+            pipeline.argument_encoder.set_texture(index as u64, texture);
+        });
+
+        pipeline.static_samplers.iter().enumerate().for_each(|(index, sampler)| {
+            pipeline.argument_encoder.set_sampler_state((index + 11) as u64, &sampler.sampler);
         });
 
         self.render_encoder.as_ref().unwrap().set_fragment_buffer(0, Some(&pipeline.argument_buffer), 0);
@@ -552,6 +558,11 @@ impl super::Texture<Device> for Texture {
     fn get_shader_heap_id(&self) -> Option<u16> {
         None
     }
+}
+
+#[derive(Clone)]
+pub struct Sampler {
+    mtl_sampler: metal::SamplerState
 }
 
 pub struct ReadBackRequest {
@@ -806,6 +817,17 @@ impl super::Device for Device {
 
             //println!("{:?}", info.pipeline_layout);
 
+            let lib = self.metal_device.new_library_with_data(info.vs.unwrap().data.as_slice())?;
+            let vvs = lib.get_function("vs_main", None).unwrap();
+
+            pipeline_state_descriptor.set_vertex_function(Some(&vvs));
+
+            let lib = self.metal_device.new_library_with_data(info.fs.unwrap().data.as_slice())?;
+            let pps = lib.get_function("ps_main", None).unwrap();
+
+            pipeline_state_descriptor.set_fragment_function(Some(&pps));
+
+            /*
             if let Some(vs) = info.vs {
                 let lib = self.metal_device.new_library_with_data(vs.data.as_slice())?;
                 let vvs = lib.get_function("vs_main", None).unwrap();
@@ -824,6 +846,7 @@ impl super::Device for Device {
                 //println!("fs {:?}", fs.function);
                 //pipeline_state_descriptor.set_fragment_function(Some(&fs.function));
             };
+            */
 
             // vertex attribs
             let vertex_desc = metal::VertexDescriptor::new();
@@ -880,6 +903,8 @@ impl super::Device for Device {
             let mut pipeline_static_samplers = Vec::new();
             if let Some(static_samplers) = &info.pipeline_layout.static_samplers {
                 for sampler in static_samplers {
+                    println!("sampler: {}", sampler.shader_register);
+
                     let desc = metal::SamplerDescriptor::new();
                     desc.set_address_mode_r(metal::MTLSamplerAddressMode::Repeat);
                     desc.set_address_mode_s(metal::MTLSamplerAddressMode::Repeat);
@@ -887,6 +912,7 @@ impl super::Device for Device {
                     desc.set_min_filter(metal::MTLSamplerMinMagFilter::Linear);
                     desc.set_mag_filter(metal::MTLSamplerMinMagFilter::Linear);
                     desc.set_mip_filter(metal::MTLSamplerMipFilter::Linear);
+                    desc.set_support_argument_buffers(true);
 
                     // TODO:
                     pipeline_static_samplers.push(MetalSamplerBinding {
@@ -899,28 +925,26 @@ impl super::Device for Device {
             // Argument Buffer
             let descriptor = metal::ArgumentDescriptor::new();
             descriptor.set_index(0);
+            descriptor.set_array_length(11);
             descriptor.set_data_type(metal::MTLDataType::Texture);
-            descriptor.set_texture_type(metal::MTLTextureType::D2);
             descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
             println!("Argument descriptor: {:?}", descriptor);
 
-            let encoder = self.metal_device.new_argument_encoder(metal::Array::from_slice(&[descriptor]));
+            // Sampler Descriptor
+            let sampler_descriptor = metal::ArgumentDescriptor::new();
+            sampler_descriptor.set_index(11);
+            sampler_descriptor.set_array_length(11);
+            sampler_descriptor.set_data_type(metal::MTLDataType::Sampler);
+            sampler_descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
+            println!("Sampler descriptor: {:?}", sampler_descriptor);
+
+            let encoder = self.metal_device.new_argument_encoder(metal::Array::from_slice(&[descriptor, sampler_descriptor]));
             println!("encoder: {:?}", encoder);
 
             // TODO: heap size
             let argument_buffer_size = encoder.encoded_length() * 100;
             let argument_buffer = self.metal_device.new_buffer(argument_buffer_size, metal::MTLResourceOptions::empty());
             println!("buffer: {:?}", argument_buffer);
-
-            /*
-            // Encode textures to the argument buffer.
-            textures.iter().enumerate().for_each(|(index, texture)| {
-                // Offset encoder to a proper texture slot
-                let offset = index as NSUInteger * encoder.encoded_length();
-                encoder.set_argument_buffer(&argument_buffer, offset);
-                encoder.set_texture(0, texture);
-            });
-            */
 
             Ok(RenderPipeline {
                 pipeline_state: self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?,
