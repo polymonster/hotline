@@ -226,15 +226,17 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_render_pipeline(pso_pmfx);
 
-        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
+        //cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
+        cmdbuffer.set_heap_render(pso_pmfx, dev.get_shader_heap());
 
+        // TODO: bind these on metal,
         // set bindings
-        /*
         let srv0 = textures[0].get_srv_index().unwrap();
         let srv1 = textures[1].get_srv_index().unwrap();
         let srv2 = textures[2].get_srv_index().unwrap();
         let srv3 = textures[3].get_srv_index().unwrap();
 
+        /*
         // this looks up register t0, space0
         if let Some(t0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
             cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t0.index, srv0);
