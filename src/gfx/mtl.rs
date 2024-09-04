@@ -322,7 +322,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 // TODO: need to know data types (Texture, Buffer)
                 // assign textures to slots
                 if slot_index == 0 {
-                    heap.tex_slots.iter().enumerate().for_each(|(index, texture)| {
+                    heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
                         slot.argument_encoder.set_texture(index as u64, texture);
                     });
                 }
@@ -334,8 +334,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
-    fn set_binding<T: SuperPipleline>(&self, _: &T, heap: &Heap, slot: u32, offset: usize) {
-        // TODO: how to know the type?
+    fn set_binding<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+        let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
+        if rp.descriptor_slots.len() > 0 {
+            if let Some(d) = rp.descriptor_slots[0].as_ref() {
+                d.argument_encoder.set_argument_buffer(&d.argument_buffer, 0);
+                d.argument_encoder.set_texture(slot as u64, &heap.texture_slots[offset]);
+            }
+        }
     }
 
     fn set_texture(&mut self, texture: &Texture, slot: u32) {
@@ -509,7 +515,8 @@ struct MetalSamplerBinding {
 #[derive(Clone)]
 pub struct DescriptorMember {
     offset: u32,
-    num: u32
+    num: u32,
+    info: PipelineSlotInfo
 }
 type DescriptorMemberArray = Vec<Option<DescriptorMember>>;
 
@@ -533,7 +540,27 @@ impl super::RenderPipeline<Device> for RenderPipeline {}
 
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        None
+        if (space as usize) < self.descriptor_slots.len() {
+            if let Some(set) = self.descriptor_slots[space as usize].as_ref() {
+                if (register as usize) < set.members.len() {
+                    if let Some(member) = set.members[(register as usize)].as_ref() {
+                        Some(&member.info)
+                    }
+                    else {
+                        None
+                    }
+                }
+                else {
+                    None
+                }
+            }
+            else {
+                None
+            }
+        }
+        else {
+            None
+        }
     }
 
     fn get_pipeline_slots(&self) -> &Vec<u32> {
@@ -640,13 +667,37 @@ impl super::Pipeline for ComputePipeline {
 }
 
 #[derive(Clone)]
+enum HeapResourceType {
+    None,
+    Texture,
+    Buffer
+}
+
+#[derive(Clone)]
 pub struct Heap {
     mtl_heap: metal::Heap,
-    tex_slots: Vec<metal::Texture>
+    texture_slots: Vec<metal::Texture>,
+    buffer_slots: Vec<metal::Buffer>,
+    resource_type: Vec<HeapResourceType>,
+    offset: usize
+}
+
+impl Heap {
+    fn allocate(&mut self) -> usize {
+        let srv = self.offset;
+        self.offset += 1;
+        unsafe {
+            self.texture_slots.resize(self.offset, std::mem::transmute(0 as usize));
+            self.buffer_slots.resize(self.offset, std::mem::transmute(0 as usize));
+        }
+        self.resource_type.resize(self.offset, HeapResourceType::None);
+        srv
+    }
 }
 
 impl super::Heap<Device> for Heap {
     fn deallocate(&mut self, index: usize) {
+
     }
 
     fn cleanup_dropped_resources(&mut self, swap_chain: &SwapChain) {
@@ -713,7 +764,10 @@ impl Device {
 
         Heap {
             mtl_heap: heap,
-            tex_slots: Vec::new()
+            texture_slots: Vec::new(),
+            buffer_slots: Vec::new(),
+            resource_type: Vec::new(),
+            offset: 0
         }
     }
 }
@@ -733,7 +787,7 @@ impl super::Device for Device {
     type CommandSignature = CommandSignature;
 
     fn create(info: &super::DeviceInfo) -> Device {
-        //objc::rc::autoreleasepool(|| {
+        objc::rc::autoreleasepool(|| {
             let device = metal::Device::system_default()
                 .expect("hotline_rs::gfx::mtl: failed to create metal device");
             let command_queue = device.new_command_queue();
@@ -762,7 +816,7 @@ impl super::Device for Device {
                 adapter_info: adapter_info,
                 metal_device: device
             }
-       //})
+       })
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
@@ -837,7 +891,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        // objc::rc::autoreleasepool(|| {
+        objc::rc::autoreleasepool(|| {
             let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
 
             //println!("{:?}", info.pipeline_layout);
@@ -981,7 +1035,11 @@ impl super::Device for Device {
                             members[binding.shader_register as usize] = Some(
                                 DescriptorMember {
                                     offset: 0,
-                                    num: num
+                                    num: num,
+                                    info: PipelineSlotInfo {
+                                        index: binding.shader_register,
+                                        count: binding.num_descriptors
+                                    }
                                 }
                             );
                         }
@@ -1035,24 +1093,6 @@ impl super::Device for Device {
                 });
             }
 
-            /*
-            // Argument Buffer
-            let descriptor = metal::ArgumentDescriptor::new();
-            descriptor.set_index(0);
-            descriptor.set_array_length(11);
-            descriptor.set_data_type(metal::MTLDataType::Texture);
-            descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
-            println!("Argument descriptor: {:?}", descriptor);
-            */
-
-            //let encoder = self.metal_device.new_argument_encoder(metal::Array::from_slice(&[descriptor]));
-            //println!("encoder: {:?}", encoder);
-
-            // TODO: heap size
-            //let argument_buffer_size = encoder.encoded_length();
-            //let argument_buffer = self.metal_device.new_buffer(argument_buffer_size, metal::MTLResourceOptions::empty());
-            //println!("buffer: {:?}", argument_buffer);
-
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
             Ok(RenderPipeline {
@@ -1061,7 +1101,7 @@ impl super::Device for Device {
                 static_samplers: pipeline_static_samplers,
                 descriptor_slots
             })
-        //})
+        })
     }
 
     fn create_shader<T: Sized>(
@@ -1069,7 +1109,7 @@ impl super::Device for Device {
         info: &super::ShaderInfo,
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
-        //objc::rc::autoreleasepool(|| {
+        objc::rc::autoreleasepool(|| {
             let mut data_copy = Vec::<u8>::new();
             let data = slice_as_u8_slice(src);
 
@@ -1090,7 +1130,7 @@ impl super::Device for Device {
                     ),
                 })
             }
-        //})
+        })
     }
 
     fn create_buffer_with_heap<T: Sized>(
@@ -1195,8 +1235,6 @@ impl super::Device for Device {
             let tex = self.shader_heap.mtl_heap.new_texture(&desc)
                 .expect("hotline_rs::gfx::mtl failed to allocate texture in heap!");
 
-            self.shader_heap.tex_slots.push(tex.to_owned());
-
             // data
             if let Some(data) = data {
                 tex.replace_region(
@@ -1214,9 +1252,13 @@ impl super::Device for Device {
                 );
             }
 
+            // srv
+            let srv_index = self.shader_heap.allocate();
+            self.shader_heap.texture_slots[srv_index] = tex.to_owned();
+
             Ok(Texture{
                 metal_texture: tex,
-                srv_index: Some(self.shader_heap.tex_slots.len())
+                srv_index: Some(srv_index)
             })
         // })
     }
