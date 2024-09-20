@@ -1,5 +1,10 @@
 // TODO:
 
+// macos / metal
+// - deal with sampler 65535 issue
+// - load texture + imgui sample
+// - merge into main with minimal changes to external code
+
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
 
@@ -156,7 +161,7 @@
 // x fix issues with crash when a return happens between begin/end render pass
 // x gfx::buffer should need to be mut for update
 // x propagate sample mask??
-// x Draw Instanced 
+// x Draw Instanced
 // x draw instanced
 // x pmfx v2 docs (view)
 // x batch vertex instance buffer

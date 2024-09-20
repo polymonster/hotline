@@ -123,7 +123,8 @@ impl super::SwapChain<Device> for SwapChain {
 
             self.backbuffer_texture = Texture {
                 metal_texture: drawable.texture().to_owned(),
-                srv_index: None
+                srv_index: None,
+                heap_id: None
             };
 
             self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
@@ -321,13 +322,14 @@ impl super::CmdBuf<Device> for CmdBuf {
 
                 // TODO: need to know data types (Texture, Buffer)
                 // assign textures to slots
-                if slot_index == 0 {
+                if slot_index == 1 {
                     heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
                         slot.argument_encoder.set_texture(index as u64, texture);
                     });
                 }
 
-                if slot_index == 0 {
+                if slot_index == 1 {
+                    println!("setting fragment buffer");
                     self.render_encoder.as_ref().unwrap().set_fragment_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
                 }
             }
@@ -575,7 +577,8 @@ impl super::Pipeline for RenderPipeline {
 #[derive(Clone)]
 pub struct Texture {
     metal_texture: metal::Texture,
-    srv_index: Option<usize>
+    srv_index: Option<usize>,
+    heap_id: Option<u16>
 }
 
 impl super::Texture<Device> for Texture {
@@ -598,7 +601,8 @@ impl super::Texture<Device> for Texture {
     fn clone_inner(&self) -> Texture {
         Texture {
             metal_texture: self.metal_texture.clone(),
-            srv_index: self.srv_index
+            srv_index: self.srv_index,
+            heap_id: self.heap_id
         }
     }
 
@@ -607,7 +611,7 @@ impl super::Texture<Device> for Texture {
     }
 
     fn get_shader_heap_id(&self) -> Option<u16> {
-        None
+        self.heap_id
     }
 }
 
@@ -679,7 +683,8 @@ pub struct Heap {
     texture_slots: Vec<metal::Texture>,
     buffer_slots: Vec<metal::Buffer>,
     resource_type: Vec<HeapResourceType>,
-    offset: usize
+    offset: usize,
+    id: u16
 }
 
 impl Heap {
@@ -739,7 +744,7 @@ impl Device {
             }).unwrap()
         })
     }
-    fn create_heap_mtl(mtl_device: &metal::Device, info: &HeapInfo) -> Heap {
+    fn create_heap_mtl(mtl_device: &metal::Device, info: &HeapInfo, id: u16) -> Heap {
             // hmm?
             let texture_descriptor = TextureDescriptor::new();
             texture_descriptor.set_width(512);
@@ -767,7 +772,8 @@ impl Device {
             texture_slots: Vec::new(),
             buffer_slots: Vec::new(),
             resource_type: Vec::new(),
-            offset: 0
+            offset: 0,
+            id
         }
     }
 }
@@ -811,8 +817,8 @@ impl super::Device for Device {
                 command_queue: command_queue,
                 shader_heap: Self::create_heap_mtl(&device, &HeapInfo{
                     heap_type: HeapType::Shader,
-                    num_descriptors: info.shader_heap_size
-                }),
+                    num_descriptors: info.shader_heap_size,
+                }, 1),
                 adapter_info: adapter_info,
                 metal_device: device
             }
@@ -820,7 +826,7 @@ impl super::Device for Device {
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
-        Self::create_heap_mtl(&self.metal_device, &info)
+        Self::create_heap_mtl(&self.metal_device, &info, 2)
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
@@ -856,7 +862,8 @@ impl super::Device for Device {
 
                 let backbuffer_texture = Texture {
                     metal_texture: drawable.texture().to_owned(),
-                    srv_index: None
+                    srv_index: None,
+                    heap_id: None
                 };
                 let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
                 let render_pass_no_clear = self.create_render_pass_for_swap_chain(&backbuffer_texture, None);
@@ -894,7 +901,6 @@ impl super::Device for Device {
         objc::rc::autoreleasepool(|| {
             let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
 
-            //println!("{:?}", info.pipeline_layout);
             let vs_data = info.vs.unwrap().data.to_vec();
             let lib = self.metal_device.new_library_with_data(vs_data.as_slice())?;
             let vvs = lib.get_function("vs_main", None).unwrap();
@@ -983,8 +989,6 @@ impl super::Device for Device {
             let mut pipeline_static_samplers = Vec::new();
             if let Some(static_samplers) = &info.pipeline_layout.static_samplers {
                 for sampler in static_samplers {
-                    println!("sampler: {}", sampler.shader_register);
-
                     let desc = metal::SamplerDescriptor::new();
                     desc.set_address_mode_r(metal::MTLSamplerAddressMode::Repeat);
                     desc.set_address_mode_s(metal::MTLSamplerAddressMode::Repeat);
@@ -994,7 +998,6 @@ impl super::Device for Device {
                     desc.set_mip_filter(metal::MTLSamplerMipFilter::Linear);
                     desc.set_support_argument_buffers(true);
 
-                    // TODO:
                     pipeline_static_samplers.push(MetalSamplerBinding {
                         slot: sampler.shader_register,
                         sampler: self.metal_device.new_sampler(&desc)
@@ -1113,7 +1116,15 @@ impl super::Device for Device {
             let mut data_copy = Vec::<u8>::new();
             let data = slice_as_u8_slice(src);
 
-            let lib = self.metal_device.new_library_with_data(data)?;
+            let lib = if let Some(compile_info) = info.compile_info.as_ref() {
+                let src = std::str::from_utf8(slice_as_u8_slice(src))?;
+                let opt = metal::CompileOptions::new();
+                opt.set_fast_math_enabled(true);
+                self.metal_device.new_library_with_source(src, &opt)?
+            }
+            else {
+                self.metal_device.new_library_with_data(data)?
+            };
 
             let names = lib.function_names();
             if names.len() == 1 {
@@ -1206,7 +1217,7 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
-        // objc::rc::autoreleasepool(|| {
+        objc::rc::autoreleasepool(|| {
             let desc = TextureDescriptor::new();
 
             // TODO:
@@ -1227,11 +1238,7 @@ impl super::Device for Device {
             desc.set_storage_mode(metal::MTLStorageMode::Shared);
             desc.set_texture_type(metal::MTLTextureType::D2);
 
-            // bindful
-            // let tex = self.metal_device.new_texture(&desc);
-
             // heap bindless
-            println!("heap: {:?}", self.shader_heap.mtl_heap);
             let tex = self.shader_heap.mtl_heap.new_texture(&desc)
                 .expect("hotline_rs::gfx::mtl failed to allocate texture in heap!");
 
@@ -1258,9 +1265,10 @@ impl super::Device for Device {
 
             Ok(Texture{
                 metal_texture: tex,
-                srv_index: Some(srv_index)
+                srv_index: Some(srv_index),
+                heap_id: Some(self.shader_heap.id)
             })
-        // })
+        })
     }
 
     fn create_texture_with_heaps<T: Sized>(
@@ -1274,7 +1282,8 @@ impl super::Device for Device {
             let tex = self.metal_device.new_texture(&desc);
             Ok(Texture{
                 metal_texture: tex,
-                srv_index: None
+                srv_index: None,
+                heap_id: Some(self.shader_heap.id)
             })
         })
     }
@@ -1283,7 +1292,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPassInfo<Device>,
     ) -> result::Result<RenderPass, super::Error> {
-        // objc::rc::autoreleasepool(|| {
+        objc::rc::autoreleasepool(|| {
             // new desc
             let descriptor = metal::RenderPassDescriptor::new();
 
@@ -1306,7 +1315,7 @@ impl super::Device for Device {
             Ok(RenderPass{
                 desc: descriptor.to_owned()
             })
-        //})
+        })
     }
 
     fn create_compute_pipeline(

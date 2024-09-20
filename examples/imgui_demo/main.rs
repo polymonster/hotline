@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::*;
 
 use os::{App, Window};
@@ -118,6 +115,6 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     // resources now no longer in use they can be properly cleaned up
     dev.cleanup_dropped_resources(&swap_chain);
-    
+
     Ok(())
 }
