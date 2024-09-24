@@ -18,6 +18,8 @@ use std::ffi::CString;
 
 use maths_rs::Vec4f;
 
+use std::fs;
+
 fn to_im_vec4(v: Vec4f) -> ImVec4 {
     unsafe {
         std::mem::transmute(v)
@@ -234,64 +236,23 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
     let device = &info.device;
     let swap_chain = &info.swap_chain;
 
-    // TODO: temp: compile shaders
-    let src = "
-        cbuffer vertexBuffer : register(b0)
-        {
-            float4x4 ProjectionMatrix;
-        };
-        struct VS_INPUT
-        {
-            float2 pos : POSITION;
-            float4 col : COLOR0;
-            float2 uv  : TEXCOORD0;
-        };
-        
-        struct PS_INPUT
-        {
-            float4 pos : SV_POSITION;
-            float4 col : COLOR0;
-            float2 uv  : TEXCOORD0;
-        };
-        
-        PS_INPUT VSMain(VS_INPUT input)
-        {
-            PS_INPUT output;
-            output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
-            output.col = input.col;
-            output.uv  = input.uv;
-            return output;
-        }
+    let vsc_filepath = crate::get_data_path("shaders/imgui/vs_main.vsc");
+    let psc_filepath = crate::get_data_path("shaders/imgui/ps_main.psc");
 
-        SamplerState sampler0 : register(s0);
-        Texture2D texture0 : register(t0);
-        
-        float4 PSMain(PS_INPUT input) : SV_Target
-        {
-            float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
-            return out_col;
-        }";
+    let vsc_data = fs::read(vsc_filepath)?;
+    let psc_data = fs::read(psc_filepath)?;
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain"),
-            target: String::from("vs_5_0"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
+        compile_info: None
     };
+    let vs = device.create_shader(&vs_info, &vsc_data)?;
 
-    let fs_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Fragment,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain"),
-            target: String::from("ps_5_0"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
+    let ps_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
     };
-
-    let vs = device.create_shader(&vs_info, src.as_bytes())?;
-    let fs = device.create_shader(&fs_info, src.as_bytes())?;
+    let fs = device.create_shader(&ps_info, &psc_data)?;
 
     device.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(&vs),
@@ -500,7 +461,7 @@ fn render_draw_data<D: Device>(
                 let imgui_cmd = &cmd_data;
                 if imgui_cmd.UserCallback.is_some() {
                     // TODO:
-                } 
+                }
                 else {
                     let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
                     let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
@@ -634,7 +595,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                     io.IniFilename = i.as_ptr() as _;
                 }
             };
-        
+
             Self::style_colours_hotline();
 
             let mut style = &mut *igGetStyle();
@@ -655,10 +616,10 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 let config = ImFontConfig_ImFontConfig();
                 (*config).MergeMode = merge;
 
-                // copy over the font ranges          
+                // copy over the font ranges
                 let null_term_ranges = new_ranges();
                 let mut itr = 0;
-                
+
                 if let Some(ranges) = &font.glyph_ranges {
                     // we alloc a fixed sized array on the heap for imgui glyph ranges
                     // if you have more ranges that size will need increasing
@@ -670,7 +631,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                     }
                 }
                 font_ranges.push(null_term_ranges);
-                
+
                 // pass ranges or null
                 let p_ranges = if font.glyph_ranges.is_some() {
                     null_term_ranges as *mut u32
@@ -993,15 +954,15 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
     }
 
     /// Add an optional status bar which appears at the bottom of the main window at fixed size and position
-    /// you push items into the status bar by using `imgui.begin("status_bar")` 
+    /// you push items into the status bar by using `imgui.begin("status_bar")`
     /// when passing `height` the true size may actually differ, the actual size is returned from this function
     pub fn add_status_bar(&mut self, height: f32) -> f32 {
         unsafe {
-            let status_bar_flags = ImGuiWindowFlags_NoDocking | 
-                ImGuiWindowFlags_NoResize | 
+            let status_bar_flags = ImGuiWindowFlags_NoDocking |
+                ImGuiWindowFlags_NoResize |
                 ImGuiWindowFlags_NoTitleBar |
-                ImGuiWindowFlags_NoMove | 
-                ImGuiWindowFlags_NoScrollbar | 
+                ImGuiWindowFlags_NoMove |
+                ImGuiWindowFlags_NoScrollbar |
                 ImGuiWindowFlags_NoSavedSettings;
 
             let vp = &*igGetMainViewport();
@@ -1217,7 +1178,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
     /// End imgui window must be called after a call to `begin` regardless of if `begin` returns true or false
     pub fn end(&mut self) {
-        unsafe { 
+        unsafe {
             igEnd();
         };
     }
@@ -1252,7 +1213,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igPopStyleColor(1);
         }
     }
-    
+
     /// Pop a style colour using ImGuiCol_ flags
     pub fn pop_style_colour_count(&mut self, count: i32) {
         unsafe {
@@ -1295,7 +1256,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let null_term_label = CString::new(label).unwrap();
             let null_term_preview_item = CString::new(preview_item).unwrap();
             igBeginCombo(
-                null_term_label.as_ptr() as *const i8, 
+                null_term_label.as_ptr() as *const i8,
                 null_term_preview_item.as_ptr() as *const i8,
                 flags
             )
@@ -1323,7 +1284,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         if self.begin_combo(label, selected, ImGuiComboFlags_None as i32) {
             for item in items {
                 if self.selectable(item, item == selected, ImGuiSelectableFlags_None as i32) {
-                    result = item.to_string(); 
+                    result = item.to_string();
                 }
             }
             self.end_combo();
@@ -1339,9 +1300,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         let null_term_label = CString::new(label).unwrap();
         unsafe {
             igMenuItemBool(
-                null_term_label.as_ptr() as *const i8, 
-                std::ptr::null(), 
-                false, 
+                null_term_label.as_ptr() as *const i8,
+                std::ptr::null(),
+                false,
                 true)
         }
     }
@@ -1362,7 +1323,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
     /// The next width will appear on the same line (horizontally) as the previous
     pub fn same_line(&mut self) {
-        unsafe { 
+        unsafe {
             igSameLine(0.0, -1.0);
         };
     }
@@ -1386,7 +1347,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
     /// Checkbox can be used on bools yes/no will display a tick or check when v is true and appear
     /// empty otherwise
     pub fn checkbox(&mut self, label: &str, v: &mut bool) -> bool {
-        unsafe {    
+        unsafe {
             let null_label = CString::new(label).unwrap();
             igCheckbox(null_label.as_ptr() as *const i8, v)
         }
@@ -1447,7 +1408,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         unsafe {
             let id = to_imgui_texture_id::<D>(tex);
             igImage(
-                id, 
+                id,
                 ImVec2 {x: w, y: h},
                 ImVec2 {x: 0.0, y: 0.0},
                 ImVec2 {x: 1.0, y: 1.0},
@@ -1486,9 +1447,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let id = to_imgui_texture_id::<D>(tex);
 
             igBegin(null_label.as_ptr() as *const i8, std::ptr::null_mut(), 0);
-            
+
             igImage(
-                id, 
+                id,
                 ImVec2 {x: w, y: h},
                 ImVec2 {x: 0.0, y: 0.0},
                 ImVec2 {x: 1.0, y: 1.0},
@@ -1690,7 +1651,7 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
     if !io.UserData.is_null() {
         get_user_data::<D, A>().app.destroy_window(&vd.window[0]);
     }
-    
+
     vd.swap_chain.clear();
     vd.cmd.clear();
     vd.buffers.clear();

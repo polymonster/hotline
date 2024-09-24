@@ -746,6 +746,7 @@ impl Device {
             }).unwrap()
         })
     }
+
     fn create_heap_mtl(mtl_device: &metal::Device, info: &HeapInfo, id: u16) -> Heap {
             // hmm?
             let texture_descriptor = TextureDescriptor::new();
@@ -767,7 +768,6 @@ impl Device {
             heap_descriptor.set_size(heap_size);
 
             let heap = mtl_device.new_heap(&heap_descriptor);
-            println!("heap: {:?}", heap);
 
         Heap {
             mtl_heap: heap,

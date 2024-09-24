@@ -4,9 +4,9 @@
 // - binding visibility
 // - push constant slot offsets
 // - remove ability to offset push constants pushes
-// - offline compile imgui shader
 // - load texture + imgui sample
 // - merge into main with minimal changes to external code
+// - os api winit backend
 
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
@@ -52,6 +52,7 @@
 // build
 
 // DONE:
+// x offline compile imgui shader
 // x push constants initial working
 // x deal with sampler 65535 issue
 // x test shader compilation with mac changes
