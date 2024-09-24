@@ -1226,8 +1226,6 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
 
-
-
     // TODO: temp
     fn set_texture(&mut self, texture: &D::Texture, slot: u32);
     fn set_heap_render(&self, pipeline: &D::RenderPipeline, heap: &D::Heap);

@@ -172,7 +172,6 @@ pub struct CmdBuf {
     render_encoder: Option<metal::RenderCommandEncoder>,
     compute_encoder: Option<metal::ComputeCommandEncoder>,
     bound_index_buffer: Option<metal::Buffer>,
-
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
@@ -291,7 +290,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .set_render_pipeline_state(&pipeline.pipeline_state);
 
-            // TODO: temp samplers
+            // bind static samplers
             for sampler in &pipeline.static_samplers {
                 self.render_encoder.as_ref().unwrap().set_fragment_sampler_state(
                     sampler.slot as u64, Some(&sampler.sampler))
@@ -308,30 +307,23 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_heap_render(&self, pipeline: &RenderPipeline, heap: &Heap) {
-        // TODO: new
         self.render_encoder
             .as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
             .use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
 
-        // TODO: loop
         pipeline.descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
             if let Some(slot) = slot {
-                // TODO: how to know which reg to bind on
                 slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
                 // TODO: need to know data types (Texture, Buffer)
                 // assign textures to slots
-                if slot_index == 1 {
-                    heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
-                        slot.argument_encoder.set_texture(index as u64, texture);
-                    });
-                }
+                heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
+                    slot.argument_encoder.set_texture(index as u64, texture);
+                });
 
-                if slot_index == 1 {
-                    println!("setting fragment buffer");
-                    self.render_encoder.as_ref().unwrap().set_fragment_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
-                }
+                // TODO: need to know what stages to bind on
+                self.render_encoder.as_ref().unwrap().set_fragment_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
             }
         });
     }
@@ -354,6 +346,11 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+        // TODO: need to know the stages and the buffer offset
+        self.render_encoder
+        .as_ref()
+        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+        .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
     }
 
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
@@ -526,19 +523,24 @@ type DescriptorMemberArray = Vec<Option<DescriptorMember>>;
 pub struct DescriptorSlot {
     argument_buffer: metal::Buffer,
     argument_encoder: metal::ArgumentEncoder,
-    members: Vec<Option<DescriptorMember>>
+    members: Vec<Option<DescriptorMember>>,
 }
 type DescriptorSlotArray = Vec<Option<DescriptorSlot>>;
 
+pub struct PushConstantSlot {
+    buffer: metal::Buffer,
+    slot: u32,
+    visibility: ShaderVisibility
+}
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
     static_samplers: Vec<MetalSamplerBinding>,
     slots: Vec<u32>,
-    descriptor_slots: DescriptorSlotArray
+    descriptor_slots: DescriptorSlotArray,
+    push_constant_slots: Vec<PushConstantSlot>
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
-
 
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
@@ -1096,13 +1098,26 @@ impl super::Device for Device {
                 });
             }
 
+            // create push constants
+            let mut push_constant_slots : Vec<PushConstantSlot> = Vec::new();
+            if let Some(push_constants) = info.pipeline_layout.push_constants.as_ref() {
+                for push_constant in push_constants {
+                    push_constant_slots.push(PushConstantSlot{
+                        buffer: self.metal_device.new_buffer(push_constant.num_values as u64 * 4, metal::MTLResourceOptions::StorageModeShared),
+                        slot: 2,
+                        visibility: ShaderVisibility::All
+                    })
+                }
+            }
+
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
             Ok(RenderPipeline {
                 pipeline_state,
                 slots: Vec::new(),
                 static_samplers: pipeline_static_samplers,
-                descriptor_slots
+                descriptor_slots,
+                push_constant_slots
             })
         })
     }
