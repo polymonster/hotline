@@ -312,8 +312,11 @@ impl super::CmdBuf<Device> for CmdBuf {
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
             .use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
 
-        pipeline.descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
+
+        pipeline.fragment_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
             if let Some(slot) = slot {
+                println!("bind slot: {}", slot_index);
+
                 slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
                 // TODO: need to know data types (Texture, Buffer)
@@ -326,12 +329,30 @@ impl super::CmdBuf<Device> for CmdBuf {
                 self.render_encoder.as_ref().unwrap().set_fragment_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
             }
         });
+
+        /*
+        pipeline.vertex_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
+            if let Some(slot) = slot {
+                slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
+
+                // TODO: need to know data types (Texture, Buffer)
+                // assign textures to slots
+                heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
+                    slot.argument_encoder.set_texture(index as u64, texture);
+                });
+
+                // TODO: need to know what stages to bind on
+                self.render_encoder.as_ref().unwrap().set_vertex_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
+            }
+        });
+        */
     }
 
+    // TODO: needs stage
     fn set_binding<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
         let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
-        if rp.descriptor_slots.len() > 0 {
-            if let Some(d) = rp.descriptor_slots[0].as_ref() {
+        if rp.fragment_descriptor_slots.len() > 0 {
+            if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
                 d.argument_encoder.set_argument_buffer(&d.argument_buffer, 0);
                 d.argument_encoder.set_texture(slot as u64, &heap.texture_slots[offset]);
             }
@@ -536,16 +557,18 @@ pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
     static_samplers: Vec<MetalSamplerBinding>,
     slots: Vec<u32>,
-    descriptor_slots: DescriptorSlotArray,
-    push_constant_slots: Vec<PushConstantSlot>
+    vertex_descriptor_slots: DescriptorSlotArray,
+    fragment_descriptor_slots: DescriptorSlotArray,
+    vertex_push_constant_slots: Vec<PushConstantSlot>,
+    fragment_push_constant_slots: Vec<PushConstantSlot>
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        if (space as usize) < self.descriptor_slots.len() {
-            if let Some(set) = self.descriptor_slots[space as usize].as_ref() {
+        if (space as usize) < self.fragment_descriptor_slots.len() {
+            if let Some(set) = self.fragment_descriptor_slots[space as usize].as_ref() {
                 if (register as usize) < set.members.len() {
                     if let Some(member) = set.members[(register as usize)].as_ref() {
                         Some(&member.info)
@@ -778,6 +801,116 @@ impl Device {
             id
         }
     }
+
+    fn to_mtl_descriptor_slot(&self, visibility: super::ShaderVisibility, pipeline_bindings: &Option<Vec<DescriptorBinding>>) -> DescriptorSlotArray {
+        // argument buffer to descriptor slot style
+        let mut descriptor_slots : DescriptorSlotArray = Vec::new();
+
+        // register spaces, and shader registers may not be ordered and may not be sequential or have gaps
+        if let Some(bindings) = pipeline_bindings.as_ref() {
+            // make space for enough shader register spaces
+            let mut space_count = 0;
+            for binding in bindings.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
+                space_count = binding.register_space.max(space_count);
+            }
+            descriptor_slots.resize((space_count + 1) as usize, None);
+            println!("slots : {}", descriptor_slots.len());
+
+            // iterate over descriptor slots and find members
+            descriptor_slots.iter_mut().enumerate().for_each(|(space, descriptor_slot)| {
+                let mut members : DescriptorMemberArray = Vec::new();
+                for binding in bindings.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
+                    if binding.register_space == space as u32 {
+                        if members.len() < (binding.shader_register + 1) as usize {
+                            members.resize((binding.shader_register + 1) as usize, None);
+                        }
+
+                        // get num
+                        let num = if let Some(num) = binding.num_descriptors {
+                            num
+                        }
+                        else {
+                            1
+                        };
+
+                        // assign member info
+                        members[binding.shader_register as usize] = Some(
+                            DescriptorMember {
+                                offset: 0,
+                                num: num,
+                                info: PipelineSlotInfo {
+                                    index: binding.shader_register,
+                                    count: binding.num_descriptors
+                                }
+                            }
+                        );
+                    }
+                }
+
+                // now work out the offsets of the members within the space
+                let mut offset = 0;
+                for member in &mut members {
+                    if let Some(member) = member {
+                        member.offset = offset;
+                        offset += member.num;
+                    }
+                }
+
+                // finally if we have members and not an empty space
+                // create an argument buffer
+                if members.len() > 0 {
+                    let mut member_descriptors = Vec::new();
+
+                    let mut total_num = 0;
+                    for member in &members {
+                        if let Some(member) = member {
+                            let descriptor = metal::ArgumentDescriptor::new();
+                            descriptor.set_index(member.offset as u64);
+                            descriptor.set_array_length(member.num as u64);
+
+                            // TODO: types / access
+                            descriptor.set_data_type(metal::MTLDataType::Texture);
+                            descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                            // push metal argument descriptor
+                            member_descriptors.push(descriptor.to_owned());
+
+                            total_num += member.num;
+                        }
+                    }
+
+                    // create encoder and argument buffer
+                    let argument_encoder = self.metal_device.new_argument_encoder(metal::Array::from_owned_slice(member_descriptors.as_slice()));
+                    let argument_buffer_size = argument_encoder.encoded_length() * total_num as u64;
+                    let argument_buffer = self.metal_device.new_buffer(argument_buffer_size, metal::MTLResourceOptions::empty());
+
+                    *descriptor_slot = Some(
+                        DescriptorSlot {
+                            argument_encoder,
+                            argument_buffer,
+                            members
+                        }
+                    )
+                }
+            });
+        }
+
+        descriptor_slots
+    }
+
+    fn to_mtl_push_constant_slot(&self, visibility: super::ShaderVisibility, pipeline_push_constants: &Option<Vec<PushConstantInfo>>, binding_offset: u32) -> Vec<PushConstantSlot> {
+        let mut push_constant_slots : Vec<PushConstantSlot> = Vec::new();
+        if let Some(push_constants) = pipeline_push_constants.as_ref() {
+            for push_constant in push_constants.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
+                push_constant_slots.push(PushConstantSlot{
+                    buffer: self.metal_device.new_buffer(push_constant.num_values as u64 * 4, metal::MTLResourceOptions::StorageModeShared),
+                    slot: 2,
+                    visibility: ShaderVisibility::All
+                })
+            }
+        }
+        push_constant_slots
+    }
 }
 
 impl super::Device for Device {
@@ -1007,108 +1140,10 @@ impl super::Device for Device {
                 }
             }
 
-            // argument buffer to descriptor slot style
-            let mut descriptor_slots : DescriptorSlotArray = Vec::new();
-
-            // register spaces, and shader registers may not be ordered and may not be sequential or have gaps
-            if let Some(bindings) = info.pipeline_layout.bindings.as_ref() {
-                // make space for enough shader register spaces
-                let mut space_count = 0;
-                for binding in bindings {
-                    space_count = binding.register_space.max(space_count);
-                }
-                descriptor_slots.resize((space_count + 1) as usize, None);
-
-                // iterate over descriptor slots and find members
-                descriptor_slots.iter_mut().enumerate().for_each(|(space, descriptor_slot)| {
-                    let mut members : DescriptorMemberArray = Vec::new();
-                    for binding in bindings {
-                        if binding.register_space == space as u32 {
-                            if members.len() < (binding.shader_register + 1) as usize {
-                                members.resize((binding.shader_register + 1) as usize, None);
-                            }
-
-                            // get num
-                            let num = if let Some(num) = binding.num_descriptors {
-                                num
-                            }
-                            else {
-                                1
-                            };
-
-                            // assign member info
-                            members[binding.shader_register as usize] = Some(
-                                DescriptorMember {
-                                    offset: 0,
-                                    num: num,
-                                    info: PipelineSlotInfo {
-                                        index: binding.shader_register,
-                                        count: binding.num_descriptors
-                                    }
-                                }
-                            );
-                        }
-                    }
-
-                    // now work out the offsets of the members within the space
-                    let mut offset = 0;
-                    for member in &mut members {
-                        if let Some(member) = member {
-                            member.offset = offset;
-                            offset += member.num;
-                        }
-                    }
-
-                    // finally if we have members and not an empty space
-                    // create an argument buffer
-                    if members.len() > 0 {
-                        let mut member_descriptors = Vec::new();
-
-                        let mut total_num = 0;
-                        for member in &members {
-                            if let Some(member) = member {
-                                let descriptor = metal::ArgumentDescriptor::new();
-                                descriptor.set_index(member.offset as u64);
-                                descriptor.set_array_length(member.num as u64);
-
-                                // TODO: types / access
-                                descriptor.set_data_type(metal::MTLDataType::Texture);
-                                descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
-
-                                // push metal argument descriptor
-                                member_descriptors.push(descriptor.to_owned());
-
-                                total_num += member.num;
-                            }
-                        }
-
-                        // create encoder and argument buffer
-                        let argument_encoder = self.metal_device.new_argument_encoder(metal::Array::from_owned_slice(member_descriptors.as_slice()));
-                        let argument_buffer_size = argument_encoder.encoded_length() * total_num as u64;
-                        let argument_buffer = self.metal_device.new_buffer(argument_buffer_size, metal::MTLResourceOptions::empty());
-
-                        *descriptor_slot = Some(
-                            DescriptorSlot {
-                                argument_encoder,
-                                argument_buffer,
-                                members
-                            }
-                        )
-                    }
-                });
-            }
-
-            // create push constants
-            let mut push_constant_slots : Vec<PushConstantSlot> = Vec::new();
-            if let Some(push_constants) = info.pipeline_layout.push_constants.as_ref() {
-                for push_constant in push_constants {
-                    push_constant_slots.push(PushConstantSlot{
-                        buffer: self.metal_device.new_buffer(push_constant.num_values as u64 * 4, metal::MTLResourceOptions::StorageModeShared),
-                        slot: 2,
-                        visibility: ShaderVisibility::All
-                    })
-                }
-            }
+            let vertex_descriptor_slots = self.to_mtl_descriptor_slot(ShaderVisibility::Vertex, &info.pipeline_layout.bindings);
+            let fragment_descriptor_slots = self.to_mtl_descriptor_slot(ShaderVisibility::Fragment, &info.pipeline_layout.bindings);
+            let vertex_push_constant_slots = self.to_mtl_push_constant_slot(ShaderVisibility::Vertex, &info.pipeline_layout.push_constants, vertex_descriptor_slots.len() as u32);
+            let fragment_push_constant_slots = self.to_mtl_push_constant_slot(ShaderVisibility::Fragment, &info.pipeline_layout.push_constants, fragment_descriptor_slots.len() as u32);
 
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
@@ -1116,8 +1151,10 @@ impl super::Device for Device {
                 pipeline_state,
                 slots: Vec::new(),
                 static_samplers: pipeline_static_samplers,
-                descriptor_slots,
-                push_constant_slots
+                fragment_descriptor_slots,
+                vertex_descriptor_slots,
+                vertex_push_constant_slots,
+                fragment_push_constant_slots
             })
         })
     }

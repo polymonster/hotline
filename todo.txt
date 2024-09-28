@@ -1,8 +1,7 @@
 // TODO:
 
 // macos / metal
-// - binding visibility
-// - push constant slot offsets
+// - add stage / visibility to get slot and set binding
 // - remove ability to offset push constants pushes
 // - load texture + imgui sample
 // - merge into main with minimal changes to external code
@@ -52,6 +51,8 @@
 // build
 
 // DONE:
+// x binding visibility
+// x push constant slot offsets
 // x offline compile imgui shader
 // x push constants initial working
 // x deal with sampler 65535 issue
