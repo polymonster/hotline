@@ -315,8 +315,6 @@ impl super::CmdBuf<Device> for CmdBuf {
 
         pipeline.fragment_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
             if let Some(slot) = slot {
-                println!("bind slot: {}", slot_index);
-
                 slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
                 // TODO: need to know data types (Texture, Buffer)
@@ -814,7 +812,6 @@ impl Device {
                 space_count = binding.register_space.max(space_count);
             }
             descriptor_slots.resize((space_count + 1) as usize, None);
-            println!("slots : {}", descriptor_slots.len());
 
             // iterate over descriptor slots and find members
             descriptor_slots.iter_mut().enumerate().for_each(|(space, descriptor_slot)| {
@@ -901,13 +898,13 @@ impl Device {
     fn to_mtl_push_constant_slot(&self, visibility: super::ShaderVisibility, pipeline_push_constants: &Option<Vec<PushConstantInfo>>, binding_offset: u32) -> Vec<PushConstantSlot> {
         let mut push_constant_slots : Vec<PushConstantSlot> = Vec::new();
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
-            for push_constant in push_constants.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
+            push_constants.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All).enumerate().for_each(|(index, push_constant)| {
                 push_constant_slots.push(PushConstantSlot{
                     buffer: self.metal_device.new_buffer(push_constant.num_values as u64 * 4, metal::MTLResourceOptions::StorageModeShared),
-                    slot: 2,
+                    slot: binding_offset + index as u32,
                     visibility: ShaderVisibility::All
                 })
-            }
+            });
         }
         push_constant_slots
     }
