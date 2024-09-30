@@ -3,6 +3,7 @@ use imgui_sys::*;
 use crate::gfx::Heap;
 use crate::os;
 use crate::os::App;
+use crate::os::MonitorInfo;
 use crate::os::Window;
 use crate::os::NativeHandle;
 
@@ -57,6 +58,7 @@ pub struct ImGuiInfo<'stack, D: Device, A: App> {
     pub swap_chain: &'stack mut D::SwapChain,
     pub main_window: &'stack A::Window,
     pub fonts: Vec<FontInfo>,
+    pub monitors: Vec<MonitorInfo>
 }
 
 /// The concrete `ImGui` instance itself
@@ -717,7 +719,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let mut monitors: Vec<ImGuiPlatformMonitor> = Vec::new();
 
             let platform_io = &mut *igGetPlatformIO();
-            let os_monitors = A::enumerate_display_monitors();
+            let os_monitors = &info.monitors;
             for monitor in os_monitors {
                 let ig_mon = ImGuiPlatformMonitor {
                     MainPos: ImVec2 {

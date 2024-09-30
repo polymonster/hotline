@@ -219,6 +219,8 @@ pub trait App: 'static + Any + Sized + Send + Sync {
     fn get_input_enabled(&self) -> (bool, bool);
     /// Enumerate all display monitors
     fn enumerate_display_monitors() -> Vec<MonitorInfo>;
+    // TODO: ^^
+    fn enumerate_display_monitors2(&self) -> Vec<MonitorInfo>;
     /// Sets the mouse cursor
     fn set_cursor(&self, cursor: &Cursor);
     /// Opens a native open file dialog window, exts are provided to filer selections. ie vec![".txt", ".png"]

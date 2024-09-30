@@ -1,8 +1,11 @@
 // TODO:
 
 // macos / metal
+// - remove set_texture
+// - implement set heap properly (remove set render heap)
 // - add stage / visibility to get slot and set binding
-// - remove ability to offset push constants pushes
+// - remove ability to offset push constants pushes.. nope
+// - allow metal to push partial push constants
 // - load texture + imgui sample
 // - merge into main with minimal changes to external code
 // - os api winit backend

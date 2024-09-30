@@ -1,11 +1,11 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-/// 
+///
 /// Bindless Texture
-/// 
+///
 
-use crate::prelude::*; 
+use crate::prelude::*;
 
 #[no_mangle]
 pub fn bindless_texture(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -29,30 +29,30 @@ pub fn setup_bindless_texture(
     let sphere = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 64);
 
     let textures = [
-        TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds"), 
+        TextureComponent(image::load_texture_from_file(&mut device,
+            &hotline_rs::get_data_path("textures/metalgrid2_albedo.dds"),
             Some(&mut pmfx.shader_heap)
         )?),
-        TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds"), 
+        TextureComponent(image::load_texture_from_file(&mut device,
+            &hotline_rs::get_data_path("textures/metalgrid2_normal.dds"),
             Some(&mut pmfx.shader_heap)
         )?),
-        TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/bluechecker01.dds"), 
+        TextureComponent(image::load_texture_from_file(&mut device,
+            &hotline_rs::get_data_path("textures/bluechecker01.dds"),
             Some(&mut pmfx.shader_heap)
         )?),
-        TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/redchecker01.dds"), 
+        TextureComponent(image::load_texture_from_file(&mut device,
+            &hotline_rs::get_data_path("textures/redchecker01.dds"),
             Some(&mut pmfx.shader_heap)
         )?)
     ];
 
     // square number of rows and columns
     let rc = sqrt(textures.len() as f32);
-    let irc = (rc + 0.5) as usize; 
+    let irc = (rc + 0.5) as usize;
 
     let size = 10.0;
-    let half_size = size * 0.5;    
+    let half_size = size * 0.5;
     let step = size * half_size;
     let half_extent = (rc-1.0) * step * 0.5;
     let start_pos = vec3f(-half_extent, size, -half_extent);
@@ -71,7 +71,7 @@ pub fn setup_bindless_texture(
             ));
         }
     }
-    
+
     // spawn entities to keep hold of textures
     for tex in textures {
         commands.spawn(
@@ -104,22 +104,22 @@ pub fn setup_bindless_texture(
             hotline_rs::primitives::create_prism_mesh(&mut device.0, 4, false, true, 0.25, 0.5),
             hotline_rs::primitives::create_helix_mesh(&mut device.0, 16, 4),
         ];
-    
+
         let uv_debug_tex = TextureComponent(image::load_texture_from_file(
-            &mut device, 
+            &mut device,
             &hotline_rs::get_src_data_path("textures/blend_test_fg.png"),
             Some(&mut pmfx.shader_heap)
         )?);
-    
+
         let rc = ceil(sqrt(meshes.len() as f32));
-        let irc = (rc + 0.5) as usize; 
-    
+        let irc = (rc + 0.5) as usize;
+
         let size = 10.0;
-        let half_size = size * 0.5;    
+        let half_size = size * 0.5;
         let step = size * half_size;
         let half_extent = (rc-1.0) * step * 0.5;
         let start_pos = vec3f(-half_extent, size, -half_extent);
-    
+
         let mut i = 0;
         for y in 0..irc {
             for x in 0..irc {
@@ -153,7 +153,7 @@ pub fn draw_meshes_bindless_texture(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;

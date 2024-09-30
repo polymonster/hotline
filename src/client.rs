@@ -260,7 +260,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                         [font_awesome::MINIMUM_CODEPOINT as u32, font_awesome::MAXIMUM_CODEPOINT as u32]
                     ])
                 }
-            ]
+            ],
+            monitors: app.enumerate_display_monitors2()
         };
         let imgui = imgui::ImGui::create(&mut imgui_info)?;
 
