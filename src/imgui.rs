@@ -1,6 +1,8 @@
 use imgui_sys::*;
 
 use crate::gfx::Heap;
+use crate::gfx::ShaderCompileFlags;
+use crate::gfx::ShaderCompileInfo;
 use crate::os;
 use crate::os::App;
 use crate::os::MonitorInfo;
@@ -244,17 +246,30 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
     let vsc_data = fs::read(vsc_filepath)?;
     let psc_data = fs::read(psc_filepath)?;
 
+    let vsc_filepath = crate::get_data_path("shaders/imgui/vs_main.vsc");
+    let psc_filepath = crate::get_data_path("shaders/imgui/ps_main.psc");
+
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
+        compile_info: Some(ShaderCompileInfo{
+            entry_point: String::from("vs_main"),
+            target: String::from("vs_6_0"),
+            flags: ShaderCompileFlags::NONE
+        })
     };
-    let vs = device.create_shader(&vs_info, &vsc_data)?;
+    // let vs = device.create_shader(&vs_info, &vsc_data)?;
+    let vs = device.create_shader(&vs_info, vsc_filepath.as_bytes())?;
 
     let ps_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
-        compile_info: None
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: Some(ShaderCompileInfo{
+            entry_point: String::from("ps_main"),
+            target: String::from("ps_6_0"),
+            flags: ShaderCompileFlags::NONE
+        })
     };
-    let fs = device.create_shader(&ps_info, &psc_data)?;
+    // let fs = device.create_shader(&ps_info, &psc_data)?;
+    let fs = device.create_shader(&ps_info, psc_filepath.as_bytes())?;
 
     device.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(&vs),
@@ -583,8 +598,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igCreateContext(std::ptr::null_mut());
             let mut io = &mut *igGetIO();
 
-            io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
+            // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
             // construct path for ini to be along side the exe
             let exe_path = std::env::current_exe().ok().unwrap();

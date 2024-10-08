@@ -113,7 +113,7 @@ impl super::App for App {
 
     /// Retuns the mouse in screen coordinates
     fn get_mouse_pos(&self) -> super::Point<i32> {
-        panic!();
+        // TODO:
         super::Point {
             x: 0,
             y: 0
@@ -122,25 +122,26 @@ impl super::App for App {
 
     /// Retuns the mouse vertical wheel position
     fn get_mouse_wheel(&self) -> f32 {
-        panic!();
+        //panic!();
+        // TODO:
         0.0
     }
 
     /// Retuns the mouse horizontal wheel positions
     fn get_mouse_hwheel(&self) -> f32 {
-        panic!();
+        // panic!();
         0.0
     }
 
     /// Retuns the mouse button states, up or down
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
-        panic!();
+        // panic!();
         [false; 5]
     }
 
     /// Returns the distance the mouse has moved since the last frame
     fn get_mouse_pos_delta(&self) -> super::Size<i32> {
-        panic!();
+        // panic!();
         super::Size {
             x: 0,
             y: 0
@@ -149,32 +150,32 @@ impl super::App for App {
 
     /// Returns a vector of utf-16 characters that have been input since the last frame
     fn get_utf16_input(&self) -> Vec<u16> {
-        panic!();
+        // panic!();
         vec![]
     }
 
     /// Returns an array of bools containing 0-256 keys down (true) or up (false)
     fn get_keys_down(&self) -> [bool; 256] {
-        panic!();
+        // panic!();
         [false; 256]
     }
 
     /// Returns an array of bools containing 0-256 of keys pressed, will trigger only once and then require debouce
     fn get_keys_pressed(&self) -> [bool; 256] {
-        panic!();
+        // panic!();
         [false; 256]
     }
 
     /// Returns true if the sys key is down and false if the key is up
     fn is_sys_key_down(&self, key: super::SysKey) -> bool {
-        panic!();
+        // panic!();
         false
     }
 
     /// Returns true if the sys key is pressed this frame and
     /// requires debounce until it is pressed again
     fn is_sys_key_pressed(&self, key: super::SysKey) -> bool {
-        panic!();
+        // panic!();
         false
     }
 
@@ -372,7 +373,7 @@ impl super::Window<App> for Window {
 
     /// Returns true if the mouse if hovering this window
     fn is_mouse_hovered(&self) -> bool {
-        panic!();
+        // TODO:
         false
     }
 
@@ -437,7 +438,7 @@ impl super::Window<App> for Window {
 
     /// Return mouse position in relative coordinates from the top left corner of the window
     fn get_mouse_client_pos(&self, mouse_pos: super::Point<i32>) -> super::Point<i32> {
-        panic!();
+        // panic!();
         super::Point {
             x: 0,
             y: 0

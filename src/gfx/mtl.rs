@@ -25,6 +25,8 @@ use std::result;
 use cocoa::{appkit::NSView, base::id as cocoa_id};
 use core_graphics_types::geometry::CGSize;
 
+use std::path::Path;
+
 const MEGA_BYTE : usize = 1024 * 1024 * 1024;
 
 const fn to_mtl_vertex_format(format: super::Format) -> MTLVertexFormat {
@@ -104,7 +106,7 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_num_buffers(&self) -> u32 {
-        0
+        3
     }
 
     fn get_frame_fence_value(&self) -> u64 {
@@ -172,6 +174,7 @@ pub struct CmdBuf {
     render_encoder: Option<metal::RenderCommandEncoder>,
     compute_encoder: Option<metal::ComputeCommandEncoder>,
     bound_index_buffer: Option<metal::Buffer>,
+    bound_index_stride: usize
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
@@ -281,6 +284,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_index_buffer(&mut self, buffer: &Buffer) {
         self.bound_index_buffer = Some(buffer.metal_buffer.clone());
+        self.bound_index_stride = buffer.element_stride;
     }
 
     fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
@@ -369,7 +373,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.render_encoder
         .as_ref()
         .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-        .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
+        // .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
+        // .set_vertex_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
+        .set_vertex_bytes(0,  num_values as u64 * 4, data.as_ptr() as _);
     }
 
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
@@ -413,7 +419,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                     index_count as u64,
                     metal::MTLIndexType::UInt16,
                     &self.bound_index_buffer.as_ref().unwrap(),
-                    start_index as u64,
+                    start_index as u64 * self.bound_index_stride as u64,
                     instance_count as u64,
                     base_vertex as i64,
                     start_instance as u64
@@ -473,11 +479,16 @@ impl super::CmdBuf<Device> for CmdBuf {
 }
 
 pub struct Buffer {
-    metal_buffer: metal::Buffer
+    metal_buffer: metal::Buffer,
+    element_stride: usize
 }
 
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&mut self, offset: usize, data: &[T]) -> result::Result<(), super::Error> {
+        unsafe {
+            let data_ptr = self.metal_buffer.contents();
+            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut u8, data_ptr as *mut u8, data.len());
+        }
         Ok(())
     }
 
@@ -518,7 +529,6 @@ impl super::Buffer<Device> for Buffer {
 }
 
 pub struct Shader {
-    function: metal::Function,
     lib: metal::Library,
     data: Vec<u8>
 }
@@ -942,8 +952,7 @@ impl super::Device for Device {
 
             // feature info
             let tier = device.argument_buffers_support();
-            println!("Argument buffer support: {:?}", tier);
-            assert_eq!(metal::MTLArgumentBuffersTier::Tier2, tier);
+            assert_eq!(metal::MTLArgumentBuffersTier::Tier2, tier); //TODO: message
 
             Device {
                 command_queue: command_queue,
@@ -1021,7 +1030,8 @@ impl super::Device for Device {
                 cmd: None,
                 render_encoder: None,
                 compute_encoder: None,
-                bound_index_buffer: None
+                bound_index_buffer: None,
+                bound_index_stride: 0
             }
         })
     }
@@ -1033,15 +1043,18 @@ impl super::Device for Device {
         objc::rc::autoreleasepool(|| {
             let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
 
-            let vs_data = info.vs.unwrap().data.to_vec();
-            let lib = self.metal_device.new_library_with_data(vs_data.as_slice())?;
-            let vvs = lib.get_function("vs_main", None).unwrap();
+            //let vs_data = info.vs.unwrap().data.to_vec();
+            //let lib = self.metal_device.new_library_with_data(vs_data.as_slice())?;
+
+            let vvs = info.vs.unwrap().lib.get_function("vs_main", None).unwrap();
+            println!("lib: {:?}", info.vs.unwrap().lib);
 
             pipeline_state_descriptor.set_vertex_function(Some(&vvs));
 
-            let ps_data = info.fs.unwrap().data.to_vec();
-            let lib = self.metal_device.new_library_with_data(ps_data.as_slice())?;
-            let pps = lib.get_function("ps_main", None).unwrap();
+            //let ps_data = info.fs.unwrap().data.to_vec();
+            //let lib = self.metal_device.new_library_with_data(ps_data.as_slice())?;
+
+            let pps = info.fs.unwrap().lib.get_function("ps_main", None).unwrap();
 
             pipeline_state_descriptor.set_fragment_function(Some(&pps));
 
@@ -1166,10 +1179,21 @@ impl super::Device for Device {
             let data = slice_as_u8_slice(src);
 
             let lib = if let Some(compile_info) = info.compile_info.as_ref() {
+
+                let u8slice = slice_as_u8_slice(src);
+                println!("{:?}", u8slice);
+
+                let src = std::str::from_utf8(u8slice)?;
+                println!("{:?}", src);
+
+                self.metal_device.new_library_with_file(std::path::Path::new(src))?
+
+                /*
                 let src = std::str::from_utf8(slice_as_u8_slice(src))?;
                 let opt = metal::CompileOptions::new();
                 opt.set_fast_math_enabled(true);
                 self.metal_device.new_library_with_source(src, &opt)?
+                */
             }
             else {
                 self.metal_device.new_library_with_data(data)?
@@ -1178,7 +1202,6 @@ impl super::Device for Device {
             let names = lib.function_names();
             if names.len() == 1 {
                 Ok(Shader{
-                    function: lib.get_function(names[0].as_str(), None)?.to_owned(),
                     lib: lib.to_owned(),
                     data: data.to_vec()
                 })
@@ -1214,7 +1237,8 @@ impl super::Device for Device {
             };
 
             Ok(Buffer{
-                metal_buffer: buf
+                metal_buffer: buf,
+                element_stride: info.stride
             })
         })
     }
@@ -1239,7 +1263,8 @@ impl super::Device for Device {
             };
 
             Ok(Buffer{
-                metal_buffer: buf
+                metal_buffer: buf,
+                element_stride: info.stride
             })
         })
     }
@@ -1256,7 +1281,8 @@ impl super::Device for Device {
             let buf = self.metal_device.new_buffer(byte_len, opt);
 
             Ok(Buffer{
-                metal_buffer: buf
+                metal_buffer: buf,
+                element_stride: size
             })
         })
     }
