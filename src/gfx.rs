@@ -285,6 +285,13 @@ pub enum ShaderType {
 }
 
 bitflags! {
+    /// Device feature flags.
+    pub struct DeviceFeatureFlags: u32 {
+        const NONE = 0;
+        const RAYTRACING = 1<<0;
+        const MESH_SAHDER = 1<<1;
+    }
+
     /// Shader compilation flags.
     pub struct ShaderCompileFlags: u32 {
         /// No flags, default compilation.
@@ -1115,6 +1122,8 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     fn cleanup_dropped_resources(&mut self, swap_chain: &Self::SwapChain);
     /// Returns an `AdapterInfo` struct (info about GPU vendor, and HW statistics)
     fn get_adapter_info(&self) -> &AdapterInfo;
+    /// Returns a `DeviceFeatureFlags` struct containing flags for supported hardware features
+    fn get_feature_flags(&self) -> &DeviceFeatureFlags;
     /// Read data back from GPU buffer into CPU `ReadBackData` assumes the `Buffer` is created with `create_read_back_buffer`
     /// None is returned if the buffer has yet to br written on the GPU
     fn read_buffer(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Option<ReadBackData>;
