@@ -155,7 +155,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
 
             // make thread safe
             let mt : ID3D11Multithread = device.cast()?;
-            mt.SetMultithreadProtected(BOOL::from(true));
+            mt.SetMultithreadProtected(BOOL::from(true)).expect("hotline_rs::wmf::error: call to SetMultithreadProtected failed");
 
             // setup media engine
             let mut reset_token : u32 = 0;

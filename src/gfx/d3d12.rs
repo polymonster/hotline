@@ -24,8 +24,7 @@ use std::sync::Mutex;
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
     Win32::Graphics::Direct3D12::*, Win32::Graphics::Dxgi::Common::*, Win32::Graphics::Dxgi::*,
-    Win32::System::LibraryLoader::*, Win32::System::Threading::*,
-    Win32::System::WindowsProgramming::*,
+    Win32::System::LibraryLoader::*, Win32::System::Threading::*
 };
 
 #[macro_export]
@@ -856,7 +855,7 @@ pub fn get_hardware_adapter(
                 break;
             }
 
-            let mut desc = adapter.unwrap().GetDesc1()?;
+            let desc = adapter.unwrap().GetDesc1()?;
 
             // decode utf-16 dfescription
             let decoded1 = decode_utf16(desc.Description)
@@ -890,7 +889,7 @@ pub fn get_hardware_adapter(
 
         let adapter = factory.EnumAdapters1(selected_index as u32)?;
         
-        let mut desc = adapter.GetDesc1()?;
+        let desc = adapter.GetDesc1()?;
 
         if D3D12CreateDevice(
             &adapter,
@@ -1748,7 +1747,7 @@ impl super::Device for Device {
                 ..Default::default()
             };
 
-            let hwnd : HWND = unsafe { std::mem::transmute(win.get_native_handle().get_isize()) };
+            let hwnd : HWND = std::mem::transmute(win.get_native_handle().get_isize());
 
             // create swap chain itself
             let swap_chain1 = self
