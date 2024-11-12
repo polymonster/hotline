@@ -20,6 +20,8 @@ use std::result;
 use std::collections::HashMap;
 use std::ffi::CString;
 
+use std::ptr::addr_of;
+
 #[derive(Clone)]
 pub struct App {
     window_class: String,
@@ -121,10 +123,12 @@ fn hinstance_usize(h: HINSTANCE) -> usize {
 impl Drop for Window {
     fn drop(&mut self) {
         unsafe {
-            if GetCapture() == as_hwnd(self.hwnd) {
-                ReleaseCapture();
+            if self.hwnd != 0 {
+                if GetCapture() == as_hwnd(self.hwnd) {
+                    ReleaseCapture().expect("hotline_rs::win32::error: call to ReleaseCapture failed");
+                }
+                let _ = DestroyWindow(as_hwnd(self.hwnd));
             }
-            DestroyWindow(as_hwnd(self.hwnd));
         }
     }
 }
@@ -132,7 +136,7 @@ impl Drop for Window {
 impl Drop for App {
     fn drop(&mut self) {
         unsafe {
-            UnregisterClassA(PCSTR(self.window_class.as_ptr() as _), as_hinstance(self.hinstance));
+            let _ = UnregisterClassA(PCSTR(self.window_class.as_ptr() as _), as_hinstance(self.hinstance));
         }
     }
 }
@@ -203,7 +207,7 @@ fn adjust_window_rect(
         bottom: rect.y + rect.height,
     };
     unsafe {
-        AdjustWindowRectEx(&mut rc, ws, BOOL::from(false), wsex);
+        AdjustWindowRectEx(&mut rc, ws, BOOL::from(false), wsex).expect("hotline_rs::win32::error: failed AdjustWindowRectEx");
     }
     super::Rect::<i32> {
         x: rc.left,
@@ -262,7 +266,7 @@ impl App {
             self.proc_data.utf16_inputs.clear();
             // get new mouse pos
             let mut mouse_pos = POINT::default();
-            GetCursorPos(&mut mouse_pos);
+            let _ = GetCursorPos(&mut mouse_pos);
             let new_mouse_pos = super::Point {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
@@ -326,7 +330,7 @@ impl App {
                             dwFlags: TME_LEAVE,
                             hwndTrack: window,
                             dwHoverTime: 0,
-                        });
+                        }).expect("hotline_rs::win32::error: TrackMouseEvent failed");
                         proc_data.mouse_tracked = true;
                     }
                     LRESULT(0)
@@ -389,7 +393,7 @@ impl App {
                     LRESULT(0)
                 }
                 WM_PAINT => {
-                    ValidateRect(window, None);
+                    let _ = ValidateRect(window, None);
                     LRESULT(0)
                 }
                 WM_CHAR => {
@@ -498,7 +502,7 @@ impl App {
         unsafe {
             let any_down = self.proc_data.mouse_down.iter().any(|v| v == &true);
             if !any_down && GetCapture() == window {
-                ReleaseCapture();
+                ReleaseCapture().expect("hotline_rs::win32::error: call to ReleaseCapture failed")
             }
         }
     }
@@ -631,8 +635,8 @@ impl super::App for App {
             self.update_input();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
-                    TranslateMessage(&msg);
-                    DispatchMessageA(&msg);
+                    let _ = TranslateMessage(&msg);
+                    let _ = DispatchMessageA(&msg);
                     
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     if let Some(hwnd_flags) = self.hwnd_flags.get(&hwnd_usize(msg.hwnd)) {
@@ -720,9 +724,9 @@ impl super::App for App {
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
             MONITOR_ENUM.clear();
-            EnumDisplayMonitors(HDC::default(), None, Some(enum_func), LPARAM(0));
+            let _ = EnumDisplayMonitors(HDC::default(), None, Some(enum_func), LPARAM(0));
             let mut monitors: Vec<super::MonitorInfo> = Vec::new();
-            for m in &MONITOR_ENUM {
+            for m in &*addr_of!(MONITOR_ENUM) {
                 monitors.push(m.clone());
             }
             monitors
@@ -802,7 +806,7 @@ impl super::App for App {
         unsafe {
             let chwnd = GetConsoleWindow();
             let mut rect = RECT::default();
-            GetWindowRect(chwnd, &mut rect);
+            GetWindowRect(chwnd, &mut rect).expect("hotline_rs::win32::error: call to GetWindowRect failed");
             super::Rect::<i32> {
                 x: rect.left,
                 y: rect.top,
@@ -823,7 +827,7 @@ impl super::App for App {
                 rect.width,
                 rect.height,
                 SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            ).expect("hotline_rs::win32::error: call to SetWindowPos failed");
         }
     }
 }
@@ -832,11 +836,11 @@ impl super::Window<App> for Window {
     fn bring_to_front(&self) {
         let hwnd = as_hwnd(self.hwnd);
         unsafe {
-            SetForegroundWindow(hwnd);
-            SetFocus(hwnd);
-            SetActiveWindow(hwnd);
-            BringWindowToTop(hwnd);
-            ShowWindow(hwnd, SW_RESTORE);
+            let _ = SetForegroundWindow(hwnd);
+            SetFocus(hwnd).expect("hotline_rs::win32::error: call to SetFocus failed");
+            SetActiveWindow(hwnd).expect("hotline_rs::win32::error: call to SetActiveWindow failed");
+            BringWindowToTop(hwnd).expect("hotline_rs::win32::error: call to BringWindowToTop failed");
+            let _ = ShowWindow(hwnd, SW_RESTORE);
         }
     }
 
@@ -850,14 +854,14 @@ impl super::Window<App> for Window {
         }
         unsafe {
             let hwnd = as_hwnd(self.hwnd);
-            ShowWindow(hwnd, cmd);
+            let _ = ShowWindow(hwnd, cmd);
         }
     }
 
     fn close(&mut self) {
         unsafe {
             let hwnd = as_hwnd(self.hwnd);
-            DestroyWindow(hwnd);
+            DestroyWindow(hwnd).expect("hotline_rs::win32::error: call to DestroyWindow failed");
         }
     }
 
@@ -900,7 +904,7 @@ impl super::Window<App> for Window {
                     right: rect.x + rect.width,
                     bottom: rect.y + rect.height,
                 };
-                AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+                AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex).expect("hotline_rs::win32::error: call to AdjustWindowRectEx failed");
 
                 SetWindowPos(
                     hwnd,
@@ -910,9 +914,9 @@ impl super::Window<App> for Window {
                     rect.right - rect.left,
                     rect.bottom - rect.top,
                     swp_flag | SWP_NOACTIVATE | SWP_FRAMECHANGED,
-                );
+                ).expect("hotline_rs::win32::error: call to SetWindowPos failed");
 
-                ShowWindow(hwnd, SW_SHOWNA);
+                let _ = ShowWindow(hwnd, SW_SHOWNA);
                 self.events |= super::WindowEventFlags::MOVE;
                 self.events |= super::WindowEventFlags::SIZE;
             }
@@ -930,16 +934,16 @@ impl super::Window<App> for Window {
     fn set_focused(&self) {
         unsafe {
             let hwnd = as_hwnd(self.hwnd);
-            BringWindowToTop(hwnd);
-            SetForegroundWindow(hwnd);
-            SetFocus(hwnd);
+            BringWindowToTop(hwnd).expect("hotline_rs::win32::error: call to BringWindowToTop failed");
+            let _ = SetForegroundWindow(hwnd);
+            SetFocus(hwnd).expect("hotline_rs::win32::error: call to SetFocus failed");
         }
     }
 
     fn is_mouse_hovered(&self) -> bool {
         unsafe {
             let mut mouse_pos = POINT::default();
-            GetCursorPos(&mut mouse_pos);
+            GetCursorPos(&mut mouse_pos).expect("hotline_rs::win32::error: call to GetCursorPos failed");
             as_hwnd(self.hwnd) == WindowFromPoint(mouse_pos)
         }
     }
@@ -947,7 +951,7 @@ impl super::Window<App> for Window {
     fn set_title(&self, title: String) {
         unsafe {
             let mb = string_to_wide(title);
-            SetWindowTextW(as_hwnd(self.hwnd), PCWSTR(mb.as_ptr() as _));
+            SetWindowTextW(as_hwnd(self.hwnd), PCWSTR(mb.as_ptr() as _)).expect("hotline_rs::win32::error: call to SetWindowTextW failed");
         }
     }
 
@@ -959,7 +963,7 @@ impl super::Window<App> for Window {
             bottom: pos.y,
         };
         unsafe {
-            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex).expect("hotline_rs::win32::error: call to AdjustWindowRectEx failed");
             SetWindowPos(
                 as_hwnd(self.hwnd),
                 HWND::default(),
@@ -968,7 +972,7 @@ impl super::Window<App> for Window {
                 0,
                 0,
                 SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE,
-            );
+            ).expect("hotline_rs::win32::error: call to SetWindowPos failed");
         }
     }
 
@@ -980,7 +984,7 @@ impl super::Window<App> for Window {
             bottom: size.y,
         };
         unsafe {
-            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex);
+            AdjustWindowRectEx(&mut rect, self.ws, BOOL::from(false), self.wsex).expect("hotline_rs::win32::error: call to AdjustWindowRectEx failed");
             SetWindowPos(
                 as_hwnd(self.hwnd),
                 HWND::default(),
@@ -989,14 +993,14 @@ impl super::Window<App> for Window {
                 rect.right - rect.left,
                 rect.bottom - rect.top,
                 SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE,
-            );
+            ).expect("hotline_rs::win32::error: call to SetWindowPos failed");
         }
     }
 
     fn get_pos(&self) -> super::Point<i32> {
         unsafe {
             let mut pos = POINT { x: 0, y: 0 };
-            ClientToScreen(as_hwnd(self.hwnd), &mut pos);
+            let _ = ClientToScreen(as_hwnd(self.hwnd), &mut pos);
             super::Point { x: pos.x, y: pos.y }
         }
     }
@@ -1004,7 +1008,7 @@ impl super::Window<App> for Window {
     fn get_size(&self) -> super::Size<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetClientRect(as_hwnd(self.hwnd), &mut rect);
+            GetClientRect(as_hwnd(self.hwnd), &mut rect).expect("hotline_rs::win32::error: call to GetClientRect failed");
             super::Size {
                 x: rect.right - rect.left,
                 y: rect.bottom - rect.top,
@@ -1015,7 +1019,7 @@ impl super::Window<App> for Window {
     fn get_viewport_rect(&self) -> super::Rect<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetClientRect(as_hwnd(self.hwnd), &mut rect);
+            GetClientRect(as_hwnd(self.hwnd), &mut rect).expect("hotline_rs::win32::error: call to GetClientRect failed");
             super::Rect::<i32> {
                 x: 0,
                 y: 0,
@@ -1028,11 +1032,11 @@ impl super::Window<App> for Window {
     fn get_window_rect(&self) -> super::Rect<i32> {
         unsafe {
             let mut rect = RECT::default();
-            GetWindowRect(as_hwnd(self.hwnd), &mut rect);
+            GetWindowRect(as_hwnd(self.hwnd), &mut rect).expect("hotline_rs::win32::error: call to GetWindowRect failed");
 
             // this is adjusted to compensate for AdjustWindowRectEx on create
             let mut adj = RECT::default();
-            AdjustWindowRectEx(&mut adj, self.ws, BOOL::from(false), self.wsex);
+            AdjustWindowRectEx(&mut adj, self.ws, BOOL::from(false), self.wsex).expect("hotline_rs::win32::error: call to AdjustWindowRectEx failed");
             let adj_rect = RECT {
                 left: rect.left - adj.left,
                 right: rect.right - adj.right,
@@ -1055,7 +1059,7 @@ impl super::Window<App> for Window {
                 x: mouse_pos.x,
                 y: mouse_pos.y,
             };
-            ScreenToClient(as_hwnd(self.hwnd), &mut mp);
+            ScreenToClient(as_hwnd(self.hwnd), &mut mp).expect("hotline_rs::win32::error: call to ScreenToClient failed");
             super::Point { x: mp.x, y: mp.y }
         }
     }
