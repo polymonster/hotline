@@ -904,7 +904,7 @@ pub fn get_hardware_adapter(
                 }
             } else {
                 // auto select first non software adapter
-                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags);
+                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags as i32);
                 if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE {
                     let adpater_vendor = to_vendor(desc.VendorId);
 
