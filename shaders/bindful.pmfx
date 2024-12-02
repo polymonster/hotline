@@ -1,0 +1,23 @@
+{
+    include: [
+        "bindful.hlsl"
+    ]
+    sampler_states: {
+        wrap_linear: {
+            filter: "Linear",
+            address_u: "Wrap",
+            address_v: "Wrap",
+            address_w: "Wrap",
+        }
+    }
+    pipelines: {
+        bindful: {
+            vs: vs_main,
+            ps: ps_main,
+            static_samplers: {
+                sampler0: "wrap_linear"
+            }
+            topology: "TriangleList"
+        }
+    }
+}

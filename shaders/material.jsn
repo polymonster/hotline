@@ -1,0 +1,138 @@
+{
+    include: [
+        "material.hlsl"
+    ]
+
+    textures: {
+        static_cubemap: {
+            filepath: "textures/cubemap.dds"
+        }
+    }
+
+    pipelines: {
+        mesh_debug_tangent_space: {
+            vs: vs_mesh_lit
+            ps: ps_mesh_debug_tangent_space
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        mesh_material_instanced: {
+            vs: "vs_mesh_material",
+            ps: "ps_mesh_material"
+            push_constants: [
+                "view_push_constants"
+                "world_buffer_info"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            vertex_layout: {
+                vs_input_entity_ids: {
+                    input_slot: 1
+                    input_slot_class: "PerInstance"
+                }
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        mesh_lit: {
+            vs: "vs_mesh",
+            ps: "ps_mesh_lit"
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        mesh_pbr_ibl: {
+            vs: "vs_mesh",
+            ps: "ps_mesh_pbr_ibl"
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+    }
+
+    render_graphs: {
+        mesh_debug_tangent_space: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_debug_tangent_space"]
+                function: "render_meshes_debug_tangent_space"
+                depends_on: ["debug"]
+            }
+        }
+        mesh_instanced_bindless_material: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_material_instanced"]
+                function: "render_meshes_bindless"
+                depends_on: ["debug"]
+            }
+        }
+        mesh_lit: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view"
+                pipelines: ["mesh_lit"]
+                function: "render_meshes_bindless"
+                depends_on: ["debug"]
+            }
+        }
+        mesh_pbr: {
+            clear_cubemap_skybox: {
+                view: "main_view"
+                cubemap: true
+                function: "cubemap_clear"
+                pipelines: [
+                    "cubemap_clear"
+                ]
+                uses: [
+                    ["static_cubemap", "Read"]
+                ]
+            }
+            sphere_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "mesh_pbr_ibl"
+                ]
+                function: "render_meshes_pbr"
+                depends_on: ["clear_cubemap_skybox"]
+            }
+        }
+    }
+}

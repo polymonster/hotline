@@ -1,0 +1,158 @@
+{
+    include: [
+        "texture.hlsl"
+    ]
+
+    textures: {
+        read_write_texture3d: {
+            width: 64,
+            height: 64,
+            depth: 64,
+            usage: [UnorderedAccess, ShaderResource]
+        }
+    }
+
+    pipelines: {
+        mesh_bindless_texture: {
+            vs: vs_mesh
+            ps: ps_texture2d
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+
+        cubemap(mesh_bindless_texture): {
+            vs: vs_mesh
+            ps: ps_cubemap
+        }
+
+        cubemap_reflect(mesh_bindless_texture): {
+            vs: vs_mesh
+            ps: ps_cubemap_reflect
+        }
+
+        texture2d_array(mesh_bindless_texture): {
+            ps: ps_texture2d_array
+        }
+
+        texture3d(mesh_bindless_texture): {
+            vs: vs_texture3d
+            ps: ps_volume_texture_ray_march_sdf
+            raster_state: cull_none
+        }
+
+        volume_ray_march(mesh_bindless_texture): {
+            vs: vs_texture3d
+            ps: ps_volume_texture_ray_march
+            static_samplers: {
+                sampler_wrap_linear: clamp_point
+            }
+            raster_state: cull_none
+        }
+
+        compute_write_texture3d: {
+            cs: cs_write_texture3d
+            push_constants: [
+                resources
+            ]
+        }
+    }
+
+    render_graphs: {
+        mesh_bindless_texture: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_bindless_texture"]
+                function: "draw_meshes_bindless_texture"
+                depends_on: ["debug"]
+            }
+        }
+
+        cubemap_test: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            sphere_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "cubemap"
+                ]
+                function: "render_meshes_cubemap"
+                depends_on: ["debug"]
+            }
+        }
+
+        texture2d_array_test: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            billboard_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "texture2d_array"
+                ]
+                function: "render_meshes_texture2d_array"
+                depends_on: ["debug"]
+            }
+        }
+
+        texture3d_test: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            sdf_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "texture3d"
+                ]
+                function: "render_meshes_texture3d"
+                depends_on: ["debug"]
+            }
+        }
+
+        read_write_texture: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            write_texture: {
+                function: "dispatch_compute"
+                pipelines: ["compute_write_texture3d"]
+                uses: [
+                    ["read_write_texture3d", "Write"]
+                ]
+                target_dimension: "read_write_texture3d"
+            }
+            sdf_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "volume_ray_march"
+                ]
+                uses: [
+                    ["read_write_texture3d", "Read"]
+                ]
+                function: "render_meshes_texture3d"
+                depends_on: ["debug"]
+            }
+        }
+    }
+}

@@ -1,0 +1,63 @@
+{
+    include: [
+        "draw_instanced.hlsl"
+    ]
+
+    pipelines: {
+        mesh_vertex_buffer_instanced: {
+            vs: vs_mesh_vertex_buffer_instanced
+            ps: ps_checkerboard
+            push_constants: [
+                "view_push_constants"
+            ]
+            vertex_layout: {
+                vs_input_instance: {
+                    input_slot: 1
+                    input_slot_class: "PerInstance"
+                }
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        mesh_cbuffer_instanced: {
+            vs: vs_mesh_cbuffer_instanced
+            ps: ps_checkerboard
+            push_constants: [
+                "view_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+    }
+
+    render_graphs: {
+        mesh_draw_vertex_buffer_instanced: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_vertex_buffer_instanced"]
+                function: "draw_meshes_vertex_buffer_instanced"
+                depends_on: ["debug"]
+            }
+        }
+        mesh_draw_cbuffer_instanced: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_cbuffer_instanced"]
+                function: "draw_meshes_cbuffer_instanced"
+                depends_on: ["debug"]
+            }
+        }
+    }
+}

@@ -1,0 +1,171 @@
+{
+    textures: {
+        single_directional_shadow_map: {
+            width: 4096
+            height: 4096
+            format: D32f
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+
+        single_omni_shadow_map: {
+            width: 2048
+            height: 2048
+            cubemap: true
+            array_layers: 6
+            format: D32f
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+    }
+
+    sampler_states: {
+        shadow_compare: {
+            filter: Linear
+            address_u: Clamp
+            address_v: Clamp
+            address_w: Clamp
+            comparison: Less
+        }
+    }
+
+    views: {
+        single_directional_shadow_map: {
+            depth_stencil: [
+                "single_directional_shadow_map"
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: "single_shadow_map_camera"
+        }
+
+        single_omni_shadow_map: {
+            depth_stencil: [
+                "single_omni_shadow_map"
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: "omni_shadow_camera"
+        }
+
+        shadow_cam_debug: {
+            render_target: [
+                main_colour
+            ]
+            depth_stencil: [
+                main_depth
+            ]
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: single_shadow_map_camera
+            clear_depth: null
+            clear_colour: null
+        }
+    }
+
+    pipelines: {
+        depth_only_shadow: {
+            vs: vs_depth_world_pos
+            push_constants: [
+                view_push_constants
+                draw_push_constants
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_front
+            topology: TriangleList
+        }
+
+        depth_only_omni_shadow: {
+            vs: vs_depth_world_pos
+            ps: ps_omni_shadow_depth
+            push_constants: [
+                view_push_constants
+                draw_push_constants
+                world_buffer_info
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_front
+            topology: TriangleList
+        }
+
+        single_directional_shadow: {
+            vs: vs_mesh
+            ps: ps_single_directional_shadow
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: TriangleList
+            static_samplers: {
+                sampler_shadow_compare: shadow_compare
+                sampler_clamp_point: clamp_point
+            }
+        }
+
+        single_omni_shadow: {
+            vs: vs_mesh
+            ps: ps_single_omni_shadow
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: TriangleList
+            static_samplers: {
+                sampler_shadow_compare: shadow_compare
+                sampler_clamp_point: clamp_point
+            }
+        }
+    }
+
+    render_graphs: {
+        mesh_lit_single_shadow_map: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            shadow: {
+                view: "single_directional_shadow_map"
+                pipelines: ["depth_only_shadow"]
+                function: "render_meshes_bindless"
+                depends_on: ["debug"]
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["single_directional_shadow"]
+                function: "render_meshes_bindless"
+                depends_on: ["shadow"]
+                uses: [
+                    [single_directional_shadow_map, Read]
+                ]
+            }
+        }
+
+        mesh_lit_omni_shadow_map: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            omni_shadow: {
+                view: "single_omni_shadow_map"
+                cubemap: true
+                pipelines: ["depth_only_omni_shadow"]
+                function: "render_meshes_bindless"
+                depends_on: ["debug"]
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["single_omni_shadow"]
+                function: "render_meshes_bindless"
+                depends_on: ["omni_shadow"]
+                uses: [
+                    [single_omni_shadow_map, Read]
+                ]
+            }
+        }
+    }
+}
