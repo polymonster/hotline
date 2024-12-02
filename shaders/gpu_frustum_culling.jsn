@@ -1,0 +1,50 @@
+{
+    include: [
+        "gpu_frustum_culling.hlsl"
+    ]
+
+    pipelines: {
+        compute_frustum_cull: {
+            cs: cs_frustum_cull
+            push_constants: [
+                resources
+                world_buffer_info
+            ]
+        }
+        mesh_indirect_push_constants: {
+            vs: vs_mesh_material_indirect
+            ps: ps_mesh_material
+            push_constants: [
+                "view_push_constants"
+                "indirect_push_constants"
+                "world_buffer_info"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+    }
+
+    render_graphs: {
+        execute_indirect_culling: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            cull: {
+                function: "dispatch_compute_frustum_cull"
+                pipelines: ["compute_frustum_cull"]
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_indirect_push_constants"]
+                function: "draw_meshes_indirect_culling"
+                depends_on: ["cull", "debug"]
+            }
+        }
+    }
+}

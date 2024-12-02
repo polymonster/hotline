@@ -1,0 +1,145 @@
+import draw.jsn
+import draw_indirect.jsn
+import draw_instanced.jsn
+import texture.jsn
+import material.jsn
+import gpu_frustum_culling.jsn
+import render_targets.jsn
+import state_tests.jsn
+import shadows.jsn
+{
+    include: [
+        "ecs.hlsl"
+        "maths.hlsl"
+        "draw.hlsl"
+        "draw_instanced.hlsl"
+        "texture.hlsl"
+        "material.hlsl"
+        "gpu_frustum_culling.hlsl"
+        "render_targets.hlsl"
+        "shadows.hlsl"
+    ]
+
+    depth_stencil_states: {
+        depth_test_less: {
+            depth_enabled: true
+            depth_write_mask: All
+            depth_func: Less
+        }
+        depth_test_greater: {
+            depth_enabled: true
+            depth_write_mask: All
+            depth_func: Greater
+        }
+        depth_test_equal: {
+            depth_enabled: true
+            depth_write_mask: All
+            depth_func: Equal
+        }
+        depth_test_always: {
+            depth_enabled: true
+            depth_write_mask: All
+            depth_func: Less
+        }
+    }
+
+    sampler_states: {
+        wrap_linear: {
+            filter: Linear
+            address_u: Wrap
+            address_v: Wrap
+            address_w: Wrap
+        }
+        clamp_linear: {
+            filter: Linear
+            address_u: Clamp
+            address_v: Clamp
+            address_w: Clamp
+        }
+        clamp_point: {
+            filter: Point
+            address_u: Clamp
+            address_v: Clamp
+            address_w: Clamp
+        }
+    }
+
+    raster_states: {
+        wireframe: {
+            fill_mode: Wireframe
+            depth_bias: -5
+        }
+        cull_back: {
+            cull_mode: Back
+        }
+        cull_none: {
+            cull_mode: None
+        }
+        cull_front: {
+            cull_mode: Front
+        }
+    }
+
+    render_target_blend_states: {
+        disabled: {
+            blend_enabled: false
+        }
+        additive: {
+            blend_enabled: true
+            src_blend: One
+            dst_blend: One
+        }
+        alpha: {
+            blend_enabled: true
+            src_blend: SrcAlpha
+            dst_blend: InvSrcAlpha
+        }
+    }
+
+    textures: {
+        main_colour: {
+            ratio: {
+                window: main_dock
+                scale: 1.0
+            }
+            format: BGRX8n
+            usage: ["ShaderResource", "RenderTarget"]
+            samples: 8
+        }
+        main_depth(main_colour): {
+            format: D24nS8u
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+    }
+
+    views: {
+        main_view: {
+            render_target: [
+                main_colour
+            ]
+            clear_colour: [0.45, 0.55, 0.60, 1.0]
+            depth_stencil: [
+                main_depth
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: main_camera
+        }
+        main_view_black: {
+            render_target: [
+                main_colour
+            ]
+            clear_colour: [0.0, 0.0, 0.0, 1.0]
+            depth_stencil: [
+                main_depth
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: main_camera
+        }
+        main_view_no_clear(main_view): {
+            clear_colour: null
+            clear_depth: null
+        }
+    }
+}

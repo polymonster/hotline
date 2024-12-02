@@ -1,0 +1,11 @@
+{
+    include: [
+        "triangle.hlsl"
+    ]
+    pipelines: {
+        default: {
+            vs: vs_main,
+            ps: ps_main
+        }
+    }
+}

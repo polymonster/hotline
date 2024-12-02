@@ -56,6 +56,7 @@
             data_dir: "target/data"
             temp_dir: "target/temp"
             src_data_dir: "hotline-data/src"
+            src_shader_dir: "shaders"
         }
 
         // clean build and temp dirs
@@ -113,7 +114,7 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i ${src_data_dir}/shaders/"
+                "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
@@ -126,7 +127,7 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_0"
-                "-i ${src_data_dir}/shaders/"
+                "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"

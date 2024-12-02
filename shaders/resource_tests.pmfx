@@ -1,0 +1,50 @@
+{
+    include: [
+        "bindful.hlsl"
+    ]
+    
+    textures: {
+        bear_frame: {
+            filepath: "textures/bear/bear_stomp_anim_001.png"
+            src_data: true
+        }
+
+        compressed_bc1: {
+            filepath: "textures/formats/texfmt_bc1.dds"
+        }
+        
+        compressed_bc3: {
+            filepath: "textures/formats/texfmt_bc3.dds"
+        }
+
+        compressed_bc5: {
+            filepath: "textures/formats/texfmt_bc5.dds"
+        }
+
+        copy_dest: {
+            width: 512
+            height: 512
+            format: RGBA8n
+        }
+    }
+
+    sampler_states: {
+        wrap_linear: {
+            filter: "Linear",
+            address_u: "Wrap",
+            address_v: "Wrap",
+            address_w: "Wrap",
+        }
+    }
+
+    pipelines: {
+        bindful: {
+            vs: vs_main,
+            ps: ps_main,
+            static_samplers: {
+                sampler0: "wrap_linear"
+            }
+            topology: "TriangleList"
+        }
+    }
+}

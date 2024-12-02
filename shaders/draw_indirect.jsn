@@ -1,0 +1,23 @@
+{
+    render_graphs: {
+        mesh_draw_indirect: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_push_draw_constants"]
+                function: "draw_meshes_indirect"
+                depends_on: ["debug"]
+            }
+            wireframe: {
+                view: "main_view_no_clear"
+                pipelines: ["wireframe_overlay"]
+                function: "render_meshes"
+                depends_on: ["meshes", "debug"]
+            }
+        }
+    }
+}
