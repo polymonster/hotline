@@ -1053,6 +1053,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             }
         }
 
+        // cleanup heaps
+        self.pmfx.shader_heap.cleanup_dropped_resources(&self.swap_chain);
+        self.device.cleanup_dropped_resources(&self.swap_chain);
+
+        //
+        self.device.report_live_objects()?;
+
         Ok(())
     }
 }
