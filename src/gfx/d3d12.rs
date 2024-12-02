@@ -130,6 +130,7 @@ type D3D12DebugVersion = ID3D12Debug;
 #[derive(Clone)]
 pub struct Device {
     adapter_info: super::AdapterInfo,
+    feature_flags: super::DeviceFeatureFlags,
     dxgi_factory: IDXGIFactory4,
     device: D3D12DeviceVersion,
     command_allocator: ID3D12CommandAllocator,
@@ -833,6 +834,33 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
     })
 }
 
+#[derive(Copy, Clone)]
+enum Vendor
+{
+    Unknown,
+    Intel,
+    Amd,
+    Nvidia
+}
+
+fn to_vendor(vendor_id: u32) -> Vendor {
+    match vendor_id {
+        0x163C | 0x8086 | 0x8087 => Vendor::Intel,
+        0x1002 | 0x1022 => Vendor::Amd,
+        0x10DE => Vendor::Nvidia,
+        _ => Vendor::Unknown
+    }
+}
+
+fn is_discrete_gpu(vendor: Vendor) -> bool {
+    match vendor {
+        Vendor::Unknown => false,
+        Vendor::Intel => false,
+        Vendor::Amd => true,
+        Vendor::Nvidia => true
+    }
+}
+
 pub fn get_hardware_adapter(
     factory: &IDXGIFactory4,
     adapter_name: &Option<String>,
@@ -849,6 +877,7 @@ pub fn get_hardware_adapter(
 
         // enumerate info
         let mut selected_index = -1;
+        let mut selected_vendor = Vendor::Unknown;
         for i in 0.. {
             let adapter = factory.EnumAdapters1(i);
             if adapter.is_err() {
@@ -858,6 +887,7 @@ pub fn get_hardware_adapter(
             let desc = adapter.unwrap().GetDesc1()?;
 
             // decode utf-16 dfescription
+
             let decoded1 = decode_utf16(desc.Description)
                 .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
                 .collect::<String>();
@@ -874,10 +904,20 @@ pub fn get_hardware_adapter(
                 }
             } else {
                 // auto select first non software adapter
-                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags as i32);
-                if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE && 
-                    selected_index == -1 {
-                    selected_index = i as i32;
+                let adapter_flag = DXGI_ADAPTER_FLAG(desc.Flags);
+                if (adapter_flag & DXGI_ADAPTER_FLAG_SOFTWARE) == DXGI_ADAPTER_FLAG_NONE {
+                    let adpater_vendor = to_vendor(desc.VendorId);
+
+                    // select first
+                    if selected_index == -1 {
+                        selected_index = i as i32;
+                        selected_vendor = adpater_vendor;
+                    }
+
+                    // override rules to select discrete gpu
+                    if !is_discrete_gpu(selected_vendor) && is_discrete_gpu(adpater_vendor) {
+                        selected_index = i as i32;
+                    }
                 }
             }
         }
@@ -1684,10 +1724,36 @@ impl super::Device for Device {
             );
             d3d12_debug_name!(dsv_heap.heap, "device_depth_stencil_heap");
 
+            // query feature flags
+            let mut feature_flags = DeviceFeatureFlags::NONE;
+
+            // ray tracing
+            let options5 = D3D12_FEATURE_DATA_D3D12_OPTIONS5::default();
+            if device.CheckFeatureSupport(
+                D3D12_FEATURE_D3D12_OPTIONS5, 
+                std::ptr::addr_of!(options5) as *mut _, 
+                std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS5>() as u32).is_ok() {
+                if options5.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED {
+                    feature_flags |= super::DeviceFeatureFlags::RAYTRACING;
+                }
+            }
+
+            // mesh shader
+            let options7 = D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
+            if device.CheckFeatureSupport(
+                D3D12_FEATURE_D3D12_OPTIONS7, 
+                std::ptr::addr_of!(options7) as *mut _, 
+                std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS7>() as u32).is_ok() {
+                if options7.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED {
+                    feature_flags |= super::DeviceFeatureFlags::MESH_SAHDER;
+                }
+            }
+
             // initialise struct
             let mut device = Device {
                 timestamp_frequency,
                 adapter_info,
+                feature_flags,
                 device,
                 dxgi_factory,
                 command_allocator,
@@ -3032,6 +3098,10 @@ impl super::Device for Device {
 
     fn get_adapter_info(&self) -> &AdapterInfo {
         &self.adapter_info
+    }
+
+    fn get_feature_flags(&self) -> &DeviceFeatureFlags {
+        &self.feature_flags
     }
 
     fn read_buffer(&self, swap_chain: &SwapChain, buffer: &Buffer, size: usize, frame_written_fence: u64) -> Option<super::ReadBackData> {
