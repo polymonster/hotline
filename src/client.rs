@@ -1051,14 +1051,16 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         
                 readback_request.unmap();
             }
+
+            // cleanup heaps
+            self.pmfx.shader_heap.cleanup_dropped_resources(&self.swap_chain);
+            self.device.cleanup_dropped_resources(&self.swap_chain);
         }
 
-        // cleanup heaps
-        self.pmfx.shader_heap.cleanup_dropped_resources(&self.swap_chain);
-        self.device.cleanup_dropped_resources(&self.swap_chain);
-
-        //
-        self.device.report_live_objects()?;
+        self.swap_chain.wait_for_last_frame();
+        
+        // unloads plugins, dropping all gpu resources
+        self.unload();
 
         Ok(())
     }

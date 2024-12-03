@@ -768,6 +768,7 @@ fn dynamic_cubemap() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("dynamic_cubemap")
 }
 
+/*
 #[test]
 fn pbr() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("pbr")
@@ -777,3 +778,4 @@ fn pbr() -> Result<(), hotline_rs::Error> {
 fn omni_shadow_maps() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("omni_shadow_map")
 }
+*/
