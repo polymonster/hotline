@@ -204,7 +204,6 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         export_fn.to_string(),
     );
     
-    println!("{}", concat);
     concat.parse().unwrap()
 }
 
