@@ -116,7 +116,7 @@
             "name": "tests (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/deps/tests-661041b177eb9ae4.exe",
+            "program": "${workspaceFolder}/target/debug/deps/tests-9d060b7b8785eb4b.exe",
             "args": ["--test-threads=1", "--nocapture"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",

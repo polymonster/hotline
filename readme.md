@@ -328,7 +328,7 @@ Any render functions are automatically added to the `Render` system set, but you
 ```rust
 // custom base set
 #[no_mangle]
-#[export_update_fn(in_base_set(MyCustsomSet::CustomUpdate))]
+#[export_update_fn(in_set(MyCustsomSet::CustomUpdate))]
 fn update_cameras() {
     // ..
 }
@@ -341,7 +341,7 @@ fn update_batch() {
 
 // in base set after render
 #[no_mangle]
-#[export_update_fn(in_base_set(MyCustsomSet::PostStep).before(SystemSets::Render))]
+#[export_update_fn(in_set(MyCustsomSet::PostStep).before(SystemSets::Render))]
 fn finalise() {
     // ..
 }

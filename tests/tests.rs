@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use std::collections::HashMap;
+use std::{collections::HashMap, fmt::Debug};
 
 use hotline_rs::prelude::*;
 
@@ -608,7 +608,6 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
 //
 // error tests
 // 
-
 #[test]
 fn test_missing_demo() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_demo")
@@ -644,10 +643,20 @@ fn test_missing_camera() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_camera")
 }
 
+/*
+#[test]
+fn draw() -> Result<(), hotline_rs::Error> {
+    for i in 0..100 {
+        boot_client_ecs_plugin_demo(format!("draw{i}").as_str());
+    }
+    Ok(())
+}
+    */
+
+
 //
 // ecs examples
 //
-
 #[test]
 fn draw() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("draw")
@@ -768,7 +777,6 @@ fn dynamic_cubemap() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("dynamic_cubemap")
 }
 
-/*
 #[test]
 fn pbr() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("pbr")
@@ -778,4 +786,3 @@ fn pbr() -> Result<(), hotline_rs::Error> {
 fn omni_shadow_maps() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("omni_shadow_map")
 }
-*/
