@@ -79,7 +79,7 @@ pub fn load_material(
 }
 
 #[no_mangle]
-#[export_update_fn(in_base_set(SystemSets::Batch))]
+#[export_update_fn(in_set(SystemSets::Batch))]
 pub fn batch_lights(
     mut pmfx: ResMut<PmfxRes>,
     light_query: Query<(&Position, &Colour, &LightComponent)>) -> Result<(), hotline_rs::Error> {
@@ -124,7 +124,7 @@ pub fn batch_lights(
 
 /// Batch updates instance world matrices into the `InstanceBuffer`
 #[no_mangle]
-#[export_update_fn(in_base_set(SystemSets::Batch))]
+#[export_update_fn(in_set(SystemSets::Batch))]
 pub fn batch_world_matrix_instances(
     instances_query: Query<(&Parent, &WorldMatrix)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) -> Result<(), hotline_rs::Error> {
@@ -143,7 +143,7 @@ pub fn batch_world_matrix_instances(
 
 /// Batch updates lookup id's into the instance buffer
 #[no_mangle]
-#[export_update_fn(in_base_set(SystemSets::Batch))]
+#[export_update_fn(in_set(SystemSets::Batch))]
 pub fn batch_material_instances(
     mut instances_query: Query<(&Parent, &InstanceIds)>,
     mut instance_batch_query: Query<(Entity, &mut InstanceBuffer)>) -> Result<(), hotline_rs::Error> {
@@ -179,7 +179,7 @@ const fn unit_aabb_corners() -> [Vec3f; 8] {
 /// Batches draw calls into a structured buffer which can be looked up into, and also batches extents
 /// to perform GPU culling
 #[no_mangle]
-#[export_update_fn(in_base_set(SystemSets::Batch))]
+#[export_update_fn(in_set(SystemSets::Batch))]
 pub fn batch_bindless_draw_data(
     mut pmfx: ResMut<PmfxRes>,
     draw_query: Query<(&WorldMatrix, &Extents)>) -> Result<(), hotline_rs::Error> {
@@ -595,6 +595,7 @@ pub mod prelude {
     pub use rand::prelude::*;
     pub use bevy_ecs::prelude::*;
     pub use bevy_ecs::schedule::SystemConfig;
+    pub use bevy_ecs::schedule::SystemConfigs;
     pub use export_macros;
     pub use export_macros::export_update_fn;
     pub use export_macros::export_render_fn;

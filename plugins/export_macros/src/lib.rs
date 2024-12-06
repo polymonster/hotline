@@ -105,15 +105,15 @@ fn parse_fn(item: &TokenStream) -> FunctionParsed {
 }
 
 fn emit_update_order(attr: TokenStream, default_set: &str) -> String {
-    if attr.to_string().contains("in_base_set") {
+    if attr.to_string().contains("in_set") {
         attr.to_string()
     }
     else {
         if attr.is_empty() {
-            format!("in_base_set ( {} )", default_set)
+            format!("in_set ( {} )", default_set)
         }
         else {
-            format!("in_base_set ( {} ) . {}", default_set, attr.to_string())
+            format!("in_set ( {} ) . {}", default_set, attr.to_string())
         }
     }
 }
@@ -128,10 +128,10 @@ pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let order = emit_update_order(attr, "SystemSets :: Update");
 
     // emit the closure code itself
-    let export_fn = format!("#[no_mangle] fn export_{}() -> SystemConfig {{
+    let export_fn = format!("#[no_mangle] fn export_{}() -> SystemConfigs {{
         (move | {} | {{
             {} ({}).unwrap();
-        }}).into_config().{}
+        }}).into_configs().{}
     }}", parsed.name, moves, parsed.name, pass, order);
 
     // output the original item plus the generated export function
@@ -155,7 +155,7 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let render_closure = quote! {
         #[no_mangle] 
-        fn export_fn_name(view_name: String) -> SystemConfig {
+        fn export_fn_name(view_name: String) -> SystemConfigs {
             (move | fn_move | {
                 let view = pmfx.get_view(&view_name);
                 let err = match view {
@@ -186,7 +186,7 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                 if let Err(err) = err {
                     pmfx.log_error(&view_name, &err.msg);
                 }
-            }).into_config().fn_attr
+            }).into_configs().fn_attr
         }
     }.to_string();
 
@@ -204,6 +204,7 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         export_fn.to_string(),
     );
     
+    println!("{}", concat);
     concat.parse().unwrap()
 }
 
@@ -217,7 +218,7 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let render_closure = quote! {
         #[no_mangle] 
-        fn export_fn_name(pass_name: String) -> SystemConfig {
+        fn export_fn_name(pass_name: String) -> SystemConfigs {
             (move | fn_move | {
                 
                 let pass = pmfx.get_compute_pass(&pass_name);
@@ -243,7 +244,7 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                 if let Err(err) = err {
                     pmfx.log_error(&pass_name, &err.msg);
                 }
-            }).into_config().fn_attr
+            }).into_configs().fn_attr
         }
     }.to_string();
 

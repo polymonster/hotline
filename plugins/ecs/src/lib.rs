@@ -7,6 +7,7 @@ use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
+use bevy_ecs::schedule::SystemConfigs;
 
 use std::collections::HashMap;
 
@@ -30,7 +31,6 @@ struct BevyPlugin {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
-#[system_set(base)]
 pub enum CoreSystemSets {
     Update,
     Batch,
@@ -284,21 +284,21 @@ fn update_cameras(
 
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfig> {
+    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfigs> {
         // find by export name
         for (_, lib) in &client.libs {
             unsafe {
                 let exported_function_name = format!("export_{}", name);
                 if view_name.is_empty() {
                     // function with () no args
-                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfig>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn());
                     }
                 }
                 else {
                     // function with pass name args
-                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfig>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn(view_name.to_string()));
                     }
@@ -310,7 +310,7 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfig>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
                 if let Ok(hook_fn) = hook {
                     let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
@@ -558,16 +558,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let info = &self.schedule_info;
 
         // core update
-        self.schedule.add_system(update_cameras.in_base_set(CoreSystemSets::Update));
-        self.schedule.add_system(update_main_camera_config.in_base_set(CoreSystemSets::Update));
+        self.schedule.add_systems(update_cameras.in_set(CoreSystemSets::Update));
+        self.schedule.add_systems(update_main_camera_config.in_set(CoreSystemSets::Update));
 
         // core batch functions do syncronised work to prepare buffers / matrices for drawing
-        self.schedule.add_system(update_world_matrices.in_base_set(SystemSets::Batch));
+        self.schedule.add_systems(update_world_matrices.in_set(SystemSets::Batch));
 
         // hook in setup funcs
         for func_name in &info.setup {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                self.setup_schedule.add_system(func);
+                self.setup_schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -576,8 +576,9 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // hook in updates funcs
         for func_name in &info.update {
+            println!("adding {}", func_name);
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                self.schedule.add_system(func);
+                self.schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -587,12 +588,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in render functions
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                self.schedule.add_system(func);
+                self.schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
             }
         }
+
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
 
         // process sets in fixed order
@@ -658,7 +660,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
-        client.serialise_plugin_data("ecs", &self.session_info);
+        //client.serialise_plugin_data("ecs", &self.session_info);
+
         client
     }
 
