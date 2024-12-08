@@ -150,6 +150,7 @@
                 "-metal_version 2.3"
                 "-metal_sdk macosx"
                 "-discrete_binding 0"
+                "-discrete_binding 1"
                 "-i ${src_data_dir}/shaders/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"

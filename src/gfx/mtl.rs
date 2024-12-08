@@ -375,7 +375,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
         // .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
         // .set_vertex_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
-        .set_vertex_bytes(0,  num_values as u64 * 4, data.as_ptr() as _);
+        .set_vertex_bytes(1,  num_values as u64 * 4, data.as_ptr() as _);
     }
 
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
