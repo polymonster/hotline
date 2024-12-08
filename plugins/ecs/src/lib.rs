@@ -98,7 +98,7 @@ pub fn camera_constants_from_orbit(rot: &Vec3f, focus: &Vec3f, zoom: f32, aspect
     let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
     // translation matrix
     let translate_zoom = Mat4f::from_translation(vec3f(0.0, 0.0, zoom));
-    let translate_focus = Mat4f::from_translation(*focus);        
+    let translate_focus = Mat4f::from_translation(*focus);
     // build view / proj matrix
     let view = translate_focus * mat_rot * translate_zoom;
     let pos = view.get_column(3);
@@ -241,7 +241,7 @@ fn update_camera_fly(
 
     // generate proj matrix
     let aspect = pmfx.get_window_aspect("main_dock");
-    
+
     // assign view proj
     let constants = camera_constants_from_fly(&position, &camera.rot, aspect, 60.0);
     view_proj.0 = constants.view_projection_matrix;
@@ -255,9 +255,9 @@ fn update_cameras(
     time: Res<TimeRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {
-    
+
     pmfx.get_world_buffers_mut().camera.clear();
-    
+
     for (name, mut position, mut camera, mut view_proj) in &mut query {
         match camera.camera_type {
             CameraType::Fly => {
@@ -305,7 +305,7 @@ impl BevyPlugin {
                 }
             }
         }
-        
+
         // deprecated using get_system function
         for (lib_name, lib) in &client.libs {
             unsafe {
@@ -408,7 +408,7 @@ impl BevyPlugin {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
-        
+
         // schedule
         client.imgui.separator();
         client.imgui.text("Schedule");
@@ -428,13 +428,13 @@ impl BevyPlugin {
 
         if self.errors.contains_key(graph) {
             client.imgui.colour_text(
-                &format!("Render Graph: {}: {}.", "error", graph), 
+                &format!("Render Graph: {}: {}.", "error", graph),
                 error_col
             );
 
             for err in &self.errors[graph] {
                 client.imgui.colour_text(
-                    &format!("  {}", err), 
+                    &format!("  {}", err),
                     error_col
                 );
             }
@@ -446,7 +446,7 @@ impl BevyPlugin {
                 render_function_names.push(format!("{}: {}", v.0, v.1));
             }
             self.status_ui_category(
-                &mut client.imgui, 
+                &mut client.imgui,
                 &format!("Render Graph ({}):", graph),
                 &render_function_names
             );
@@ -529,7 +529,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // dynamically change demos and lookup infos in other libs
         let schedule_info = self.get_demo_schedule_info(&mut client);
-        
+
         // get schedule or use default and warn the user
         self.schedule_info = if let Some(info) = schedule_info {
             info
@@ -576,7 +576,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // hook in updates funcs
         for func_name in &info.update {
-            println!("adding {}", func_name);
             if let Some(func) = self.get_system_function(func_name, "", &client) {
                 self.schedule.add_systems(func);
             }
@@ -633,7 +632,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            let (cam, vp, pos) = self.setup_camera();           
+            let (cam, vp, pos) = self.setup_camera();
             self.world.spawn((
                 ViewProjectionMatrix(vp),
                 pos,
@@ -723,7 +722,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
             // -/+ to toggle through demos, ignore test missing and test failing demos
             let wrap_len = demo_list.len();
-            
+
             let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
             if let Some(index) = cur_demo_index {
                 let keys = client.app.get_keys_pressed();
