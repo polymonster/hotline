@@ -105,19 +105,19 @@ impl Window {
 }
 
 fn as_hwnd(handle: usize) -> HWND {
-    unsafe { std::mem::transmute(handle) } 
+    unsafe { std::mem::transmute(handle) }
 }
 
 fn as_hinstance(handle: usize) -> HINSTANCE {
-    unsafe { std::mem::transmute(handle) } 
+    unsafe { std::mem::transmute(handle) }
 }
 
 fn hwnd_usize(h: HWND) -> usize {
-    unsafe { std::mem::transmute(h.0) } 
+    unsafe { std::mem::transmute(h.0) }
 }
 
 fn hinstance_usize(h: HINSTANCE) -> usize {
-    unsafe { std::mem::transmute(h.0) } 
+    unsafe { std::mem::transmute(h.0) }
 }
 
 impl Drop for Window {
@@ -302,17 +302,17 @@ impl App {
 
         // debounce normal keys
         debounce_keys(
-            256, 
-            &mut self.proc_data.key_down, 
-            &mut self.proc_data.key_press, 
+            256,
+            &mut self.proc_data.key_down,
+            &mut self.proc_data.key_press,
             &mut self.proc_data.key_debounce
         );
 
         // debounce sys keys
         debounce_keys(
-            super::SysKey::Count as usize, 
-            &mut self.proc_data.sys_key_down, 
-            &mut self.proc_data.sys_key_press, 
+            super::SysKey::Count as usize,
+            &mut self.proc_data.sys_key_down,
+            &mut self.proc_data.sys_key_press,
             &mut self.proc_data.sys_key_debounce
         );
     }
@@ -404,11 +404,11 @@ impl App {
                 }
                 WM_KEYDOWN | WM_KEYUP | WM_SYSKEYDOWN | WM_SYSKEYUP => {
                     let down = (message == WM_KEYDOWN) || (message == WM_SYSKEYDOWN);
-    
+
                     if wparam.0 < 256 {
                         proc_data.key_down[wparam.0] = down;
                     }
-    
+
                     let vk = VIRTUAL_KEY(wparam.0 as u16);
                     match vk {
                         VK_CONTROL => {
@@ -422,7 +422,7 @@ impl App {
                         }
                         _ => {}
                     }
-    
+
                     LRESULT(0)
                 }
                 _ => DefWindowProcA(window, message, wparam, lparam),
@@ -452,7 +452,7 @@ impl App {
             _ => self.wndproc(window, message, wparam, lparam),
         }
     }
-    
+
     fn add_event(&mut self, window: HWND, flags: super::WindowEventFlags) {
         let iwindow = hwnd_usize(window);
         if let Some(window_events) = self.events.get_mut(&iwindow) {
@@ -463,7 +463,7 @@ impl App {
             self.events.insert(iwindow, flags);
         }
     }
-    
+
     fn imgui_wndproc(
         &mut self,
         window: HWND,
@@ -497,7 +497,7 @@ impl App {
             }
         }
     }
-    
+
     fn release_capture(&mut self, window: HWND) {
         unsafe {
             let any_down = self.proc_data.mouse_down.iter().any(|v| v == &true);
@@ -576,7 +576,7 @@ impl super::App for App {
         unsafe {
             let ws = to_win32_dw_style(&info.style);
             let wsex = to_win32_dw_ex_style(&info.style);
-            
+
             let rect = adjust_window_rect(&info.rect, ws, wsex);
 
             let parent_hwnd = if info.parent_handle.is_some() {
@@ -631,13 +631,13 @@ impl super::App for App {
         unsafe {
             let mut msg = MSG::default();
             let mut quit = false;
-            
+
             self.update_input();
             loop {
                 if PeekMessageA(&mut msg, None, 0, 0, PM_REMOVE).into() {
                     let _ = TranslateMessage(&msg);
                     let _ = DispatchMessageA(&msg);
-                    
+
                     // handle wnd proc on self functions, to avoid need for static mutable state
                     if let Some(hwnd_flags) = self.hwnd_flags.get(&hwnd_usize(msg.hwnd)) {
                         if hwnd_flags.contains(super::WindowStyleFlags::IMGUI) {
@@ -652,7 +652,7 @@ impl super::App for App {
                         quit = true;
                         break;
                     }
-                } 
+                }
                 else {
                     break;
                 }
@@ -719,7 +719,7 @@ impl super::App for App {
 
     fn get_input_enabled(&self) -> (bool, bool) {
         (self.keyboard_input_enabled, self.mouse_input_enabled)
-    }   
+    }
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
@@ -785,7 +785,7 @@ impl super::App for App {
                 }
                 open_dialog.SetFileTypes(&specs)?;
             }
-            
+
             open_dialog.Show(HWND::default())?;
             let results : IShellItemArray = open_dialog.GetResults()?;
 
@@ -806,7 +806,7 @@ impl super::App for App {
         unsafe {
             let chwnd = GetConsoleWindow();
             let mut rect = RECT::default();
-            GetWindowRect(chwnd, &mut rect).expect("hotline_rs::win32::error: call to GetWindowRect failed");
+            let _ = GetWindowRect(chwnd, &mut rect);
             super::Rect::<i32> {
                 x: rect.left,
                 y: rect.top,
@@ -1235,7 +1235,7 @@ extern "system" fn enum_func(
         let dpi_scale =
             if GetDpiForMonitor(monitor, MDT_EFFECTIVE_DPI, &mut xdpi, &mut ydpi).is_ok() {
                 (xdpi as f32) / 96.0
-            } 
+            }
             else {
                 1.0
             };
