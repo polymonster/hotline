@@ -7,6 +7,7 @@ const GPU_VALIDATION : bool = false;
 use crate::os::Window;
 use crate::os::NativeHandle;
 
+// use super::Shader;
 use super::*;
 use super::Device as SuperDevice;
 use super::ReadBackRequest as SuperReadBackRequest;
@@ -20,6 +21,7 @@ use std::ffi::{CStr, CString, c_void};
 use std::result;
 use std::str;
 use std::sync::Mutex;
+use std::pin::Pin;
 
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
@@ -328,6 +330,10 @@ pub struct ComputePipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
     lookup: RootSignatureLookup,
+}
+
+#[derive(Clone)]
+pub struct RaytracingPipeline {
 }
 
 const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -1626,6 +1632,7 @@ impl super::Device for Device {
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
     type ComputePipeline = ComputePipeline;
+    type RaytracingPipeline = RaytracingPipeline;
     type Heap = Heap;
     type QueryHeap = QueryHeap;
     type CommandSignature = CommandSignature;
@@ -2951,6 +2958,92 @@ impl super::Device for Device {
                 lookup: sig_lookup
             })
         }
+    }
+
+    fn create_raytracing_pipeline(
+        &self,
+        info: &super::RaytracingPipelineInfo<Self>,
+    ) -> result::Result<RaytracingPipeline, super::Error> {
+
+        let mut subobjects = Vec::new();
+
+        // create dxil lib
+        /*
+        let mut libs = Vec::new();
+        let mut make_subobject = |shader : &Option<(&Shader, &str)>| {
+            if let Some((shader, entry)) = &shader {
+                let dxil_library = D3D12_DXIL_LIBRARY_DESC {
+                    DXILLibrary: D3D12_SHADER_BYTECODE {
+                        pShaderBytecode: shader.get_buffer_pointer(),
+                        BytecodeLength: shader.get_buffer_size(),
+                    },
+                    NumExports: 1,
+                    pExports: &D3D12_EXPORT_DESC {
+                        Name: windows_core::PCWSTR(entry.as_ptr() as *const _),
+                        ExportToRename: windows_core::PCWSTR(std::ptr::null()),
+                        Flags: D3D12_EXPORT_FLAGS(0),
+                    },
+                    ..Default::default()
+                };
+                libs.push(dxil_library);
+                
+                let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
+                    Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
+                    pDesc: &libs.last().unwrap() as *const _ as *const _,
+                };
+                subobjects.push(dxil_library_subobject);
+            }
+        };
+        make_subobject(&info.raygen_shader);
+        make_subobject(&info.closest_hit_shader);
+        make_subobject(&info.miss_shader);
+        */
+
+        /*
+        if let Some((shader, entry)) = &info.raygen_shader {
+
+        }
+        */
+
+        let (shader, entry) = info.raygen_shader.unwrap();
+        let wide_name = os::win32::string_to_wide(entry.to_string());
+
+        let dxil_library = D3D12_DXIL_LIBRARY_DESC {
+            DXILLibrary: D3D12_SHADER_BYTECODE {
+                pShaderBytecode: shader.get_buffer_pointer(),
+                BytecodeLength: shader.get_buffer_size(),
+            },
+            NumExports: 1,
+            pExports: &D3D12_EXPORT_DESC {
+                Name: windows_core::PCWSTR(wide_name.as_ptr() as *const _),
+                ExportToRename: windows_core::PCWSTR(std::ptr::null()),
+                Flags: D3D12_EXPORT_FLAGS(0),
+            },
+            ..Default::default()
+        };
+        
+        let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
+            Type: D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG,
+            pDesc: &dxil_library as *const _ as *const _,
+        };
+        subobjects.push(dxil_library_subobject);
+
+        // create a state object descriptor
+        let state_object_desc = D3D12_STATE_OBJECT_DESC {
+            Type: D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE,
+            NumSubobjects: subobjects.len() as u32,
+            pSubobjects: subobjects.as_ptr() as *const _,
+        };
+
+        unsafe {
+            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
+            let state_object: ID3D12StateObject = device5.CreateStateObject(
+                &state_object_desc,
+            )?;
+        }
+
+        Ok(RaytracingPipeline {
+        })
     }
 
     fn create_indirect_render_command<T: Sized>(
@@ -4333,6 +4426,8 @@ unsafe impl Send for RenderPipeline {}
 unsafe impl Sync for RenderPipeline {}
 unsafe impl Send for ComputePipeline {}
 unsafe impl Sync for ComputePipeline {}
+unsafe impl Send for RaytracingPipeline {}
+unsafe impl Sync for RaytracingPipeline {}
 unsafe impl Send for Shader {}
 unsafe impl Sync for Shader {}
 unsafe impl Send for CmdBuf {}
@@ -4349,4 +4444,5 @@ unsafe impl Send for CommandSignature {}
 unsafe impl Sync for CommandSignature {}
 
 impl super::ComputePipeline<Device> for ComputePipeline {}
+impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}

@@ -282,6 +282,9 @@ pub enum ShaderType {
     Vertex,
     Fragment,
     Compute,
+    RayGen,
+    ClosestHit,
+    Miss
 }
 
 bitflags! {
@@ -740,6 +743,14 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
     pub pipeline_layout: PipelineLayout,
 }
 
+
+/// Information to create a raytracing pipeline through `Device::create_raytracing_pipeline`
+pub struct RaytracingPipelineInfo<'stack, D: Device> {
+    pub raygen_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub closest_hit_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub miss_shader: Option<(&'stack D::Shader, &'stack str)>,
+}
+
 /// Information to create a pipeline through `Device::create_texture`.
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
@@ -908,6 +919,9 @@ pub trait RenderPass<D: Device>: Send + Sync  {
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
+/// An opaque compute pipeline type..
+pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
+
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
     /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
@@ -1043,6 +1057,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Heap: Heap<Self>;
     type QueryHeap: QueryHeap<Self>;
     type ComputePipeline: ComputePipeline<Self>;
+    type RaytracingPipeline: RaytracingPipeline<Self>;
     type CommandSignature: CommandSignature<Self>;
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
@@ -1105,6 +1120,11 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
+    /// Create a new raytracing pipeline state object from `RaytracingPipelineInfo`
+    fn create_raytracing_pipeline(
+        &self,
+        info: &RaytracingPipelineInfo<Self>,
+    ) -> Result<Self::RaytracingPipeline, Error>;
     /// Creat a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
         &mut self, 

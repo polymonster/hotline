@@ -138,6 +138,20 @@
         }
     }
 
+    rt_shaders: {
+        jsn_vars: {
+            output_dir: "target/data/shaders"
+        }
+        shell: {
+            commands: [
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyRaygenShader -Fo ${output_dir}/raygen.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyClosestHitShader -Fo ${output_dir}/closesthit.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyMissShader -Fo ${output_dir}/miss.cso -I . shaders/raytracing_example.hlsl"
+            ]
+        }
+    }
+
+
     // win32 debug client, plugins and data
     win32-debug(win32-data, hotline): {
         copy: {
