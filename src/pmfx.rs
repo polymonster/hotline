@@ -2,6 +2,8 @@
 
 use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
+use crate::gfx::RaytracingPipelineInfo;
+
 use crate::os;
 use crate::gfx;
 use crate::primitives;
@@ -335,6 +337,12 @@ struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
     cs: Option<String>,
+    rg: Option<String>,
+    ch: Option<String>,
+    ah: Option<String>,
+    mi: Option<String>,
+    is: Option<String>,
+    ca: Option<String>,
     numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
@@ -2061,6 +2069,41 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     let mask = permutation.parse().unwrap();
                     permutations.insert(mask, (pipeline.hash, pso));
                 }
+            }
+
+            Ok(())
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+            })
+        }
+    }
+
+    // Create a raytracing pipeline define in pmfx, with rg, ch, ah or mi shader stages
+    pub fn create_raytracing_pipeline(&mut self, device: &D, pipeline_name: &str) -> Result<(), super::Error> {
+        if self.pmfx.pipelines.contains_key(pipeline_name) {
+            // first create shaders if necessary
+            let folder = self.pmfx_folders.get(pipeline_name)
+                .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+            
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
+                self.create_shader(device, Path::new(&folder), &pipeline.rg)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.ch)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.ah)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.mi)?;
+            }
+
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                let raytracing_pipeline = device.create_raytracing_pipeline(&RaytracingPipelineInfo{
+                    raygen_shader: if let Some(rg) = self.get_shader(&pipeline.rg) { Some((rg, "MyRaygenShader")) } else { None },
+                    any_hit_shader: None,
+                    closest_hit_shader: None,
+                    miss_shader: None,
+                    intersection_shader: None,
+                    callable_shader: None,
+                    pipeline_layout: pipeline.pipeline_layout.clone()
+                });
             }
 
             Ok(())

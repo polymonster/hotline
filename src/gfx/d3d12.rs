@@ -2967,47 +2967,35 @@ impl super::Device for Device {
 
         let mut subobjects = Vec::new();
 
-        // create dxil lib
-        /*
-        let mut libs = Vec::new();
-        let mut make_subobject = |shader : &Option<(&Shader, &str)>| {
-            if let Some((shader, entry)) = &shader {
-                let dxil_library = D3D12_DXIL_LIBRARY_DESC {
-                    DXILLibrary: D3D12_SHADER_BYTECODE {
-                        pShaderBytecode: shader.get_buffer_pointer(),
-                        BytecodeLength: shader.get_buffer_size(),
-                    },
-                    NumExports: 1,
-                    pExports: &D3D12_EXPORT_DESC {
-                        Name: windows_core::PCWSTR(entry.as_ptr() as *const _),
-                        ExportToRename: windows_core::PCWSTR(std::ptr::null()),
-                        Flags: D3D12_EXPORT_FLAGS(0),
-                    },
-                    ..Default::default()
-                };
-                libs.push(dxil_library);
-                
-                let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
-                    Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
-                    pDesc: &libs.last().unwrap() as *const _ as *const _,
-                };
-                subobjects.push(dxil_library_subobject);
-            }
-        };
-        make_subobject(&info.raygen_shader);
-        make_subobject(&info.closest_hit_shader);
-        make_subobject(&info.miss_shader);
-        */
-
-        /*
-        if let Some((shader, entry)) = &info.raygen_shader {
-
-        }
-        */
-
         let (shader, entry) = info.raygen_shader.unwrap();
         let wide_name = os::win32::string_to_wide(entry.to_string());
 
+        // TODO: triangle hit group
+        
+        // rt shader config
+        let max_payload_size: u32 = 64; // Max size for ray payload (in bytes)
+        let max_attribute_size: u32 = 32; // Max size for intersection attributes (in bytes)
+        let shader_config = D3D12_RAYTRACING_SHADER_CONFIG {
+            MaxPayloadSizeInBytes: max_payload_size,
+            MaxAttributeSizeInBytes: max_attribute_size,
+        };
+        let shader_config_subobject = D3D12_STATE_SUBOBJECT {
+            Type: D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG,
+            pDesc: &shader_config as *const _ as *const _,
+        };
+        subobjects.push(shader_config_subobject);
+
+        // pipeline config
+        let pipeline_config = D3D12_RAYTRACING_PIPELINE_CONFIG {
+            MaxTraceRecursionDepth: 1, // TODO: parameterize
+        };
+        let pipeline_config_subobject = D3D12_STATE_SUBOBJECT {
+            Type: D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_PIPELINE_CONFIG,
+            pDesc: &pipeline_config as *const _ as *const _,
+        };
+        subobjects.push(pipeline_config_subobject);
+
+        // dxil library
         let dxil_library = D3D12_DXIL_LIBRARY_DESC {
             DXILLibrary: D3D12_SHADER_BYTECODE {
                 pShaderBytecode: shader.get_buffer_pointer(),
@@ -3021,12 +3009,22 @@ impl super::Device for Device {
             },
             ..Default::default()
         };
-        
         let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
-            Type: D3D12_STATE_SUBOBJECT_TYPE_RAYTRACING_SHADER_CONFIG,
+            Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
             pDesc: &dxil_library as *const _ as *const _,
         };
         subobjects.push(dxil_library_subobject);
+
+        // root signature, for now we use a global one per pipeline
+        let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
+            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature))
+        };
+        let global_root_signature_subobject = D3D12_STATE_SUBOBJECT {
+            Type: D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE,
+            pDesc: &global_root_signature as *const _ as *const _,
+        };
+        subobjects.push(global_root_signature_subobject);
 
         // create a state object descriptor
         let state_object_desc = D3D12_STATE_OBJECT_DESC {
