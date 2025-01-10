@@ -283,8 +283,11 @@ pub enum ShaderType {
     Fragment,
     Compute,
     RayGen,
+    AnyHit,
     ClosestHit,
-    Miss
+    Miss,
+    Intersection,
+    Callable
 }
 
 bitflags! {
@@ -747,8 +750,12 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
 /// Information to create a raytracing pipeline through `Device::create_raytracing_pipeline`
 pub struct RaytracingPipelineInfo<'stack, D: Device> {
     pub raygen_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub any_hit_shader: Option<(&'stack D::Shader, &'stack str)>,
     pub closest_hit_shader: Option<(&'stack D::Shader, &'stack str)>,
     pub miss_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub intersection_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub callable_shader: Option<(&'stack D::Shader, &'stack str)>,
+    pub pipeline_layout: PipelineLayout,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.

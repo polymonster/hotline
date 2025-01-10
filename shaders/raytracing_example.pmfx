@@ -1,0 +1,13 @@
+{
+    include: [
+        "raytracing_example.hlsl"
+    ]
+
+    pipelines: {
+        raytracing: {
+            rg: "MyRaygenShader"
+            ch: "MyClosestHitShader"
+            mi: "MyMissShader"
+        }
+    }
+}

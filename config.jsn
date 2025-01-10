@@ -126,7 +126,7 @@
             explicit: true
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_0"
+                "-shader_version 6_3"
                 "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
@@ -147,6 +147,7 @@
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyRaygenShader -Fo ${output_dir}/raygen.cso -I . shaders/raytracing_example.hlsl"
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyClosestHitShader -Fo ${output_dir}/closesthit.cso -I . shaders/raytracing_example.hlsl"
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyMissShader -Fo ${output_dir}/miss.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -Fo ${output_dir}/lib.cso -I . shaders/raytracing_example.hlsl"
             ]
         }
     }
