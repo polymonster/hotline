@@ -56,36 +56,10 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     let mut cmd = device.create_cmd_buf(num_buffers);
 
-
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut device, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/raytracing_example"))?;
     pmfx.create_raytracing_pipeline(&device, "raytracing");
 
-    /*
-    // create raytracing shaders
-    let raygen_shader = device.create_shader(&gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::RayGen,
-        compile_info: None
-    }, &fs::read(hotline_rs::get_data_path("shaders/raygen.cso"))?)?;
-
-    let closest_hit_shader = device.create_shader(&gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::ClosestHit,
-        compile_info: None
-    }, &fs::read(hotline_rs::get_data_path("shaders/closesthit.cso"))?)?;
-
-    let miss_shader = device.create_shader(&gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Miss,
-        compile_info: None
-    }, &fs::read(hotline_rs::get_data_path("shaders/miss.cso"))?)?;
-
-    // create raytracing pipeline
-    let raytracing_pipeline = device.create_raytracing_pipeline(&RaytracingPipelineInfo{
-        raygen_shader: Some((&raygen_shader, "MyRaygenShader")),
-        closest_hit_shader: None, //Some((&closest_hit_shader, "MyClosestHitShader")),
-        miss_shader: None, // Some((&miss_shader, "MyMissShader")),
-    });
-    */
-    
     while app.run() {
         // update window and swap chain
         window.update(&mut app);
