@@ -2967,9 +2967,6 @@ impl super::Device for Device {
 
         let mut subobjects = Vec::new();
 
-        let (shader, entry) = info.raygen_shader.unwrap();
-        let wide_name = os::win32::string_to_wide(entry.to_string());
-
         // TODO: triangle hit group
         
         // rt shader config
@@ -2995,25 +2992,34 @@ impl super::Device for Device {
         };
         subobjects.push(pipeline_config_subobject);
 
-        // dxil library
-        let dxil_library = D3D12_DXIL_LIBRARY_DESC {
-            DXILLibrary: D3D12_SHADER_BYTECODE {
-                pShaderBytecode: shader.get_buffer_pointer(),
-                BytecodeLength: shader.get_buffer_size(),
-            },
-            NumExports: 1,
-            pExports: &D3D12_EXPORT_DESC {
-                Name: windows_core::PCWSTR(wide_name.as_ptr() as *const _),
-                ExportToRename: windows_core::PCWSTR(std::ptr::null()),
-                Flags: D3D12_EXPORT_FLAGS(0),
-            },
-            ..Default::default()
-        };
-        let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
-            Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
-            pDesc: &dxil_library as *const _ as *const _,
-        };
-        subobjects.push(dxil_library_subobject);
+        // widen entry point strings
+        let wide_entry_points: Vec<_> = info.shaders
+            .iter()
+            .map(|x| os::win32::string_to_wide(x.entry_point.clone()))
+            .collect();
+
+        // dxil library shaders
+        for (index, shader) in info.shaders.iter().enumerate() {
+            // dxil library
+            let dxil_library = D3D12_DXIL_LIBRARY_DESC {
+                DXILLibrary: D3D12_SHADER_BYTECODE {
+                    pShaderBytecode: shader.shader.get_buffer_pointer(),
+                    BytecodeLength: shader.shader.get_buffer_size(),
+                },
+                NumExports: 1,
+                pExports: &D3D12_EXPORT_DESC {
+                    Name: windows_core::PCWSTR(wide_entry_points[index].as_ptr() as *const _),
+                    ExportToRename: windows_core::PCWSTR(std::ptr::null()),
+                    Flags: D3D12_EXPORT_FLAGS(0),
+                },
+                ..Default::default()
+            };
+            let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
+                Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
+                pDesc: &dxil_library as *const _ as *const _,
+            };
+            subobjects.push(dxil_library_subobject);
+        }
 
         // root signature, for now we use a global one per pipeline
         let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
