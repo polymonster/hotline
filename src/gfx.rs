@@ -746,15 +746,23 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
     pub pipeline_layout: PipelineLayout,
 }
 
+pub struct RaytracingShader<'stack, D: Device> {
+    pub shader: &'stack D::Shader,
+    pub entry_point: String,
+    pub stage: ShaderType
+}
 
 /// Information to create a raytracing pipeline through `Device::create_raytracing_pipeline`
 pub struct RaytracingPipelineInfo<'stack, D: Device> {
-    pub raygen_shader: Option<(&'stack D::Shader, &'stack str)>,
-    pub any_hit_shader: Option<(&'stack D::Shader, &'stack str)>,
-    pub closest_hit_shader: Option<(&'stack D::Shader, &'stack str)>,
-    pub miss_shader: Option<(&'stack D::Shader, &'stack str)>,
-    pub intersection_shader: Option<(&'stack D::Shader, &'stack str)>,
-    pub callable_shader: Option<(&'stack D::Shader, &'stack str)>,
+
+    //pub raygen_shader: Option<(&'stack D::Shader, String)>,
+    //pub any_hit_shader: Option<(&'stack D::Shader, String)>,
+    //pub closest_hit_shader: Option<(&'stack D::Shader, String)>,
+    //pub miss_shader: Option<(&'stack D::Shader, String)>,
+    //pub intersection_shader: Option<(&'stack D::Shader, String)>,
+    //pub callable_shader: Option<(&'stack D::Shader, String)>,
+
+    pub shaders: Vec<RaytracingShader<'stack, D>>,
     pub pipeline_layout: PipelineLayout,
 }
 

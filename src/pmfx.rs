@@ -937,6 +937,18 @@ fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8
     }
 }
 
+fn get_shader_entry_point_name(shader_name: Option<String>) -> Option<String> {
+    if let Some(shader_name) = shader_name {
+        Path::new(&shader_name)
+            .file_stem()
+            .and_then(|os_str| os_str.to_str())
+            .map(|s| s.to_string())
+    }
+    else {
+        None
+    }
+}
+
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
     pub fn create(device: &mut D, shader_heap_size: usize) -> Self {
@@ -2092,16 +2104,35 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_shader(device, Path::new(&folder), &pipeline.ch)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.ah)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.mi)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.is)?;
+                self.create_shader(device, Path::new(&folder), &pipeline.ca)?;
             }
 
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+
+                // build shader info vector
+                let stages = vec![
+                    (pipeline.rg, gfx::ShaderType::RayGen), 
+                    (pipeline.ch, gfx::ShaderType::ClosestHit), 
+                    (pipeline.ah, gfx::ShaderType::AnyHit), 
+                    (pipeline.mi, gfx::ShaderType::Miss), 
+                    (pipeline.is, gfx::ShaderType::Intersection), 
+                    (pipeline.ca, gfx::ShaderType::Callable), 
+                ];
+
+                let shaders = stages
+                    .iter()
+                    .filter(|x| x.0.is_some())
+                    .map(|x| (x.0.as_ref().unwrap(), x.1))
+                    .map(|x| gfx::RaytracingShader {
+                        shader: self.get_shader(&Some(x.0.to_string())).unwrap(),
+                        entry_point: get_shader_entry_point_name(Some(x.0.to_string())).unwrap(),
+                        stage: x.1
+                    })
+                    .collect();
+
                 let raytracing_pipeline = device.create_raytracing_pipeline(&RaytracingPipelineInfo{
-                    raygen_shader: if let Some(rg) = self.get_shader(&pipeline.rg) { Some((rg, "MyRaygenShader")) } else { None },
-                    any_hit_shader: None,
-                    closest_hit_shader: None,
-                    miss_shader: None,
-                    intersection_shader: None,
-                    callable_shader: None,
+                    shaders,
                     pipeline_layout: pipeline.pipeline_layout.clone()
                 });
             }
