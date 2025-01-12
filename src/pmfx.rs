@@ -337,12 +337,8 @@ struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
     cs: Option<String>,
-    rg: Option<String>,
-    ch: Option<String>,
-    ah: Option<String>,
-    mi: Option<String>,
-    is: Option<String>,
-    ca: Option<String>,
+    lib: Option<Vec<String>>,
+    hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
     numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
@@ -2098,42 +2094,29 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
                 .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
-            
+
+            // for each permutation compile its lib shaders
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
-                self.create_shader(device, Path::new(&folder), &pipeline.rg)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.ch)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.ah)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.mi)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.is)?;
-                self.create_shader(device, Path::new(&folder), &pipeline.ca)?;
+                let lib = pipeline.lib.expect("hotline_rs::pmfx:: ray tracing pipeline expects a lib member with a set of raytacing shaders");
+                for shader in lib {
+                    self.create_shader(device, Path::new(&folder), &Some(shader))?;
+                }
             }
-
+            
+            // for each permutation create a pipeline
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
-
-                // build shader info vector
-                let stages = vec![
-                    (pipeline.rg, gfx::ShaderType::RayGen), 
-                    (pipeline.ch, gfx::ShaderType::ClosestHit), 
-                    (pipeline.ah, gfx::ShaderType::AnyHit), 
-                    (pipeline.mi, gfx::ShaderType::Miss), 
-                    (pipeline.is, gfx::ShaderType::Intersection), 
-                    (pipeline.ca, gfx::ShaderType::Callable), 
-                ];
-
-                let shaders = stages
+                let shaders = pipeline.lib.expect("hotline_rs::pmfx:: ray tracing pipeline expects a lib member with a set of raytacing shaders")
                     .iter()
-                    .filter(|x| x.0.is_some())
-                    .map(|x| (x.0.as_ref().unwrap(), x.1))
                     .map(|x| gfx::RaytracingShader {
-                        shader: self.get_shader(&Some(x.0.to_string())).unwrap(),
-                        entry_point: get_shader_entry_point_name(Some(x.0.to_string())).unwrap(),
-                        stage: x.1
+                        shader: self.get_shader(&Some(x.to_string())).unwrap(),
+                        entry_point: get_shader_entry_point_name(Some(x.to_string())).unwrap(),
                     })
                     .collect();
 
                 let raytracing_pipeline = device.create_raytracing_pipeline(&RaytracingPipelineInfo{
                     shaders,
-                    pipeline_layout: pipeline.pipeline_layout.clone()
+                    pipeline_layout: pipeline.pipeline_layout.clone(),
+                    hit_groups: pipeline.hit_groups
                 });
             }
 
