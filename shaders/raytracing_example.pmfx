@@ -5,9 +5,14 @@
 
     pipelines: {
         raytracing: {
-            rg: "MyRaygenShader"
-            ch: "MyClosestHitShader"
-            mi: "MyMissShader"
+            lib: ["MyRaygenShader", "MyClosestHitShader", "MyMissShader"]
+            hit_groups: [
+                {
+                    name: "MyHitGroup"
+                    closest_hit: "MyClosestHitShader"
+                    geometry: Triangles
+                }
+            ]
         }
     }
 }
