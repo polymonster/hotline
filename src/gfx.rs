@@ -747,22 +747,31 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
 }
 
 pub struct RaytracingShader<'stack, D: Device> {
+    /// Reference to shader
     pub shader: &'stack D::Shader,
-    pub entry_point: String,
-    pub stage: ShaderType
+    /// Entry point name within shader
+    pub entry_point: String
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub enum RaytracingHitGeometry {
+    Triangles,
+    ProceduralPrimitive
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RaytracingHitGroup {
+    pub name: String,
+    pub any_hit: Option<String>,
+    pub closest_hit: Option<String>,
+    pub intersection: Option<String>,
+    pub geometry: RaytracingHitGeometry
 }
 
 /// Information to create a raytracing pipeline through `Device::create_raytracing_pipeline`
 pub struct RaytracingPipelineInfo<'stack, D: Device> {
-
-    //pub raygen_shader: Option<(&'stack D::Shader, String)>,
-    //pub any_hit_shader: Option<(&'stack D::Shader, String)>,
-    //pub closest_hit_shader: Option<(&'stack D::Shader, String)>,
-    //pub miss_shader: Option<(&'stack D::Shader, String)>,
-    //pub intersection_shader: Option<(&'stack D::Shader, String)>,
-    //pub callable_shader: Option<(&'stack D::Shader, String)>,
-
     pub shaders: Vec<RaytracingShader<'stack, D>>,
+    pub hit_groups: Option<Vec<RaytracingHitGroup>>,
     pub pipeline_layout: PipelineLayout,
 }
 

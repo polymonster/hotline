@@ -756,7 +756,14 @@ const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) ->
         IndirectArgumentType::UnorderedAccess => D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW,
         IndirectArgumentType::ShaderResource => D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW,
     }
-} 
+}
+
+const fn to_d3d12_hit_group_type(op: &super::RaytracingHitGeometry) -> D3D12_HIT_GROUP_TYPE {
+    match op {
+        super::RaytracingHitGeometry::Triangles => D3D12_HIT_GROUP_TYPE_TRIANGLES,
+        super::RaytracingHitGeometry::ProceduralPrimitive => D3D12_HIT_GROUP_TYPE_PROCEDURAL_PRIMITIVE,
+    }
+}
 
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
@@ -2966,10 +2973,8 @@ impl super::Device for Device {
     ) -> result::Result<RaytracingPipeline, super::Error> {
 
         let mut subobjects = Vec::new();
-
-        // TODO: triangle hit group
         
-        // rt shader config
+        // rt shader config // TODO: move consts into info struct
         let max_payload_size: u32 = 64; // Max size for ray payload (in bytes)
         let max_attribute_size: u32 = 32; // Max size for intersection attributes (in bytes)
         let shader_config = D3D12_RAYTRACING_SHADER_CONFIG {
@@ -3031,6 +3036,37 @@ impl super::Device for Device {
             pDesc: &global_root_signature as *const _ as *const _,
         };
         subobjects.push(global_root_signature_subobject);
+
+        // hitgroup config
+        let mut wide_hit_group_strings = Vec::new();
+        if let Some(hit_groups) = &info.hit_groups {
+            for group in hit_groups {
+                // widen strings
+                let vpos = wide_hit_group_strings.len();
+                wide_hit_group_strings.push(os::win32::string_to_wide(group.name.clone()));
+                wide_hit_group_strings.push(if let Some(entry) = group.any_hit.as_ref() { 
+                    os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
+                wide_hit_group_strings.push(if let Some(entry) = group.closest_hit.as_ref() { 
+                    os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
+                wide_hit_group_strings.push(if let Some(entry) = group.intersection.as_ref() { 
+                    os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
+                // create desc
+                let hit_group_desc = D3D12_HIT_GROUP_DESC {
+                    Type: to_d3d12_hit_group_type(&group.geometry),
+                    HitGroupExport: windows_core::PCWSTR(wide_hit_group_strings[vpos].as_ptr()),
+                    //AnyHitShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+1].as_ptr()),
+                    ClosestHitShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+2].as_ptr()),
+                    //IntersectionShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+3].as_ptr()),
+                    AnyHitShaderImport: windows_core::PCWSTR::null(),
+                    IntersectionShaderImport: windows_core::PCWSTR::null(),
+                };
+                let hit_group_subobject = D3D12_STATE_SUBOBJECT {
+                    Type: D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP,
+                    pDesc: &hit_group_desc as *const _ as *const _,
+                };
+                subobjects.push(hit_group_subobject);
+            }
+        }
 
         // create a state object descriptor
         let state_object_desc = D3D12_STATE_OBJECT_DESC {
