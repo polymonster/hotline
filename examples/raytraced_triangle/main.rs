@@ -58,42 +58,8 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut device, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/raytracing_example"))?;
-
-    // TODO: reconfigure pmfx data
    
-    // TODO: hit group parms from PMFX? +1
-    // .. can have multiple shaders of each type
-    // .. import multiple shader stages per hit group (ch, ah, is)
-    // .. export multiple hit groups
-
-    /* ie: 
-    {
-        "hitGroups": [
-            {
-                "name": "SimpleHitGroup",
-                "shaders": {
-                    "closestHit": "ClosestHitShader"
-                }
-                },
-                {
-                "name": "TransparentHitGroup",
-                "shaders": {
-                    "closestHit": "ClosestHitShader",
-                    "anyHit": "AnyHitShader"
-                }
-                },
-                {
-                "name": "ProceduralHitGroup",
-                "shaders": {
-                    "closestHit": "ClosestHitShader",
-                    "intersection": "IntersectionShader"
-                }
-            }
-        ]
-        }
-    */
-   
-    pmfx.create_raytracing_pipeline(&device, "raytracing");
+    pmfx.create_raytracing_pipeline(&device, "raytracing")?;
 
     // TODO: create ray tracing acceleration structures +0
     // TODO: shader tables +2
