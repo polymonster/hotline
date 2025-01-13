@@ -2117,7 +2117,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     shaders,
                     pipeline_layout: pipeline.pipeline_layout.clone(),
                     hit_groups: pipeline.hit_groups
-                });
+                })?;
             }
 
             Ok(())

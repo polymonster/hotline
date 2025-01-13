@@ -334,6 +334,7 @@ pub struct ComputePipeline {
 
 #[derive(Clone)]
 pub struct RaytracingPipeline {
+    state_object: ID3D12StateObject
 }
 
 const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -3003,6 +3004,8 @@ impl super::Device for Device {
             .map(|x| os::win32::string_to_wide(x.entry_point.clone()))
             .collect();
 
+        let mut library_descs = Vec::new();
+
         // dxil library shaders
         for (index, shader) in info.shaders.iter().enumerate() {
             // dxil library
@@ -3011,17 +3014,12 @@ impl super::Device for Device {
                     pShaderBytecode: shader.shader.get_buffer_pointer(),
                     BytecodeLength: shader.shader.get_buffer_size(),
                 },
-                NumExports: 1,
-                pExports: &D3D12_EXPORT_DESC {
-                    Name: windows_core::PCWSTR(wide_entry_points[index].as_ptr() as *const _),
-                    ExportToRename: windows_core::PCWSTR(std::ptr::null()),
-                    Flags: D3D12_EXPORT_FLAGS(0),
-                },
                 ..Default::default()
             };
+            library_descs.push(dxil_library);
             let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
                 Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
-                pDesc: &dxil_library as *const _ as *const _,
+                pDesc: &library_descs[index] as *const _ as *const _,
             };
             subobjects.push(dxil_library_subobject);
         }
@@ -3039,8 +3037,10 @@ impl super::Device for Device {
 
         // hitgroup config
         let mut wide_hit_group_strings = Vec::new();
+        let mut hit_group_descs = Vec::new();
         if let Some(hit_groups) = &info.hit_groups {
             for group in hit_groups {
+                let index = hit_group_descs.len();
                 // widen strings
                 let vpos = wide_hit_group_strings.len();
                 wide_hit_group_strings.push(os::win32::string_to_wide(group.name.clone()));
@@ -3060,9 +3060,10 @@ impl super::Device for Device {
                     AnyHitShaderImport: windows_core::PCWSTR::null(),
                     IntersectionShaderImport: windows_core::PCWSTR::null(),
                 };
+                hit_group_descs.push(hit_group_desc);
                 let hit_group_subobject = D3D12_STATE_SUBOBJECT {
                     Type: D3D12_STATE_SUBOBJECT_TYPE_HIT_GROUP,
-                    pDesc: &hit_group_desc as *const _ as *const _,
+                    pDesc: &hit_group_descs[index] as *const _ as *const _,
                 };
                 subobjects.push(hit_group_subobject);
             }
@@ -3077,13 +3078,13 @@ impl super::Device for Device {
 
         unsafe {
             let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
-            let state_object: ID3D12StateObject = device5.CreateStateObject(
+            let state_object = device5.CreateStateObject(
                 &state_object_desc,
             )?;
+            Ok(RaytracingPipeline {
+                state_object: state_object
+            })
         }
-
-        Ok(RaytracingPipeline {
-        })
     }
 
     fn create_indirect_render_command<T: Sized>(
