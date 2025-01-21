@@ -3020,7 +3020,7 @@ impl super::Device for Device {
         let mut library_descs = Vec::new();
 
         // dxil library shaders
-        for (index, shader) in info.shaders.iter().enumerate() {
+        for (index, shader) in info.shaders.iter().enumerate().rev() {
             // dxil library
             let dxil_library = D3D12_DXIL_LIBRARY_DESC {
                 DXILLibrary: D3D12_SHADER_BYTECODE {
@@ -3032,7 +3032,7 @@ impl super::Device for Device {
             library_descs.push(dxil_library);
             let dxil_library_subobject = D3D12_STATE_SUBOBJECT {
                 Type: D3D12_STATE_SUBOBJECT_TYPE_DXIL_LIBRARY,
-                pDesc: &library_descs[index] as *const _ as *const _,
+                pDesc: &library_descs[info.shaders.len() - index - 1] as *const _ as *const _,
             };
             subobjects.push(dxil_library_subobject);
         }
@@ -3047,6 +3047,16 @@ impl super::Device for Device {
             pDesc: &global_root_signature as *const _ as *const _,
         };
         subobjects.push(global_root_signature_subobject);
+
+        // retuns null if the vec is empty
+        let wstr_or_null = |vec: &Vec<u16> | -> windows_core::PCWSTR {
+            if vec.is_empty() {
+                windows_core::PCWSTR::null()
+            }
+            else {
+                windows_core::PCWSTR(vec.as_ptr())
+            }
+        };
 
         // hitgroup config
         let mut wide_hit_group_strings = Vec::new();
@@ -3066,12 +3076,10 @@ impl super::Device for Device {
                 // create desc
                 let hit_group_desc = D3D12_HIT_GROUP_DESC {
                     Type: to_d3d12_hit_group_type(&group.geometry),
-                    HitGroupExport: windows_core::PCWSTR(wide_hit_group_strings[vpos].as_ptr()),
-                    //AnyHitShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+1].as_ptr()),
-                    ClosestHitShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+2].as_ptr()),
-                    //IntersectionShaderImport: windows_core::PCWSTR(wide_hit_group_strings[vpos+3].as_ptr()),
-                    AnyHitShaderImport: windows_core::PCWSTR::null(),
-                    IntersectionShaderImport: windows_core::PCWSTR::null(),
+                    HitGroupExport: wstr_or_null(&wide_hit_group_strings[vpos]),
+                    AnyHitShaderImport: wstr_or_null(&wide_hit_group_strings[vpos+1]),
+                    ClosestHitShaderImport: wstr_or_null(&wide_hit_group_strings[vpos+2]),
+                    IntersectionShaderImport: wstr_or_null(&wide_hit_group_strings[vpos+3]),
                 };
                 hit_group_descs.push(hit_group_desc);
                 let hit_group_subobject = D3D12_STATE_SUBOBJECT {
@@ -3097,38 +3105,57 @@ impl super::Device for Device {
 
             // get shader identifiers
             let props = state_object.cast::<ID3D12StateObjectProperties>().expect("hotline_rs::gfx::d3d12: expected ID3D12StateObjectProperties");
-            let ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[0].as_ptr()));
-            println!("ident: {:?}", ident);
+            let raygen_ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[0].as_ptr()));
+            let miss_ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[2].as_ptr()));
+
+            let raygen_identities = vec![raygen_ident];
+            let miss_identities = vec![miss_ident];
+
+            let create_shader_table = |idents : Vec<*mut c_void> | -> Option<ID3D12Resource> {
+                // create a table resource
+                let mut table_buffer: Option<ID3D12Resource> = None;
+                let buffer_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize * idents.len();
+                self.device.CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_DEFAULT,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 0,
+                        Width: buffer_size as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_COMMON,
+                    None,
+                    &mut table_buffer,
+                ).expect("hotline_rs::gfx::d3d12: failed to create a shader binding table buffer");
+
+                // 
+                if let Some(resource) = table_buffer.as_ref() {
+                    let range = D3D12_RANGE { Begin: 0, End: 0 };
+                    let mut map_data = std::ptr::null_mut();
+                    resource.Map(0, Some(&range), Some(&mut map_data));
+                    std::ptr::copy_nonoverlapping(idents.as_ptr() as *mut _, map_data, buffer_size);
+                    resource.Unmap(0, None);
+                }
+
+                table_buffer
+            };
             
             // create a resource ray gen, miss and hitgroup (maybe arrays)
-
-            // create a table resource
-            let mut table_buffer: Option<ID3D12Resource> = None;
-            self.device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: D3D12_HEAP_TYPE_DEFAULT,
-                    ..Default::default()
-                },
-                D3D12_HEAP_FLAG_NONE,
-                &D3D12_RESOURCE_DESC {
-                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                    Alignment: 0, //D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT as u64,
-                    Width: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as u64,
-                    Height: 1,
-                    DepthOrArraySize: 1,
-                    MipLevels: 1,
-                    Format: DXGI_FORMAT_UNKNOWN,
-                    SampleDesc: DXGI_SAMPLE_DESC {
-                        Count: 1,
-                        Quality: 0,
-                    },
-                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                    Flags: D3D12_RESOURCE_FLAG_NONE,
-                },
-                D3D12_RESOURCE_STATE_COMMON,
-                None,
-                &mut table_buffer,
-            )?;
+            create_shader_table(raygen_identities);
+            create_shader_table(miss_identities);
 
             Ok(RaytracingPipeline {
                 state_object: state_object
