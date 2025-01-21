@@ -226,7 +226,7 @@ pub fn string_to_wide(string: String) -> Vec<u16> {
             windows::Win32::Globalization::MULTI_BYTE_TO_WIDE_CHAR_FLAGS(0),
             null_string.as_bytes(),
             Some(vx.as_mut_slice()),
-        );
+        ) + 1;
         let mut v: Vec<u16> = vec![0; n as usize];
         MultiByteToWideChar(
             windows::Win32::Globalization::CP_UTF8,
