@@ -1630,6 +1630,13 @@ impl Shader {
     }
 }
 
+pub struct ShaderTable {
+}
+
+impl super::ShaderTable<Device> for ShaderTable {
+
+}
+
 impl super::Device for Device {
     type SwapChain = SwapChain;
     type CmdBuf = CmdBuf;
@@ -1644,6 +1651,7 @@ impl super::Device for Device {
     type Heap = Heap;
     type QueryHeap = QueryHeap;
     type CommandSignature = CommandSignature;
+    type ShaderTable = ShaderTable;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -2149,6 +2157,9 @@ impl super::Device for Device {
                     Flags: to_d3d12_buffer_usage_flags(info.usage),
                     ..Default::default()
                 },
+                D3D12_RESOURCE_STATE_COMMON,
+
+                /*
                 // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
@@ -2159,6 +2170,8 @@ impl super::Device for Device {
                 else {
                     to_d3d12_resource_state(info.initial_state)
                 },
+                */
+                
                 None,
                 &mut buf,
             )?;
@@ -3078,9 +3091,45 @@ impl super::Device for Device {
 
         unsafe {
             let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
-            let state_object = device5.CreateStateObject(
+            let state_object : ID3D12StateObject = device5.CreateStateObject(
                 &state_object_desc,
             )?;
+
+            // get shader identifiers
+            let props = state_object.cast::<ID3D12StateObjectProperties>().expect("hotline_rs::gfx::d3d12: expected ID3D12StateObjectProperties");
+            let ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[0].as_ptr()));
+            println!("ident: {:?}", ident);
+            
+            // create a resource ray gen, miss and hitgroup (maybe arrays)
+
+            // create a table resource
+            let mut table_buffer: Option<ID3D12Resource> = None;
+            self.device.CreateCommittedResource(
+                &D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    ..Default::default()
+                },
+                D3D12_HEAP_FLAG_NONE,
+                &D3D12_RESOURCE_DESC {
+                    Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                    Alignment: 0, //D3D12_RAYTRACING_SHADER_RECORD_BYTE_ALIGNMENT as u64,
+                    Width: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as u64,
+                    Height: 1,
+                    DepthOrArraySize: 1,
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_UNKNOWN,
+                    SampleDesc: DXGI_SAMPLE_DESC {
+                        Count: 1,
+                        Quality: 0,
+                    },
+                    Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                    Flags: D3D12_RESOURCE_FLAG_NONE,
+                },
+                D3D12_RESOURCE_STATE_COMMON,
+                None,
+                &mut table_buffer,
+            )?;
+
             Ok(RaytracingPipeline {
                 state_object: state_object
             })
