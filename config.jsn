@@ -3,7 +3,7 @@
     tools<windows>: {
         pmfx: "hotline-data/bin/win32/pmfx/pmfx.exe"
         texturec: "hotline-data/bin/win32/texturec/texturec.exe"
-        pmfx_dev: "../pmfx-shader/pmfx.py"
+        pmfx_dev: "py -3 ../pmfx-shader/pmfx.py"
     }
 
     tools_help: {
