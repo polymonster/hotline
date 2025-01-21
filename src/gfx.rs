@@ -775,6 +775,13 @@ pub struct RaytracingPipelineInfo<'stack, D: Device> {
     pub pipeline_layout: PipelineLayout,
 }
 
+pub struct RaytacingShaderBindingTable<D: Device> {
+    pub ray_generation: D::ShaderTable,
+    pub miss: D::ShaderTable,
+    pub hit_group: D::ShaderTable,
+    pub callable: D::ShaderTable
+}
+
 /// Information to create a pipeline through `Device::create_texture`.
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
@@ -946,6 +953,9 @@ pub trait ComputePipeline<D: Device>: Send + Sync  {}
 /// An opaque compute pipeline type..
 pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
 
+/// An opaque shader table type..
+pub trait ShaderTable<D: Device>: Send + Sync  {}
+
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
     /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
@@ -1083,6 +1093,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type ComputePipeline: ComputePipeline<Self>;
     type RaytracingPipeline: RaytracingPipeline<Self>;
     type CommandSignature: CommandSignature<Self>;
+    type ShaderTable: ShaderTable<Self>;
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
     /// Create a new resource `Heap` from `HeapInfo`
