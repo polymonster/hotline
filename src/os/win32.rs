@@ -238,6 +238,10 @@ pub fn string_to_wide(string: String) -> Vec<u16> {
     }
 }
 
+pub fn string_ref_to_wide(string: &String) -> Vec<u16> {
+    string_to_wide(string.clone())
+}
+
 pub fn wide_to_string(wide: PWSTR) -> String {
     let mut v : Vec<u16> = Vec::new();
     let mut counter = 0;

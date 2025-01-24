@@ -4,6 +4,7 @@ use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
 use crate::gfx::RaytracingPipelineInfo;
 
+use crate::gfx::RaytracingShaderBindingTableInfo;
 use crate::os;
 use crate::gfx;
 use crate::primitives;
@@ -2117,6 +2118,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     shaders,
                     pipeline_layout: pipeline.pipeline_layout.clone(),
                     hit_groups: pipeline.hit_groups
+                })?;
+
+                let sbt = device.create_ray_tracing_shader_binding_table(&RaytracingShaderBindingTableInfo{
+                    ray_generation_shader: String::from("MyRaygenShader"),
+                    miss_shaders: vec![String::from("MyMissShader")],
+                    callable_shaders: Vec::new(),
+                    hit_groups: vec![String::from("MyHitGroup")],
+                    pipeline: &raytracing_pipeline
                 })?;
             }
 

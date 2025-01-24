@@ -775,11 +775,18 @@ pub struct RaytracingPipelineInfo<'stack, D: Device> {
     pub pipeline_layout: PipelineLayout,
 }
 
-pub struct RaytacingShaderBindingTable<D: Device> {
-    pub ray_generation: D::ShaderTable,
-    pub miss: D::ShaderTable,
-    pub hit_group: D::ShaderTable,
-    pub callable: D::ShaderTable
+/// Information to create a raytracing shader binding table from a raytracing pipeline, for use with `Device::dispatch_rays`
+pub struct RaytracingShaderBindingTableInfo<'stack, D: Device> {
+    /// The entry point name of the ray generation shader within the pipeline
+    pub ray_generation_shader: String,
+    /// The entry point names of the miss shaders to use in the dispatch rays
+    pub miss_shaders: Vec<String>,
+    /// The entry point names of the callable shaders to use in the dispatch rays
+    pub callable_shaders: Vec<String>,
+    /// The names of the hit groups to use in the dispatch rays
+    pub hit_groups: Vec<String>,
+    // The raytracing pipeline to bind shaders from within
+    pub pipeline: &'stack D::RaytracingPipeline
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -953,8 +960,8 @@ pub trait ComputePipeline<D: Device>: Send + Sync  {}
 /// An opaque compute pipeline type..
 pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
 
-/// An opaque shader table type..
-pub trait ShaderTable<D: Device>: Send + Sync  {}
+/// An opaque shader table binding type..
+pub trait RaytracingShaderBindingTable<D: Device>: Send + Sync  {}
 
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
@@ -1093,7 +1100,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type ComputePipeline: ComputePipeline<Self>;
     type RaytracingPipeline: RaytracingPipeline<Self>;
     type CommandSignature: CommandSignature<Self>;
-    type ShaderTable: ShaderTable<Self>;
+    type RaytracingShaderBindingTable: RaytracingShaderBindingTable<Self>;
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
     /// Create a new resource `Heap` from `HeapInfo`
@@ -1160,7 +1167,11 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &RaytracingPipelineInfo<Self>,
     ) -> Result<Self::RaytracingPipeline, Error>;
-    /// Creat a command signature for `execute_indirect` commands associated on the `RenderPipeline`
+    fn create_ray_tracing_shader_binding_table(
+        &self,
+        info: &RaytracingShaderBindingTableInfo<Self>
+    ) -> Result<Self::RaytracingShaderBindingTable, Error>;
+    /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
         &mut self, 
         arguments: Vec<IndirectArgument>,
