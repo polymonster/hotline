@@ -21,7 +21,6 @@ use std::ffi::{CStr, CString, c_void};
 use std::result;
 use std::str;
 use std::sync::Mutex;
-use std::pin::Pin;
 
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
@@ -1630,11 +1629,17 @@ impl Shader {
     }
 }
 
-pub struct ShaderTable {
+pub(crate) struct ShaderTable {
+    pub buffer: Option<ID3D12Resource>,
+    pub count: usize,
+    pub stride: usize
 }
 
-impl super::ShaderTable<Device> for ShaderTable {
-
+pub struct RaytracingShaderBindingTable {
+    pub ray_generation: ShaderTable,
+    pub miss: ShaderTable,
+    pub hit_group: ShaderTable,
+    pub callable: ShaderTable
 }
 
 impl super::Device for Device {
@@ -1651,7 +1656,7 @@ impl super::Device for Device {
     type Heap = Heap;
     type QueryHeap = QueryHeap;
     type CommandSignature = CommandSignature;
-    type ShaderTable = ShaderTable;
+    type RaytracingShaderBindingTable = RaytracingShaderBindingTable;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -3103,62 +3108,94 @@ impl super::Device for Device {
                 &state_object_desc,
             )?;
 
-            // get shader identifiers
-            let props = state_object.cast::<ID3D12StateObjectProperties>().expect("hotline_rs::gfx::d3d12: expected ID3D12StateObjectProperties");
-            let raygen_ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[0].as_ptr()));
-            let miss_ident = props.GetShaderIdentifier(windows_core::PCWSTR(wide_entry_points[2].as_ptr()));
-
-            let raygen_identities = vec![raygen_ident];
-            let miss_identities = vec![miss_ident];
-
-            let create_shader_table = |idents : Vec<*mut c_void> | -> Option<ID3D12Resource> {
-                // create a table resource
-                let mut table_buffer: Option<ID3D12Resource> = None;
-                let buffer_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize * idents.len();
-                self.device.CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_DEFAULT,
-                        ..Default::default()
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 0,
-                        Width: buffer_size as u64,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
-                        },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_COMMON,
-                    None,
-                    &mut table_buffer,
-                ).expect("hotline_rs::gfx::d3d12: failed to create a shader binding table buffer");
-
-                // 
-                if let Some(resource) = table_buffer.as_ref() {
-                    let range = D3D12_RANGE { Begin: 0, End: 0 };
-                    let mut map_data = std::ptr::null_mut();
-                    resource.Map(0, Some(&range), Some(&mut map_data));
-                    std::ptr::copy_nonoverlapping(idents.as_ptr() as *mut _, map_data, buffer_size);
-                    resource.Unmap(0, None);
-                }
-
-                table_buffer
-            };
-            
-            // create a resource ray gen, miss and hitgroup (maybe arrays)
-            create_shader_table(raygen_identities);
-            create_shader_table(miss_identities);
-
             Ok(RaytracingPipeline {
                 state_object: state_object
+            })
+        }
+    }
+
+    fn create_ray_tracing_shader_binding_table(
+        &self,
+        info: &super::RaytracingShaderBindingTableInfo<Self>
+    ) -> result::Result<RaytracingShaderBindingTable, super::Error> {
+        unsafe { 
+            let create_shader_table = |idents : Vec<*mut c_void> | -> ShaderTable {
+                if idents.is_empty() {
+                    ShaderTable {
+                        buffer: None,
+                        count: 0,
+                        stride: 0
+                    }
+                }
+                else {
+                    // create a table resource
+                    let mut table_buffer: Option<ID3D12Resource> = None;
+                    let buffer_size = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize * idents.len();
+                    self.device.CreateCommittedResource(
+                        &D3D12_HEAP_PROPERTIES {
+                            Type: D3D12_HEAP_TYPE_UPLOAD,
+                            ..Default::default()
+                        },
+                        D3D12_HEAP_FLAG_NONE,
+                        &D3D12_RESOURCE_DESC {
+                            Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                            Alignment: 0,
+                            Width: buffer_size as u64,
+                            Height: 1,
+                            DepthOrArraySize: 1,
+                            MipLevels: 1,
+                            Format: DXGI_FORMAT_UNKNOWN,
+                            SampleDesc: DXGI_SAMPLE_DESC {
+                                Count: 1,
+                                Quality: 0,
+                            },
+                            Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                            Flags: D3D12_RESOURCE_FLAG_NONE,
+                        },
+                        D3D12_RESOURCE_STATE_GENERIC_READ,
+                        None,
+                        &mut table_buffer,
+                    ).expect("hotline_rs::gfx::d3d12: failed to create a shader binding table buffer");
+
+                    // 
+                    if let Some(resource) = table_buffer.as_ref() {
+                        let range = D3D12_RANGE { Begin: 0, End: 0 };
+                        let mut map_data = std::ptr::null_mut();
+                        resource.Map(0, Some(&range), Some(&mut map_data));
+                        std::ptr::copy_nonoverlapping(idents.as_ptr() as *mut _, map_data, buffer_size);
+                        resource.Unmap(0, None);
+                    }
+
+                    ShaderTable {
+                        buffer: table_buffer,
+                        count: idents.len(),
+                        stride: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize
+                    }
+                }
+            };
+
+            // get shader identifiers
+            let props = info.pipeline.state_object.cast::<ID3D12StateObjectProperties>().expect("hotline_rs::gfx::d3d12: expected ID3D12StateObjectProperties");
+            let raygen_id = props.GetShaderIdentifier(windows_core::PCWSTR(os::win32::string_ref_to_wide(&info.ray_generation_shader).as_ptr()));
+
+            let miss_ids = info.miss_shaders.iter()
+                .map(|x| props.GetShaderIdentifier(windows_core::PCWSTR(os::win32::string_ref_to_wide(x).as_ptr())))
+                .collect();
+
+            let callable_ids = info.callable_shaders.iter()
+                .map(|x| props.GetShaderIdentifier(windows_core::PCWSTR(os::win32::string_ref_to_wide(x).as_ptr())))
+                .collect();
+
+            let hit_group_ids = info.hit_groups.iter()
+                .map(|x| props.GetShaderIdentifier(windows_core::PCWSTR(os::win32::string_ref_to_wide(x).as_ptr())))
+                .collect();
+
+            // create
+            Ok(RaytracingShaderBindingTable {
+                ray_generation: create_shader_table(vec![raygen_id]),
+                miss: create_shader_table(miss_ids),
+                hit_group: create_shader_table(callable_ids),
+                callable: create_shader_table(hit_group_ids),
             })
         }
     }
@@ -4563,3 +4600,4 @@ unsafe impl Sync for CommandSignature {}
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
+impl super::RaytracingShaderBindingTable<Device> for RaytracingShaderBindingTable {}
