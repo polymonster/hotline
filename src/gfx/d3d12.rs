@@ -2162,9 +2162,6 @@ impl super::Device for Device {
                     Flags: to_d3d12_buffer_usage_flags(info.usage),
                     ..Default::default()
                 },
-                D3D12_RESOURCE_STATE_COMMON,
-
-                /*
                 // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
@@ -2175,8 +2172,6 @@ impl super::Device for Device {
                 else {
                     to_d3d12_resource_state(info.initial_state)
                 },
-                */
-                
                 None,
                 &mut buf,
             )?;
