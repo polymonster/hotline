@@ -789,6 +789,17 @@ pub struct RaytracingShaderBindingTableInfo<'stack, D: Device> {
     pub pipeline: &'stack D::RaytracingPipeline
 }
 
+/// Information to create a raytracing bottom level acceleration structure from traingle geometry index and vertex buffers
+pub struct RaytracingTrianglesInfo<'stack, D: Device> {
+    pub index_buffer: &'stack D::Buffer,
+    pub vertex_buffer: &'stack D::Buffer,
+    pub transform3x4: Option<&'stack D::Buffer>,
+    pub index_count: usize,
+    pub vertex_count: usize,
+    pub index_format: Format,
+    pub vertex_format: Format
+}
+
 /// Information to create a pipeline through `Device::create_texture`.
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
@@ -954,6 +965,7 @@ pub trait RenderPass<D: Device>: Send + Sync  {
     /// hash is based on render target format, depth stencil format and MSAA sample count
     fn get_format_hash(&self) -> u64;
 }
+
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
 
@@ -962,6 +974,12 @@ pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
 
 /// An opaque shader table binding type..
 pub trait RaytracingShaderBindingTable<D: Device>: Send + Sync  {}
+
+/// An opaque top level acceleration structure for ray tracing geometry
+pub trait RaytracingTLAS<D: Device>: Send + Sync  {}
+
+/// An opaque bottom level acceleration structure for ray tracing geometry
+pub trait RaytracingBLAS<D: Device>: Send + Sync  {}
 
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
@@ -1167,10 +1185,14 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &RaytracingPipelineInfo<Self>,
     ) -> Result<Self::RaytracingPipeline, Error>;
-    fn create_ray_tracing_shader_binding_table(
+    /// Create a new raytracing shader binding table from `RaytracingShaderBindingTableInfo`
+    fn create_raytracing_shader_binding_table(
         &self,
         info: &RaytracingShaderBindingTableInfo<Self>
     ) -> Result<Self::RaytracingShaderBindingTable, Error>;
+    fn create_raytracing_blas(
+        &self,
+    );
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
         &mut self, 

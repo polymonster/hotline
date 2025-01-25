@@ -3114,7 +3114,7 @@ impl super::Device for Device {
         }
     }
 
-    fn create_ray_tracing_shader_binding_table(
+    fn create_raytracing_shader_binding_table(
         &self,
         info: &super::RaytracingShaderBindingTableInfo<Self>
     ) -> result::Result<RaytracingShaderBindingTable, super::Error> {
@@ -3198,6 +3198,38 @@ impl super::Device for Device {
                 callable: create_shader_table(hit_group_ids),
             })
         }
+    }
+
+    fn create_raytracing_blas(&self) {
+        // D3D12_RAYTRACING_GEOMETRY_DESC
+        // - from index / vertex upload buffer
+
+        // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS
+        // D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
+
+        // UAV ScratchResource based on geo scratch size
+        // UAV BLAS
+
+        // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC
+
+        // BuildRaytracingAccelerationStructure
+        /*
+            auto BuildAccelerationStructure = [&](auto* raytracingCommandList)
+            {
+                raytracingCommandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
+                commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_bottomLevelAccelerationStructure.Get()));
+                raytracingCommandList->BuildRaytracingAccelerationStructure(&topLevelBuildDesc, 0, nullptr);
+            };
+
+            // Build acceleration structure.
+            BuildAccelerationStructure(m_dxrCommandList.Get());
+            
+            // Kick off acceleration structure construction.
+            m_deviceResources->ExecuteCommandList();
+
+            // Wait for GPU to finish as the locally created temporary GPU resources will get released once we go out of scope.
+            m_deviceResources->WaitForGpu();
+        */
     }
 
     fn create_indirect_render_command<T: Sized>(
