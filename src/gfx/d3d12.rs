@@ -900,7 +900,6 @@ pub fn get_hardware_adapter(
             let desc = adapter.unwrap().GetDesc1()?;
 
             // decode utf-16 dfescription
-
             let decoded1 = decode_utf16(desc.Description)
                 .map(|r| r.unwrap_or(REPLACEMENT_CHARACTER))
                 .collect::<String>();
@@ -1636,10 +1635,18 @@ pub(crate) struct ShaderTable {
 }
 
 pub struct RaytracingShaderBindingTable {
-    pub ray_generation: ShaderTable,
-    pub miss: ShaderTable,
-    pub hit_group: ShaderTable,
-    pub callable: ShaderTable
+    pub(crate) ray_generation: ShaderTable,
+    pub(crate) miss: ShaderTable,
+    pub(crate) hit_group: ShaderTable,
+    pub(crate) callable: ShaderTable
+}
+
+pub struct RaytracingBLAS {
+    
+}
+
+pub struct RaytracingTLAS {
+
 }
 
 impl super::Device for Device {
@@ -1657,6 +1664,8 @@ impl super::Device for Device {
     type QueryHeap = QueryHeap;
     type CommandSignature = CommandSignature;
     type RaytracingShaderBindingTable = RaytracingShaderBindingTable;
+    type RaytracingBLAS = RaytracingBLAS;
+    type RaytracingTLAS = RaytracingTLAS;
     fn create(info: &super::DeviceInfo) -> Device {
         unsafe {
             // enable debug layer
@@ -3195,9 +3204,38 @@ impl super::Device for Device {
         }
     }
 
-    fn create_raytracing_blas(&self) {
+    fn create_raytracing_blas(
+        &self,
+        info: RaytracingGeometryInfo<Self>
+    ) -> result::Result<RaytracingBLAS, super::Error> {
         // D3D12_RAYTRACING_GEOMETRY_DESC
         // - from index / vertex upload buffer
+
+        let d3d_geo_desc = match info {
+            RaytracingGeometryInfo::Triangles(tris) => {
+                D3D12_RAYTRACING_GEOMETRY_DESC {
+                    Type: D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES,
+                    Flags: D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE, // TODO: add flags to the 
+                    Anonymous: D3D12_RAYTRACING_GEOMETRY_DESC_0 {
+                        Triangles: D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC {
+                            Transform3x4: 0,
+                            IndexFormat: to_dxgi_format(tris.index_format),
+                            VertexFormat: to_dxgi_format(tris.vertex_format),
+                            IndexCount: tris.index_count as u32,
+                            VertexCount: tris.index_count as u32,
+                            IndexBuffer: 0,
+                            VertexBuffer: D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {
+                                StartAddress: 0,
+                                StrideInBytes: 0
+                            },
+                        }
+                    }
+                }
+            }
+            _ => {
+                unimplemented!();
+            }
+        } ;
 
         // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS
         // D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
@@ -3225,6 +3263,8 @@ impl super::Device for Device {
             // Wait for GPU to finish as the locally created temporary GPU resources will get released once we go out of scope.
             m_deviceResources->WaitForGpu();
         */
+
+        unimplemented!();
     }
 
     fn create_indirect_render_command<T: Sized>(
@@ -4628,3 +4668,5 @@ impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
 impl super::RaytracingShaderBindingTable<Device> for RaytracingShaderBindingTable {}
+impl super::RaytracingBLAS<Device> for RaytracingBLAS {}
+impl super::RaytracingTLAS<Device> for RaytracingTLAS {}
