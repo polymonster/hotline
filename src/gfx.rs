@@ -376,6 +376,12 @@ bitflags! {
         /// Used in shader as `AppendStructuredBuffer` and contains a counter element
         const APPEND_COUNTER = (1 << 6);
     }
+
+    pub struct RaytracingGeometryFlags : u8 {
+        const NONE = 0;
+        const NO_DUPLICATE_ANY_HIT = (1 << 0);
+        const OPAQUE = (1<<1);
+    }
 }
 
 /// `PipelineLayout` is required to create a pipeline it describes the layout of resources for access on the GPU.
@@ -789,11 +795,6 @@ pub struct RaytracingShaderBindingTableInfo<'stack, D: Device> {
     pub pipeline: &'stack D::RaytracingPipeline
 }
 
-// TODO: we must add flags
-//pub const D3D12_RAYTRACING_GEOMETRY_FLAG_NONE: D3D12_RAYTRACING_GEOMETRY_FLAGS = D3D12_RAYTRACING_GEOMETRY_FLAGS(0i32);
-//pub const D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION: D3D12_RAYTRACING_GEOMETRY_FLAGS = D3D12_RAYTRACING_GEOMETRY_FLAGS(2i32);
-//pub const D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE: D3D12_RAYTRACING_GEOMETRY_FLAGS = D3D12_RAYTRACING_GEOMETRY_FLAGS(1i32);
-
 /// Information to create a raytracing bottom level acceleration structure from traingle geometry index and vertex buffers
 pub struct RaytracingTrianglesInfo<'stack, D: Device> {
     pub index_buffer: &'stack D::Buffer,
@@ -802,13 +803,15 @@ pub struct RaytracingTrianglesInfo<'stack, D: Device> {
     pub index_count: usize,
     pub vertex_count: usize,
     pub index_format: Format,
-    pub vertex_format: Format
+    pub vertex_format: Format,
+    pub flags: RaytracingGeometryFlags
 }
 
 /// Information to create a raytracing acceleration structure from aabbs
 pub struct RaytracingAABBsInfo<'stack, D: Device> {
     pub aabbs: Option<&'stack D::Buffer>,
     pub aabb_count: usize,
+    pub flags: RaytracingGeometryFlags
 }
 
 pub enum RaytracingGeometryInfo<'stack, D: Device> {
@@ -1210,7 +1213,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     ) -> Result<Self::RaytracingShaderBindingTable, Error>;
     /// Create a bottom level acceleration structure from `RaytracingGeometryInfo`
     fn create_raytracing_blas(
-        &self,
+        &mut self,
         info: RaytracingGeometryInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
