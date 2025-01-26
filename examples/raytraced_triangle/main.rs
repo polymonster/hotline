@@ -1,4 +1,3 @@
-use gfx::RaytracingPipelineInfo;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -8,17 +7,9 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
-use std::fs;
-
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
-
-#[repr(C)]
-struct Vertex {
-    position: [f32; 3],
-    color: [f32; 4],
-}
 
 fn main() -> Result<(), hotline_rs::Error> {
     let mut app = os_platform::App::create(os::AppInfo {

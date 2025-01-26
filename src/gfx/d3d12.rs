@@ -765,6 +765,19 @@ const fn to_d3d12_hit_group_type(op: &super::RaytracingHitGeometry) -> D3D12_HIT
     }
 }
 
+fn to_d3d12_raytracing_geometry_flags(flags: super::RaytracingGeometryFlags) -> D3D12_RAYTRACING_GEOMETRY_FLAGS {
+    let mut d3d12_flags : D3D12_RAYTRACING_GEOMETRY_FLAGS = D3D12_RAYTRACING_GEOMETRY_FLAGS(0);
+    if flags.contains(RaytracingGeometryFlags::OPAQUE) {
+        d3d12_flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE;
+    }
+
+    if flags.contains(RaytracingGeometryFlags::NO_DUPLICATE_ANY_HIT) {
+        d3d12_flags |= D3D12_RAYTRACING_GEOMETRY_FLAG_NO_DUPLICATE_ANYHIT_INVOCATION;
+    }
+
+    d3d12_flags
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -1117,9 +1130,6 @@ fn align_buffer_data_size(size_bytes: usize, usage: super::BufferUsage) -> usize
     }
 }
 
-impl super::Shader<Device> for Shader {}
-impl super::RenderPipeline<Device> for RenderPipeline {}
-
 impl super::RenderPass<Device> for RenderPass {
     fn get_format_hash(&self) -> u64 {
         self.format_hash
@@ -1209,6 +1219,15 @@ impl QueryHeap {
 impl super::QueryHeap<Device> for QueryHeap {
     fn reset(&mut self) {
         self.alloc_index = 0;
+    }
+}
+
+impl Buffer {
+    /// Get the d3d virtual address as u64 or 0 if the resource is None
+    fn d3d_virtual_address(&self) -> u64 {
+        unsafe {
+            self.resource.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0)
+        }
     }
 }
 
@@ -3020,15 +3039,8 @@ impl super::Device for Device {
         };
         subobjects.push(pipeline_config_subobject);
 
-        // widen entry point strings
-        let wide_entry_points: Vec<_> = info.shaders
-            .iter()
-            .map(|x| os::win32::string_to_wide(x.entry_point.clone()))
-            .collect();
-
-        let mut library_descs = Vec::new();
-
         // dxil library shaders
+        let mut library_descs = Vec::new();
         for (index, shader) in info.shaders.iter().enumerate().rev() {
             // dxil library
             let dxil_library = D3D12_DXIL_LIBRARY_DESC {
@@ -3165,7 +3177,7 @@ impl super::Device for Device {
                     if let Some(resource) = table_buffer.as_ref() {
                         let range = D3D12_RANGE { Begin: 0, End: 0 };
                         let mut map_data = std::ptr::null_mut();
-                        resource.Map(0, Some(&range), Some(&mut map_data));
+                        resource.Map(0, Some(&range), Some(&mut map_data)).expect("hotline_rs::gfx::d3d12: failed to map buffer data for the shader binding table");
                         std::ptr::copy_nonoverlapping(idents.as_ptr() as *mut _, map_data, buffer_size);
                         resource.Unmap(0, None);
                     }
@@ -3205,28 +3217,26 @@ impl super::Device for Device {
     }
 
     fn create_raytracing_blas(
-        &self,
+        &mut self,
         info: RaytracingGeometryInfo<Self>
     ) -> result::Result<RaytracingBLAS, super::Error> {
-        // D3D12_RAYTRACING_GEOMETRY_DESC
-        // - from index / vertex upload buffer
-
-        let d3d_geo_desc = match info {
+        // create geometry desc
+        let geometry_desc = match info {
             RaytracingGeometryInfo::Triangles(tris) => {
                 D3D12_RAYTRACING_GEOMETRY_DESC {
                     Type: D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES,
-                    Flags: D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE, // TODO: add flags to the 
+                    Flags: to_d3d12_raytracing_geometry_flags(tris.flags),
                     Anonymous: D3D12_RAYTRACING_GEOMETRY_DESC_0 {
                         Triangles: D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC {
-                            Transform3x4: 0,
+                            Transform3x4: tris.transform3x4.map(|x| x.d3d_virtual_address()).unwrap_or(0),
                             IndexFormat: to_dxgi_format(tris.index_format),
                             VertexFormat: to_dxgi_format(tris.vertex_format),
                             IndexCount: tris.index_count as u32,
                             VertexCount: tris.index_count as u32,
-                            IndexBuffer: 0,
+                            IndexBuffer: tris.index_buffer.d3d_virtual_address(),
                             VertexBuffer: D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {
-                                StartAddress: 0,
-                                StrideInBytes: 0
+                                StartAddress: tris.vertex_buffer.d3d_virtual_address(),
+                                StrideInBytes: size_for_format(tris.vertex_format, 1, 1, 1)
                             },
                         }
                     }
@@ -3235,15 +3245,44 @@ impl super::Device for Device {
             _ => {
                 unimplemented!();
             }
-        } ;
+        };
 
-        // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS
-        // D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO
+        // create acceleration structure inputs
+        let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
+            Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL,
+            Flags: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE, // TODO: pass with info
+            NumDescs: 1,
+            DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
+            Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
+                pGeometryDescs: &geometry_desc
+            }
+        };
 
-        // UAV ScratchResource based on geo scratch size
-        // UAV BLAS
+        // get prebuild info
+        let prebuild_info = unsafe {
+            let mut prebuild_info: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO = std::mem::zeroed();
+            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
+            device5.GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mut prebuild_info);
+            prebuild_info
+        };
+
+        // UAV scratch buffer based on prebuild_info scratch size
+        let scratch_buffer = self.create_buffer::<u8>(&BufferInfo {
+            usage: super::BufferUsage::UNORDERED_ACCESS,
+            cpu_access: super::CpuAccessFlags::NONE,
+            format: super::Format::Unknown,
+            stride: prebuild_info.ScratchDataSizeInBytes as usize,
+            num_elements: 1,
+            initial_state: super::ResourceState::UnorderedAccess
+        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC
+        let structure_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
+            Inputs: inputs,
+            SourceAccelerationStructureData: 0,
+            DestAccelerationStructureData: todo!(),
+            ScratchAccelerationStructureData: scratch_buffer.d3d_virtual_address()
+        };
 
         // BuildRaytracingAccelerationStructure
         /*
@@ -4664,6 +4703,8 @@ unsafe impl Sync for QueryHeap {}
 unsafe impl Send for CommandSignature {}
 unsafe impl Sync for CommandSignature {}
 
+impl super::Shader<Device> for Shader {}
+impl super::RenderPipeline<Device> for RenderPipeline {}
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
