@@ -375,6 +375,8 @@ bitflags! {
         const INDIRECT_ARGUMENT_BUFFER = (1 << 5);
         /// Used in shader as `AppendStructuredBuffer` and contains a counter element
         const APPEND_COUNTER = (1 << 6);
+        /// Acceleration structure
+        const ACCELERATION_STRUCTURE = (1 << 7);
     }
 
     pub struct RaytracingGeometryFlags : u8 {
@@ -1214,7 +1216,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Create a bottom level acceleration structure from `RaytracingGeometryInfo`
     fn create_raytracing_blas(
         &mut self,
-        info: RaytracingGeometryInfo<Self>
+        info: &RaytracingGeometryInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(

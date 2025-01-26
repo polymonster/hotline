@@ -1661,11 +1661,11 @@ pub struct RaytracingShaderBindingTable {
 }
 
 pub struct RaytracingBLAS {
-    
+    pub(crate) blas_buffer: Buffer
 }
 
 pub struct RaytracingTLAS {
-
+    pub(crate) tlas_buffer: Buffer
 }
 
 impl super::Device for Device {
@@ -2166,6 +2166,69 @@ impl super::Device for Device {
         let aligned_size = align_buffer_data_size(size_bytes, info.usage);
 
         unsafe {
+            // create upload buffer
+            let upload = if let Some(data) = &data {
+                let mut upload: Option<ID3D12Resource> = None;
+                self.device.CreateCommittedResource(
+                    &D3D12_HEAP_PROPERTIES {
+                        Type: D3D12_HEAP_TYPE_UPLOAD,
+                        ..Default::default()
+                    },
+                    D3D12_HEAP_FLAG_NONE,
+                    &D3D12_RESOURCE_DESC {
+                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
+                        Alignment: 0,
+                        Width: aligned_size as u64,
+                        Height: 1,
+                        DepthOrArraySize: 1,
+                        MipLevels: 1,
+                        Format: DXGI_FORMAT_UNKNOWN,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1,
+                            Quality: 0,
+                        },
+                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
+                        Flags: D3D12_RESOURCE_FLAG_NONE,
+                    },
+                    D3D12_RESOURCE_STATE_GENERIC_READ,
+                    None,
+                    &mut upload,
+                )?;
+                let upload = upload.unwrap();
+
+                // copy data to upload buffer
+                let mut map_data = std::ptr::null_mut();
+                let res = upload.clone();
+                res.Map(0, None, Some(&mut map_data))?;
+                if !map_data.is_null() {
+                    let src = data.as_ptr() as *mut u8;
+                    std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes);
+                }
+                res.Unmap(0, None);
+
+                // return the uplaod buffer
+                Some(upload)
+            }
+            else {
+                None
+            };
+
+            // acceleration structure just needs an upload buffer. TODO: separate to function
+            if info.usage == super::BufferUsage::ACCELERATION_STRUCTURE {
+                return Ok(Buffer {
+                    resource: upload,
+                    vbv: None,
+                    ibv: None,
+                    srv_index: None,
+                    cbv_index: None,
+                    counter_offset: None,
+                    uav_index: None,
+                    drop_list: Some(heap.drop_list.clone()),
+                    persistent_mapped_data: std::ptr::null_mut()
+                });
+            }
+
+            // create a buffer resource
             self.device.CreateCommittedResource(
                 &D3D12_HEAP_PROPERTIES {
                     Type: if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
@@ -2207,45 +2270,8 @@ impl super::Device for Device {
 
             // load buffer with initialised data
             if let Some(data) = &data {
-                let mut upload: Option<ID3D12Resource> = None;
-                self.device.CreateCommittedResource(
-                    &D3D12_HEAP_PROPERTIES {
-                        Type: D3D12_HEAP_TYPE_UPLOAD,
-                        ..Default::default()
-                    },
-                    D3D12_HEAP_FLAG_NONE,
-                    &D3D12_RESOURCE_DESC {
-                        Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
-                        Alignment: 0,
-                        Width: aligned_size as u64,
-                        Height: 1,
-                        DepthOrArraySize: 1,
-                        MipLevels: 1,
-                        Format: DXGI_FORMAT_UNKNOWN,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1,
-                            Quality: 0,
-                        },
-                        Layout: D3D12_TEXTURE_LAYOUT_ROW_MAJOR,
-                        Flags: D3D12_RESOURCE_FLAG_NONE,
-                    },
-                    D3D12_RESOURCE_STATE_GENERIC_READ,
-                    None,
-                    &mut upload,
-                )?;
                 let upload = upload.unwrap();
-
-                // copy data to upload buffer
-                let mut map_data = std::ptr::null_mut();
-                let res = upload.clone();
-                res.Map(0, None, Some(&mut map_data))?;
-                if !map_data.is_null() {
-                    let src = data.as_ptr() as *mut u8;
-                    std::ptr::copy_nonoverlapping(src, map_data as *mut u8, size_bytes);
-                }
-                res.Unmap(0, None);
-
-                // copy resource
+                // copy resource from upload buffer
                 let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
                 self.command_list.CopyResource(&buf, &upload);
                 let barrier = transition_barrier(
@@ -3119,7 +3145,7 @@ impl super::Device for Device {
         };
 
         unsafe {
-            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
+            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create raytracing pipeline");
             let state_object : ID3D12StateObject = device5.CreateStateObject(
                 &state_object_desc,
             )?;
@@ -3218,7 +3244,7 @@ impl super::Device for Device {
 
     fn create_raytracing_blas(
         &mut self,
-        info: RaytracingGeometryInfo<Self>
+        info: &RaytracingGeometryInfo<Self>
     ) -> result::Result<RaytracingBLAS, super::Error> {
         // create geometry desc
         let geometry_desc = match info {
@@ -3261,12 +3287,12 @@ impl super::Device for Device {
         // get prebuild info
         let prebuild_info = unsafe {
             let mut prebuild_info: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO = std::mem::zeroed();
-            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create_raytracing_pipeline");
+            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create raytracing blas");
             device5.GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mut prebuild_info);
             prebuild_info
         };
 
-        // UAV scratch buffer based on prebuild_info scratch size
+        // UAV scratch buffer
         let scratch_buffer = self.create_buffer::<u8>(&BufferInfo {
             usage: super::BufferUsage::UNORDERED_ACCESS,
             cpu_access: super::CpuAccessFlags::NONE,
@@ -3276,34 +3302,51 @@ impl super::Device for Device {
             initial_state: super::ResourceState::UnorderedAccess
         }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
-        // D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC
-        let structure_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
+        // UAV buffer the blas
+        let blas_buffer = self.create_buffer::<u8>(&BufferInfo {
+            usage: super::BufferUsage::UNORDERED_ACCESS,
+            cpu_access: super::CpuAccessFlags::NONE,
+            format: super::Format::Unknown,
+            stride: prebuild_info.ResultDataMaxSizeInBytes as usize,
+            num_elements: 1,
+            initial_state: super::ResourceState::UnorderedAccess
+        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
+
+        // create blas desc
+        let blas_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
             Inputs: inputs,
             SourceAccelerationStructureData: 0,
-            DestAccelerationStructureData: todo!(),
+            DestAccelerationStructureData: blas_buffer.d3d_virtual_address(),
             ScratchAccelerationStructureData: scratch_buffer.d3d_virtual_address()
         };
 
-        // BuildRaytracingAccelerationStructure
-        /*
-            auto BuildAccelerationStructure = [&](auto* raytracingCommandList)
-            {
-                raytracingCommandList->BuildRaytracingAccelerationStructure(&bottomLevelBuildDesc, 0, nullptr);
-                commandList->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(m_bottomLevelAccelerationStructure.Get()));
-                raytracingCommandList->BuildRaytracingAccelerationStructure(&topLevelBuildDesc, 0, nullptr);
-            };
+        // build blas
+        unsafe {
+            let cmd = self.command_list.cast::<ID3D12GraphicsCommandList4>().expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList4 availability to create raytracing blas");
+            cmd.BuildRaytracingAccelerationStructure(&blas_desc, None);
 
-            // Build acceleration structure.
-            BuildAccelerationStructure(m_dxrCommandList.Get());
-            
-            // Kick off acceleration structure construction.
-            m_deviceResources->ExecuteCommandList();
+            // TODO: barrier?
 
-            // Wait for GPU to finish as the locally created temporary GPU resources will get released once we go out of scope.
-            m_deviceResources->WaitForGpu();
-        */
+            self.command_list.Close()?;
 
-        unimplemented!();
+            // execute commandlist
+            let cmd = Some(self.command_list.cast().unwrap());
+            self.command_queue.ExecuteCommandLists(&[cmd]);
+
+            // wait
+            let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
+            self.command_queue.Signal(&fence, 1)?;
+            let event = CreateEventA(None, false, false, None)?;
+            fence.SetEventOnCompletion(1, event)?;
+            WaitForSingleObject(event, INFINITE);
+
+            // reset command list
+            self.command_list.Reset(&self.command_allocator, None)?;
+
+            Ok(RaytracingBLAS {
+                blas_buffer
+            })
+        }
     }
 
     fn create_indirect_render_command<T: Sized>(

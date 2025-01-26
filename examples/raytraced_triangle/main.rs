@@ -1,3 +1,4 @@
+use gfx::BufferUsage;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -20,9 +21,9 @@ fn main() -> Result<(), hotline_rs::Error> {
     });
 
     let num_buffers : u32 = 2;
-
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers as usize,
+        shader_heap_size: 4,
         ..Default::default()
     });
     println!("{}", device.get_adapter_info());
@@ -33,6 +34,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         ..Default::default()
     });
 
+    
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers,
         format: gfx::Format::RGBA8n,
@@ -52,8 +54,45 @@ fn main() -> Result<(), hotline_rs::Error> {
    
     pmfx.create_raytracing_pipeline(&device, "raytracing")?;
 
-    // TODO: create ray tracing acceleration structures +0
-    // TODO: shader tables +2
+    let index_buffer = device.create_buffer(&gfx::BufferInfo {
+        usage: BufferUsage::ACCELERATION_STRUCTURE,
+        cpu_access: gfx::CpuAccessFlags::WRITE,
+        format: gfx::Format::R16u,
+        stride: 2,
+        num_elements: 3,
+        initial_state: gfx::ResourceState::GenericRead
+    }, Some(&vec![0 as u16, 1 as u16, 2 as u16]))?;
+
+    let offset = 0.75;
+    let depth = 1.0;
+    let vertices: Vec<f32> = vec![
+        0.0, offset, depth,
+        -offset, offset, depth,
+        offset, offset, depth
+    ];
+    
+    let vertex_buffer = device.create_buffer(&gfx::BufferInfo {
+        usage: BufferUsage::ACCELERATION_STRUCTURE,
+        cpu_access: gfx::CpuAccessFlags::WRITE,
+        format: gfx::Format::RGB32f,
+        stride: 12,
+        num_elements: 3,
+        initial_state: gfx::ResourceState::GenericRead
+    }, Some(&vertices))?;
+
+    device.create_raytracing_blas(&gfx::RaytracingGeometryInfo::Triangles(
+        gfx::RaytracingTrianglesInfo {
+            index_buffer: &index_buffer,
+            vertex_buffer: &vertex_buffer,
+            transform3x4: None,
+            index_count: 3,
+            index_format: gfx::Format::R16u,
+            vertex_count: 3,
+            vertex_format: gfx::Format::RGB32f,
+            flags: gfx::RaytracingGeometryFlags::OPAQUE
+        }
+    ))?;
+
     // TODO: dispatch rays
 
     while app.run() {
