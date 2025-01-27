@@ -375,8 +375,10 @@ bitflags! {
         const INDIRECT_ARGUMENT_BUFFER = (1 << 5);
         /// Used in shader as `AppendStructuredBuffer` and contains a counter element
         const APPEND_COUNTER = (1 << 6);
-        /// Acceleration structure
-        const ACCELERATION_STRUCTURE = (1 << 7);
+        /// Upload only buffer, can be used for acceleration structure geometry or to copy data
+        const UPLOAD = (1 << 7);
+        /// Only create the buffer and no views
+        const BUFFER_ONLY = (1 << 8);
     }
 
     pub struct RaytracingGeometryFlags : u8 {
@@ -936,6 +938,8 @@ pub enum ResourceState {
     GenericRead,
     /// Used for argument buffer in `execute_indirect` calls 
     IndirectArgument,
+    /// Used for destination acceleration structure buffers
+    AccelerationStructure
 }
 
 /// ome resources may contain subresources for resolving

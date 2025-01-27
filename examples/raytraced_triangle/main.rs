@@ -55,7 +55,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     pmfx.create_raytracing_pipeline(&device, "raytracing")?;
 
     let index_buffer = device.create_buffer(&gfx::BufferInfo {
-        usage: BufferUsage::ACCELERATION_STRUCTURE,
+        usage: BufferUsage::UPLOAD,
         cpu_access: gfx::CpuAccessFlags::WRITE,
         format: gfx::Format::R16u,
         stride: 2,
@@ -72,7 +72,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     ];
     
     let vertex_buffer = device.create_buffer(&gfx::BufferInfo {
-        usage: BufferUsage::ACCELERATION_STRUCTURE,
+        usage: BufferUsage::UPLOAD,
         cpu_access: gfx::CpuAccessFlags::WRITE,
         format: gfx::Format::RGB32f,
         stride: 12,
@@ -92,6 +92,8 @@ fn main() -> Result<(), hotline_rs::Error> {
             flags: gfx::RaytracingGeometryFlags::OPAQUE
         }
     ))?;
+
+    // TODO: create tlas
 
     // TODO: dispatch rays
 
