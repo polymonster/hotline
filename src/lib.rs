@@ -141,6 +141,35 @@ fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
     files
 }
 
+// macros for static addr of convenience
+#[macro_export]
+macro_rules! static_ref{
+    ($place:expr) => {
+        &*std::ptr::addr_of!($place)
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_mut{
+    ($place:expr) => {
+        &mut *std::ptr::addr_of_mut!($place)
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_array{
+    ($place:expr) => {
+        &*std::ptr::addr_of!($place[0])
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_array_mut{
+    ($place:expr) => {
+        &mut *std::ptr::addr_of_mut!($place[0])
+    }
+}
+
 /// This is a hardcoded compile time selection of os backend for windows as win32
 #[cfg(target_os = "windows")]
 pub use os::win32 as os_platform;
@@ -152,7 +181,6 @@ pub use gfx::d3d12 as gfx_platform;
 /// This is a hardcoded compile time selection of os backend for windows as wmf
 #[cfg(target_os = "windows")]
 pub use av::wmf as av_platform;
-
 
 /// Most commonly used re-exported types.
 #[cfg(target_os = "windows")]
