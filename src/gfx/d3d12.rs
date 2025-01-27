@@ -490,6 +490,7 @@ const fn to_d3d12_resource_state(state: super::ResourceState) -> D3D12_RESOURCE_
         super::ResourceState::CopyDst => D3D12_RESOURCE_STATE_COPY_DEST,
         super::ResourceState::GenericRead => D3D12_RESOURCE_STATE_GENERIC_READ,
         super::ResourceState::IndirectArgument => D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT,
+        super::ResourceState::AccelerationStructure => D3D12_RESOURCE_STATE_RAYTRACING_ACCELERATION_STRUCTURE
     }
 }
 
@@ -2214,7 +2215,7 @@ impl super::Device for Device {
             };
 
             // acceleration structure just needs an upload buffer. TODO: separate to function
-            if info.usage == super::BufferUsage::ACCELERATION_STRUCTURE {
+            if info.usage == super::BufferUsage::UPLOAD {
                 return Ok(Buffer {
                     resource: upload,
                     vbv: None,
@@ -2297,62 +2298,7 @@ impl super::Device for Device {
                     std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
             }
 
-            // create optional views
-            let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
-            let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
-            let mut cbv_index = None;
-            let mut srv_index = None;
-
-            if info.usage.contains(super::BufferUsage::VERTEX) {
-                vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
-                    BufferLocation: buf.GetGPUVirtualAddress(),
-                    StrideInBytes: info.stride as u32,
-                    SizeInBytes: size_bytes as u32,
-                });
-            }
-
-            if info.usage.contains(super::BufferUsage::INDEX) {
-                ibv = Some(D3D12_INDEX_BUFFER_VIEW {
-                    BufferLocation: buf.GetGPUVirtualAddress(),
-                    SizeInBytes: size_bytes as u32,
-                    Format: dxgi_format,
-                })
-            }
-
-            if info.usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
-                let h = heap.allocate();
-                self.device.CreateConstantBufferView(
-                    Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
-                        BufferLocation: buf.GetGPUVirtualAddress(),
-                        SizeInBytes: aligned_size as u32
-                    }),
-                    h,
-                );
-                cbv_index = Some(heap.get_handle_index(&h));
-            }
-
-            if info.usage.contains(super::BufferUsage::SHADER_RESOURCE) {
-                let h = heap.allocate();
-                self.device.CreateShaderResourceView(
-                    &buf,
-                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
-                        Format: dxgi_format,
-                        ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
-                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                            Buffer: D3D12_BUFFER_SRV {
-                                FirstElement: 0,
-                                NumElements: info.num_elements as u32,
-                                StructureByteStride: info.stride as u32,
-                                Flags: D3D12_BUFFER_SRV_FLAG_NONE
-                            }
-                        }
-                    }),
-                    h,
-                );
-                srv_index = Some(heap.get_handle_index(&h));
-            }
-
+            // map data
             let mut map_data = std::ptr::null_mut();
             if info.cpu_access.contains(super::CpuAccessFlags::PERSISTENTLY_MAPPED) {
                 buf.Map(0, None, Some(&mut map_data))?;
@@ -2366,43 +2312,101 @@ impl super::Device for Device {
                 None
             };
 
-            // create uav
+            // create optional views
+            let mut vbv: Option<D3D12_VERTEX_BUFFER_VIEW> = None;
+            let mut ibv: Option<D3D12_INDEX_BUFFER_VIEW> = None;
             let mut uav_index = None;
-            if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
-                let h = heap.allocate();
-                if let Some(offset) = counter_offset {
-                    // append counter buffers are implictly added to the end of the buffer
-                    // different approches could be used with manually tracking and adding counters
-                    // but this approach creates a d3d friendly `AppendStructuredBuffer`
-                    self.device.CreateUnorderedAccessView(
+            let mut cbv_index = None;
+            let mut srv_index = None;
+
+            if !info.usage.contains(super::BufferUsage::BUFFER_ONLY) {
+                if info.usage.contains(super::BufferUsage::VERTEX) {
+                    vbv = Some(D3D12_VERTEX_BUFFER_VIEW {
+                        BufferLocation: buf.GetGPUVirtualAddress(),
+                        StrideInBytes: info.stride as u32,
+                        SizeInBytes: size_bytes as u32,
+                    });
+                }
+
+                if info.usage.contains(super::BufferUsage::INDEX) {
+                    ibv = Some(D3D12_INDEX_BUFFER_VIEW {
+                        BufferLocation: buf.GetGPUVirtualAddress(),
+                        SizeInBytes: size_bytes as u32,
+                        Format: dxgi_format,
+                    })
+                }
+
+                if info.usage.contains(super::BufferUsage::CONSTANT_BUFFER) {
+                    let h = heap.allocate();
+                    self.device.CreateConstantBufferView(
+                        Some(&D3D12_CONSTANT_BUFFER_VIEW_DESC {
+                            BufferLocation: buf.GetGPUVirtualAddress(),
+                            SizeInBytes: aligned_size as u32
+                        }),
+                        h,
+                    );
+                    cbv_index = Some(heap.get_handle_index(&h));
+                }
+
+                if info.usage.contains(super::BufferUsage::SHADER_RESOURCE) {
+                    let h = heap.allocate();
+                    self.device.CreateShaderResourceView(
                         &buf,
-                        &buf,
-                        Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
-                            Format: DXGI_FORMAT_UNKNOWN,
-                            ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
-                            Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
-                                Buffer: D3D12_BUFFER_UAV {
+                        Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: dxgi_format,
+                            ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_SRV {
                                     FirstElement: 0,
                                     NumElements: info.num_elements as u32,
                                     StructureByteStride: info.stride as u32,
-                                    CounterOffsetInBytes: offset as u64,
-                                    Flags: D3D12_BUFFER_UAV_FLAG_NONE
+                                    Flags: D3D12_BUFFER_SRV_FLAG_NONE
                                 }
                             }
                         }),
                         h,
                     );
-                }
-                else {
-                    self.device.CreateUnorderedAccessView(
-                        &buf,
-                        None,
-                        None,
-                        h,
-                    );
+                    srv_index = Some(heap.get_handle_index(&h));
                 }
 
-                uav_index = Some(heap.get_handle_index(&h));
+                // create uav
+                if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+                    let h = heap.allocate();
+                    if let Some(offset) = counter_offset {
+                        // append counter buffers are implictly added to the end of the buffer
+                        // different approches could be used with manually tracking and adding counters
+                        // but this approach creates a d3d friendly `AppendStructuredBuffer`
+                        self.device.CreateUnorderedAccessView(
+                            &buf,
+                            &buf,
+                            Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
+                                Format: DXGI_FORMAT_UNKNOWN,
+                                ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
+                                Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                                    Buffer: D3D12_BUFFER_UAV {
+                                        FirstElement: 0,
+                                        NumElements: info.num_elements as u32,
+                                        StructureByteStride: info.stride as u32,
+                                        CounterOffsetInBytes: offset as u64,
+                                        Flags: D3D12_BUFFER_UAV_FLAG_NONE
+                                    }
+                                }
+                            }),
+                            h,
+                        );
+                    }
+                    else {
+                        self.device.CreateUnorderedAccessView(
+                            &buf,
+                            None,
+                            None,
+                            h,
+                        );
+                    }
+
+                    uav_index = Some(heap.get_handle_index(&h));
+                }
             }
 
             Ok(Buffer {
@@ -3294,7 +3298,7 @@ impl super::Device for Device {
 
         // UAV scratch buffer
         let scratch_buffer = self.create_buffer::<u8>(&BufferInfo {
-            usage: super::BufferUsage::UNORDERED_ACCESS,
+            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::BUFFER_ONLY,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ScratchDataSizeInBytes as usize,
@@ -3304,12 +3308,12 @@ impl super::Device for Device {
 
         // UAV buffer the blas
         let blas_buffer = self.create_buffer::<u8>(&BufferInfo {
-            usage: super::BufferUsage::UNORDERED_ACCESS,
+            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::BUFFER_ONLY,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ResultDataMaxSizeInBytes as usize,
             num_elements: 1,
-            initial_state: super::ResourceState::UnorderedAccess
+            initial_state: super::ResourceState::AccelerationStructure
         }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // create blas desc
