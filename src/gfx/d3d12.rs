@@ -2270,7 +2270,7 @@ impl super::Device for Device {
             let buf = buf.unwrap();
 
             // load buffer with initialised data
-            if let Some(data) = &data {
+            if data.is_some() {
                 let upload = upload.unwrap();
                 // copy resource from upload buffer
                 let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE).unwrap();
@@ -3329,8 +3329,6 @@ impl super::Device for Device {
             let cmd = self.command_list.cast::<ID3D12GraphicsCommandList4>().expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList4 availability to create raytracing blas");
             cmd.BuildRaytracingAccelerationStructure(&blas_desc, None);
 
-            // TODO: barrier?
-
             self.command_list.Close()?;
 
             // execute commandlist
@@ -3351,6 +3349,14 @@ impl super::Device for Device {
                 blas_buffer
             })
         }
+    }
+
+    fn create_raytracing_tlas(
+        &mut self,
+        _info: &Vec<RaytracingInstanceInfo<Self>>
+    ) -> result::Result<RaytracingTLAS, super::Error> {
+
+        unimplemented!()
     }
 
     fn create_indirect_render_command<T: Sized>(

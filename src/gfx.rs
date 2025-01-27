@@ -381,9 +381,13 @@ bitflags! {
         const BUFFER_ONLY = (1 << 8);
     }
 
+    /// Flags for raytracing geometry
     pub struct RaytracingGeometryFlags : u8 {
+        /// No flags
         const NONE = 0;
+        /// Specifies the implementation must only call the any-hit shader a single time for each primitive in this geometry
         const NO_DUPLICATE_ANY_HIT = (1 << 0);
+        /// Opque Geometry specifies no anyhit shader is called
         const OPAQUE = (1<<1);
     }
 }
@@ -818,9 +822,20 @@ pub struct RaytracingAABBsInfo<'stack, D: Device> {
     pub flags: RaytracingGeometryFlags
 }
 
+/// Information to specify geometry for a raytracing bottom level acceleration structure
 pub enum RaytracingGeometryInfo<'stack, D: Device> {
     Triangles(RaytracingTrianglesInfo<'stack, D>),
     AABBs(RaytracingAABBsInfo<'stack, D>)
+}
+
+/// Information to create a top level raytracing acceleration structure
+pub struct RaytracingInstanceInfo<'stack, D: Device> {
+    /// A 3x4 transform matrix in row-major layout
+    pub transform: [f32; 12],
+    pub instance_id: u32,
+    pub instance_mask: u32,
+    pub hit_group_mask: u32,
+    pub blas: &'stack D::RaytracingBLAS
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -1222,6 +1237,11 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         info: &RaytracingGeometryInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
+    /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
+    fn create_raytracing_tlas(
+        &mut self,
+        info: &Vec<RaytracingInstanceInfo<Self>>
+    ) -> Result<Self::RaytracingTLAS, Error>;
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
         &mut self, 
