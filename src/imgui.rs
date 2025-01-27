@@ -18,14 +18,9 @@ use std::ffi::CString;
 
 use maths_rs::Vec4f;
 
-use std::ptr::addr_of;
-use std::ptr::addr_of_mut;
-
-macro_rules! static_ref_mut{
-    ($place:expr) => {
-        &mut *addr_of_mut!($place)
-    }
-}
+use crate::static_ref;
+use crate::static_ref_mut;
+use crate::static_ref_array_mut;
 
 fn to_im_vec4(v: Vec4f) -> ImVec4 {
     unsafe {
@@ -641,7 +636,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 let ini_file = parent.join("imgui.ini");
                 static mut NULL_INI_FILE : Option<CString> = None;
                 NULL_INI_FILE = Some(CString::new(ini_file.to_str().unwrap().to_string()).unwrap());
-                if let Some(i) = &*addr_of!(NULL_INI_FILE) {
+                if let Some(i) = static_ref!(NULL_INI_FILE) {
                     io.IniFilename = i.as_ptr() as _;
                 }
             };
@@ -1158,7 +1153,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                     "This is some useful text.\0".as_ptr() as *const i8,
                 );
 
-                igColorEdit3("clear color\0".as_ptr() as _, CLEAR_COLOUR.as_mut_ptr(), 0); // Edit 3 floats representing a color
+                igColorEdit3("color\0".as_ptr() as _, static_ref_array_mut!(CLEAR_COLOUR), 0); // Edit 3 floats representing a color
 
                 igText(
                     "Application average %.3f ms/frame (%.1f FPS)\0".as_ptr() as _,

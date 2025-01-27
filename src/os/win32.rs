@@ -20,7 +20,8 @@ use std::result;
 use std::collections::HashMap;
 use std::ffi::CString;
 
-use std::ptr::addr_of;
+use crate::static_ref;
+use crate::static_ref_mut;
 
 #[derive(Clone)]
 pub struct App {
@@ -727,10 +728,10 @@ impl super::App for App {
 
     fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
         unsafe {
-            MONITOR_ENUM.clear();
+            static_ref_mut!(MONITOR_ENUM).clear();
             let _ = EnumDisplayMonitors(HDC::default(), None, Some(enum_func), LPARAM(0));
             let mut monitors: Vec<super::MonitorInfo> = Vec::new();
-            for m in &*addr_of!(MONITOR_ENUM) {
+            for m in static_ref!(MONITOR_ENUM) {
                 monitors.push(m.clone());
             }
             monitors
@@ -1244,7 +1245,7 @@ extern "system" fn enum_func(
                 1.0
             };
 
-        MONITOR_ENUM.push(super::MonitorInfo {
+        static_ref_mut!(MONITOR_ENUM).push(super::MonitorInfo {
             rect: super::Rect {
                 x: info.rcMonitor.left,
                 y: info.rcMonitor.top,
