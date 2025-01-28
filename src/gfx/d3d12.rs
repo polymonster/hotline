@@ -3353,8 +3353,49 @@ impl super::Device for Device {
 
     fn create_raytracing_tlas(
         &mut self,
-        _info: &Vec<RaytracingInstanceInfo<Self>>
+        info: &Vec<RaytracingInstanceInfo<Self>>
     ) -> result::Result<RaytracingTLAS, super::Error> {
+        
+        // create instance descs
+        let num_instances = info.len();
+        let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.iter()
+            .map(|x| D3D12_RAYTRACING_INSTANCE_DESC {
+                Transform: x.transform,
+                _bitfield1: 0, // TODO: bit packing
+                _bitfield2: 0,
+                AccelerationStructure: x.blas.blas_buffer.d3d_virtual_address()
+            })
+            .collect();
+
+        // create upload buffer for instance descs
+        let stride = std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>();
+        let instance_buffer = self.create_buffer::<u8>(&BufferInfo {
+            usage: super::BufferUsage::UPLOAD,
+            cpu_access: super::CpuAccessFlags::NONE,
+            format: super::Format::Unknown,
+            stride: std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>(),
+            num_elements: info.len(),
+            initial_state: super::ResourceState::GenericRead
+        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", stride * num_instances).as_str());
+
+        // create acceleration structure inputs
+        let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
+            Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
+            Flags: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE, // TODO: pass with info
+            NumDescs: num_instances as u32,
+            DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
+            Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
+                InstanceDescs: 0, // TODO
+            }
+        };
+
+        // get prebuild info
+        let prebuild_info = unsafe {
+            let mut prebuild_info: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO = std::mem::zeroed();
+            let device5 = self.device.cast::<ID3D12Device5>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device5 availability to create raytracing tlas");
+            device5.GetRaytracingAccelerationStructurePrebuildInfo(&inputs, &mut prebuild_info);
+            prebuild_info
+        };
 
         unimplemented!()
     }
