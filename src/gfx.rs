@@ -390,6 +390,17 @@ bitflags! {
         /// Opque Geometry specifies no anyhit shader is called
         const OPAQUE = (1<<1);
     }
+
+    // Flags for building ray tracing acelleration structures
+    pub struct AccelerationStructureBuildFlags : u8 {
+        const NONE = 0;
+        const ALLOW_COMPACTION = (1<<1);
+        const ALLOW_UPDATE = (1<<2);
+        const MINIMIZE_MEMORY = (1<<3);
+        const PERFORM_UPDATE = (1<<4);
+        const PREFER_FAST_BUILD = (1<<5);
+        const PREFER_FAST_TRACE = (1<<6);
+    }
 }
 
 /// `PipelineLayout` is required to create a pipeline it describes the layout of resources for access on the GPU.
@@ -812,14 +823,12 @@ pub struct RaytracingTrianglesInfo<'stack, D: Device> {
     pub vertex_count: usize,
     pub index_format: Format,
     pub vertex_format: Format,
-    pub flags: RaytracingGeometryFlags
 }
 
 /// Information to create a raytracing acceleration structure from aabbs
 pub struct RaytracingAABBsInfo<'stack, D: Device> {
     pub aabbs: Option<&'stack D::Buffer>,
     pub aabb_count: usize,
-    pub flags: RaytracingGeometryFlags
 }
 
 /// Information to specify geometry for a raytracing bottom level acceleration structure
@@ -837,6 +846,17 @@ pub struct RaytracingInstanceInfo<'stack, D: Device> {
     pub hit_group_index: u32,
     pub instance_flags: u32,
     pub blas: &'stack D::RaytracingBLAS
+}
+
+pub struct RaytracingBLASInfo<'stack, D: Device> {
+    pub geometry: RaytracingGeometryInfo<'stack, D>,
+    pub geometry_flags: RaytracingGeometryFlags,
+    pub build_flags: AccelerationStructureBuildFlags,
+}
+
+pub struct RaytracingTLASInfo<'stack, D: Device> {
+    pub instances: &'stack Vec<RaytracingInstanceInfo<'stack, D>>,
+    pub build_flags: AccelerationStructureBuildFlags,
 }
 
 /// Information to create a pipeline through `Device::create_texture`.
@@ -1236,12 +1256,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Create a bottom level acceleration structure from `RaytracingGeometryInfo`
     fn create_raytracing_blas(
         &mut self,
-        info: &RaytracingGeometryInfo<Self>
+        info: &RaytracingBLASInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
     /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
     fn create_raytracing_tlas(
         &mut self,
-        info: &Vec<RaytracingInstanceInfo<Self>>
+        info: &RaytracingTLASInfo<Self>
     ) -> Result<Self::RaytracingTLAS, Error>;
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(

@@ -1,4 +1,8 @@
+use gfx::AccelerationStructureBuildFlags;
 use gfx::BufferUsage;
+use gfx::RaytracingBLASInfo;
+use gfx::RaytracingInstanceInfo;
+use gfx::RaytracingTLASInfo;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -80,20 +84,32 @@ fn main() -> Result<(), hotline_rs::Error> {
         initial_state: gfx::ResourceState::GenericRead
     }, Some(&vertices))?;
 
-    device.create_raytracing_blas(&gfx::RaytracingGeometryInfo::Triangles(
-        gfx::RaytracingTrianglesInfo {
-            index_buffer: &index_buffer,
-            vertex_buffer: &vertex_buffer,
-            transform3x4: None,
-            index_count: 3,
-            index_format: gfx::Format::R16u,
-            vertex_count: 3,
-            vertex_format: gfx::Format::RGB32f,
-            flags: gfx::RaytracingGeometryFlags::OPAQUE
-        }
-    ))?;
+    let blas = device.create_raytracing_blas(&RaytracingBLASInfo {
+        geometry: gfx::RaytracingGeometryInfo::Triangles(
+            gfx::RaytracingTrianglesInfo {
+                index_buffer: &index_buffer,
+                vertex_buffer: &vertex_buffer,
+                transform3x4: None,
+                index_count: 3,
+                index_format: gfx::Format::R16u,
+                vertex_count: 3,
+                vertex_format: gfx::Format::RGB32f,
+            }),
+        geometry_flags: gfx::RaytracingGeometryFlags::OPAQUE,
+        build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
+    })?;
 
-    // TODO: create tlas
+    let _ = device.create_raytracing_tlas(&RaytracingTLASInfo {
+        instances: &vec![RaytracingInstanceInfo {
+            transform: [0.0; 12],
+            instance_id: 0,
+            instance_mask: 0,
+            hit_group_index: 0,
+            instance_flags: 0,
+            blas: &blas
+        }],
+        build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
+    })?;
 
     // TODO: dispatch rays
 
