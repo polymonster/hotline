@@ -779,6 +779,37 @@ fn to_d3d12_raytracing_geometry_flags(flags: super::RaytracingGeometryFlags) -> 
     d3d12_flags
 }
 
+fn to_d3d12_raytracing_acceleration_structure_build_flags
+    (flags: super::AccelerationStructureBuildFlags) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS {
+    let mut d3d12_flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS(0);
+
+    if flags.contains(AccelerationStructureBuildFlags::ALLOW_COMPACTION) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_COMPACTION;
+    }
+
+    if flags.contains(AccelerationStructureBuildFlags::ALLOW_UPDATE) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE;
+    }
+
+    if flags.contains(AccelerationStructureBuildFlags::MINIMIZE_MEMORY) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_MINIMIZE_MEMORY;
+    }
+
+    if flags.contains(AccelerationStructureBuildFlags::PERFORM_UPDATE) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE;
+    }
+
+    if flags.contains(AccelerationStructureBuildFlags::PREFER_FAST_BUILD) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_BUILD;
+    }
+
+    if flags.contains(AccelerationStructureBuildFlags::PREFER_FAST_TRACE) {
+        d3d12_flags |= D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
+    }
+
+    d3d12_flags
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -3268,14 +3299,14 @@ impl super::Device for Device {
 
     fn create_raytracing_blas(
         &mut self,
-        info: &RaytracingGeometryInfo<Self>
+        info: &RaytracingBLASInfo<Self>
     ) -> result::Result<RaytracingBLAS, super::Error> {
         // create geometry desc
-        let geometry_desc = match info {
+        let geometry_desc = match &info.geometry {
             RaytracingGeometryInfo::Triangles(tris) => {
                 D3D12_RAYTRACING_GEOMETRY_DESC {
                     Type: D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES,
-                    Flags: to_d3d12_raytracing_geometry_flags(tris.flags),
+                    Flags: to_d3d12_raytracing_geometry_flags(info.geometry_flags),
                     Anonymous: D3D12_RAYTRACING_GEOMETRY_DESC_0 {
                         Triangles: D3D12_RAYTRACING_GEOMETRY_TRIANGLES_DESC {
                             Transform3x4: tris.transform3x4.map(|x| x.d3d_virtual_address()).unwrap_or(0),
@@ -3300,7 +3331,7 @@ impl super::Device for Device {
         // create acceleration structure inputs
         let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
             Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL,
-            Flags: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE, // TODO: pass with info
+            Flags: to_d3d12_raytracing_acceleration_structure_build_flags(info.build_flags),
             NumDescs: 1,
             DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
             Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
@@ -3374,7 +3405,7 @@ impl super::Device for Device {
 
     fn create_raytracing_tlas(
         &mut self,
-        info: &Vec<RaytracingInstanceInfo<Self>>
+        info: &RaytracingTLASInfo<Self>
     ) -> result::Result<RaytracingTLAS, super::Error> {
 
         // pack 24: 8 bits
@@ -3383,8 +3414,8 @@ impl super::Device for Device {
         };
 
         // create instance descs
-        let num_instances = info.len();
-        let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.iter()
+        let num_instances = info.instances.len();
+        let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.instances.iter()
             .map(|x| 
                 D3D12_RAYTRACING_INSTANCE_DESC {
                 Transform: x.transform,
@@ -3401,7 +3432,7 @@ impl super::Device for Device {
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>(),
-            num_elements: info.len(),
+            num_elements: num_instances,
             initial_state: super::ResourceState::GenericRead
         }, Some(instance_descs.as_slice()))
         .expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", stride * num_instances).as_str());
@@ -3409,7 +3440,7 @@ impl super::Device for Device {
         // create acceleration structure inputs
         let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
             Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
-            Flags: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE, // TODO: pass with info
+            Flags: to_d3d12_raytracing_acceleration_structure_build_flags(info.build_flags),
             NumDescs: num_instances as u32,
             DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
             Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
