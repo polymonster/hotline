@@ -834,7 +834,8 @@ pub struct RaytracingInstanceInfo<'stack, D: Device> {
     pub transform: [f32; 12],
     pub instance_id: u32,
     pub instance_mask: u32,
-    pub hit_group_mask: u32,
+    pub hit_group_index: u32,
+    pub instance_flags: u32,
     pub blas: &'stack D::RaytracingBLAS
 }
 
