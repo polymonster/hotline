@@ -38,7 +38,6 @@ fn main() -> Result<(), hotline_rs::Error> {
         ..Default::default()
     });
 
-    
     let swap_chain_info = gfx::SwapChainInfo {
         num_buffers,
         format: gfx::Format::RGBA8n,
@@ -99,7 +98,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
     })?;
 
-    let _ = device.create_raytracing_tlas(&RaytracingTLASInfo {
+    let tlas = device.create_raytracing_tlas(&RaytracingTLASInfo {
         instances: &vec![RaytracingInstanceInfo {
             transform: [0.0; 12],
             instance_id: 0,
@@ -111,7 +110,20 @@ fn main() -> Result<(), hotline_rs::Error> {
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
     })?;
 
-    // TODO: dispatch rays
+    // unordered access rw texture
+    let rw_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: 512,
+        height: 512,
+        depth: 1,
+        array_layers: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
+        initial_state: gfx::ResourceState::ShaderResource,
+    };
+    let _rw_tex = device.create_texture::<u8>(&rw_info, None).unwrap();
 
     while app.run() {
         // update window and swap chain
@@ -126,6 +138,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
 
+        // TODO:
+        // bind rw
+        // dispatch rays
+
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
@@ -136,6 +152,9 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
         cmd.set_viewport(&viewport);
         cmd.set_scissor_rect(&scissor);
+
+        // TODO:
+        // blit output to backbuffer
         
         cmd.end_render_pass();
 

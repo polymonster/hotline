@@ -1421,6 +1421,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         counter_buffer: Option<&D::Buffer>,
         counter_buffer_offset: usize
     );
+    /// Issue dispatch call for ray tracing with the specified `RaytracingShaderBindingTable` which is associated with the bound `RaytracingPipeline`
+    fn dispatch_rays(&self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 

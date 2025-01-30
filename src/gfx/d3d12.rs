@@ -4280,6 +4280,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
+        unimplemented!()
+    }
+
     fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> result::Result<ReadBackRequest, super::Error> {
         let bb = self.bb_index;
         let bbz = self.bb_index as u32;
