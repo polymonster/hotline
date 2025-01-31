@@ -1383,6 +1383,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
     /// Set a compute pipeline for `dispatch`
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
+    /// Set a raytracing pipeline for `dispatch_rays`
+    fn set_raytracing_pipeline(&self, pipeline: &D::RaytracingPipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
     fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap);
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
