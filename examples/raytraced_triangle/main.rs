@@ -123,7 +123,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
         initial_state: gfx::ResourceState::ShaderResource,
     };
-    let _rw_tex = device.create_texture::<u8>(&rw_info, None).unwrap();
+    let raytracing_output = device.create_texture::<u8>(&rw_info, None).unwrap();
 
     while app.run() {
         // update window and swap chain
@@ -138,30 +138,29 @@ fn main() -> Result<(), hotline_rs::Error> {
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
 
-        // TODO:
-        // bind rw
-        // dispatch rays
+        let raytracing_pipeline = pmfx.get_raytracing_pipeline("raytracing")?;
+        cmd.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
+        cmd.set_heap(&raytracing_pipeline.pipeline, &device.get_shader_heap()); // TODO: we are here.
+
+        cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
+            x: window_rect.width as u32,
+            y: window_rect.height as u32,
+            z: 1
+        });
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
-            state_after: gfx::ResourceState::RenderTarget,
+            state_after: gfx::ResourceState::CopyDst,
         });
 
-        cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
-        cmd.set_viewport(&viewport);
-        cmd.set_scissor_rect(&scissor);
-
-        // TODO:
-        // blit output to backbuffer
-        
-        cmd.end_render_pass();
+        cmd.copy_texture_region(&swap_chain.get_backbuffer_texture(), 0, 0, 0, 0, &raytracing_output, None);
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
+            state_before: gfx::ResourceState::CopyDst,
             state_after: gfx::ResourceState::Present,
         });
 

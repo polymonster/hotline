@@ -133,6 +133,11 @@ type FormatPipelineMap<T> = HashMap<String, HashMap<u32, (PmfxHash, T)>>;
 type TrackedView<D> = (PmfxHash, Arc<Mutex<View<D>>>, String);
 type TrackedComputePass<D> = (PmfxHash, Arc<Mutex<ComputePass<D>>>);
 
+pub struct RaytracingPipelineBinding<D: gfx::Device> {
+    pub pipeline: D::RaytracingPipeline,
+    pub sbt: D::RaytracingShaderBindingTable,
+}
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
@@ -147,6 +152,8 @@ pub struct Pmfx<D: gfx::Device> {
     render_pipelines: HashMap<PmfxHash, FormatPipelineMap<D::RenderPipeline>>,
     /// Compute Pipelines grouped by name then as a tuple (build_hash, pipeline)
     compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
+    /// Raytracing pipeline and sbt binding pair
+    raytracing_pipelines: HashMap<String, (PmfxHash, RaytracingPipelineBinding<D>)>,
     /// Shaders stored along with their build hash for quick checks if reload is necessary
     shaders: HashMap<String, (PmfxHash, D::Shader)>,
     /// Texture map of tracked texture info
@@ -960,6 +967,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
+            raytracing_pipelines: HashMap::new(),
             shaders: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
@@ -2120,14 +2128,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     hit_groups: pipeline.hit_groups
                 })?;
 
-                // TODO: raytracing
-                let _sbt = device.create_raytracing_shader_binding_table(&RaytracingShaderBindingTableInfo{
+                // TODO: this info should come from .pmfx data
+                let sbt = device.create_raytracing_shader_binding_table(&RaytracingShaderBindingTableInfo{
                     ray_generation_shader: String::from("MyRaygenShader"),
                     miss_shaders: vec![String::from("MyMissShader")],
                     callable_shaders: Vec::new(),
                     hit_groups: vec![String::from("MyHitGroup")],
                     pipeline: &raytracing_pipeline
                 })?;
+
+                // insert pipeline into the hash map w/ hash
+                self.raytracing_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, RaytracingPipelineBinding {
+                    pipeline: raytracing_pipeline,
+                    sbt
+                }));
             }
 
             Ok(())
@@ -2184,6 +2198,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
         else {
             Err(super::Error {
                 msg: format!("hotline_rs::pmfx:: could not find compute pipeline: {}", pipeline_name),
+            })
+        }
+    }
+ 
+    /// Fetch a prebuilt RaytracingPipelineBinding which is contains a RaytracingPipeline and RaytracingShaderBindingTable
+    pub fn get_raytracing_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Result<&'stack RaytracingPipelineBinding<D>, super::Error> {
+        if self.raytracing_pipelines.contains_key(pipeline_name) {
+            Ok(&self.raytracing_pipelines[pipeline_name].1)
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find raytracing pipeline: {}", pipeline_name),
             })
         }
     }
