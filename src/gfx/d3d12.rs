@@ -333,7 +333,9 @@ pub struct ComputePipeline {
 
 #[derive(Clone)]
 pub struct RaytracingPipeline {
-    state_object: ID3D12StateObject
+    state_object: ID3D12StateObject,
+    root_signature: ID3D12RootSignature,
+    lookup: RootSignatureLookup
 }
 
 const fn to_dxgi_format(format: super::Format) -> DXGI_FORMAT {
@@ -1259,6 +1261,12 @@ impl Buffer {
     fn d3d_virtual_address(&self) -> u64 {
         unsafe {
             self.resource.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0)
+        }
+    }
+    /// Get the d3d virtual address as u64 or 0 if the resource is None
+    fn size_bytes(&self) -> u64 {
+        unsafe {
+            self.resource.as_ref().map(|x| x.GetDesc().Width).unwrap_or(0)
         }
     }
 }
@@ -3142,7 +3150,7 @@ impl super::Device for Device {
         // root signature, for now we use a global one per pipeline
         let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
         let global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
-            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature))
+            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone())) // TODO: cleanup
         };
         let global_root_signature_subobject = D3D12_STATE_SUBOBJECT {
             Type: D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE,
@@ -3206,7 +3214,9 @@ impl super::Device for Device {
             )?;
 
             Ok(RaytracingPipeline {
-                state_object: state_object
+                state_object,
+                root_signature: root_signature.root_signature.clone(), // TODO: we
+                lookup: root_signature
             })
         }
     }
@@ -4147,6 +4157,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn set_raytracing_pipeline(&self, pipeline: &RaytracingPipeline) {
+        let cmd = self.cmd().cast::<ID3D12GraphicsCommandList4>().unwrap();
+        unsafe {
+            cmd.SetComputeRootSignature(&pipeline.root_signature);
+            cmd.SetPipelineState1(&pipeline.state_object);
+        }
+    }
+
     fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
@@ -4281,7 +4299,40 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
-        unimplemented!()
+        /*
+            // Bind the heaps, acceleration structure and dispatch rays.    
+            commandList->SetComputeRootShaderResourceView(GlobalRootSignatureParams::AccelerationStructureSlot, m_topLevelAccelerationStructure->GetGPUVirtualAddress());
+            
+        */
+        unsafe {
+            let dispatch_desc = D3D12_DISPATCH_RAYS_DESC {
+                RayGenerationShaderRecord: D3D12_GPU_VIRTUAL_ADDRESS_RANGE {
+                    StartAddress: sbt.ray_generation.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
+                    SizeInBytes: sbt.ray_generation.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                },
+                MissShaderTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
+                    StartAddress: sbt.miss.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
+                    SizeInBytes: sbt.miss.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    StrideInBytes: sbt.miss.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                },
+                HitGroupTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
+                    StartAddress: sbt.hit_group.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
+                    SizeInBytes: sbt.hit_group.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    StrideInBytes: sbt.hit_group.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                },
+                CallableShaderTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
+                    StartAddress: sbt.callable.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
+                    SizeInBytes: sbt.callable.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    StrideInBytes: sbt.callable.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                },
+                Width: numthreads.x,
+                Height: numthreads.y,
+                Depth: numthreads.z,
+            };
+
+            let cmd = self.cmd().cast::<ID3D12GraphicsCommandList4>().unwrap();
+            cmd.DispatchRays(&dispatch_desc);
+        }
     }
 
     fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> result::Result<ReadBackRequest, super::Error> {
@@ -4707,6 +4758,21 @@ impl super::Pipeline for RenderPipeline {
 }
 
 impl super::Pipeline for ComputePipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        let h = get_binding_descriptor_hash(register, space, descriptor_type);
+        self.lookup.slot_lookup.get(&h)
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.lookup.descriptor_slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Compute
+    }
+}
+
+impl super::Pipeline for RaytracingPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         let h = get_binding_descriptor_hash(register, space, descriptor_type);
         self.lookup.slot_lookup.get(&h)
