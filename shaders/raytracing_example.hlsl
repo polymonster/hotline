@@ -42,6 +42,7 @@ void MyRaygenShader()
         lerp(g_rayGenCB.viewport.top, g_rayGenCB.viewport.bottom, lerpValues.y),
         0.0f);
 
+
     if (IsInsideViewport(origin.xy, g_rayGenCB.stencil))
     {
         // Trace the ray.

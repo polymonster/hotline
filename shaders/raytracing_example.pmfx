@@ -13,6 +13,9 @@
                     geometry: Triangles
                 }
             ]
+            push_constants: [
+                "g_rayGenCB"
+            ]
         }
     }
 }

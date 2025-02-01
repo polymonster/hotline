@@ -3,6 +3,9 @@ use gfx::BufferUsage;
 use gfx::RaytracingBLASInfo;
 use gfx::RaytracingInstanceInfo;
 use gfx::RaytracingTLASInfo;
+use hotline_rs::gfx::RaytracingTLAS;
+use hotline_rs::gfx::Texture;
+use hotline_rs::gfx::Pipeline;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -15,6 +18,11 @@ use os::Window;
 #[cfg(target_os = "windows")]
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
+
+struct RaytracingViewport {
+    viewport: [f32; 4],
+    scissor: [f32; 4]
+}
 
 fn main() -> Result<(), hotline_rs::Error> {
     let mut app = os_platform::App::create(os::AppInfo {
@@ -110,18 +118,20 @@ fn main() -> Result<(), hotline_rs::Error> {
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
     })?;
 
+    let window_rect = window.get_viewport_rect();
+
     // unordered access rw texture
     let rw_info = gfx::TextureInfo {
         format: gfx::Format::RGBA8n,
         tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
+        width: window_rect.width as u64,
+        height: window_rect.height as u64,
         depth: 1,
         array_layers: 1,
         mip_levels: 1,
         samples: 1,
         usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
-        initial_state: gfx::ResourceState::ShaderResource,
+        initial_state: gfx::ResourceState::UnorderedAccess,
     };
     let raytracing_output = device.create_texture::<u8>(&rw_info, None).unwrap();
 
@@ -140,7 +150,36 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         let raytracing_pipeline = pmfx.get_raytracing_pipeline("raytracing")?;
         cmd.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
-        cmd.set_heap(&raytracing_pipeline.pipeline, &device.get_shader_heap()); // TODO: we are here.
+        
+        // bind rw tex on u0
+        let uav0 =  raytracing_output.get_uav_index().expect("expect raytracing_output to have a uav");
+        if let Some(u0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::UnorderedAccess) {
+            cmd.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), u0.index, uav0);
+        }
+
+        // set push constants on b0
+        let border = 0.1;
+        let aspect = window_rect.width as f32 / window_rect.height as f32;
+        cmd.push_compute_constants(0, 8, 0, gfx::as_u8_slice(&RaytracingViewport {
+            viewport: [
+                -1.0 + border, 
+                -1.0 + border * aspect,
+                 1.0 - border, 
+                 1.0 - border * aspect
+            ],
+            scissor: [
+                -1.0 + border / aspect, 
+                -1.0 + border,
+                 1.0 - border / aspect, 
+                 1.0 - border
+            ]
+        }));
+
+        // bind tlas on t0
+        let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
+        if let Some(t0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
+            cmd.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), t0.index, srv0);
+        }
 
         cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
             x: window_rect.width as u32,
@@ -155,6 +194,13 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::CopyDst,
         });
 
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(&raytracing_output),
+            buffer: None,
+            state_before: gfx::ResourceState::UnorderedAccess,
+            state_after: gfx::ResourceState::CopySrc,
+        });
+
         cmd.copy_texture_region(&swap_chain.get_backbuffer_texture(), 0, 0, 0, 0, &raytracing_output, None);
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
@@ -162,6 +208,13 @@ fn main() -> Result<(), hotline_rs::Error> {
             buffer: None,
             state_before: gfx::ResourceState::CopyDst,
             state_after: gfx::ResourceState::Present,
+        });
+
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(&raytracing_output),
+            buffer: None,
+            state_before: gfx::ResourceState::CopySrc,
+            state_after: gfx::ResourceState::UnorderedAccess,
         });
 
         cmd.close()?;
