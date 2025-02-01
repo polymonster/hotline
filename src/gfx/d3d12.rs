@@ -2408,6 +2408,29 @@ impl super::Device for Device {
                     cbv_index = Some(heap.get_handle_index(&h));
                 }
 
+                // srv
+                if info.usage.contains(super::BufferUsage::SHADER_RESOURCE) {
+                    let h = heap.allocate();
+                    self.device.CreateShaderResourceView(
+                        &buf,
+                        Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: dxgi_format,
+                            ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_SRV {
+                                    FirstElement: 0,
+                                    NumElements: info.num_elements as u32,
+                                    StructureByteStride: info.stride as u32,
+                                    Flags: D3D12_BUFFER_SRV_FLAG_NONE
+                                }
+                            }
+                        }),
+                        h,
+                    );
+                    srv_index = Some(heap.get_handle_index(&h));
+                }
+
                 // create uav
                 if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
                     let h = heap.allocate();
@@ -2447,22 +2470,19 @@ impl super::Device for Device {
                 }
             }
 
-            // srv
-            if info.usage.contains(super::BufferUsage::SHADER_RESOURCE) {
+            // TODO:
+            if info.usage.contains(super::BufferUsage::SHADER_RESOURCE | super::BufferUsage::BUFFER_ONLY) {
                 let h = heap.allocate();
                 self.device.CreateShaderResourceView(
-                    &buf,
+                    None,
                     Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
                         Format: dxgi_format,
-                        ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                        ViewDimension: D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE,
                         Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                         Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                            Buffer: D3D12_BUFFER_SRV {
-                                FirstElement: 0,
-                                NumElements: info.num_elements as u32,
-                                StructureByteStride: info.stride as u32,
-                                Flags: D3D12_BUFFER_SRV_FLAG_NONE
-                            }
+                            RaytracingAccelerationStructure: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_SRV {
+                                Location: buf.GetGPUVirtualAddress(), // GPU Address of the TLAS
+                            },
                         }
                     }),
                     h,
