@@ -1036,9 +1036,6 @@ pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
 /// An opaque shader table binding type..
 pub trait RaytracingShaderBindingTable<D: Device>: Send + Sync  {}
 
-/// An opaque top level acceleration structure for ray tracing geometry
-pub trait RaytracingTLAS<D: Device>: Send + Sync  {}
-
 /// An opaque bottom level acceleration structure for ray tracing geometry
 pub trait RaytracingBLAS<D: Device>: Send + Sync  {}
 
@@ -1390,6 +1387,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
+    // TODO:
+    fn set_tlas(&self, tlas: &D::RaytracingTLAS);
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
@@ -1498,6 +1497,14 @@ pub trait Texture<D: Device>: Send + Sync {
     fn is_resolvable(&self) -> bool;
     /// Return the id of the shader heap
     fn get_shader_heap_id(&self) -> Option<u16>;
+}
+
+/// An opaque top level acceleration structure for ray tracing geometry
+pub trait RaytracingTLAS<D: Device>: Send + Sync  {
+    /// Return the index to access in a shader (if the resource has msaa this is the resolved view)
+    fn get_srv_index(&self) -> Option<usize>;
+    /// Return the id of the shader heap
+    fn get_shader_heap_id(&self) -> u16;
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
