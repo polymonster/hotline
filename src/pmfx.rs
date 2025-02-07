@@ -2130,10 +2130,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                 // TODO: this info should come from .pmfx data
                 let sbt = device.create_raytracing_shader_binding_table(&RaytracingShaderBindingTableInfo{
-                    ray_generation_shader: String::from("MyRaygenShader"),
-                    miss_shaders: vec![String::from("MyMissShader")],
+                    ray_generation_shader: String::from("raygen_shader"),
+                    miss_shaders: vec![String::from("miss_shader")],
                     callable_shaders: Vec::new(),
-                    hit_groups: vec![String::from("MyHitGroup")],
+                    hit_groups: vec![String::from("hit_group")],
                     pipeline: &raytracing_pipeline
                 })?;
 

@@ -5,16 +5,16 @@
 
     pipelines: {
         raytracing: {
-            lib: ["MyRaygenShader", "MyClosestHitShader", "MyMissShader"]
+            lib: ["raygen_shader", "closest_hit_shader", "miss_shader"]
             hit_groups: [
                 {
-                    name: "MyHitGroup"
-                    closest_hit: "MyClosestHitShader"
+                    name: "hit_group"
+                    closest_hit: "closest_hit_shader"
                     geometry: Triangles
                 }
             ]
             push_constants: [
-                "g_rayGenCB"
+                "raygen_constants"
             ]
         }
     }

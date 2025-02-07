@@ -379,6 +379,8 @@ bitflags! {
         const UPLOAD = (1 << 7);
         /// Only create the buffer and no views
         const BUFFER_ONLY = (1 << 8);
+        /// Used as acceleration
+        const ACCELERATION_STRUCTURE = (1 << 9);
     }
 
     /// Flags for raytracing geometry
