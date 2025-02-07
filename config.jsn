@@ -113,11 +113,12 @@
         pmfx: {
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_0"
+                "-shader_version 6_3"
                 "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
+                "-f"
                 "-args"
                 "-Zpr"
             ]
