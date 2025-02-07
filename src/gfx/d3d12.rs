@@ -2431,8 +2431,26 @@ impl super::Device for Device {
                     srv_index = Some(heap.get_handle_index(&h));
                 }
 
-                // create uav
-                if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+                // create uav / acelleration structure
+                if info.usage.contains(super::BufferUsage::ACCELERATION_STRUCTURE) {
+                    let h = heap.allocate();
+                    self.device.CreateShaderResourceView(
+                        None,
+                        Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: dxgi_format,
+                            ViewDimension: D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE,
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                RaytracingAccelerationStructure: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_SRV {
+                                    Location: buf.GetGPUVirtualAddress(), // GPU Address of the TLAS
+                                },
+                            }
+                        }),
+                        h,
+                    );
+                    srv_index = Some(heap.get_handle_index(&h));
+                }
+                else if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
                     let h = heap.allocate();
                     if let Some(offset) = counter_offset {
                         // append counter buffers are implictly added to the end of the buffer
@@ -2468,26 +2486,6 @@ impl super::Device for Device {
 
                     uav_index = Some(heap.get_handle_index(&h));
                 }
-            }
-
-            // TODO:
-            if info.usage.contains(super::BufferUsage::SHADER_RESOURCE | super::BufferUsage::BUFFER_ONLY) {
-                let h = heap.allocate();
-                self.device.CreateShaderResourceView(
-                    None,
-                    Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
-                        Format: dxgi_format,
-                        ViewDimension: D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE,
-                        Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
-                        Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
-                            RaytracingAccelerationStructure: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_SRV {
-                                Location: buf.GetGPUVirtualAddress(), // GPU Address of the TLAS
-                            },
-                        }
-                    }),
-                    h,
-                );
-                srv_index = Some(heap.get_handle_index(&h));
             }
 
             Ok(Buffer {
@@ -3392,13 +3390,13 @@ impl super::Device for Device {
 
         // UAV buffer the blas
         let blas_buffer = self.create_buffer::<u8>(&BufferInfo {
-            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::BUFFER_ONLY,
+            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::ACCELERATION_STRUCTURE,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ResultDataMaxSizeInBytes as usize,
             num_elements: 1,
             initial_state: super::ResourceState::AccelerationStructure
-        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
+        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // create blas desc
         let blas_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
@@ -3443,16 +3441,16 @@ impl super::Device for Device {
 
         // pack 24: 8 bits
         let pack_24_8 = |a, b| {
-            ((a & 0x00ffffff) << 8) | (b & 0x000000ff)
+            (a & 0x00ffffff) | ((b & 0x000000ff) << 24)
         };
 
-        // create instance descs
+        // create instance descslea
         let num_instances = info.instances.len();
         let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.instances.iter()
             .map(|x| 
                 D3D12_RAYTRACING_INSTANCE_DESC {
                 Transform: x.transform,
-                _bitfield1: pack_24_8(x.instance_mask, x.instance_id),
+                _bitfield1: pack_24_8(x.instance_id, x.instance_mask),
                 _bitfield2: pack_24_8(x.hit_group_index, x.instance_flags),
                 AccelerationStructure: x.blas.blas_buffer.d3d_virtual_address()
             })
@@ -3503,13 +3501,13 @@ impl super::Device for Device {
 
         // UAV buffer the tlas
         let tlas_buffer = self.create_buffer::<u8>(&BufferInfo {
-            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::BUFFER_ONLY | super::BufferUsage::SHADER_RESOURCE,
+            usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::ACCELERATION_STRUCTURE,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ResultDataMaxSizeInBytes as usize,
             num_elements: 1,
             initial_state: super::ResourceState::AccelerationStructure
-        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
+        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a tlas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // create tlas desc
         let tlas_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {

@@ -77,7 +77,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let offset = 0.75;
     let depth = 1.0;
     let vertices: Vec<f32> = vec![
-        0.0, offset, depth,
+        0.0, -offset, depth,
         -offset, offset, depth,
         offset, offset, depth
     ];
@@ -108,9 +108,13 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let tlas = device.create_raytracing_tlas(&RaytracingTLASInfo {
         instances: &vec![RaytracingInstanceInfo {
-            transform: [0.0; 12],
+            transform: [
+                1.0, 0.0, 0.0, 0.0, 
+                0.0, 1.0, 0.0, 0.0, 
+                0.0, 0.0, 1.0, 0.0
+            ],
             instance_id: 0,
-            instance_mask: 0,
+            instance_mask: 0xff,
             hit_group_index: 0,
             instance_flags: 0,
             blas: &blas
