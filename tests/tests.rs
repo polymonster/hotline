@@ -643,17 +643,6 @@ fn test_missing_camera() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_camera")
 }
 
-/*
-#[test]
-fn draw() -> Result<(), hotline_rs::Error> {
-    for i in 0..100 {
-        boot_client_ecs_plugin_demo(format!("draw{i}").as_str());
-    }
-    Ok(())
-}
-    */
-
-
 //
 // ecs examples
 //

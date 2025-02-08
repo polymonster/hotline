@@ -74,12 +74,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         initial_state: gfx::ResourceState::GenericRead
     }, Some(&vec![0 as u16, 1 as u16, 2 as u16]))?;
 
-    let offset = 0.75;
-    let depth = 1.0;
     let vertices: Vec<f32> = vec![
-        0.0, -offset, depth,
-        -offset, offset, depth,
-        offset, offset, depth
+        0.0, -0.25, 1.0,
+        -0.25, 0.25, 1.0,
+        0.25, 0.25, 1.0
     ];
     
     let vertex_buffer = device.create_buffer(&gfx::BufferInfo {
