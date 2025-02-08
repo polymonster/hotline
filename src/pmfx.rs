@@ -358,7 +358,7 @@ struct Pipeline {
     cs: Option<String>,
     lib: Option<Vec<String>>,
     hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
-    sbt: RaytracingShaderBindingTableInfo,
+    sbt: Option<RaytracingShaderBindingTableInfo>,
     numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
@@ -2140,11 +2140,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     hit_groups: pipeline.hit_groups
                 })?;
 
+                let sbt_info = pipeline.sbt.expect("hotline_rs::pmfx:: ray tracing pipeline expects a shader binding table (sbt) to be defined in pmfx");
                 let sbt = device.create_raytracing_shader_binding_table(&gfx::RaytracingShaderBindingTableInfo{
-                    ray_generation_shader: pipeline.sbt.ray_generation_shader,
-                    miss_shaders: pipeline.sbt.miss_shaders,
-                    callable_shaders: pipeline.sbt.callable_shaders,
-                    hit_groups: pipeline.sbt.hit_groups,
+                    ray_generation_shader: sbt_info.ray_generation_shader,
+                    miss_shaders: sbt_info.miss_shaders,
+                    callable_shaders: sbt_info.callable_shaders,
+                    hit_groups: sbt_info.hit_groups,
                     pipeline: &raytracing_pipeline
                 })?;
 
