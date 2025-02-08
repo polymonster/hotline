@@ -16,6 +16,11 @@
             push_constants: [
                 "raygen_constants"
             ]
+            sbt: {
+                ray_generation_shader: "raygen_shader",
+                miss_shaders: ["miss_shader"],
+                hit_groups: ["hit_group"],
+            }
         }
     }
 }

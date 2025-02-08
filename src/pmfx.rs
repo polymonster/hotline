@@ -4,7 +4,6 @@ use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
 use crate::gfx::RaytracingPipelineInfo;
 
-use crate::gfx::RaytracingShaderBindingTableInfo;
 use crate::os;
 use crate::gfx;
 use crate::primitives;
@@ -339,6 +338,18 @@ struct BlendInfo {
     render_target: Vec<String>,
 }
 
+/// Information to fille out gfx::RaytracingShaderBindingTableInfo. It's mostly the same but doesnt have the pipleine requirement and need for typed Device
+#[derive(Serialize, Deserialize, Clone)]
+struct RaytracingShaderBindingTableInfo {
+    ray_generation_shader: String,
+    #[serde(default)]
+    miss_shaders: Vec<String>,
+    #[serde(default)]
+    hit_groups: Vec<String>,
+    #[serde(default)]
+    callable_shaders: Vec<String>
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
@@ -347,6 +358,7 @@ struct Pipeline {
     cs: Option<String>,
     lib: Option<Vec<String>>,
     hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
+    sbt: RaytracingShaderBindingTableInfo,
     numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
@@ -2128,12 +2140,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     hit_groups: pipeline.hit_groups
                 })?;
 
-                // TODO: this info should come from .pmfx data
-                let sbt = device.create_raytracing_shader_binding_table(&RaytracingShaderBindingTableInfo{
-                    ray_generation_shader: String::from("raygen_shader"),
-                    miss_shaders: vec![String::from("miss_shader")],
-                    callable_shaders: Vec::new(),
-                    hit_groups: vec![String::from("hit_group")],
+                let sbt = device.create_raytracing_shader_binding_table(&gfx::RaytracingShaderBindingTableInfo{
+                    ray_generation_shader: pipeline.sbt.ray_generation_shader,
+                    miss_shaders: pipeline.sbt.miss_shaders,
+                    callable_shaders: pipeline.sbt.callable_shaders,
+                    hit_groups: pipeline.sbt.hit_groups,
                     pipeline: &raytracing_pipeline
                 })?;
 

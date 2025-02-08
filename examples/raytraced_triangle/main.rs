@@ -19,12 +19,8 @@ use os::Window;
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
-struct RaytracingViewport {
-    viewport: [f32; 4],
-    scissor: [f32; 4]
-}
-
 fn main() -> Result<(), hotline_rs::Error> {
+    // setup app
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("raytraced_triangle"),
         window: false,
@@ -32,6 +28,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         dpi_aware: true,
     });
 
+    // setup gpu device
     let num_buffers : u32 = 2;
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers as usize,
@@ -41,6 +38,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     println!("{}", device.get_adapter_info());
     println!("features: {:?}", device.get_feature_flags());
 
+    // setup window and attach swapchain
     let mut window = app.create_window(os::WindowInfo {
         title: String::from("raytraced_triangle!"),
         ..Default::default()
@@ -57,14 +55,16 @@ fn main() -> Result<(), hotline_rs::Error> {
         }),
     };
 
+    // setup swap chain
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     let mut cmd = device.create_cmd_buf(num_buffers);
 
+    // pmfx for easier piepline loading, pipeline from raytracing_example.pmfx
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut device, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/raytracing_example"))?;
-   
     pmfx.create_raytracing_pipeline(&device, "raytracing")?;
 
+    // create geometry for the BLAS
     let index_buffer = device.create_buffer(&gfx::BufferInfo {
         usage: BufferUsage::UPLOAD,
         cpu_access: gfx::CpuAccessFlags::WRITE,
@@ -89,6 +89,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         initial_state: gfx::ResourceState::GenericRead
     }, Some(&vertices))?;
 
+    // create the BLAS itself
     let blas = device.create_raytracing_blas(&RaytracingBLASInfo {
         geometry: gfx::RaytracingGeometryInfo::Triangles(
             gfx::RaytracingTrianglesInfo {
@@ -104,6 +105,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
     })?;
 
+    // create a TLAS with a single instance of BLAS
     let tlas = device.create_raytracing_tlas(&RaytracingTLASInfo {
         instances: &vec![RaytracingInstanceInfo {
             transform: [
@@ -120,9 +122,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE
     })?;
 
-    let window_rect = window.get_viewport_rect();
-
     // unordered access rw texture
+    let window_rect = window.get_viewport_rect();
     let rw_info = gfx::TextureInfo {
         format: gfx::Format::RGBA8n,
         tex_type: gfx::TextureType::Texture2D,
@@ -144,8 +145,6 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // update viewport from window size
         let window_rect = window.get_viewport_rect();
-        let viewport = gfx::Viewport::from(window_rect);
-        let scissor = gfx::ScissorRect::from(window_rect);
 
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
@@ -162,20 +161,18 @@ fn main() -> Result<(), hotline_rs::Error> {
         // set push constants on b0
         let border = 0.1;
         let aspect = window_rect.width as f32 / window_rect.height as f32;
-        cmd.push_compute_constants(0, 8, 0, gfx::as_u8_slice(&RaytracingViewport {
-            viewport: [
-                -1.0 + border, 
-                -1.0 + border * aspect,
-                 1.0 - border, 
-                 1.0 - border * aspect
-            ],
-            scissor: [
-                -1.0 + border / aspect, 
-                -1.0 + border,
-                 1.0 - border / aspect, 
-                 1.0 - border
-            ]
-        }));
+        cmd.push_compute_constants(0, 8, 0, gfx::as_u8_slice(&[
+            // viewport
+            -1.0 + border, 
+            -1.0 + border * aspect,
+             1.0 - border, 
+             1.0 - border * aspect,
+            // scissor
+            -1.0 + border / aspect, 
+            -1.0 + border,
+             1.0 - border / aspect, 
+             1.0 - border
+        ]));
 
         // bind tlas on t0
         let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
