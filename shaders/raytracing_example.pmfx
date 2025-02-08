@@ -1,0 +1,26 @@
+{
+    include: [
+        "raytracing_example.hlsl"
+    ]
+
+    pipelines: {
+        raytracing: {
+            lib: ["raygen_shader", "closest_hit_shader", "miss_shader"]
+            hit_groups: [
+                {
+                    name: "hit_group"
+                    closest_hit: "closest_hit_shader"
+                    geometry: Triangles
+                }
+            ]
+            push_constants: [
+                "raygen_constants"
+            ]
+            sbt: {
+                ray_generation_shader: "raygen_shader",
+                miss_shaders: ["miss_shader"],
+                hit_groups: ["hit_group"],
+            }
+        }
+    }
+}

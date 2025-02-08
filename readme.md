@@ -801,6 +801,12 @@ Test for implementing and verifying the imgui backend - this demonstrates the en
 
 A standalone example of video playback, it allows you to load a video file from disk so it can be used to test compatibility of different video formats. The current implementation uses windows media foundation and Direct3D12 device to perform video decoding. The `av` API provides access to decoded video frames as a native `gfx::Texture` and performs all decoding on the GPU.
 
+### Raytraced Triangle
+
+A basic example to setup raytracing pipeline, it creates a BLAS consisting of a triangle mesh, TLAS with a single instance of the BLAS
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/raytraced_triangle.png" width="100%"/>
+
 ### Resource Tests
 
 This provides a testbed for loading different resource types, it loads some compressed texture formats and displays them to the screen to verify the texture build pipeline and the texture loading pipeline. It also tests the `copy_texture_region` API by copying a texture file specified in a `pmfx` into an empty texture also declared inside the `pmfx` config. This sample can be used in future as more resources are added.
