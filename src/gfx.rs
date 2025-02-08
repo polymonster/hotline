@@ -282,6 +282,12 @@ pub enum ShaderType {
     Vertex,
     Fragment,
     Compute,
+    RayGen,
+    AnyHit,
+    ClosestHit,
+    Miss,
+    Intersection,
+    Callable
 }
 
 bitflags! {
@@ -369,6 +375,33 @@ bitflags! {
         const INDIRECT_ARGUMENT_BUFFER = (1 << 5);
         /// Used in shader as `AppendStructuredBuffer` and contains a counter element
         const APPEND_COUNTER = (1 << 6);
+        /// Upload only buffer, can be used for acceleration structure geometry or to copy data
+        const UPLOAD = (1 << 7);
+        /// Only create the buffer and no views
+        const BUFFER_ONLY = (1 << 8);
+        /// Used as acceleration
+        const ACCELERATION_STRUCTURE = (1 << 9);
+    }
+
+    /// Flags for raytracing geometry
+    pub struct RaytracingGeometryFlags : u8 {
+        /// No flags
+        const NONE = 0;
+        /// Specifies the implementation must only call the any-hit shader a single time for each primitive in this geometry
+        const NO_DUPLICATE_ANY_HIT = (1 << 0);
+        /// Opque Geometry specifies no anyhit shader is called
+        const OPAQUE = (1<<1);
+    }
+
+    // Flags for building ray tracing acelleration structures
+    pub struct AccelerationStructureBuildFlags : u8 {
+        const NONE = 0;
+        const ALLOW_COMPACTION = (1<<1);
+        const ALLOW_UPDATE = (1<<2);
+        const MINIMIZE_MEMORY = (1<<3);
+        const PERFORM_UPDATE = (1<<4);
+        const PREFER_FAST_BUILD = (1<<5);
+        const PREFER_FAST_TRACE = (1<<6);
     }
 }
 
@@ -740,6 +773,94 @@ pub struct ComputePipelineInfo<'stack, D: Device> {
     pub pipeline_layout: PipelineLayout,
 }
 
+pub struct RaytracingShader<'stack, D: Device> {
+    /// Reference to shader
+    pub shader: &'stack D::Shader,
+    /// Entry point name within shader
+    pub entry_point: String
+}
+
+#[derive(Serialize, Deserialize, Clone, Copy)]
+pub enum RaytracingHitGeometry {
+    Triangles,
+    ProceduralPrimitive
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+pub struct RaytracingHitGroup {
+    pub name: String,
+    pub any_hit: Option<String>,
+    pub closest_hit: Option<String>,
+    pub intersection: Option<String>,
+    pub geometry: RaytracingHitGeometry
+}
+
+/// Information to create a raytracing pipeline through `Device::create_raytracing_pipeline`
+pub struct RaytracingPipelineInfo<'stack, D: Device> {
+    pub shaders: Vec<RaytracingShader<'stack, D>>,
+    pub hit_groups: Option<Vec<RaytracingHitGroup>>,
+    pub pipeline_layout: PipelineLayout,
+}
+
+/// Information to create a raytracing shader binding table from a raytracing pipeline, for use with `Device::dispatch_rays`
+pub struct RaytracingShaderBindingTableInfo<'stack, D: Device> {
+    /// The entry point name of the ray generation shader within the pipeline
+    pub ray_generation_shader: String,
+    /// The entry point names of the miss shaders to use in the dispatch rays
+    pub miss_shaders: Vec<String>,
+    /// The entry point names of the callable shaders to use in the dispatch rays
+    pub callable_shaders: Vec<String>,
+    /// The names of the hit groups to use in the dispatch rays
+    pub hit_groups: Vec<String>,
+    /// The raytracing pipeline to bind shaders from within
+    pub pipeline: &'stack D::RaytracingPipeline
+}
+
+/// Information to create a raytracing bottom level acceleration structure from traingle geometry index and vertex buffers
+pub struct RaytracingTrianglesInfo<'stack, D: Device> {
+    pub index_buffer: &'stack D::Buffer,
+    pub vertex_buffer: &'stack D::Buffer,
+    pub transform3x4: Option<&'stack D::Buffer>,
+    pub index_count: usize,
+    pub vertex_count: usize,
+    pub index_format: Format,
+    pub vertex_format: Format,
+}
+
+/// Information to create a raytracing acceleration structure from aabbs
+pub struct RaytracingAABBsInfo<'stack, D: Device> {
+    pub aabbs: Option<&'stack D::Buffer>,
+    pub aabb_count: usize,
+}
+
+/// Information to specify geometry for a raytracing bottom level acceleration structure
+pub enum RaytracingGeometryInfo<'stack, D: Device> {
+    Triangles(RaytracingTrianglesInfo<'stack, D>),
+    AABBs(RaytracingAABBsInfo<'stack, D>)
+}
+
+/// Information to create a top level raytracing acceleration structure
+pub struct RaytracingInstanceInfo<'stack, D: Device> {
+    /// A 3x4 transform matrix in row-major layout
+    pub transform: [f32; 12],
+    pub instance_id: u32,
+    pub instance_mask: u32,
+    pub hit_group_index: u32,
+    pub instance_flags: u32,
+    pub blas: &'stack D::RaytracingBLAS
+}
+
+pub struct RaytracingBLASInfo<'stack, D: Device> {
+    pub geometry: RaytracingGeometryInfo<'stack, D>,
+    pub geometry_flags: RaytracingGeometryFlags,
+    pub build_flags: AccelerationStructureBuildFlags,
+}
+
+pub struct RaytracingTLASInfo<'stack, D: Device> {
+    pub instances: &'stack Vec<RaytracingInstanceInfo<'stack, D>>,
+    pub build_flags: AccelerationStructureBuildFlags,
+}
+
 /// Information to create a pipeline through `Device::create_texture`.
 #[derive(Copy, Clone)]
 pub struct TextureInfo {
@@ -855,6 +976,8 @@ pub enum ResourceState {
     GenericRead,
     /// Used for argument buffer in `execute_indirect` calls 
     IndirectArgument,
+    /// Used for destination acceleration structure buffers
+    AccelerationStructure
 }
 
 /// ome resources may contain subresources for resolving
@@ -905,8 +1028,18 @@ pub trait RenderPass<D: Device>: Send + Sync  {
     /// hash is based on render target format, depth stencil format and MSAA sample count
     fn get_format_hash(&self) -> u64;
 }
+
 /// An opaque compute pipeline type..
 pub trait ComputePipeline<D: Device>: Send + Sync  {}
+
+/// An opaque compute pipeline type..
+pub trait RaytracingPipeline<D: Device>: Send + Sync  {}
+
+/// An opaque shader table binding type..
+pub trait RaytracingShaderBindingTable<D: Device>: Send + Sync  {}
+
+/// An opaque bottom level acceleration structure for ray tracing geometry
+pub trait RaytracingBLAS<D: Device>: Send + Sync  {}
 
 /// A pipeline trait for shared functionality between Compute and Render pipelines
 pub trait Pipeline {
@@ -1043,7 +1176,11 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Heap: Heap<Self>;
     type QueryHeap: QueryHeap<Self>;
     type ComputePipeline: ComputePipeline<Self>;
+    type RaytracingPipeline: RaytracingPipeline<Self>;
     type CommandSignature: CommandSignature<Self>;
+    type RaytracingShaderBindingTable: RaytracingShaderBindingTable<Self>;
+    type RaytracingBLAS: RaytracingBLAS<Self>;
+    type RaytracingTLAS: RaytracingTLAS<Self>;
     /// Create a new GPU `Device` from `Device Info`
     fn create(info: &DeviceInfo) -> Self;
     /// Create a new resource `Heap` from `HeapInfo`
@@ -1105,7 +1242,27 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &ComputePipelineInfo<Self>,
     ) -> Result<Self::ComputePipeline, Error>;
-    /// Creat a command signature for `execute_indirect` commands associated on the `RenderPipeline`
+    /// Create a new raytracing pipeline state object from `RaytracingPipelineInfo`
+    fn create_raytracing_pipeline(
+        &self,
+        info: &RaytracingPipelineInfo<Self>,
+    ) -> Result<Self::RaytracingPipeline, Error>;
+    /// Create a new raytracing shader binding table from `RaytracingShaderBindingTableInfo`
+    fn create_raytracing_shader_binding_table(
+        &self,
+        info: &RaytracingShaderBindingTableInfo<Self>
+    ) -> Result<Self::RaytracingShaderBindingTable, Error>;
+    /// Create a bottom level acceleration structure from `RaytracingGeometryInfo`
+    fn create_raytracing_blas(
+        &mut self,
+        info: &RaytracingBLASInfo<Self>
+    ) -> Result<Self::RaytracingBLAS, Error>;
+    /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
+    fn create_raytracing_tlas(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>
+    ) -> Result<Self::RaytracingTLAS, Error>;
+    /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
         &mut self, 
         arguments: Vec<IndirectArgument>,
@@ -1151,8 +1308,8 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
 pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     /// Call to begin a new frame, to synconise with v-sync and internally swap buffers
     fn new_frame(&mut self);
-    /// Update to syncornise with the window, this may require the backbuffer to resize
-    fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
+    /// Update to syncornise with the window, this may require the backbuffer to resize, returns true if a resize occured
+    fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf) -> bool;
     /// Waits on the CPU for the last frame that was submitted with `swap` to be completed by the GPU
     fn wait_for_last_frame(&self);
     /// Returns the fence value for the current frame, you can use this to syncronise reads
@@ -1225,11 +1382,15 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
     /// Set a compute pipeline for `dispatch`
     fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
+    /// Set a raytracing pipeline for `dispatch_rays`
+    fn set_raytracing_pipeline(&self, pipeline: &D::RaytracingPipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
     fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap);
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
+    // TODO:
+    fn set_tlas(&self, tlas: &D::RaytracingTLAS);
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
@@ -1263,6 +1424,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         counter_buffer: Option<&D::Buffer>,
         counter_buffer_offset: usize
     );
+    /// Issue dispatch call for ray tracing with the specified `RaytracingShaderBindingTable` which is associated with the bound `RaytracingPipeline`
+    fn dispatch_rays(&self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 
@@ -1336,6 +1499,14 @@ pub trait Texture<D: Device>: Send + Sync {
     fn is_resolvable(&self) -> bool;
     /// Return the id of the shader heap
     fn get_shader_heap_id(&self) -> Option<u16>;
+}
+
+/// An opaque top level acceleration structure for ray tracing geometry
+pub trait RaytracingTLAS<D: Device>: Send + Sync  {
+    /// Return the index to access in a shader (if the resource has msaa this is the resolved view)
+    fn get_srv_index(&self) -> Option<usize>;
+    /// Return the id of the shader heap
+    fn get_shader_heap_id(&self) -> u16;
 }
 
 /// An opaque shader heap type, use to create views of resources for binding and access in shaders
