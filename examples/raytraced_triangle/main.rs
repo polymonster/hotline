@@ -19,6 +19,23 @@ use os::Window;
 use os::win32 as os_platform;
 use gfx::d3d12 as gfx_platform;
 
+/// Create an rw texture output for raytracing to write into
+fn create_raytracing_output(device: &mut gfx_platform::Device, window_rect: &os::Rect<i32>) -> gfx_platform::Texture {
+    let rw_info = gfx::TextureInfo {
+        format: gfx::Format::RGBA8n,
+        tex_type: gfx::TextureType::Texture2D,
+        width: window_rect.width as u64,
+        height: window_rect.height as u64,
+        depth: 1,
+        array_layers: 1,
+        mip_levels: 1,
+        samples: 1,
+        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
+        initial_state: gfx::ResourceState::UnorderedAccess,
+    };
+    device.create_texture::<u8>(&rw_info, None).unwrap()
+}
+
 fn main() -> Result<(), hotline_rs::Error> {
     // setup app
     let mut app = os_platform::App::create(os::AppInfo {
@@ -32,7 +49,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let num_buffers : u32 = 2;
     let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
         render_target_heap_size: num_buffers as usize,
-        shader_heap_size: 4,
+        shader_heap_size: 32,
         ..Default::default()
     });
     println!("{}", device.get_adapter_info());
@@ -123,28 +140,22 @@ fn main() -> Result<(), hotline_rs::Error> {
     })?;
 
     // unordered access rw texture
-    let window_rect = window.get_viewport_rect();
-    let rw_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: window_rect.width as u64,
-        height: window_rect.height as u64,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
-        initial_state: gfx::ResourceState::UnorderedAccess,
-    };
-    let raytracing_output = device.create_texture::<u8>(&rw_info, None).unwrap();
+    let mut raytracing_output = create_raytracing_output(&mut device, &window.get_viewport_rect());
 
     while app.run() {
         // update window and swap chain
         window.update(&mut app);
-        swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
 
         // update viewport from window size
         let window_rect = window.get_viewport_rect();
+
+        // update and or resize swap chain
+        let reized = swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);
+
+        // resize the rw texture output
+        if reized {
+            raytracing_output = create_raytracing_output(&mut device, &window.get_viewport_rect());
+        }
 
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);

@@ -3811,7 +3811,7 @@ impl super::SwapChain<Device> for SwapChain {
         self.frame_fence_value[self.bb_index]
     }
 
-    fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
+    fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) -> bool {
         let size = window.get_size();
         if (size.x != self.width || size.y != self.height) && size.x > 0 && size.y > 0 {
             unsafe {
@@ -3861,9 +3861,11 @@ impl super::SwapChain<Device> for SwapChain {
                 self.width = size.x;
                 self.height = size.y;
                 self.bb_index = 0;
+                true
             }
         } else {
             self.new_frame();
+            false
         }
     }
 

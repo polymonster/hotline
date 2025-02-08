@@ -1308,8 +1308,8 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
 pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     /// Call to begin a new frame, to synconise with v-sync and internally swap buffers
     fn new_frame(&mut self);
-    /// Update to syncornise with the window, this may require the backbuffer to resize
-    fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf);
+    /// Update to syncornise with the window, this may require the backbuffer to resize, returns true if a resize occured
+    fn update<A: os::App>(&mut self, device: &mut D, window: &A::Window, cmd: &mut D::CmdBuf) -> bool;
     /// Waits on the CPU for the last frame that was submitted with `swap` to be completed by the GPU
     fn wait_for_last_frame(&self);
     /// Returns the fence value for the current frame, you can use this to syncronise reads
