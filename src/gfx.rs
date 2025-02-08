@@ -812,7 +812,7 @@ pub struct RaytracingShaderBindingTableInfo<'stack, D: Device> {
     pub callable_shaders: Vec<String>,
     /// The names of the hit groups to use in the dispatch rays
     pub hit_groups: Vec<String>,
-    // The raytracing pipeline to bind shaders from within
+    /// The raytracing pipeline to bind shaders from within
     pub pipeline: &'stack D::RaytracingPipeline
 }
 

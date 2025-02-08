@@ -1263,12 +1263,6 @@ impl Buffer {
             self.resource.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0)
         }
     }
-    /// Get the d3d virtual address as u64 or 0 if the resource is None
-    fn size_bytes(&self) -> u64 {
-        unsafe {
-            self.resource.as_ref().map(|x| x.GetDesc().Width).unwrap_or(0)
-        }
-    }
 }
 
 impl Device {
@@ -1709,8 +1703,8 @@ impl Shader {
 
 pub(crate) struct ShaderTable {
     pub buffer: Option<ID3D12Resource>,
-    pub count: usize,
-    pub stride: usize
+    pub _count: usize,
+    pub _stride: usize
 }
 
 pub struct RaytracingShaderBindingTable {
@@ -3250,8 +3244,8 @@ impl super::Device for Device {
                 if idents.is_empty() {
                     ShaderTable {
                         buffer: None,
-                        count: 0,
-                        stride: 0
+                        _count: 0,
+                        _stride: 0
                     }
                 }
                 else {
@@ -3296,8 +3290,8 @@ impl super::Device for Device {
 
                     ShaderTable {
                         buffer: table_buffer,
-                        count: idents.len(),
-                        stride: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize
+                        _count: idents.len(),
+                        _stride: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize
                     }
                 }
             };

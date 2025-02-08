@@ -73,7 +73,7 @@ void raygen_shader()
     else
     {
         // Render interpolated DispatchRaysIndex outside the stencil window
-        output_target[DispatchRaysIndex().xy] = float4(lerp_values, 0.0, 1.0);
+        output_target[DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
     }
 }
 
