@@ -190,9 +190,6 @@
                 "cargo build --examples"
             ]
         }
-        copy: {
-            
-        }
     }
 
     // runs cargo test single threaded to make it more firendly for using d3d devices and client instances
