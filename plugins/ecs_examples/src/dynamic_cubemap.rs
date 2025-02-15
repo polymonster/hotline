@@ -63,7 +63,7 @@ pub fn setup_dynamic_cubemap(
     let dist = rand::distributions::Uniform::from(0..orbit_meshes.len());
 
     let num_primitves = 32; 
-    for i in 0..num_primitves {
+    for _ in 0..num_primitves {
         let rv = normalize(vec3f(rng.gen(), rng.gen(), rng.gen()) * 2.0 - 1.0);
         let rr = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::tau();
         let offset : f32 = 20.0 + rng.gen::<f32>() * 20.0;

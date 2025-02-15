@@ -76,8 +76,10 @@
 
                 // default imgui layouts form the client.. todo. move to target
                 ["plugins/imgui.ini", "target/debug/imgui.ini"]
-                ["plugins/imgui.ini", "target/debug/imgui.ini"]
                 ["plugins/imgui.ini", "target/debug/deps/imgui.ini"]
+
+                ["plugins/imgui.ini", "target/release/imgui.ini"]
+                ["plugins/imgui.ini", "target/release/deps/imgui.ini"]
 
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
@@ -118,7 +120,6 @@
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
-                "-f"
                 "-args"
                 "-Zpr"
             ]
@@ -188,6 +189,9 @@
             commands: [
                 "cargo build --examples"
             ]
+        }
+        copy: {
+            
         }
     }
 
