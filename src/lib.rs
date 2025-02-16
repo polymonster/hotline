@@ -88,6 +88,7 @@ pub fn get_src_data_path(asset: &str) -> String {
             String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
         }
         else {
+            println!("unable to find path for asset {}", asset);
             panic!();
         }
     }
