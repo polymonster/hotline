@@ -118,7 +118,6 @@
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
-                "-f"
                 "-args"
                 "-Zpr"
             ]
