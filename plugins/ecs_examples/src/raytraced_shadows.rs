@@ -210,7 +210,6 @@ pub fn setup_raytraced_shadows_tlas(
         if t.tlas.is_none() {
             let mut instances = Vec::new();
             for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
-                println!("meow {}", index);
                 let translate = Mat34f::from_translation(position.0);
                 let rotate = Mat34f::from(rotation.0);
                 let scale = Mat34f::from_scale(scale.0);
@@ -267,21 +266,25 @@ pub fn render_meshes_raytraced(
     if let Ok(cam) = cam {
         for t in &tlas_query {
             if let Some(tlas) = &t.tlas {
-                println!("we have tlas, camera, output tex and size");
+                // set pipeline
+                let pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
+                pass.cmd_buf.set_raytracing_pipeline(&pipeline.pipeline);
+
+                // push camera constants
+
+                // dispatch
+                /*
+                cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
+                    x: window_rect.width as u32,
+                    y: window_rect.height as u32,
+                    z: 1
+                });
+                */
             }
         }
     }
 
     /*
-    cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
-        x: window_rect.width as u32,
-        y: window_rect.height as u32,
-        z: 1
-    });
-    */
-
-    /*
-        let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
     pass.cmd_buf.set_compute_pipeline(&pipeline);
 
     let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
