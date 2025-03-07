@@ -3342,7 +3342,7 @@ impl super::Device for Device {
                             IndexBuffer: tris.index_buffer.d3d_virtual_address(),
                             VertexBuffer: D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {
                                 StartAddress: tris.vertex_buffer.d3d_virtual_address(),
-                                StrideInBytes: size_for_format(tris.vertex_format, 1, 1, 1)
+                                StrideInBytes: tris.vertex_stride as u64
                             },
                         }
                     }

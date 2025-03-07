@@ -7,6 +7,7 @@ use crate::prelude::*;
 /// GPU Frustum Culling
 /// 
 
+#[allow(unused)]
 #[repr(packed)]
 pub struct DrawIndirectArgs {
     pub vertex_buffer: gfx::VertexBufferView,

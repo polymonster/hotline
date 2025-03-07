@@ -117,6 +117,7 @@ fn main() -> Result<(), hotline_rs::Error> {
                 index_format: gfx::Format::R16u,
                 vertex_count: 3,
                 vertex_format: gfx::Format::RGB32f,
+                vertex_stride: 12
             }),
         geometry_flags: gfx::RaytracingGeometryFlags::OPAQUE,
         build_flags: AccelerationStructureBuildFlags::PREFER_FAST_TRACE

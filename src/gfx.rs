@@ -825,6 +825,7 @@ pub struct RaytracingTrianglesInfo<'stack, D: Device> {
     pub vertex_count: usize,
     pub index_format: Format,
     pub vertex_format: Format,
+    pub vertex_stride: usize
 }
 
 /// Information to create a raytracing acceleration structure from aabbs

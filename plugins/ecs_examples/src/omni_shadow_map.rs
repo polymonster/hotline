@@ -165,7 +165,7 @@ pub fn animate_omni_shadow (
 
     let extent = 60.0;
 
-    for (mut position, mut velocity, component) in &mut light_query {
+    for (mut position, _, component) in &mut light_query {
         
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
 
@@ -179,10 +179,9 @@ pub fn animate_omni_shadow (
 #[export_update_fn]
 pub fn animate_meshes (
     time: Res<TimeRes>, 
-    mut pmfx: ResMut<PmfxRes>,
     mut mesh_query: Query<(&mut Rotation, &MeshComponent), Without<Billboard>>) -> Result<(), hotline_rs::Error> {
 
-    for (mut rotation, component) in &mut mesh_query {
+    for (mut rotation, _) in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(f32::pi() * time.delta, f32::pi() * time.delta, f32::pi() * time.delta);
     }
 

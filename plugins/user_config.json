@@ -1,9 +1,9 @@
 {
   "main_window_rect": {
-    "x": 1281,
-    "y": 31,
-    "width": 1278,
-    "height": 1368
+    "x": 0,
+    "y": 50,
+    "width": 1485,
+    "height": 1339
   },
   "console_window_rect": {
     "x": 0,
@@ -13,21 +13,21 @@
   },
   "plugins": {
     "ecs_examples": {
-      "path": "C:/Users/alex_/dev/hotline/plugins"
+      "path": "/plugins"
     },
     "ecs": {
-      "path": "C:/Users/alex_/dev/hotline/plugins"
+      "path": "/plugins"
     }
   },
   "plugin_data": {
     "ecs": {
-      "active_demo": "draw_push_constants",
+      "active_demo": "omni_shadow_map",
       "debug_draw_flags": {
         "bits": 1
       },
       "default_cameras": {
         "bindless_material": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -36,9 +36,9 @@
           ],
           "fov": 60.0,
           "pos": [
-            -204.99942016601562,
+            -204.9994201660156,
             300.58636474609375,
-            191.16505432128906
+            191.16505432128903
           ],
           "rot": [
             -47.0,
@@ -48,7 +48,7 @@
           "zoom": 411.0
         },
         "bindless_texture": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -69,7 +69,7 @@
           "zoom": 111.0
         },
         "blend_states": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -90,7 +90,7 @@
           "zoom": 241.0
         },
         "cubemap": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -111,7 +111,7 @@
           "zoom": 161.0
         },
         "directional_lights": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -120,9 +120,9 @@
           ],
           "fov": 60.0,
           "pos": [
-            249.39102172851562,
+            249.3910217285156,
             365.6768493652344,
-            232.56088256835938
+            232.56088256835935
           ],
           "rot": [
             -47.0,
@@ -132,7 +132,7 @@
           "zoom": 500.0
         },
         "draw": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -150,10 +150,10 @@
             173.0,
             0.0
           ],
-          "zoom": 3.0953867435455322
+          "zoom": 3.095386743545532
         },
         "draw_cbuffer_instanced": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -174,7 +174,7 @@
           "zoom": 211.0
         },
         "draw_indexed": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -195,7 +195,7 @@
           "zoom": 11.0
         },
         "draw_indexed_cbuffer_instanced": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -204,9 +204,9 @@
           ],
           "fov": 60.0,
           "pos": [
-            101.81123352050781,
+            101.8112335205078,
             123.74796295166016,
-            121.33390808105469
+            121.33390808105467
           ],
           "rot": [
             -38.0,
@@ -216,7 +216,7 @@
           "zoom": 201.0
         },
         "draw_indexed_push_constants": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -225,9 +225,9 @@
           ],
           "fov": 60.0,
           "pos": [
-            101.81123352050781,
+            101.8112335205078,
             123.74796295166016,
-            121.33390808105469
+            121.33390808105467
           ],
           "rot": [
             -38.0,
@@ -237,7 +237,7 @@
           "zoom": 201.0
         },
         "draw_indirect": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -258,7 +258,7 @@
           "zoom": 101.0
         },
         "draw_material": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Fly",
           "focus": [
             0.0,
@@ -279,7 +279,7 @@
           "zoom": 401.0
         },
         "draw_push_constants": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -288,7 +288,7 @@
           ],
           "fov": 60.0,
           "pos": [
-            101.30033874511719,
+            101.3003387451172,
             148.53457641601562,
             -94.4640884399414
           ],
@@ -300,7 +300,7 @@
           "zoom": 203.09539794921875
         },
         "draw_push_constants_texture": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -321,7 +321,7 @@
           "zoom": 101.0
         },
         "draw_vertex_buffer_instanced": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -342,7 +342,7 @@
           "zoom": 401.0
         },
         "dynamic_cubemap": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             -8.792448997497559,
@@ -351,7 +351,7 @@
           ],
           "fov": 60.0,
           "pos": [
-            -198.48973083496094,
+            -198.48973083496097,
             194.8465576171875,
             139.6575927734375
           ],
@@ -363,7 +363,7 @@
           "zoom": 301.0
         },
         "generate_mip_maps": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -384,7 +384,7 @@
           "zoom": 801.0
         },
         "geometry_primitives": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -405,7 +405,7 @@
           "zoom": 300.0
         },
         "gpu_frustum_culling": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -426,7 +426,7 @@
           "zoom": 2201.0
         },
         "multiple_render_targets": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -447,7 +447,7 @@
           "zoom": 2841.0
         },
         "omni_shadow_map": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             -84.5775146484375,
@@ -468,7 +468,7 @@
           "zoom": 401.0
         },
         "pbr": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             -8.89047622680664,
@@ -489,7 +489,7 @@
           "zoom": 201.0
         },
         "point_lights": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -510,7 +510,7 @@
           "zoom": 4200.0
         },
         "raster_states": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -531,7 +531,7 @@
           "zoom": 141.0
         },
         "read_write_texture": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -540,7 +540,7 @@
           ],
           "fov": 60.0,
           "pos": [
-            -122.07220458984375,
+            -122.07220458984376,
             148.37442016601562,
             145.4799346923828
           ],
@@ -552,7 +552,7 @@
           "zoom": 241.0
         },
         "shadow_map": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             -84.5775146484375,
@@ -573,7 +573,7 @@
           "zoom": 301.0
         },
         "spot_lights": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -594,7 +594,7 @@
           "zoom": 4200.0
         },
         "tangent_space_normal_maps": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -604,7 +604,7 @@
           "fov": 60.0,
           "pos": [
             152.46359252929688,
-            185.31411743164062,
+            185.31411743164065,
             181.69903564453125
           ],
           "rot": [
@@ -615,7 +615,7 @@
           "zoom": 301.0
         },
         "test_blend_states": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -636,7 +636,7 @@
           "zoom": 201.0
         },
         "test_compute": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -657,7 +657,7 @@
           "zoom": 226.0
         },
         "test_cubemap": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -678,7 +678,7 @@
           "zoom": 201.0
         },
         "test_multiple_render_targets": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -699,7 +699,7 @@
           "zoom": 2726.0
         },
         "test_raster_states": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -720,7 +720,7 @@
           "zoom": 101.0
         },
         "test_texture2d_array": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -741,7 +741,7 @@
           "zoom": 301.0
         },
         "test_texture3d": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -762,7 +762,7 @@
           "zoom": 126.0
         },
         "texture2d_array": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -783,7 +783,7 @@
           "zoom": 261.0
         },
         "texture3d": {
-          "aspect": 0.9342105388641357,
+          "aspect": 0.9342105388641356,
           "camera_type": "Orbit",
           "focus": [
             0.0,
@@ -792,7 +792,7 @@
           ],
           "fov": 60.0,
           "pos": [
-            -91.16191101074219,
+            -91.1619110107422,
             61.810333251953125,
             88.03402709960938
           ],
@@ -805,25 +805,25 @@
         }
       },
       "main_camera": {
-        "aspect": 0.9342105388641357,
+        "aspect": 0.9342105388641356,
         "camera_type": "Orbit",
         "focus": [
-          0.0,
-          0.0,
-          0.0
+          -84.5775146484375,
+          -24.918657302856445,
+          -41.637569427490234
         ],
         "fov": 60.0,
         "pos": [
-          101.30033874511719,
-          148.53457641601562,
-          -94.4640884399414
+          251.52508544921875,
+          -10.923968315124512,
+          176.62876892089844
         ],
         "rot": [
-          -47.0,
-          133.0,
+          -362.0,
+          7257.0,
           0.0
         ],
-        "zoom": 203.09539794921875
+        "zoom": 401.0
       }
     }
   }
