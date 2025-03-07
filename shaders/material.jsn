@@ -56,6 +56,21 @@
             raster_state: cull_back
             topology: "TriangleList"
         }
+        mesh_lit_rt_shadow: {
+            lib: ["scene_raygen_shader", "scene_closest_hit_shader", "scene_miss_shader"]
+            hit_groups: [
+                {
+                    name: "hit_group"
+                    closest_hit: "scene_closest_hit_shader"
+                    geometry: Triangles
+                }
+            ]
+            sbt: {
+                ray_generation_shader: "scene_raygen_shader",
+                miss_shaders: ["scene_miss_shader"],
+                hit_groups: ["hit_group"],
+            }
+        }
         mesh_pbr_ibl: {
             vs: "vs_mesh",
             ps: "ps_mesh_pbr_ibl"
@@ -111,6 +126,31 @@
                 pipelines: ["mesh_lit"]
                 function: "render_meshes_bindless"
                 depends_on: ["debug"]
+            }
+        }
+        mesh_lit_rt_shadow: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                pipelines: ["mesh_lit_rt_shadow"]
+                function: "render_meshes_raytraced"
+                depends_on: ["debug"]
+				uses: [
+					["staging_output", "Write"]
+				]
+            }
+			blit_main_colour: {
+                view: "main_view"
+                pipelines: ["imdraw_blit"]
+                uses: [
+                    ["staging_output", "Read"]
+                ]
+                target_dimension: "staging_output"
+                function: "blit"
+                depends_on: ["meshes"]
             }
         }
         mesh_pbr: {

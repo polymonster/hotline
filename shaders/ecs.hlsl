@@ -137,6 +137,9 @@ StructuredBuffer<spot_light_data> spot_lights[] : register(t0, space4);
 StructuredBuffer<directional_light_data> directional_lights[] : register(t0, space5);
 StructuredBuffer<float4x4> shadow_matrices[] : register(t0, space6);
 
+// 
+RaytracingAccelerationStructure scene_tlas : register(t1, space0);
+
 // textures 
 Texture2D textures[] : register(t0, space7);
 Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);

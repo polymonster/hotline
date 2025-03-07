@@ -107,7 +107,7 @@ pub fn render_meshes_pbr(
     let mut i = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
 
-        let roughness = ((i % rc).as_f32() / rc as f32);
+        let roughness = (i % rc).as_f32() / rc as f32;
         let metalness = if i >= 8 {
             1.0
         }
