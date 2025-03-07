@@ -6,7 +6,6 @@ use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
-use bevy_ecs::schedule::SystemConfig;
 use bevy_ecs::schedule::SystemConfigs;
 
 use std::collections::HashMap;

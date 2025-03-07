@@ -29,6 +29,7 @@ mod shadow_map;
 mod omni_shadow_map;
 mod dynamic_cubemap;
 mod pbr;
+mod raytraced_shadows;
 
 use prelude::*;
 
@@ -583,7 +584,8 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "shadow_map",
         "dynamic_cubemap",
         "omni_shadow_map",
-        "pbr"
+        "pbr",
+        "raytraced_shadows"
     ]
 }
 
