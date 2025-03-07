@@ -399,8 +399,11 @@ enum ResourceUsage {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct GraphPassInfo {
-    /// For render passes, specifies the view (render target, camera etc
+    /// For render passes, specifies the view (render target, camera etc)
     view: Option<String>,
+    /// Indicates it is a raytraced view, uses camera but RW texture
+    #[serde(default)]
+    raytraced: bool,
     /// Pipelines array that will use during this pass
     pipelines: Option<Vec<String>>,
     /// A function to call which can build draw or compute commands
@@ -1938,7 +1941,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     if let Some(view) = &instance.view {
                         // create transitions by inspecting view info
                         let pmfx_view = self.pmfx.views[view].clone();
-        
+
                         // if we need to write to a target we must make sure it is transitioned into render target state
                         for rt_name in pmfx_view.render_target {
                             self.create_texture_transition_barrier(

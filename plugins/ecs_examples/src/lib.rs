@@ -307,7 +307,6 @@ pub fn render_meshes(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     view.cmd_buf.set_render_pipeline(&pipeline);
-
     view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;

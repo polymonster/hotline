@@ -256,7 +256,7 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     float3 diffuse = irradiance * albedo;
 
     // specular / reflection
-    float spec_lod = 16.0; //log2(roughness * 10000.0);
+    float spec_lod = 16.0;
 
     float3 ks = f;
     float3 kd = (1.0 - ks) * (1.0 - metalness);
@@ -265,4 +265,99 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     float3 specular = prefilter * (f * brdf.x + brdf.y);
 
     return float4(((kd * max(diffuse, 0.0) + max(specular, 0.0))), 1.0);
+}
+
+// basic ray traced shadow
+bool is_occluded(float3 origin, float3 direction, float tMin, float tMax)
+{
+    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
+
+    RayDesc desc;
+    desc.Origin = origin;
+    desc.TMin = tMin;
+    desc.Direction = direction;
+    desc.TMax = tMax;
+
+    rayQuery.TraceRayInline(
+        scene_tlas,
+        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+        0xFF,
+        desc
+    );
+
+    while (rayQuery.Proceed()) // Traverse BVH
+    {
+        if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+        {
+            return true; // Something is occluding
+        }
+    }
+    return false; // No occlusion
+}
+
+struct RayPayload
+{
+    float4 color;
+};
+
+[shader("raygeneration")]
+void scene_raygen_shader()
+{
+    /*
+    float2 lerp_values = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
+
+    // Orthographic projection since we're raytracing in screen space.
+    float3 ray_dir = float3(0.0, 0.0, 1.0);
+    float3 origin = float3(
+        lerp(
+            raygen_constants.viewport.left, 
+            raygen_constants.viewport.right, 
+            lerp_values.x
+        ),
+        lerp(
+            raygen_constants.viewport.top, 
+            raygen_constants.viewport.bottom, 
+            lerp_values.y
+        ),
+        0.0f
+    );
+
+
+    if (inside_viewport(origin.xy, raygen_constants.stencil))
+    {
+        // Trace the ray.
+        // Set the ray's extents.
+        RayDesc ray;
+        ray.Origin = origin;
+        ray.Direction = ray_dir;
+        
+        // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
+        // TMin should be kept small to prevent missing geometry at close contact areas.
+        ray.TMin = 0.001;
+        ray.TMax = 10000.0;
+        RayPayload payload = { float4(0.0, 0.0, 1.0, 0.0) };
+        TraceRay(scene, RAY_FLAG_NONE, ~0, 0.0, 1.0, 0.0, ray, payload);
+
+        // Write the raytraced color to the output texture.
+        output_target[DispatchRaysIndex().xy] = payload.color;
+    }
+    else
+    {
+        // Render interpolated DispatchRaysIndex outside the stencil window
+        output_target[DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
+    }
+    */
+}
+
+[shader("closesthit")]
+void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
+    payload.color = float4(float3(1.0, 1.0, 1.0) - barycentrics, 1.0);
+}
+
+[shader("miss")]
+void scene_miss_shader(inout RayPayload payload)
+{
+    payload.color = float4(0.5, 0.5, 0.5, 1.0);
 }
