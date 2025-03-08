@@ -303,9 +303,9 @@ struct RayPayload
 [shader("raygeneration")]
 void scene_raygen_shader()
 {
-    /*
     float2 lerp_values = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
 
+	/*
     // Orthographic projection since we're raytracing in screen space.
     float3 ray_dir = float3(0.0, 0.0, 1.0);
     float3 origin = float3(
@@ -347,6 +347,8 @@ void scene_raygen_shader()
         output_target[DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
     }
     */
+	
+	rw_textures[resources.input0.index][DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
 }
 
 [shader("closesthit")]

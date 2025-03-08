@@ -135,10 +135,6 @@ pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let export_tokens : TokenStream = export_fn.parse().unwrap();
 
     let input = parse_macro_input!(item as ItemFn);
-    let expanded = quote! {
-        #input
-    };
-
     let export_tokens : TokenStream = export_fn.parse().unwrap();
     let expanded = quote! {
         // The original function remains untouched

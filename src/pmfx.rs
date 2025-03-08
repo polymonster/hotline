@@ -350,6 +350,14 @@ struct RaytracingShaderBindingTableInfo {
     callable_shaders: Vec<String>
 }
 
+#[derive(Clone)]
+enum PipelineType {
+    None,
+    Render,
+    Compute,
+    Raytracing
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
@@ -1968,7 +1976,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
                     else if let Some(pipelines) = &instance.pipelines {
                         for pipeline in pipelines {
-                            self.create_compute_pipeline(device, pipeline)?;
+                            let pipeline_type = self.get_pipeline_type(pipeline);
+                            match pipeline_type {
+                                PipelineType::Compute => self.create_compute_pipeline(device, pipeline)?,
+                                PipelineType::Raytracing => self.create_raytracing_pipeline(device, pipeline)?,
+                                _ => panic!("hotline::pmfx: error: compute views require compute or raytracing pipelines")
+                            }
                         }
                     }
 
@@ -2016,6 +2029,32 @@ impl<D> Pmfx<D> where D: gfx::Device {
             Err(super::Error {
                 msg: format!("hotline_rs::pmfx:: could not find render graph: {}", graph_name),
             })
+        }
+    }
+
+    /// Returns the pipeline type based on the config setup from pmfx, a vs indicates render pipeline (ps may be null), cs for compute and lib for raytracing. Returns `PipelineType::None` if the pipeline is not found or is invalid
+    pub fn get_pipeline_type(&self, pipeline_name: &str) -> PipelineType {
+        if self.pmfx.pipelines.contains_key(pipeline_name) {
+            if let Some((_, pipeline)) = self.pmfx.pipelines[pipeline_name].iter().next() {
+                if pipeline.vs.is_some() {
+                    PipelineType::Render
+                }
+                else if pipeline.cs.is_some() {
+                    PipelineType::Compute
+                }
+                else if pipeline.lib.is_some() {
+                    PipelineType::Raytracing
+                }
+                else {
+                    PipelineType::None
+                }
+            }
+            else {
+                PipelineType::None
+            }
+        }
+        else {
+            PipelineType::None
         }
     }
 
