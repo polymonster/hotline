@@ -264,49 +264,40 @@ pub fn render_meshes_raytraced(
 
     let cam = pmfx.get_camera_constants("main_camera");
     if let Ok(cam) = cam {
-        for t in &tlas_query {
+        for t in &tlas_query {            
             if let Some(tlas) = &t.tlas {
-                // set pipeline
-                let pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
-                pass.cmd_buf.set_raytracing_pipeline(&pipeline.pipeline);
 
-                // push camera constants
+                // set pipeline
+                let rt_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
+                pass.cmd_buf.set_raytracing_pipeline(&rt_pipeline.pipeline);
+
+                // camera constants TODO:
+
+                // resource use constants
+                let using_slot = rt_pipeline.pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
+                if let Some(slot) = using_slot {
+                    for i in 0..pass.use_indices.len() {
+                        let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
+                        pass.cmd_buf.push_compute_constants(
+                            slot.index, 
+                            num_constants, 
+                            i as u32 * num_constants, 
+                            gfx::as_u8_slice(&pass.use_indices[i])
+                        );
+                    }
+                }
+
+                pass.cmd_buf.set_heap(&rt_pipeline.pipeline, &pmfx.shader_heap);
 
                 // dispatch
-                /*
-                cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
-                    x: window_rect.width as u32,
-                    y: window_rect.height as u32,
+                pass.cmd_buf.dispatch_rays(&rt_pipeline.sbt, gfx::Size3 {
+                    x: output_size.0 as u32,
+                    y: output_size.1 as u32,
                     z: 1
                 });
-                */
             }
         }
     }
-
-    /*
-    pass.cmd_buf.set_compute_pipeline(&pipeline);
-
-    let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = using_slot {
-        for i in 0..pass.use_indices.len() {
-            let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-            pass.cmd_buf.push_compute_constants(
-                slot.index, 
-                num_constants, 
-                i as u32 * num_constants, 
-                gfx::as_u8_slice(&pass.use_indices[i])
-            );
-        }
-    }
-
-    pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
-    
-    pass.cmd_buf.dispatch(
-        pass.group_count,
-        pass.numthreads
-    );
-    */
 
     Ok(())
 }

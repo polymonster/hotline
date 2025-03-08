@@ -70,6 +70,9 @@
                 miss_shaders: ["scene_miss_shader"],
                 hit_groups: ["hit_group"],
             }
+			push_constants: [
+                resources
+            ]
         }
         mesh_pbr_ibl: {
             vs: "vs_mesh",
