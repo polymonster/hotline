@@ -1,6 +1,8 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
+use hotline_rs::gfx::RaytracingTLAS;
+
 ///
 /// Raytraced Shadows
 /// 
@@ -43,9 +45,9 @@ pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_plat
                     index_buffer: &mesh.ib,
                     vertex_buffer: &mesh.vb,
                     transform3x4: None,
-                    index_count: 3,
+                    index_count: mesh.num_indices as usize,
                     index_format: gfx::Format::R16u,
-                    vertex_count: 3,
+                    vertex_count: mesh.num_indices as usize,
                     vertex_format: gfx::Format::RGB32f,
                     vertex_stride: 56
                 }),
@@ -186,11 +188,11 @@ pub fn setup_raytraced_shadows_scene(
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
 
-    commands.spawn((
+    commands.spawn(
         TLAS {
             tlas: None
         }
-    ));
+    );
 
     // 
     
@@ -250,8 +252,16 @@ pub fn animate_lights (
     Ok(())
 }
 
+// TODO_RT
+// create tlas with heap?
+// update tlas
+// mesh vertex count
+// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
+// colors from rust compile output?
+
 #[export_compute_fn]
-pub fn render_meshes_raytraced(    
+pub fn render_meshes_raytraced(
+    device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
     tlas_query: Query<&TLAS>
@@ -262,35 +272,39 @@ pub fn render_meshes_raytraced(
     let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
     let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
 
-    let cam = pmfx.get_camera_constants("main_camera");
-    if let Ok(cam) = cam {
+    let camera = pmfx.get_camera_constants("main_camera");
+    if let Ok(camera) = camera {
         for t in &tlas_query {            
             if let Some(tlas) = &t.tlas {
 
                 // set pipeline
-                let rt_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
-                pass.cmd_buf.set_raytracing_pipeline(&rt_pipeline.pipeline);
+                let raytracing_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
+                pass.cmd_buf.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
 
-                // camera constants TODO:
+                
+                let slot = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
+                if let Some(slot) = slot {
+                    // camera constants
+                    let inv = camera.view_projection_matrix.inverse();
+                    pass.cmd_buf.push_compute_constants(slot.index, 16, 0, &inv);
 
-                // resource use constants
-                let using_slot = rt_pipeline.pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-                if let Some(slot) = using_slot {
-                    for i in 0..pass.use_indices.len() {
-                        let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-                        pass.cmd_buf.push_compute_constants(
-                            slot.index, 
-                            num_constants, 
-                            i as u32 * num_constants, 
-                            gfx::as_u8_slice(&pass.use_indices[i])
-                        );
-                    }
+                    // output uav
+                    pass.cmd_buf.push_compute_constants(slot.index, 4, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
                 }
 
-                pass.cmd_buf.set_heap(&rt_pipeline.pipeline, &pmfx.shader_heap);
+                // bind shader heap
+                if let Some(u0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::UnorderedAccess) {
+                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, u0.index, 0);
+                }
+
+                // bind tlas on t1 (device heap)
+                let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
+                if let Some(t0) = raytracing_pipeline.pipeline.get_pipeline_slot(69, 0, gfx::DescriptorType::ShaderResource) {
+                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), t0.index, srv0);
+                }
 
                 // dispatch
-                pass.cmd_buf.dispatch_rays(&rt_pipeline.sbt, gfx::Size3 {
+                pass.cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
                     x: output_size.0 as u32,
                     y: output_size.1 as u32,
                     z: 1

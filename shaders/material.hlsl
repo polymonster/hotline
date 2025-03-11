@@ -297,69 +297,53 @@ bool is_occluded(float3 origin, float3 direction, float tMin, float tMax)
 
 struct RayPayload
 {
-    float4 color;
+    float4 colour;
+};
+
+cbuffer ray_tracing_constants : register(b0) {
+    float4x4    inverse_wvp;
+    int4        output_uav_index;
 };
 
 [shader("raygeneration")]
 void scene_raygen_shader()
 {
-    float2 lerp_values = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
+    //uv and ndc from dispatch dim
+    float2 uv = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
+    float2 ndc = uv * 2.0 - 1.0;
 
-	/*
-    // Orthographic projection since we're raytracing in screen space.
-    float3 ray_dir = float3(0.0, 0.0, 1.0);
-    float3 origin = float3(
-        lerp(
-            raygen_constants.viewport.left, 
-            raygen_constants.viewport.right, 
-            lerp_values.x
-        ),
-        lerp(
-            raygen_constants.viewport.top, 
-            raygen_constants.viewport.bottom, 
-            lerp_values.y
-        ),
-        0.0f
-    );
+    // unproject ray
+    float4 near = float4(ndc.x, ndc.y, 0.0, 1.0);
+    float4 far = float4(ndc.x, ndc.y, 1.0, 1.0);
+    
+    float4 wnear = mul(inverse_wvp, near);
+    wnear /= wnear.w;
+    
+    float4 wfar = mul(inverse_wvp, far);
+    wfar /= wfar.w;
 
+    // ray desc
+    RayDesc ray;
+    ray.Origin = wnear.xyz;
+    ray.Direction = normalize(wfar.xyz - wnear.xyz);
+    ray.TMin = 0.001;
+    ray.TMax = 10000.0;
 
-    if (inside_viewport(origin.xy, raygen_constants.stencil))
-    {
-        // Trace the ray.
-        // Set the ray's extents.
-        RayDesc ray;
-        ray.Origin = origin;
-        ray.Direction = ray_dir;
-        
-        // Set TMin to a non-zero small value to avoid aliasing issues due to floating - point errors.
-        // TMin should be kept small to prevent missing geometry at close contact areas.
-        ray.TMin = 0.001;
-        ray.TMax = 10000.0;
-        RayPayload payload = { float4(0.0, 0.0, 1.0, 0.0) };
-        TraceRay(scene, RAY_FLAG_NONE, ~0, 0.0, 1.0, 0.0, ray, payload);
+    RayPayload payload = { float4(0.0, 0.0, 1.0, 0.0) };
+    TraceRay(scene_tlas, RAY_FLAG_NONE, ~0, 0.0, 1.0, 0.0, ray, payload);
 
-        // Write the raytraced color to the output texture.
-        output_target[DispatchRaysIndex().xy] = payload.color;
-    }
-    else
-    {
-        // Render interpolated DispatchRaysIndex outside the stencil window
-        output_target[DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
-    }
-    */
-	
-	rw_textures[resources.input0.index][DispatchRaysIndex().xy] = float4(lerp_values, 1.0, 1.0);
+	rw_textures[output_uav_index.x][DispatchRaysIndex().xy] = payload.colour;
 }
 
 [shader("closesthit")]
 void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
     float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-    payload.color = float4(float3(1.0, 1.0, 1.0) - barycentrics, 1.0);
+    payload.colour = float4(float3(1.0, 1.0, 1.0) - barycentrics, 1.0);
 }
 
 [shader("miss")]
 void scene_miss_shader(inout RayPayload payload)
 {
-    payload.color = float4(0.5, 0.5, 0.5, 1.0);
+    payload.colour = float4(0.5, 0.5, 0.5, 1.0);
 }

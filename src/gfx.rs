@@ -169,6 +169,8 @@ pub struct HeapInfo {
     pub heap_type: HeapType,
     /// Total size of the heap in number of resources.
     pub num_descriptors: usize,
+    /// Optional debug name
+    pub debug_name: Option<String>
 }
 
 /// Options for heap types.
@@ -1258,6 +1260,14 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         info: &RaytracingBLASInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
+    /*
+    /// Create a top level acceleration structure from array of `RaytracingInstanceInfo` with specificed heap
+    fn create_raytracing_tlas_with_heap(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>,
+        heap: &mut Self::Heap
+    ) -> Result<Self::RaytracingTLAS, Error>;
+    */
     /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
     fn create_raytracing_tlas(
         &mut self,
@@ -1392,9 +1402,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
     // TODO:
     fn set_tlas(&self, tlas: &D::RaytracingTLAS);
-    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
+    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
-    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
+    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values
     fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
