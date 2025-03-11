@@ -1806,10 +1806,10 @@ impl super::Device for Device {
                 &HeapInfo {
                     heap_type: super::HeapType::Shader,
                     num_descriptors: info.shader_heap_size,
+                    debug_name: Some("device_shader_heap".to_string())
                 },
                 heap_id
             );
-            d3d12_debug_name!(shader_heap.heap, "device_shader_heap");
 
             // rtv
             heap_id += 1;
@@ -1818,10 +1818,10 @@ impl super::Device for Device {
                 &HeapInfo {
                     heap_type: super::HeapType::RenderTarget,
                     num_descriptors: info.render_target_heap_size,
+                    debug_name: Some("device_render_target_heap".to_string())
                 },
                 heap_id
             );
-            d3d12_debug_name!(rtv_heap.heap, "device_render_target_heap");
             
             // dsv
             heap_id += 1;
@@ -1830,10 +1830,10 @@ impl super::Device for Device {
                 &HeapInfo {
                     heap_type: super::HeapType::DepthStencil,
                     num_descriptors: info.depth_stencil_heap_size,
+                    debug_name: Some("device_depth_stencil_heap".to_string())
                 },
                 heap_id
             );
-            d3d12_debug_name!(dsv_heap.heap, "device_depth_stencil_heap");
 
             // query feature flags
             let mut feature_flags = DeviceFeatureFlags::NONE;
@@ -1889,7 +1889,13 @@ impl super::Device for Device {
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
         self.heap_id += 1; // bump heap id
-        create_heap(&self.device, info, self.heap_id)
+        let heap = create_heap(&self.device, info, self.heap_id);
+        if let Some(debug_name) = &info.debug_name {
+            unsafe {
+                d3d12_debug_name!(heap.heap, debug_name);
+            }
+        }
+        heap
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {

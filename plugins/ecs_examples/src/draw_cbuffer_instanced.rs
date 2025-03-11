@@ -53,7 +53,8 @@ pub fn setup_draw_cbuffer_instanced(
     for mesh in meshes {
         let mut heap = device.create_heap(&gfx::HeapInfo {
             heap_type: gfx::HeapType::Shader,
-            num_descriptors: instance_count as usize
+            num_descriptors: instance_count as usize,
+            debug_name: Some("instance_buffer_heap".to_string())
         });
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),

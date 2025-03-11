@@ -132,7 +132,6 @@ pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
             {} ({}).unwrap();
         }}).into_configs().{}
     }}", parsed.name, moves, parsed.name, pass, order);
-    let export_tokens : TokenStream = export_fn.parse().unwrap();
 
     let input = parse_macro_input!(item as ItemFn);
     let export_tokens : TokenStream = export_fn.parse().unwrap();

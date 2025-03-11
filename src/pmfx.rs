@@ -351,7 +351,7 @@ struct RaytracingShaderBindingTableInfo {
 }
 
 #[derive(Clone)]
-enum PipelineType {
+pub enum PipelineType {
     None,
     Render,
     Compute,
@@ -983,6 +983,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let shader_heap = device.create_heap(&gfx::HeapInfo {
             heap_type: gfx::HeapType::Shader,
             num_descriptors: shader_heap_size,
+            debug_name: Some("pmfx_shader_heap".to_string())
         });
         Pmfx {
             pmfx: File::new(),

@@ -113,14 +113,11 @@ pub fn render_orbit_meshes(
 
     view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
-    let mut mip = 0;
     for (world_matrix, mesh) in &mesh_draw_query {
         view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
         view.cmd_buf.set_index_buffer(&mesh.0.ib);
         view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-
-        mip += 1;
     }
 
     Ok(())

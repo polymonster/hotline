@@ -71,7 +71,7 @@
                 hit_groups: ["hit_group"],
             }
 			push_constants: [
-                resources
+                ray_tracing_constants
             ]
         }
         mesh_pbr_ibl: {
