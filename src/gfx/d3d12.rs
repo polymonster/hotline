@@ -3434,11 +3434,11 @@ impl super::Device for Device {
         }
     }
 
-    fn create_raytracing_tlas(
+    fn create_raytracing_tlas_with_heap(
         &mut self,
-        info: &RaytracingTLASInfo<Self>
+        info: &RaytracingTLASInfo<Self>,
+        heap: &mut Heap
     ) -> result::Result<RaytracingTLAS, super::Error> {
-
         // pack 24: 8 bits
         let pack_24_8 = |a, b| {
             (a & 0x00ffffff) | ((b & 0x000000ff) << 24)
@@ -3458,15 +3458,17 @@ impl super::Device for Device {
 
         // create upload buffer for instance descs
         let stride = std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>();
-        let instance_buffer = self.create_buffer(&BufferInfo {
+        let instance_buffer = self.create_buffer_with_heap(&BufferInfo {
             usage: super::BufferUsage::UPLOAD,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>(),
             num_elements: num_instances,
             initial_state: super::ResourceState::GenericRead
-        }, Some(instance_descs.as_slice()))
-        .expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", stride * num_instances).as_str());
+            }, 
+            Some(instance_descs.as_slice()),
+            heap
+        ).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", stride * num_instances).as_str());
 
         // create acceleration structure inputs
         let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
@@ -3489,25 +3491,31 @@ impl super::Device for Device {
         };
 
         // UAV scratch buffer
-        let scratch_buffer = self.create_buffer::<u8>(&BufferInfo {
+        let scratch_buffer = self.create_buffer_with_heap::<u8>(&BufferInfo {
             usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::BUFFER_ONLY,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ScratchDataSizeInBytes as usize,
             num_elements: 1,
             initial_state: super::ResourceState::UnorderedAccess
-        }, None)
+            },
+            None,
+            heap
+        )
         .expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing tlas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // UAV buffer the tlas
-        let tlas_buffer = self.create_buffer::<u8>(&BufferInfo {
+        let tlas_buffer = self.create_buffer_with_heap::<u8>(&BufferInfo {
             usage: super::BufferUsage::UNORDERED_ACCESS | super::BufferUsage::ACCELERATION_STRUCTURE,
             cpu_access: super::CpuAccessFlags::NONE,
             format: super::Format::Unknown,
             stride: prebuild_info.ResultDataMaxSizeInBytes as usize,
             num_elements: 1,
             initial_state: super::ResourceState::AccelerationStructure
-        }, None).expect(format!("hotline_rs::gfx::d3d12: failed to create a tlas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
+            }, 
+            None,
+            heap
+        ).expect(format!("hotline_rs::gfx::d3d12: failed to create a tlas of size {}", prebuild_info.ScratchDataSizeInBytes).as_str());
 
         // create tlas desc
         let tlas_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
@@ -3533,6 +3541,16 @@ impl super::Device for Device {
             tlas_buffer,
             shader_heap_id: self.shader_heap.as_ref().map(|x| x.id).unwrap_or(0)
         })
+    }
+
+    fn create_raytracing_tlas(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>
+    ) -> result::Result<RaytracingTLAS, super::Error> {
+        let mut heap = std::mem::take(&mut self.shader_heap).unwrap();
+        let result = self.create_raytracing_tlas_with_heap(info, &mut heap);
+        self.shader_heap = Some(heap);
+        result
     }
 
     fn create_indirect_render_command<T: Sized>(

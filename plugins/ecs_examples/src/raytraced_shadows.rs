@@ -193,8 +193,6 @@ pub fn setup_raytraced_shadows_scene(
             tlas: None
         }
     );
-
-    // 
     
     Ok(())
 }
@@ -225,10 +223,12 @@ pub fn setup_raytraced_shadows_tlas(
                         blas: &blas.blas
                     }
                 );
-                let tlas = device.create_raytracing_tlas(&gfx::RaytracingTLASInfo {
+                let tlas = device.create_raytracing_tlas_with_heap(&gfx::RaytracingTLASInfo {
                     instances: &instances,
-                    build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE
-                })?;
+                    build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE,
+                    },
+                    &mut pmfx.shader_heap
+                )?;
                 
                 t.tlas = Some(tlas);
             }
@@ -253,7 +253,7 @@ pub fn animate_lights (
 }
 
 // TODO_RT
-// create tlas with heap?
+
 // update tlas
 // mesh vertex count
 // fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
@@ -276,12 +276,10 @@ pub fn render_meshes_raytraced(
     if let Ok(camera) = camera {
         for t in &tlas_query {            
             if let Some(tlas) = &t.tlas {
-
                 // set pipeline
                 let raytracing_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
                 pass.cmd_buf.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
 
-                
                 let slot = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
                 if let Some(slot) = slot {
                     // camera constants
@@ -300,7 +298,7 @@ pub fn render_meshes_raytraced(
                 // bind tlas on t1 (device heap)
                 let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
                 if let Some(t0) = raytracing_pipeline.pipeline.get_pipeline_slot(69, 0, gfx::DescriptorType::ShaderResource) {
-                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), t0.index, srv0);
+                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, t0.index, srv0);
                 }
 
                 // dispatch

@@ -98,21 +98,11 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         }
-        else {
-            /*
-            let hotline_path = super::get_data_path("../..");
-            let pmbuild = super::get_data_path("../../hotline-data/pmbuild.cmd");
-            std::process::Command::new(pmbuild)
-                .current_dir(hotline_path)
-                .arg("win32-debug")
-                .arg("-plugins")
-                .output()
-                .expect("hotline::hot_lib:: hot pmfx failed to compile!")
-            */
-            
+        else {            
             Command::new("cargo")
                 .current_dir(&self.path)
                 .arg("build")
+                .env("CARGO_TERM_COLOR", "always")
                 .arg("-p")
                 .arg(&self.name)
                 .output()
