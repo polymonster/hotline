@@ -1260,14 +1260,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         info: &RaytracingBLASInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
-    /*
     /// Create a top level acceleration structure from array of `RaytracingInstanceInfo` with specificed heap
     fn create_raytracing_tlas_with_heap(
         &mut self,
         info: &RaytracingTLASInfo<Self>,
         heap: &mut Self::Heap
     ) -> Result<Self::RaytracingTLAS, Error>;
-    */
     /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
     fn create_raytracing_tlas(
         &mut self,
