@@ -137,15 +137,15 @@ StructuredBuffer<spot_light_data> spot_lights[] : register(t0, space4);
 StructuredBuffer<directional_light_data> directional_lights[] : register(t0, space5);
 StructuredBuffer<float4x4> shadow_matrices[] : register(t0, space6);
 
-// TODO_RT
-RaytracingAccelerationStructure scene_tlas : register(t69, space0);
-
 // textures 
 Texture2D textures[] : register(t0, space7);
 Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);
 TextureCube cubemaps[] : register(t0, space9);
 Texture2DArray texture_arrays[] : register(t0, space10);
 Texture3D volume_textures[] : register(t0, space11);
+
+// tlas
+RaytracingAccelerationStructure scene_tlas[] : register(t0, space12);
 
 // uav textures
 RWTexture2D<float4> rw_textures[] : register(u0, space0);

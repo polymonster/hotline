@@ -115,7 +115,7 @@
         pmfx: {
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_3"
+                "-shader_version 6_5"
                 "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
@@ -128,7 +128,7 @@
             explicit: true
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_3"
+                "-shader_version 6_5"
                 "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
