@@ -1703,8 +1703,8 @@ impl Shader {
 
 pub(crate) struct ShaderTable {
     pub buffer: Option<ID3D12Resource>,
-    pub _count: usize,
-    pub _stride: usize
+    pub count: usize,
+    pub stride: usize
 }
 
 pub struct RaytracingShaderBindingTable {
@@ -3250,8 +3250,8 @@ impl super::Device for Device {
                 if idents.is_empty() {
                     ShaderTable {
                         buffer: None,
-                        _count: 0,
-                        _stride: 0
+                        count: 0,
+                        stride: 0
                     }
                 }
                 else {
@@ -3290,14 +3290,16 @@ impl super::Device for Device {
                         resource.Map(0, Some(&range), Some(&mut map_data)).expect("hotline_rs::gfx::d3d12: failed to map buffer data for the shader binding table");
                         for ident in &idents {
                             std::ptr::copy_nonoverlapping(*ident as *mut _, map_data, D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize);
+                            map_data = map_data.offset(D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as isize);
+
                         }
                         resource.Unmap(0, None);
                     }
 
                     ShaderTable {
                         buffer: table_buffer,
-                        _count: idents.len(),
-                        _stride: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize
+                        count: idents.len(),
+                        stride: D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES as usize
                     }
                 }
             };
@@ -4356,18 +4358,18 @@ impl super::CmdBuf<Device> for CmdBuf {
                 },
                 MissShaderTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
                     StartAddress: sbt.miss.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
-                    SizeInBytes: sbt.miss.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
-                    StrideInBytes: sbt.miss.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    SizeInBytes: (sbt.miss.stride * sbt.miss.count) as u64,
+                    StrideInBytes: sbt.miss.stride as u64,
                 },
                 HitGroupTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
                     StartAddress: sbt.hit_group.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
-                    SizeInBytes: sbt.hit_group.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
-                    StrideInBytes: sbt.hit_group.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    SizeInBytes: (sbt.hit_group.stride * sbt.hit_group.count) as u64,
+                    StrideInBytes: sbt.hit_group.stride as u64,
                 },
                 CallableShaderTable: D3D12_GPU_VIRTUAL_ADDRESS_RANGE_AND_STRIDE {
                     StartAddress: sbt.callable.buffer.as_ref().map(|x| x.GetGPUVirtualAddress()).unwrap_or(0),
-                    SizeInBytes: sbt.callable.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
-                    StrideInBytes: sbt.callable.buffer.as_ref().map(|x| x.GetDesc().Width ).unwrap_or(0),
+                    SizeInBytes: (sbt.callable.stride * sbt.callable.count) as u64,
+                    StrideInBytes: sbt.callable.stride as u64,
                 },
                 Width: numthreads.x,
                 Height: numthreads.y,

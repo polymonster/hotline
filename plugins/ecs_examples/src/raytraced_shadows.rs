@@ -73,7 +73,7 @@ pub fn setup_raytraced_shadows_scene(
 
     // point light
     let light_bounds = bounds * 0.75;
-    let light_pos = vec3f(light_bounds, light_bounds, 0.0);
+    let light_pos = vec3f(100.0, 0.0, 100.0);
     let light_radius = 256.0;
     commands.spawn((
         Position(light_pos),
@@ -241,23 +241,21 @@ pub fn setup_raytraced_shadows_tlas(
 #[export_update_fn]
 pub fn animate_lights (
     time: Res<TimeRes>,
-    mut light_query: Query<(&mut Position, &mut Scale, &mut LightComponent)>) -> Result<(), hotline_rs::Error> {
+    mut light_query: Query<(&mut Position, &mut LightComponent)>) -> Result<(), hotline_rs::Error> {
 
     let extent = 60.0;
-
-    for (mut position, _, _) in &mut light_query {
+    for (mut position, _) in &mut light_query {
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
+        position.0 += vec3f(100.0, 10.0, 100.0);
     }
 
     Ok(())
 }
 
 // TODO_RT
-
 // update tlas
 // mesh vertex count
 // fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
-// colors from rust compile output?
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(
@@ -266,7 +264,6 @@ pub fn render_meshes_raytraced(
     pass: &pmfx::ComputePass<gfx_platform::Device>,
     tlas_query: Query<&TLAS>
 ) -> Result<(), hotline_rs::Error> {
-
     let pmfx = &pmfx.0;
 
     let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
@@ -287,19 +284,18 @@ pub fn render_meshes_raytraced(
                     pass.cmd_buf.push_compute_constants(slot.index, 16, 0, &inv);
 
                     // output uav
-                    pass.cmd_buf.push_compute_constants(slot.index, 4, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
+                    pass.cmd_buf.push_compute_constants(slot.index, 1, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
+
+                    // scene tlas
+                    let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
+                    pass.cmd_buf.push_compute_constants(slot.index, 1, 17, gfx::as_u8_slice(&srv0));
+
+                    // point light info
+                    let world_buffer_info = pmfx.get_world_buffer_info();
+                    pass.cmd_buf.push_compute_constants(slot.index, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
                 }
 
-                // bind shader heap
-                if let Some(u0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::UnorderedAccess) {
-                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, u0.index, 0);
-                }
-
-                // bind tlas on t1 (device heap)
-                let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
-                if let Some(t0) = raytracing_pipeline.pipeline.get_pipeline_slot(69, 0, gfx::DescriptorType::ShaderResource) {
-                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, t0.index, srv0);
-                }
+                pass.cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
 
                 // dispatch
                 pass.cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {

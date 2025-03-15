@@ -57,18 +57,23 @@
             topology: "TriangleList"
         }
         mesh_lit_rt_shadow: {
-            lib: ["scene_raygen_shader", "scene_closest_hit_shader", "scene_miss_shader"]
+            lib: ["scene_raygen_shader", "scene_closest_hit_shader", "scene_miss_shader", "shadow_closest_hit_shader"]
             hit_groups: [
                 {
                     name: "hit_group"
                     closest_hit: "scene_closest_hit_shader"
                     geometry: Triangles
                 }
+                {
+                    name: "shadows"
+                    closest_hit: "shadow_closest_hit_shader"
+                    geometry: Triangles
+                }
             ]
             sbt: {
                 ray_generation_shader: "scene_raygen_shader",
                 miss_shaders: ["scene_miss_shader"],
-                hit_groups: ["hit_group"],
+                hit_groups: ["hit_group", "shadows"],
             }
 			push_constants: [
                 ray_tracing_constants

@@ -279,7 +279,7 @@ bool is_occluded(float3 origin, float3 direction, float tMin, float tMax)
     desc.TMax = tMax;
 
     rayQuery.TraceRayInline(
-        scene_tlas,
+        scene_tlas[resource_indices.y],
         RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
         0xFF,
         desc
@@ -292,17 +292,18 @@ bool is_occluded(float3 origin, float3 direction, float tMin, float tMax)
             return true; // Something is occluding
         }
     }
+
     return false; // No occlusion
 }
 
 struct RayPayload
 {
-    float4 colour;
+    float4 col;
 };
 
 cbuffer ray_tracing_constants : register(b0) {
     float4x4    inverse_wvp;
-    int4        output_uav_index;
+    int4        resource_indices; // x = uav output, y = scene_tlas
 };
 
 [shader("raygeneration")]
@@ -329,21 +330,111 @@ void scene_raygen_shader()
     ray.TMin = 0.001;
     ray.TMax = 10000.0;
 
-    RayPayload payload = { float4(0.0, 0.0, 1.0, 0.0) };
-    TraceRay(scene_tlas, RAY_FLAG_NONE, ~0, 0.0, 1.0, 0.0, ray, payload);
+    RayPayload payload = { float4(0.0, 0.0, 0.0, 0.0) };
+    TraceRay(
+        scene_tlas[resource_indices.y], 
+        RAY_FLAG_NONE, 
+        0xff, 
+        0,
+        2,
+        0, 
+        ray, 
+        payload
+    );
 
-	rw_textures[output_uav_index.x][DispatchRaysIndex().xy] = payload.colour;
+    if(payload.col.w)
+    {
+        uint point_lights_id = resource_indices.z;
+        uint point_lights_count = resource_indices.w;
+
+        float3 ip = payload.col.xyz;
+
+        payload.col = float4(0.2, 0.2, 0.2, 1.0);
+
+        for(int i = 0; i < 1; ++i) {
+            point_light_data light = point_lights[point_lights_id][i];
+
+            float d = length(light.pos - ip);
+            float3 l = normalize(light.pos.xyz - ip.xyz);
+
+            RayPayload shadow_payload;
+            shadow_payload.col = float4(0.0, 0.0, 0.0, 0.0); 
+
+            RayDesc shadow_ray;
+            shadow_ray.Origin = ip + l * 0.001;
+            shadow_ray.Direction = l;
+            shadow_ray.TMin = 0.001;
+            shadow_ray.TMax = d;
+
+            TraceRay(
+                scene_tlas[resource_indices.y],
+                RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
+                0xff,
+                1,
+                2,
+                0,
+                shadow_ray,
+                shadow_payload
+            );
+
+            payload.col.rgb = l * 0.5 + 0.5;
+            
+            if(shadow_payload.col.w)
+            {
+                payload.col.rgb *= 0.0;
+            }
+        }
+
+        rw_textures[resource_indices.x][DispatchRaysIndex().xy] = payload.col;
+    }
+    else
+    {
+        rw_textures[resource_indices.x][DispatchRaysIndex().xy] = float4(0.0, 1.0, 0.0, 1.0);
+    }
 }
 
 [shader("closesthit")]
 void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
 {
-    float3 barycentrics = float3(1 - attr.barycentrics.x - attr.barycentrics.y, attr.barycentrics.x, attr.barycentrics.y);
-    payload.colour = float4(float3(1.0, 1.0, 1.0) - barycentrics, 1.0);
+    // ray info
+    float3 r0 = WorldRayOrigin();
+    float3 rd = WorldRayDirection();
+    float rt = RayTCurrent();
+
+    // intersction point
+    float3 ip = r0 + rd * rt;
+
+    payload.col = float4(ip, 1.0);
+}
+
+[shader("anyhit")]
+void shadow_any_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    float3 r0 = WorldRayOrigin();
+    float3 rd = WorldRayDirection();
+    float rt = RayTCurrent();
+
+    // intersction point
+    float3 ip = r0 + rd * rt;
+
+    payload.col = float4(ip, 1.0);
+}
+
+[shader("closesthit")]
+void shadow_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    float3 r0 = WorldRayOrigin();
+    float3 rd = WorldRayDirection();
+    float rt = RayTCurrent();
+
+    // intersction point
+    float3 ip = r0 + rd * rt;
+
+    payload.col = float4(ip, 1.0);
 }
 
 [shader("miss")]
 void scene_miss_shader(inout RayPayload payload)
 {
-    payload.colour = float4(0.5, 0.5, 0.5, 1.0);
+    payload.col = float4(0.0, 0.0, 0.0, 0.0);
 }
