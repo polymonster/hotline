@@ -788,6 +788,13 @@ pub enum RaytracingHitGeometry {
     ProceduralPrimitive
 }
 
+pub enum AccelerationStructureRebuildMode {
+    /// Quick refit will update the transforms only
+    Refit,
+    /// Full update will update BLAS topologies
+    Full
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RaytracingHitGroup {
     pub name: String,
@@ -1214,6 +1221,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         data: Option<&[T]>,
         heap: &mut Self::Heap
     ) -> Result<Self::Buffer, Error>;
+    /// Create an upload buffer that can be used specifically for raytracing acceleration structure instances
+    fn create_raytracing_instance_buffer(
+        &mut self,
+        instances: &Vec<RaytracingInstanceInfo<Self>>,
+        heap: &mut Self::Heap // TODO; need to refactor heap handling
+    ) -> Result<Self::Buffer, Error>;  
     /// Create a `Buffer` specifically for reading back data from the GPU mainly for `Query` use
     fn create_read_back_buffer(
         &mut self,
@@ -1398,8 +1411,6 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
-    // TODO:
-    fn set_tlas(&self, tlas: &D::RaytracingTLAS);
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values
@@ -1435,6 +1446,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Issue dispatch call for ray tracing with the specified `RaytracingShaderBindingTable` which is associated with the bound `RaytracingPipeline`
     fn dispatch_rays(&self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
+    /// Update a raytracing TLAS with instance transform info contained in `instance_buffer` of length `instance_count`. Use `mode` to control quick refit or full rebuild
+    fn update_raytracing_tlas(&self, tlas: &D::RaytracingTLAS, instance_buffer: &D::Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 

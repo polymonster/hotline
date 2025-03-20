@@ -812,6 +812,13 @@ fn to_d3d12_raytracing_acceleration_structure_build_flags
     d3d12_flags
 }
 
+fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStructureRebuildMode) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS {
+    match mode {
+        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE,
+        AccelerationStructureRebuildMode::Full => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE
+    }
+}
+
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
     unsafe {
         String::from_raw_parts(
@@ -1720,6 +1727,7 @@ pub struct RaytracingBLAS {
 
 pub struct RaytracingTLAS {
     pub(crate) tlas_buffer: Buffer,
+    pub(crate) scratch_buffer: Option<Buffer>,
     pub(crate) shader_heap_id: u16
 }
 
@@ -3436,19 +3444,19 @@ impl super::Device for Device {
         }
     }
 
-    fn create_raytracing_tlas_with_heap(
+    fn create_raytracing_instance_buffer(
         &mut self,
-        info: &RaytracingTLASInfo<Self>,
-        heap: &mut Heap
-    ) -> result::Result<RaytracingTLAS, super::Error> {
+        instances: &Vec<RaytracingInstanceInfo<Self>>,
+        heap: &mut Heap 
+    ) -> result::Result<Buffer, super::Error> {
         // pack 24: 8 bits
         let pack_24_8 = |a, b| {
             (a & 0x00ffffff) | ((b & 0x000000ff) << 24)
         };
 
-        // create instance descslea
-        let num_instances = info.instances.len();
-        let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.instances.iter()
+        // create instance descs
+        let num_instances = instances.len();
+        let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = instances.iter()
             .map(|x| 
                 D3D12_RAYTRACING_INSTANCE_DESC {
                 Transform: x.transform,
@@ -3460,6 +3468,7 @@ impl super::Device for Device {
 
         // create upload buffer for instance descs
         let stride = std::mem::size_of::<D3D12_RAYTRACING_INSTANCE_DESC>();
+
         let instance_buffer = self.create_buffer_with_heap(&BufferInfo {
             usage: super::BufferUsage::UPLOAD,
             cpu_access: super::CpuAccessFlags::NONE,
@@ -3470,13 +3479,25 @@ impl super::Device for Device {
             }, 
             Some(instance_descs.as_slice()),
             heap
-        ).expect(format!("hotline_rs::gfx::d3d12: failed to create a scratch buffer for raytracing blas of size {}", stride * num_instances).as_str());
+        )?;
+
+        Ok(instance_buffer)
+    }
+
+    fn create_raytracing_tlas_with_heap(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>,
+        heap: &mut Heap
+    ) -> result::Result<RaytracingTLAS, super::Error> {
+
+        // create instance buffer
+        let instance_buffer = self.create_raytracing_instance_buffer(info.instances, heap)?;
 
         // create acceleration structure inputs
         let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
             Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
             Flags: to_d3d12_raytracing_acceleration_structure_build_flags(info.build_flags),
-            NumDescs: num_instances as u32,
+            NumDescs: info.instances.len() as u32,
             DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
             Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
                 InstanceDescs: instance_buffer.d3d_virtual_address(),
@@ -3541,6 +3562,12 @@ impl super::Device for Device {
         // return the result
         Ok(RaytracingTLAS {
             tlas_buffer,
+            scratch_buffer: if info.build_flags.contains(AccelerationStructureBuildFlags::ALLOW_UPDATE) {
+                Some(scratch_buffer)
+            }
+            else {
+                None
+            },
             shader_heap_id: self.shader_heap.as_ref().map(|x| x.id).unwrap_or(0)
         })
     }
@@ -4342,13 +4369,6 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_tlas(&self, tlas: &RaytracingTLAS) {
-        let cmd = self.cmd().cast::<ID3D12GraphicsCommandList4>().unwrap();
-        unsafe {
-            cmd.SetComputeRootShaderResourceView(0, tlas.tlas_buffer.resource.as_ref().unwrap().GetGPUVirtualAddress());
-        }
-    }
-
     fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
         unsafe {
             let dispatch_desc = D3D12_DISPATCH_RAYS_DESC {
@@ -4378,6 +4398,39 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             let cmd = self.cmd().cast::<ID3D12GraphicsCommandList4>().unwrap();
             cmd.DispatchRays(&dispatch_desc);
+        }
+    }
+
+    fn update_raytracing_tlas(&self, tlas: &RaytracingTLAS, instance_buffer: &Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode) {
+
+        // create acceleration structure inputs
+        let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
+            Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
+            Flags: to_d3d12_raytracing_acceleration_structure_update_flags(mode),
+            NumDescs: instance_count as u32,
+            DescsLayout: D3D12_ELEMENTS_LAYOUT_ARRAY,
+            Anonymous: D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS_0 {
+                InstanceDescs: instance_buffer.d3d_virtual_address(),
+            }
+        };
+                
+        // create blas desc
+        let blas_desc = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC {
+            Inputs: inputs,
+            SourceAccelerationStructureData: tlas.tlas_buffer.d3d_virtual_address(),
+            DestAccelerationStructureData: tlas.tlas_buffer.d3d_virtual_address(),
+            ScratchAccelerationStructureData: tlas.scratch_buffer
+                .as_ref()
+                .expect("hotline_rs::gfx::d3d12: tlas is required to be created with ALLOW_UPDATE in order to update it")
+                .d3d_virtual_address()
+        };
+
+        // build blas
+        unsafe {
+            let bb = self.bb_index;
+            let cmd = self.command_list[bb].cast::<ID3D12GraphicsCommandList4>()
+                .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList4 availability to create raytracing blas");
+            cmd.BuildRaytracingAccelerationStructure(&blas_desc, None);
         }
     }
 

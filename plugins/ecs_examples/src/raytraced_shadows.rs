@@ -16,7 +16,8 @@ pub struct BLAS {
 
 #[derive(Component)]
 pub struct TLAS {
-    pub tlas: Option<gfx_platform::RaytracingTLAS>
+    pub tlas: Option<gfx_platform::RaytracingTLAS>,
+    pub instance_buffer: Option<gfx_platform::Buffer>
 }
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
@@ -28,9 +29,10 @@ pub fn raytraced_shadows(client: &mut Client<gfx_platform::Device, os_platform::
             "setup_raytraced_shadows_scene"
         ],
         update: systems![
-            "setup_raytraced_shadows_tlas",
+            "animate_meshes",
             "animate_lights",
-            "batch_lights"
+            "batch_lights",
+            "update_tlas"
         ],
         render_graph: "mesh_lit_rt_shadow",
         ..Default::default()
@@ -64,8 +66,9 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+
     let tourus_mesh = hotline_rs::primitives::create_tourus_mesh(&mut device.0, 32);
-    let helix_mesh = hotline_rs::primitives::create_helix_mesh(&mut device.0, 32, 4);
+    let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 32, 0, 32, true, true, 1.0, 0.66, 1.0);
     let triangle_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 3, 0, 3, false, true, 0.33, 0.66, 1.0);
     
@@ -115,9 +118,9 @@ pub fn setup_raytraced_shadows_scene(
         Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
         Scale(splat3f(tourus_size * 2.0)),
         Rotation(Quatf::identity()),
-        MeshComponent(helix_mesh.clone()),
+        MeshComponent(teapot_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
-        blas_from_mesh(&mut device, &helix_mesh)?
+        blas_from_mesh(&mut device, &teapot_mesh)?
     ));
 
     // tube
@@ -190,7 +193,8 @@ pub fn setup_raytraced_shadows_scene(
 
     commands.spawn(
         TLAS {
-            tlas: None
+            tlas: None,
+            instance_buffer: None
         }
     );
     
@@ -198,7 +202,7 @@ pub fn setup_raytraced_shadows_scene(
 }
 
 #[export_update_fn]
-pub fn setup_raytraced_shadows_tlas(
+pub fn update_tlas(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
@@ -207,31 +211,31 @@ pub fn setup_raytraced_shadows_tlas(
 
     // ..
     for mut t in &mut tlas_query {
+        let mut instances = Vec::new();
+        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
+            let translate = Mat34f::from_translation(position.0);
+            let rotate = Mat34f::from(rotation.0);
+            let scale = Mat34f::from_scale(scale.0);
+            instances.push(
+                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
+                    transform: (translate * rotate * scale).m,
+                    instance_id: index as u32,
+                    instance_mask: 0xff,
+                    hit_group_index: 0,
+                    instance_flags: 0,
+                    blas: &blas.blas
+                }
+            );
+        }
         if t.tlas.is_none() {
-            let mut instances = Vec::new();
-            for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
-                let translate = Mat34f::from_translation(position.0);
-                let rotate = Mat34f::from(rotation.0);
-                let scale = Mat34f::from_scale(scale.0);
-                instances.push(
-                    gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
-                        transform: (translate * rotate * scale).m,
-                        instance_id: index as u32,
-                        instance_mask: 0xff,
-                        hit_group_index: 0,
-                        instance_flags: 0,
-                        blas: &blas.blas
-                    }
-                );
-                let tlas = device.create_raytracing_tlas_with_heap(&gfx::RaytracingTLASInfo {
-                    instances: &instances,
-                    build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE,
-                    },
-                    &mut pmfx.shader_heap
-                )?;
-                
-                t.tlas = Some(tlas);
-            }
+            let tlas = device.create_raytracing_tlas_with_heap(&gfx::RaytracingTLASInfo {
+                instances: &instances,
+                build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE |
+                    gfx::AccelerationStructureBuildFlags::ALLOW_UPDATE
+                },
+                &mut pmfx.shader_heap
+            )?;
+            t.tlas = Some(tlas);
         }
     }
 
@@ -246,7 +250,6 @@ pub fn animate_lights (
     let extent = 60.0;
     for (mut position, _) in &mut light_query {
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
-        position.0 += vec3f(100.0, 10.0, 100.0);
     }
 
     Ok(())
@@ -259,15 +262,44 @@ pub fn animate_lights (
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(
-    device: ResMut<DeviceRes>,
+    mut device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
-    tlas_query: Query<&TLAS>
+    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
+    mut tlas_query: Query<&mut TLAS>,
 ) -> Result<(), hotline_rs::Error> {
     let pmfx = &pmfx.0;
 
+    let mut heap = pmfx.shader_heap.clone();
+
     let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
     let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
+
+    // update tlas
+    for mut t in &mut tlas_query {
+        let mut instances = Vec::new();
+        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
+            let translate = Mat34f::from_translation(position.0);
+            let rotate = Mat34f::from(rotation.0);
+            let scale = Mat34f::from_scale(scale.0);
+            instances.push(
+                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
+                    transform: (translate * rotate * scale).m,
+                    instance_id: index as u32,
+                    instance_mask: 0xff,
+                    hit_group_index: 0,
+                    instance_flags: 0,
+                    blas: &blas.blas
+                }
+            );
+        }
+        
+        if let Some(tlas) = t.tlas.as_ref() {
+            let instance_buffer = device.create_raytracing_instance_buffer(&instances, &mut heap)?;
+            pass.cmd_buf.update_raytracing_tlas(tlas, &instance_buffer, instances.len(), gfx::AccelerationStructureRebuildMode::Refit);
+            t.instance_buffer = Some(instance_buffer);
+        }
+    }
 
     let camera = pmfx.get_camera_constants("main_camera");
     if let Ok(camera) = camera {
