@@ -1853,6 +1853,7 @@ impl super::Device for Device {
                 std::ptr::addr_of!(options5) as *mut _, 
                 std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS5>() as u32).is_ok() {
                 if options5.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED {
+                    println!("raytracing tier = {:?}", options5.RaytracingTier);
                     feature_flags |= super::DeviceFeatureFlags::RAYTRACING;
                 }
             }

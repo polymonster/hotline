@@ -82,6 +82,7 @@ struct world_buffer_info_data {
     uint2 directional_light;
     uint2 camera;
     uint2 shadow_matrix;
+    uint4 user_data;
 }
 
 // info to lookup shadow srv and matrix

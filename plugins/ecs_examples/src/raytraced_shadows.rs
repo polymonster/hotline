@@ -32,9 +32,9 @@ pub fn raytraced_shadows(client: &mut Client<gfx_platform::Device, os_platform::
             "animate_meshes",
             "animate_lights",
             "batch_lights",
-            "update_tlas"
+            "setup_tlas"
         ],
-        render_graph: "mesh_lit_rt_shadow",
+        render_graph: "mesh_lit_rt_shadow2",
         ..Default::default()
     }
 }
@@ -49,7 +49,7 @@ pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_plat
                     transform3x4: None,
                     index_count: mesh.num_indices as usize,
                     index_format: gfx::Format::R16u,
-                    vertex_count: mesh.num_indices as usize,
+                    vertex_count: mesh.num_vertices as usize,
                     vertex_format: gfx::Format::RGB32f,
                     vertex_stride: 56
                 }),
@@ -66,7 +66,6 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-
     let tourus_mesh = hotline_rs::primitives::create_tourus_mesh(&mut device.0, 32);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 32, 0, 32, true, true, 1.0, 0.66, 1.0);
@@ -202,7 +201,7 @@ pub fn setup_raytraced_shadows_scene(
 }
 
 #[export_update_fn]
-pub fn update_tlas(
+pub fn setup_tlas(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
@@ -235,6 +234,9 @@ pub fn update_tlas(
                 },
                 &mut pmfx.shader_heap
             )?;
+            let tlas_srv =  tlas.get_srv_index().expect("expect tlas to have an srv");
+            pmfx.push_constant_user_data[0] = tlas_srv as u32;
+            println!("tlas_srv = {tlas_srv}");
             t.tlas = Some(tlas);
         }
     }
@@ -255,13 +257,8 @@ pub fn animate_lights (
     Ok(())
 }
 
-// TODO_RT
-// update tlas
-// mesh vertex count
-// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
-
 #[export_compute_fn]
-pub fn render_meshes_raytraced(
+pub fn update_tlas(
     mut device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
@@ -271,9 +268,6 @@ pub fn render_meshes_raytraced(
     let pmfx = &pmfx.0;
 
     let mut heap = pmfx.shader_heap.clone();
-
-    let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
-    let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
 
     // update tlas
     for mut t in &mut tlas_query {
@@ -300,6 +294,31 @@ pub fn render_meshes_raytraced(
             t.instance_buffer = Some(instance_buffer);
         }
     }
+
+    Ok(())
+}
+
+// TODO_RT
+// mesh vertex count
+// crash when switching demo
+
+// TODO clean
+// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
+
+#[export_compute_fn]
+pub fn render_meshes_raytraced(
+    mut device: ResMut<DeviceRes>,
+    pmfx: &Res<PmfxRes>,
+    pass: &pmfx::ComputePass<gfx_platform::Device>,
+    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
+    mut tlas_query: Query<&mut TLAS>,
+) -> Result<(), hotline_rs::Error> {
+    let pmfx = &pmfx.0;
+
+    let mut heap = pmfx.shader_heap.clone();
+
+    let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
+    let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
 
     let camera = pmfx.get_camera_constants("main_camera");
     if let Ok(camera) = camera {

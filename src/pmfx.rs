@@ -99,6 +99,8 @@ pub struct Mesh<D: gfx::Device> {
     pub ib: D::Buffer,
     /// Number of indices to draw from the index buffer
     pub num_indices: u32,
+    /// Number of vertices in the vertex buffer
+    pub num_vertices: u32,
     /// Bounding aabb min
     pub aabb_min: Vec3f,
     /// Bounding aabb mix
@@ -185,6 +187,8 @@ pub struct Pmfx<D: gfx::Device> {
     pub view_errors: Arc<Mutex<HashMap<String, String>>>,
     /// Tracks the currently active render graph name
     pub active_render_graph: String,
+    /// Quick access user data
+    pub push_constant_user_data: [u32; 4],
 }
 
 /// Contains frame statistics from the GPU for all pmfx jobs
@@ -716,7 +720,9 @@ pub struct WorldBufferInfo {
     /// cbv index of the camera
     pub camera: GpuBufferLookup,
     /// srv index of shadow matrices
-    pub shadow_matrix: GpuBufferLookup
+    pub shadow_matrix: GpuBufferLookup,
+    /// custom user data
+    pub user_data: [u32; 4]
 }
 
 pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> CameraConstants {
@@ -1009,6 +1015,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             unit_quad_mesh: primitives::create_unit_quad_mesh(device),
             total_stats: TotalStats::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
+            push_constant_user_data: [0; 4]
         }
     }
 
@@ -1043,7 +1050,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             spot_light: self.world_buffers.spot_light.get_lookup(),
             directional_light: self.world_buffers.directional_light.get_lookup(),
             camera: self.world_buffers.camera.get_lookup(),
-            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup()
+            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup(),
+            user_data: self.push_constant_user_data
         }
     }
 
@@ -1596,13 +1604,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
             threads
         }
         else {
-            let pipeline = self.pmfx.pipelines.get(&pass_pipeline).unwrap();
-            if let Some(num_threads) = pipeline["0"].numthreads {
-                num_threads
+            if let Some(pipeline) = self.pmfx.pipelines.get(&pass_pipeline) {
+                if let Some(num_threads) = pipeline["0"].numthreads {
+                    num_threads
+                }
+                else {
+                    (1, 1, 1)
+                }
             }
             else {
                 (1, 1, 1)
             }
+            //let pipeline = self.pmfx.pipelines.get(&pass_pipeline).unwrap();
         };
 
         // hashes

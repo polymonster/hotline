@@ -267,35 +267,6 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     return float4(((kd * max(diffuse, 0.0) + max(specular, 0.0))), 1.0);
 }
 
-// basic ray traced shadow
-bool is_occluded(float3 origin, float3 direction, float tMin, float tMax)
-{
-    RayQuery<RAY_FLAG_SKIP_PROCEDURAL_PRIMITIVES> rayQuery;
-
-    RayDesc desc;
-    desc.Origin = origin;
-    desc.TMin = tMin;
-    desc.Direction = direction;
-    desc.TMax = tMax;
-
-    rayQuery.TraceRayInline(
-        scene_tlas[resource_indices.y],
-        RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH,
-        0xFF,
-        desc
-    );
-
-    while (rayQuery.Proceed()) // Traverse BVH
-    {
-        if (rayQuery.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
-        {
-            return true; // Something is occluding
-        }
-    }
-
-    return false; // No occlusion
-}
-
 struct RayPayload
 {
     float4 col;
@@ -305,6 +276,34 @@ cbuffer ray_tracing_constants : register(b0) {
     float4x4    inverse_wvp;
     int4        resource_indices; // x = uav output, y = scene_tlas
 };
+
+// basic ray traced shadow
+bool is_occluded(float3 origin, float3 direction, float tmin, float tmax)
+{
+    RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray_query;
+
+    RayDesc desc;
+    desc.Origin = origin;
+    desc.TMin = tmin;
+    desc.Direction = direction;
+    desc.TMax = tmax;
+
+    ray_query.TraceRayInline(
+        scene_tlas[world_buffer_info.user_data.x],
+        RAY_FLAG_NONE,
+        0xff,
+        desc
+    );
+
+    ray_query.Proceed();
+
+    if (ray_query.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+    {
+        return true;
+    }
+
+    return false;
+}
 
 [shader("raygeneration")]
 void scene_raygen_shader()
@@ -437,4 +436,48 @@ void shadow_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInter
 void scene_miss_shader(inout RayPayload payload)
 {
     payload.col = float4(0.0, 0.0, 0.0, 0.0);
+}
+
+ps_output ps_mesh_lit_rt_shadow(vs_output input) {
+    ps_output output;
+    output.colour = input.colour;
+
+    int i = 0;
+    float ks = 2.0;
+    float shininess = 32.0;
+    float roughness = 0.1;
+    float k = 0.3;
+
+    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
+    float3 n = input.normal;
+
+    // point lights
+    uint point_lights_id = world_buffer_info.point_light.x;
+    uint point_lights_count = world_buffer_info.point_light.y;
+    for(i = 0; i < point_lights_count; ++i) {
+        point_light_data light = point_lights[point_lights_id][i];
+
+        float3 l = normalize(input.world_pos.xyz - light.pos);
+        float rl = length(light.pos - input.world_pos.xyz);
+
+        float diffuse = lambert(l, n);
+        float specular = cook_torrance(l, n, v, roughness, k);
+
+        float atteniuation = point_light_attenuation(
+            light.pos,
+            light.radius,
+            input.world_pos.xyz
+        );
+
+        float4 light_colour = atteniuation * light.colour * diffuse;
+        light_colour += atteniuation * light.colour * specular;
+
+        bool occluded = is_occluded(input.world_pos.xyz, -l, 0.001, rl);
+        
+        if(!occluded) {
+            output.colour += light_colour;
+        }
+    }
+
+    return output;
 }
