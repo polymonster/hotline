@@ -122,6 +122,9 @@
                 "-num_threads 1"
                 "-args"
                 "-Zpr"
+                "-Zi"
+                "-Qembed_debug"
+                "-Od"
             ]
         }
         pmfx_dev: {

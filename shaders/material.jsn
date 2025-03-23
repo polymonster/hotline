@@ -79,6 +79,18 @@
                 ray_tracing_constants
             ]
         }
+        mesh_lit_rt_shadow2: {
+            vs: "vs_mesh",
+            ps: "ps_mesh_lit_rt_shadow"
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
         mesh_pbr_ibl: {
             vs: "vs_mesh",
             ps: "ps_mesh_pbr_ibl"
@@ -136,16 +148,39 @@
                 depends_on: ["debug"]
             }
         }
+        mesh_lit_rt_shadow2: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            update_tlas: {
+                pipelines: []
+                function: "update_tlas"
+                depends_on: ["debug"]
+            }
+            meshes: {
+                view: "main_view"
+                pipelines: ["mesh_lit_rt_shadow2"]
+                function: "render_meshes_bindless"
+                depends_on: ["update_tlas"]
+            }
+        }
         mesh_lit_rt_shadow: {
             debug: {
                 view: "main_view"
                 pipelines: ["imdraw_3d"]
                 function: "render_debug"
             }
+            update_tlas: {
+                pipelines: []
+                function: "update_tlas"
+                depends_on: ["debug"]
+            }
             meshes: {
                 pipelines: ["mesh_lit_rt_shadow"]
                 function: "render_meshes_raytraced"
-                depends_on: ["debug"]
+                depends_on: ["update_tlas"]
 				uses: [
 					["staging_output", "Write"]
 				]
