@@ -66,10 +66,11 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-    let tourus_mesh = hotline_rs::primitives::create_tourus_mesh(&mut device.0, 32);
+
+    let dodeca_mesh = hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
-    let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 32, 0, 32, true, true, 1.0, 0.66, 1.0);
-    let triangle_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 3, 0, 3, false, true, 0.33, 0.66, 1.0);
+    let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0);
+    let triangle_mesh = hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 4, false, true);
     
     let bounds = 100.0;
 
@@ -80,7 +81,7 @@ pub fn setup_raytraced_shadows_scene(
     commands.spawn((
         Position(light_pos),
         Velocity(Vec3f::unit_z()),
-        Colour(vec4f(0.125, 0.5, 0.25, 1.0)),
+        Colour(vec4f(0.5, 0.125, 0.25, 1.0)),
         LightComponent {
             light_type: LightType::Point,
             radius: light_radius,
@@ -100,22 +101,22 @@ pub fn setup_raytraced_shadows_scene(
     });
 
     let shape_bounds = bounds * 0.6;
+    let shape_size = bounds * 0.1;
 
-    // tourus
-    let tourus_size = bounds * 0.1;
-    let tourus_blas = commands.spawn((
+    // dodeca
+    let dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
-        Scale(splat3f(tourus_size)),
+        Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
-        MeshComponent(tourus_mesh.clone()),
+        MeshComponent(dodeca_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
-        blas_from_mesh(&mut device, &tourus_mesh)?
+        blas_from_mesh(&mut device, &dodeca_mesh)?
     )).id();
 
     // helix
     commands.spawn((
         Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
-        Scale(splat3f(tourus_size * 2.0)),
+        Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
         MeshComponent(teapot_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
@@ -125,7 +126,7 @@ pub fn setup_raytraced_shadows_scene(
     // tube
     commands.spawn((
         Position(vec3f(shape_bounds * 1.0, shape_bounds * 0.1, shape_bounds * -1.0)),
-        Scale(splat3f(tourus_size)),
+        Scale(splat3f(shape_size)),
         Rotation(Quatf::identity()),
         MeshComponent(tube_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
@@ -135,7 +136,7 @@ pub fn setup_raytraced_shadows_scene(
     // tri prsim
     commands.spawn((
         Position(vec3f(shape_bounds * 0.123, shape_bounds * -0.6, shape_bounds * -0.8)),
-        Scale(splat3f(tourus_size * 2.0)),
+        Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
         MeshComponent(triangle_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
@@ -146,9 +147,11 @@ pub fn setup_raytraced_shadows_scene(
     let thickness = bounds * 0.1;
     let face_size = bounds * 2.0;
 
+    let wall_offset = (bounds * 2.0) - thickness;
+
     // -y
     commands.spawn((
-        Position(vec3f(0.0, -bounds, 0.0)),
+        Position(vec3f(0.0, -wall_offset, 0.0)),
         Scale(vec3f(face_size, thickness, face_size)),
         Rotation(Quatf::identity()),
         MeshComponent(cube_mesh.clone()),
@@ -159,7 +162,7 @@ pub fn setup_raytraced_shadows_scene(
 
     // + y
     commands.spawn((
-        Position(vec3f(0.0, bounds, 0.0)),
+        Position(vec3f(0.0, wall_offset, 0.0)),
         Scale(vec3f(face_size, thickness, face_size)),
         Rotation(Quatf::identity()),
         MeshComponent(cube_mesh.clone()),
@@ -170,7 +173,7 @@ pub fn setup_raytraced_shadows_scene(
 
     // -z
     commands.spawn((
-        Position(vec3f(0.0, 0.0, -bounds)),
+        Position(vec3f(0.0, 0.0, -wall_offset)),
         Scale(vec3f(face_size, face_size, thickness)),
         Rotation(Quatf::identity()),
         MeshComponent(cube_mesh.clone()),
@@ -181,7 +184,7 @@ pub fn setup_raytraced_shadows_scene(
 
     // -x
     commands.spawn((
-        Position(vec3f(-bounds, 0.0, 0.0)),
+        Position(vec3f(-wall_offset, 0.0, 0.0)),
         Scale(vec3f(thickness, face_size, face_size)),
         Rotation(Quatf::identity()),
         MeshComponent(cube_mesh.clone()),
@@ -215,9 +218,10 @@ pub fn setup_tlas(
             let translate = Mat34f::from_translation(position.0);
             let rotate = Mat34f::from(rotation.0);
             let scale = Mat34f::from_scale(scale.0);
+            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
             instances.push(
                 gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
-                    transform: (translate * rotate * scale).m,
+                    transform: (flip * translate * rotate * scale).m,
                     instance_id: index as u32,
                     instance_mask: 0xff,
                     hit_group_index: 0,
@@ -236,7 +240,6 @@ pub fn setup_tlas(
             )?;
             let tlas_srv =  tlas.get_srv_index().expect("expect tlas to have an srv");
             pmfx.push_constant_user_data[0] = tlas_srv as u32;
-            println!("tlas_srv = {tlas_srv}");
             t.tlas = Some(tlas);
         }
     }
@@ -276,9 +279,10 @@ pub fn update_tlas(
             let translate = Mat34f::from_translation(position.0);
             let rotate = Mat34f::from(rotation.0);
             let scale = Mat34f::from_scale(scale.0);
+            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
             instances.push(
                 gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
-                    transform: (translate * rotate * scale).m,
+                    transform: (flip * translate * rotate * scale).m,
                     instance_id: index as u32,
                     instance_mask: 0xff,
                     hit_group_index: 0,
@@ -298,11 +302,7 @@ pub fn update_tlas(
     Ok(())
 }
 
-// TODO_RT
-// mesh vertex count
-// crash when switching demo
-
-// TODO clean
+// TODO cleanup
 // fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
 
 #[export_compute_fn]

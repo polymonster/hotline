@@ -312,6 +312,9 @@ void scene_raygen_shader()
     float2 uv = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
     float2 ndc = uv * 2.0 - 1.0;
 
+    float2 output_location = DispatchRaysIndex();
+    output_location.y = DispatchRaysDimensions().y - output_location.y;
+
     // unproject ray
     float4 near = float4(ndc.x, ndc.y, 0.0, 1.0);
     float4 far = float4(ndc.x, ndc.y, 1.0, 1.0);
@@ -384,11 +387,11 @@ void scene_raygen_shader()
             }
         }
 
-        rw_textures[resource_indices.x][DispatchRaysIndex().xy] = payload.col;
+        rw_textures[resource_indices.x][output_location] = payload.col;
     }
     else
     {
-        rw_textures[resource_indices.x][DispatchRaysIndex().xy] = float4(0.0, 1.0, 0.0, 1.0);
+        rw_textures[resource_indices.x][output_location] = float4(0.0, 1.0, 0.0, 1.0);
     }
 }
 
