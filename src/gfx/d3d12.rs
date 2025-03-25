@@ -3355,7 +3355,7 @@ impl super::Device for Device {
                             IndexFormat: to_dxgi_format(tris.index_format),
                             VertexFormat: to_dxgi_format(tris.vertex_format),
                             IndexCount: tris.index_count as u32,
-                            VertexCount: tris.index_count as u32,
+                            VertexCount: tris.vertex_count as u32,
                             IndexBuffer: tris.index_buffer.d3d_virtual_address(),
                             VertexBuffer: D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {
                                 StartAddress: tris.vertex_buffer.d3d_virtual_address(),
@@ -4403,7 +4403,6 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn update_raytracing_tlas(&self, tlas: &RaytracingTLAS, instance_buffer: &Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode) {
-
         // create acceleration structure inputs
         let inputs = D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS {
             Type: D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_TOP_LEVEL,
@@ -4432,6 +4431,18 @@ impl super::CmdBuf<Device> for CmdBuf {
             let cmd = self.command_list[bb].cast::<ID3D12GraphicsCommandList4>()
                 .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList4 availability to create raytracing blas");
             cmd.BuildRaytracingAccelerationStructure(&blas_desc, None);
+
+            // resource barrier
+            let barrier = D3D12_RESOURCE_BARRIER {
+                Type: D3D12_RESOURCE_BARRIER_TYPE_UAV,
+                Flags: D3D12_RESOURCE_BARRIER_FLAG_NONE,
+                Anonymous: D3D12_RESOURCE_BARRIER_0 {
+                    UAV: std::mem::ManuallyDrop::new(D3D12_RESOURCE_UAV_BARRIER {
+                        pResource: std::mem::ManuallyDrop::new(tlas.tlas_buffer.resource.clone())
+                    })
+                }
+            };
+            cmd.ResourceBarrier(&[barrier]);
         }
     }
 

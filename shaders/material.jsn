@@ -167,23 +167,19 @@
             }
         }
         mesh_lit_rt_shadow: {
-            debug: {
-                view: "main_view"
-                pipelines: ["imdraw_3d"]
-                function: "render_debug"
-            }
             update_tlas: {
                 pipelines: []
                 function: "update_tlas"
-                depends_on: ["debug"]
             }
-            meshes: {
+            render_meshes_raytraced: {
                 pipelines: ["mesh_lit_rt_shadow"]
                 function: "render_meshes_raytraced"
-                depends_on: ["update_tlas"]
-				uses: [
+                uses: [
 					["staging_output", "Write"]
 				]
+                depends_on: [
+                    "update_tlas"
+                ]
             }
 			blit_main_colour: {
                 view: "main_view"
@@ -193,7 +189,7 @@
                 ]
                 target_dimension: "staging_output"
                 function: "blit"
-                depends_on: ["meshes"]
+                depends_on: ["render_meshes_raytraced"]
             }
         }
         mesh_pbr: {
