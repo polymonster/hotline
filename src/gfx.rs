@@ -1171,6 +1171,14 @@ pub struct IndexBufferView {
     pub format: u32,
 }
 
+/// Resources that can be used with a uav_barrier in `CmdBuf`
+#[derive(Clone, Copy)]
+enum UavResource<'stack, D: Device> {
+    Texture(&'stack D::Texture),
+    Buffer(&'stack D::Buffer),
+    RaytracingTLAS(&'stack D::RaytracingTLAS),
+}
+
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame. Default heaps for shader resources,
 /// render targets and depth stencils are also provided
@@ -1221,12 +1229,16 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         data: Option<&[T]>,
         heap: &mut Self::Heap
     ) -> Result<Self::Buffer, Error>;
+    /// Create an upload buffer from data for copying into other buffers
+    fn create_upload_buffer<T: Sized>(
+        &mut self,
+        data: &[T]
+    ) -> Result<Self::Buffer, Error>;
     /// Create an upload buffer that can be used specifically for raytracing acceleration structure instances
     fn create_raytracing_instance_buffer(
         &mut self,
-        instances: &Vec<RaytracingInstanceInfo<Self>>,
-        heap: &mut Self::Heap // TODO; need to refactor heap handling
-    ) -> Result<Self::Buffer, Error>;  
+        instances: &Vec<RaytracingInstanceInfo<Self>>
+    ) -> Result<Self::Buffer, Error>;
     /// Create a `Buffer` specifically for reading back data from the GPU mainly for `Query` use
     fn create_read_back_buffer(
         &mut self,
@@ -1392,6 +1404,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     /// Add a transition barrier for a sub resource (ie. resolve texture)
     fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
+    /// Add a uav barrier for resources
+    fn uav_barrier(&mut self, resource: UavResource<D>);
     /// Set the viewport on the rasterizer stage
     fn set_viewport(&self, viewport: &Viewport);
     /// Set the scissor rect on the rasterizer stage
@@ -1447,7 +1461,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Issue dispatch call for ray tracing with the specified `RaytracingShaderBindingTable` which is associated with the bound `RaytracingPipeline`
     fn dispatch_rays(&self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
     /// Update a raytracing TLAS with instance transform info contained in `instance_buffer` of length `instance_count`. Use `mode` to control quick refit or full rebuild
-    fn update_raytracing_tlas(&self, tlas: &D::RaytracingTLAS, instance_buffer: &D::Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode);
+    fn update_raytracing_tlas(&mut self, tlas: &D::RaytracingTLAS, instance_buffer: &D::Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 

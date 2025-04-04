@@ -280,7 +280,7 @@ cbuffer ray_tracing_constants : register(b0) {
 // basic ray traced shadow
 bool is_occluded(float3 origin, float3 direction, float tmin, float tmax)
 {
-    RayQuery<RAY_FLAG_CULL_NON_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray_query;
+    RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray_query;
 
     RayDesc desc;
     desc.Origin = origin;
@@ -475,7 +475,7 @@ ps_output ps_mesh_lit_rt_shadow(vs_output input) {
         float4 light_colour = atteniuation * light.colour * diffuse;
         light_colour += atteniuation * light.colour * specular;
 
-        bool occluded = is_occluded(input.world_pos.xyz, -l, 0.001, rl);
+        bool occluded = is_occluded(input.world_pos.xyz + input.normal * 0.1, -l, 0.1, rl + 0.1);
         
         if(!occluded) {
             output.colour += light_colour;
