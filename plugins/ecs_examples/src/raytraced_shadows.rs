@@ -17,7 +17,8 @@ pub struct BLAS {
 #[derive(Component)]
 pub struct TLAS {
     pub tlas: Option<gfx_platform::RaytracingTLAS>,
-    pub instance_buffer: Option<gfx_platform::Buffer>
+    pub instance_buffer: Option<gfx_platform::Buffer>,
+    pub instance_buffer_len: usize
 }
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
@@ -196,7 +197,8 @@ pub fn setup_raytraced_shadows_scene(
     commands.spawn(
         TLAS {
             tlas: None,
-            instance_buffer: None
+            instance_buffer: None,
+            instance_buffer_len: 0
         }
     );
     
@@ -264,15 +266,14 @@ pub fn animate_lights (
 pub fn update_tlas(
     mut device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
-    pass: &pmfx::ComputePass<gfx_platform::Device>,
+    mut pass: &mut pmfx::ComputePass<gfx_platform::Device>,
     mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
     mut tlas_query: Query<&mut TLAS>,
 ) -> Result<(), hotline_rs::Error> {
     let pmfx = &pmfx.0;
 
-    let mut heap = pmfx.shader_heap.clone();
-
     // update tlas
+    let mut first = true;
     for mut t in &mut tlas_query {
         let mut instances = Vec::new();
         for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
@@ -293,7 +294,7 @@ pub fn update_tlas(
         }
         
         if let Some(tlas) = t.tlas.as_ref() {
-            let instance_buffer = device.create_raytracing_instance_buffer(&instances, &mut heap)?;
+            let instance_buffer = device.create_raytracing_instance_buffer(&instances)?;
             pass.cmd_buf.update_raytracing_tlas(tlas, &instance_buffer, instances.len(), gfx::AccelerationStructureRebuildMode::Refit);
             t.instance_buffer = Some(instance_buffer);
         }
@@ -301,9 +302,6 @@ pub fn update_tlas(
 
     Ok(())
 }
-
-// TODO cleanup
-// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(

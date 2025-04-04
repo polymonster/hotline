@@ -1,5 +1,8 @@
 // TODO:
 
+// TODO cleanup
+// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
+
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
 

@@ -138,7 +138,6 @@ pub fn batch_world_matrix_instances(
         }
         instance_batch.buffer.update(0, &mats).unwrap();
     }
-
     Ok(())
 }
 
