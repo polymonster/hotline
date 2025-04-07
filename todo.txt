@@ -11,6 +11,11 @@
 // - buffers in pmfx
 // - clear buffers for compute
 
+// raytracing
+// - need to create srv for mesh ib and vb
+// - need a redirect buffer to lookup srv index from instance index
+// - read from index buffer and vertex buffer, interpolate triangles
+
 // effects
 // - perspective shadow map
 // - cascaded shadow map

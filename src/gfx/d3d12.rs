@@ -3514,6 +3514,50 @@ impl super::Device for Device {
         })
     }
 
+    fn create_buffer_view(
+        &mut self,
+        usage: BufferUsage,
+        buffer: &Buffer,
+        heap: Option<&mut Heap>
+    ) -> result::Result<usize, super::Error> {
+        if let Some(resource) = buffer.resource.as_ref() {
+            let heap = heap.unwrap_or(self.shader_heap.as_mut().unwrap());
+            match usage {
+                super::BufferUsage::SHADER_RESOURCE => unsafe {
+                    let h = heap.allocate();
+                    self.device.CreateShaderResourceView(
+                        resource,
+                        Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
+                            Format: DXGI_FORMAT_UNKNOWN, // TODO
+                            ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
+                            Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
+                            Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_SRV {
+                                    FirstElement: 0, // TODO
+                                    NumElements: 0, // TODO
+                                    StructureByteStride: 0, // TODO
+                                    Flags: D3D12_BUFFER_SRV_FLAG_NONE
+                                }
+                            }
+                        }),
+                        h,
+                    );
+                    Ok(heap.get_handle_index(&h))
+                }
+                _ => {
+                    Err(super::Error {
+                        msg: "unsupported buffer usage".to_string()
+                    })
+                }
+            }
+        }
+        else {
+            Err(super::Error {
+                msg: "cannot create a view for buffer because buffer.resource was None".to_string()
+            })
+        }
+    }
+
     fn create_raytracing_instance_buffer(
         &mut self,
         instances: &Vec<RaytracingInstanceInfo<Self>>
