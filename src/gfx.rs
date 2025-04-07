@@ -1234,6 +1234,13 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         data: &[T]
     ) -> Result<Self::Buffer, Error>;
+    /// Create a buffer view
+    fn create_buffer_view(
+        &mut self,
+        usage: BufferUsage,
+        buffer: &Self::Buffer,
+        heap: Option<&mut Self::Heap>
+    ) -> Result<usize, Error>;
     /// Create an upload buffer that can be used specifically for raytracing acceleration structure instances
     fn create_raytracing_instance_buffer(
         &mut self,

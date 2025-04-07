@@ -344,6 +344,7 @@ void scene_raygen_shader()
         payload
     );
 
+    /*
     if(payload.col.w)
     {
         uint point_lights_id = resource_indices.z;
@@ -393,7 +394,12 @@ void scene_raygen_shader()
     {
         rw_textures[resource_indices.x][output_location] = float4(0.0, 1.0, 0.0, 1.0);
     }
+    */
+
+    rw_textures[resource_indices.x][output_location] = payload.col;
 }
+
+StructuredBuffer<uint> instance_srv_indices : register(t1, space0);
 
 [shader("closesthit")]
 void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
@@ -406,7 +412,28 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     // intersction point
     float3 ip = r0 + rd * rt;
 
-    payload.col = float4(ip, 1.0);
+    uint instanceID = InstanceID();       // From TLAS instance
+    uint primitiveIndex = PrimitiveIndex(); // Triangle index in geometry
+
+    uint srv_id = instance_srv_indices[instanceID];
+    if(srv_id == 8)
+    {
+        payload.col = float4(1.0, 0.0, 0.0, 1.0);
+    }
+    else if(srv_id == 9)
+    {
+        payload.col = float4(0.0, 1.0, 0.0, 1.0);
+    }
+    else if(srv_id == 10)
+    {
+        payload.col = float4(.0, 0.0, 1.0, 1.0);
+    }  
+    else
+    {
+        payload.col = float4(0.0, 0.0, 0.0, 1.0);
+    }
+
+    // payload.col = float4(ip, 1.0);
 }
 
 [shader("anyhit")]

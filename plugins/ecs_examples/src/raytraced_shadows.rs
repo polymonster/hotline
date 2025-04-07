@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::gfx::RaytracingTLAS;
+use hotline_rs::gfx::{CpuAccessFlags, RaytracingTLAS};
 
 ///
 /// Raytraced Shadows
@@ -18,7 +18,8 @@ pub struct BLAS {
 pub struct TLAS {
     pub tlas: Option<gfx_platform::RaytracingTLAS>,
     pub instance_buffer: Option<gfx_platform::Buffer>,
-    pub instance_buffer_len: usize
+    pub instance_buffer_len: usize,
+    pub instance_srv_buffer: gfx_platform::Buffer
 }
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
@@ -35,7 +36,7 @@ pub fn raytraced_shadows(client: &mut Client<gfx_platform::Device, os_platform::
             "batch_lights",
             "setup_tlas"
         ],
-        render_graph: "mesh_lit_rt_shadow2",
+        render_graph: "mesh_lit_rt_shadow",
         ..Default::default()
     }
 }
@@ -67,7 +68,6 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-
     let dodeca_mesh = hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0);
@@ -194,11 +194,30 @@ pub fn setup_raytraced_shadows_scene(
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
 
+    // TODO: create srv indices
+    let instance_srv_indices : Vec<u32> = vec![
+        8, 9, 10, 11, 12, 13, 14, 15
+    ];
+
+    // create a buffer for srv indices
+    let instance_srv_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
+            usage: gfx::BufferUsage::SHADER_RESOURCE,
+            cpu_access: CpuAccessFlags::NONE,
+            format: gfx::Format::Unknown,
+            stride: std::mem::size_of_val(&instance_srv_indices[0]),
+            num_elements: instance_srv_indices.len(),
+            initial_state: gfx::ResourceState::ShaderResource
+        }, 
+        Some(gfx::slice_as_u8_slice(instance_srv_indices.as_slice())),
+        &mut pmfx.shader_heap
+    )?;
+
     commands.spawn(
         TLAS {
             tlas: None,
             instance_buffer: None,
-            instance_buffer_len: 0
+            instance_buffer_len: 0,
+            instance_srv_buffer
         }
     );
     
@@ -345,6 +364,13 @@ pub fn render_meshes_raytraced(
                 }
 
                 pass.cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
+                
+                let second_slot = raytracing_pipeline.pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
+                if let Some(second_slot) = second_slot {
+                    let srv_buffer = t.instance_srv_buffer.get_srv_index().unwrap();
+                    println!("bind {} on {}", srv_buffer, second_slot.index);
+                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
+                }
 
                 // dispatch
                 pass.cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
