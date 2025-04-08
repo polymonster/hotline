@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::gfx::{CpuAccessFlags, RaytracingTLAS};
+use hotline_rs::gfx::{CpuAccessFlags, RaytracingTLAS, ResourceView};
 
 ///
 /// Raytraced Shadows
@@ -20,6 +20,11 @@ pub struct TLAS {
     pub instance_buffer: Option<gfx_platform::Buffer>,
     pub instance_buffer_len: usize,
     pub instance_srv_buffer: gfx_platform::Buffer
+}
+
+pub struct GeometryLookup {
+    pub ib_srv: u32,
+    pub vb_srv: u32,
 }
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
@@ -53,11 +58,34 @@ pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_plat
                     index_format: gfx::Format::R16u,
                     vertex_count: mesh.num_vertices as usize,
                     vertex_format: gfx::Format::RGB32f,
-                    vertex_stride: 56
+                    vertex_stride: std::mem::size_of::<hotline_rs::primitives::Vertex3D>()
                 }),
             geometry_flags: gfx::RaytracingGeometryFlags::OPAQUE,
             build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE
         })?
+    })
+}
+
+pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_platform::Heap, mesh: &pmfx::Mesh<gfx_platform::Device>) -> Result<GeometryLookup, hotline_rs::Error> {
+    Ok(GeometryLookup {
+        ib_srv: device.create_resource_view(&gfx::ResourceViewInfo {
+            view_type: gfx::ResourceView::ShaderResource,
+            format: gfx::Format::Unknown,
+            first_element: 0,
+            structure_byte_size: std::mem::size_of::<u16>(),
+            num_elements: mesh.num_indices as usize
+        },
+        gfx::Resource::Buffer(&mesh.ib),
+        heap)? as u32,
+        vb_srv: device.create_resource_view(&gfx::ResourceViewInfo {
+            view_type: gfx::ResourceView::ShaderResource,
+            format: gfx::Format::Unknown,
+            first_element: 0,
+            structure_byte_size: std::mem::size_of::<hotline_rs::primitives::Vertex3D>(),
+            num_elements: mesh.num_vertices as usize
+        },
+        gfx::Resource::Buffer(&mesh.ib),
+        heap)? as u32
     })
 }
 
@@ -104,6 +132,11 @@ pub fn setup_raytraced_shadows_scene(
     let shape_bounds = bounds * 0.6;
     let shape_size = bounds * 0.1;
 
+    // TODO: create srv indices
+    let mut instance_srv_indices : Vec<u32> = vec![
+        8, 9, 10, 11, 12, 13, 14, 15, 16
+    ];
+
     // dodeca
     let dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
@@ -113,8 +146,8 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &dodeca_mesh)?
     )).id();
-
-    // helix
+    
+    // tepot
     commands.spawn((
         Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
         Scale(splat3f(shape_size * 2.0)),
@@ -194,10 +227,11 @@ pub fn setup_raytraced_shadows_scene(
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
 
-    // TODO: create srv indices
-    let instance_srv_indices : Vec<u32> = vec![
-        8, 9, 10, 11, 12, 13, 14, 15
-    ];
+    //let mut instance_geometry_lookup = Vec::new();
+    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
+    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);
+    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
+    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
 
     // create a buffer for srv indices
     let instance_srv_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
