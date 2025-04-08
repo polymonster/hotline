@@ -3514,28 +3514,31 @@ impl super::Device for Device {
         })
     }
 
-    fn create_buffer_view(
+    fn create_resource_view(
         &mut self,
-        usage: BufferUsage,
-        buffer: &Buffer,
-        heap: Option<&mut Heap>
+        info: &ResourceViewInfo,
+        resource: Resource<Device>,
+        heap: &mut Heap
     ) -> result::Result<usize, super::Error> {
-        if let Some(resource) = buffer.resource.as_ref() {
-            let heap = heap.unwrap_or(self.shader_heap.as_mut().unwrap());
-            match usage {
-                super::BufferUsage::SHADER_RESOURCE => unsafe {
+        let inner_resource = match resource {
+            Resource::Buffer(buf) => { buf.resource.as_ref() },
+            Resource::Texture(tex) => { tex.resource.as_ref() },
+        };
+        if let Some(resource) = inner_resource {
+            match info.view_type {
+                ResourceView::ShaderResource => unsafe {
                     let h = heap.allocate();
                     self.device.CreateShaderResourceView(
                         resource,
                         Some(&D3D12_SHADER_RESOURCE_VIEW_DESC {
-                            Format: DXGI_FORMAT_UNKNOWN, // TODO
+                            Format: to_dxgi_format(info.format),
                             ViewDimension: D3D12_SRV_DIMENSION_BUFFER,
                             Shader4ComponentMapping: D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING,
                             Anonymous: D3D12_SHADER_RESOURCE_VIEW_DESC_0 {
                                 Buffer: D3D12_BUFFER_SRV {
-                                    FirstElement: 0, // TODO
-                                    NumElements: 0, // TODO
-                                    StructureByteStride: 0, // TODO
+                                    FirstElement: info.first_element as u64,
+                                    NumElements: info.num_elements as u32,
+                                    StructureByteStride: info.structure_byte_size as u32,
                                     Flags: D3D12_BUFFER_SRV_FLAG_NONE
                                 }
                             }
@@ -3546,7 +3549,7 @@ impl super::Device for Device {
                 }
                 _ => {
                     Err(super::Error {
-                        msg: "unsupported buffer usage".to_string()
+                        msg: "unsupported / unimplemented buffer usage".to_string()
                     })
                 }
             }

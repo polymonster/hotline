@@ -458,6 +458,22 @@ pub enum ShaderVisibility {
     Compute,
 }
 
+/// View types for creating secondary views for resources
+#[derive(Copy, Clone)]
+pub enum ResourceView {
+    ShaderResource,
+    UnorderedAccess,
+    ConstantBuffer
+}
+
+pub struct ResourceViewInfo {
+    pub view_type: ResourceView,
+    pub format: Format,
+    pub first_element: usize,
+    pub structure_byte_size: usize,
+    pub num_elements: usize
+}
+
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`. 
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PushConstantInfo {
@@ -1173,10 +1189,17 @@ pub struct IndexBufferView {
 
 /// Resources that can be used with a uav_barrier in `CmdBuf`
 #[derive(Clone, Copy)]
-enum UavResource<'stack, D: Device> {
+pub enum UavResource<'stack, D: Device> {
     Texture(&'stack D::Texture),
     Buffer(&'stack D::Buffer),
     RaytracingTLAS(&'stack D::RaytracingTLAS),
+}
+
+/// Resources tha can have resource views created
+#[derive(Clone, Copy)]
+pub enum Resource<'stack, D: Device> {
+    Texture(&'stack D::Texture),
+    Buffer(&'stack D::Buffer),
 }
 
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
@@ -1234,13 +1257,6 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         data: &[T]
     ) -> Result<Self::Buffer, Error>;
-    /// Create a buffer view
-    fn create_buffer_view(
-        &mut self,
-        usage: BufferUsage,
-        buffer: &Self::Buffer,
-        heap: Option<&mut Self::Heap>
-    ) -> Result<usize, Error>;
     /// Create an upload buffer that can be used specifically for raytracing acceleration structure instances
     fn create_raytracing_instance_buffer(
         &mut self,
@@ -1265,6 +1281,13 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         heaps: TextureHeapInfo<Self>,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
+    /// Create a resource view (shader resource, unordered access or constant buffer) for the given `resource` within the specified `heap`
+    fn create_resource_view(
+        &mut self,
+        info: &ResourceViewInfo,
+        resource: Resource<Self>,
+        heap: &mut Self::Heap
+    ) -> Result<usize, Error>;
     /// Create a new render pipeline state object from the supplied `RenderPipelineInfo`
     fn create_render_pipeline(
         &self,
