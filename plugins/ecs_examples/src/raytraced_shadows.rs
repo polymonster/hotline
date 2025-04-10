@@ -84,7 +84,7 @@ pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_
             structure_byte_size: std::mem::size_of::<hotline_rs::primitives::Vertex3D>(),
             num_elements: mesh.num_vertices as usize
         },
-        gfx::Resource::Buffer(&mesh.ib),
+        gfx::Resource::Buffer(&mesh.vb),
         heap)? as u32
     })
 }
@@ -227,11 +227,11 @@ pub fn setup_raytraced_shadows_scene(
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
 
-    //let mut instance_geometry_lookup = Vec::new();
-    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
-    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);
-    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
-    //instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
+    let mut instance_geometry_lookup = Vec::new();
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
 
     // create a buffer for srv indices
     let instance_srv_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
