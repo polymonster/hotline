@@ -19,9 +19,10 @@ pub struct TLAS {
     pub tlas: Option<gfx_platform::RaytracingTLAS>,
     pub instance_buffer: Option<gfx_platform::Buffer>,
     pub instance_buffer_len: usize,
-    pub instance_srv_buffer: gfx_platform::Buffer
+    pub instance_geometry_buffer: gfx_platform::Buffer
 }
 
+#[repr(C)]
 pub struct GeometryLookup {
     pub ib_srv: u32,
     pub vb_srv: u32,
@@ -132,10 +133,7 @@ pub fn setup_raytraced_shadows_scene(
     let shape_bounds = bounds * 0.6;
     let shape_size = bounds * 0.1;
 
-    // TODO: create srv indices
-    let mut instance_srv_indices : Vec<u32> = vec![
-        8, 9, 10, 11, 12, 13, 14, 15, 16
-    ];
+    let mut instance_geometry_lookup = Vec::new();
 
     // dodeca
     let dodeca_blas = commands.spawn((
@@ -146,7 +144,8 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &dodeca_mesh)?
     )).id();
-    
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
+
     // tepot
     commands.spawn((
         Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
@@ -156,6 +155,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &teapot_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);    
 
     // tube
     commands.spawn((
@@ -166,6 +166,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &tube_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
 
     // tri prsim
     commands.spawn((
@@ -176,6 +177,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &triangle_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
 
     // walls
     let thickness = bounds * 0.1;
@@ -193,6 +195,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
 
     // + y
     commands.spawn((
@@ -204,6 +207,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
 
     // -z
     commands.spawn((
@@ -215,6 +219,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
 
     // -x
     commands.spawn((
@@ -226,23 +231,18 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
-
-    let mut instance_geometry_lookup = Vec::new();
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
 
     // create a buffer for srv indices
-    let instance_srv_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
+    let instance_geometry_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
             usage: gfx::BufferUsage::SHADER_RESOURCE,
             cpu_access: CpuAccessFlags::NONE,
             format: gfx::Format::Unknown,
-            stride: std::mem::size_of_val(&instance_srv_indices[0]),
-            num_elements: instance_srv_indices.len(),
+            stride: std::mem::size_of::<GeometryLookup>(),
+            num_elements: instance_geometry_lookup.len(),
             initial_state: gfx::ResourceState::ShaderResource
         }, 
-        Some(gfx::slice_as_u8_slice(instance_srv_indices.as_slice())),
+        Some(gfx::slice_as_u8_slice(instance_geometry_lookup.as_slice())),
         &mut pmfx.shader_heap
     )?;
 
@@ -251,7 +251,7 @@ pub fn setup_raytraced_shadows_scene(
             tlas: None,
             instance_buffer: None,
             instance_buffer_len: 0,
-            instance_srv_buffer
+            instance_geometry_buffer
         }
     );
     
@@ -401,8 +401,7 @@ pub fn render_meshes_raytraced(
                 
                 let second_slot = raytracing_pipeline.pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
                 if let Some(second_slot) = second_slot {
-                    let srv_buffer = t.instance_srv_buffer.get_srv_index().unwrap();
-                    println!("bind {} on {}", srv_buffer, second_slot.index);
+                    let srv_buffer = t.instance_geometry_buffer.get_srv_index().unwrap();
                     pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
                 }
 

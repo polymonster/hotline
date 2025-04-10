@@ -399,7 +399,15 @@ void scene_raygen_shader()
     rw_textures[resource_indices.x][output_location] = payload.col;
 }
 
-StructuredBuffer<uint> instance_srv_indices : register(t1, space0);
+struct GeometryLookup
+{
+    uint ib_srv;
+    uint vb_srv;
+};
+
+StructuredBuffer<GeometryLookup> instance_geometry_lookups : register(t1, space0);
+StructuredBuffer<uint> instance_index_buffers[] : register(t0, space13);
+StructuredBuffer<vs_input_mesh> instance_vertex_buffers[] : register(t0, space14);
 
 [shader("closesthit")]
 void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
@@ -412,28 +420,34 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     // intersction point
     float3 ip = r0 + rd * rt;
 
-    uint instanceID = InstanceID();       // From TLAS instance
-    uint primitiveIndex = PrimitiveIndex(); // Triangle index in geometry
+    uint iid = InstanceID();
+    uint tid = PrimitiveIndex();
 
-    uint srv_id = instance_srv_indices[instanceID];
-    if(srv_id == 8)
+    GeometryLookup lookup = instance_geometry_lookups[iid];
+
+    uint index = (tid / 3);
+    uint half_index = index / 2;
+    uint shift = index % 2;
+
+    uint i0, i1, i2;
+    if(shift == 0)
     {
-        payload.col = float4(1.0, 0.0, 0.0, 1.0);
+        i0 = instance_index_buffers[lookup.ib_srv][half_index] & 0x0000ffff;
+        i1 = (instance_index_buffers[lookup.ib_srv][half_index]) >> 16 & 0x0000ffff;
+        i2 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0x0000ffff;
     }
-    else if(srv_id == 9)
-    {
-        payload.col = float4(0.0, 1.0, 0.0, 1.0);
-    }
-    else if(srv_id == 10)
-    {
-        payload.col = float4(.0, 0.0, 1.0, 1.0);
-    }  
     else
     {
-        payload.col = float4(0.0, 0.0, 0.0, 1.0);
+        i0 = (instance_index_buffers[lookup.ib_srv][half_index] >> 16) & 0x0000ffff;
+        i1 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0x0000ffff;
+        i2 = (instance_index_buffers[lookup.ib_srv][half_index + 1] >> 16) & 0x0000ffff;
     }
 
-    // payload.col = float4(ip, 1.0);
+    vs_input_mesh v0 = instance_vertex_buffers[lookup.vb_srv][i0];
+    vs_input_mesh v1 = instance_vertex_buffers[lookup.vb_srv][i1];
+    vs_input_mesh v2 = instance_vertex_buffers[lookup.vb_srv][i2];
+    
+    payload.col = float4(v0.normal, 1.0);
 }
 
 [shader("anyhit")]
