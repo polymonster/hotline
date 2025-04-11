@@ -99,6 +99,8 @@ pub struct Mesh<D: gfx::Device> {
     pub ib: D::Buffer,
     /// Number of indices to draw from the index buffer
     pub num_indices: u32,
+    /// Size of index type in bytes
+    pub index_size_bytes: u32,
     /// Number of vertices in the vertex buffer
     pub num_vertices: u32,
     /// Bounding aabb min

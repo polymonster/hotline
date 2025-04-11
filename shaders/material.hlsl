@@ -425,29 +425,39 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
 
     GeometryLookup lookup = instance_geometry_lookups[iid];
 
-    uint index = (tid / 3);
+    uint index = (tid * 3);
+
+    uint i0 = instance_index_buffers[lookup.ib_srv][index];
+    uint i1 = instance_index_buffers[lookup.ib_srv][index + 1];
+    uint i2 = instance_index_buffers[lookup.ib_srv][index + 2];
+
     uint half_index = index / 2;
     uint shift = index % 2;
 
-    uint i0, i1, i2;
     if(shift == 0)
     {
-        i0 = instance_index_buffers[lookup.ib_srv][half_index] & 0x0000ffff;
-        i1 = (instance_index_buffers[lookup.ib_srv][half_index]) >> 16 & 0x0000ffff;
-        i2 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0x0000ffff;
+        i0 = instance_index_buffers[lookup.ib_srv][half_index] & 0xffff;
+        i1 = (instance_index_buffers[lookup.ib_srv][half_index]) >> 16;
+        i2 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0xffff;
     }
     else
     {
-        i0 = (instance_index_buffers[lookup.ib_srv][half_index] >> 16) & 0x0000ffff;
-        i1 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0x0000ffff;
-        i2 = (instance_index_buffers[lookup.ib_srv][half_index + 1] >> 16) & 0x0000ffff;
+        i0 = (instance_index_buffers[lookup.ib_srv][half_index] >> 16);
+        i1 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0xffff;
+        i2 = (instance_index_buffers[lookup.ib_srv][half_index + 1] >> 16);
     }
+
+    float u = attr.barycentrics.x;
+    float v = attr.barycentrics.y;
+    float w = 1.0f - u - v;
 
     vs_input_mesh v0 = instance_vertex_buffers[lookup.vb_srv][i0];
     vs_input_mesh v1 = instance_vertex_buffers[lookup.vb_srv][i1];
     vs_input_mesh v2 = instance_vertex_buffers[lookup.vb_srv][i2];
     
-    payload.col = float4(v0.normal, 1.0);
+    payload.col = float4(v0.normal * u + v1.normal * v + v2.normal * w, 1.0);
+
+    payload.col.xyz = payload.col.xyz * 0.5 + 0.5;
 }
 
 [shader("anyhit")]
