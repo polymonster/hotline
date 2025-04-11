@@ -26,6 +26,8 @@ pub struct TLAS {
 pub struct GeometryLookup {
     pub ib_srv: u32,
     pub vb_srv: u32,
+    pub ib_stride: u32,
+    pub material_type: u32
 }
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
@@ -56,7 +58,7 @@ pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_plat
                     vertex_buffer: &mesh.vb,
                     transform3x4: None,
                     index_count: mesh.num_indices as usize,
-                    index_format: gfx::Format::R16u,
+                    index_format: if mesh.index_size_bytes == 2 { gfx::Format::R16u } else { gfx::Format::R32u },
                     vertex_count: mesh.num_vertices as usize,
                     vertex_format: gfx::Format::RGB32f,
                     vertex_stride: std::mem::size_of::<hotline_rs::primitives::Vertex3D>()
@@ -67,7 +69,7 @@ pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_plat
     })
 }
 
-pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_platform::Heap, mesh: &pmfx::Mesh<gfx_platform::Device>) -> Result<GeometryLookup, hotline_rs::Error> {
+pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_platform::Heap, mesh: &pmfx::Mesh<gfx_platform::Device>, material_type: u32) -> Result<GeometryLookup, hotline_rs::Error> {
     Ok(GeometryLookup {
         ib_srv: device.create_resource_view(&gfx::ResourceViewInfo {
             view_type: gfx::ResourceView::ShaderResource,
@@ -86,7 +88,9 @@ pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_
             num_elements: mesh.num_vertices as usize
         },
         gfx::Resource::Buffer(&mesh.vb),
-        heap)? as u32
+        heap)? as u32,
+        ib_stride: mesh.index_size_bytes,
+        material_type
     })
 }
 
@@ -97,6 +101,7 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 32);
     let dodeca_mesh = hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0);
@@ -145,7 +150,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &dodeca_mesh)?
     )).id();
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &dodeca_mesh, 0)?);
 
     // tepot
     commands.spawn((
@@ -156,7 +161,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &teapot_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh)?);    
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh, 1)?);    
 
     // tube
     commands.spawn((
@@ -167,7 +172,7 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &tube_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &tube_mesh, 0)?);
 
     // tri prsim
     commands.spawn((
@@ -178,7 +183,48 @@ pub fn setup_raytraced_shadows_scene(
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &triangle_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &triangle_mesh, 0)?);
+    */
+
+    let dodeca_blas = commands.spawn((
+        Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
+        Scale(splat3f(shape_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(sphere_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &sphere_mesh)?
+    )).id();
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &sphere_mesh, 1)?);
+
+    commands.spawn((
+        Position(vec3f(shape_bounds * -0.3, shape_bounds * -0.6, shape_bounds * 0.8)),
+        Scale(splat3f(shape_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(teapot_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &teapot_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh, 1)?);    
+
+    commands.spawn((
+        Position(vec3f(shape_bounds * 1.0, shape_bounds * 0.1, shape_bounds * -1.0)),
+        Scale(splat3f(shape_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(teapot_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &teapot_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh, 2)?);
+
+    commands.spawn((
+        Position(vec3f(shape_bounds * 0.123, shape_bounds * -0.6, shape_bounds * -0.8)),
+        Scale(splat3f(shape_size * 2.0)),
+        Rotation(Quatf::identity()),
+        MeshComponent(sphere_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &sphere_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &sphere_mesh, 2)?);
 
     // walls
     let thickness = bounds * 0.1;
@@ -196,7 +242,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh, 0)?);
 
     // + y
     commands.spawn((
@@ -208,7 +254,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh, 0)?);
 
     // -z
     commands.spawn((
@@ -220,7 +266,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh, 0)?);
 
     // -x
     commands.spawn((
@@ -232,19 +278,7 @@ pub fn setup_raytraced_shadows_scene(
         Billboard,
         blas_from_mesh(&mut device, &cube_mesh)?
     ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
-    */
-
-    commands.spawn((
-        Position(vec3f(0.0, 0.0, 0.0)),
-        Scale(vec3f(bounds, bounds, bounds) * 5.0),
-        Rotation(Quatf::identity()),
-        MeshComponent(cube_mesh.clone()),
-        WorldMatrix(Mat34f::identity()),
-        Billboard,
-        blas_from_mesh(&mut device, &cube_mesh)?
-    ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh, 0)?);
 
     // create a buffer for srv indices
     let instance_geometry_buffer = device.create_buffer_with_heap::<u8>(&gfx::BufferInfo{
