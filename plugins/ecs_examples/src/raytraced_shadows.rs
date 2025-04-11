@@ -37,7 +37,7 @@ pub fn raytraced_shadows(client: &mut Client<gfx_platform::Device, os_platform::
             "setup_raytraced_shadows_scene"
         ],
         update: systems![
-            "animate_meshes",
+            //"animate_meshes",
             "animate_lights",
             "batch_lights",
             "setup_tlas"
@@ -73,7 +73,7 @@ pub fn geometry_lookup_from_mesh(device: &mut ResMut<DeviceRes>, heap: &mut gfx_
             view_type: gfx::ResourceView::ShaderResource,
             format: gfx::Format::Unknown,
             first_element: 0,
-            structure_byte_size: std::mem::size_of::<u16>(),
+            structure_byte_size: mesh.index_size_bytes as usize,
             num_elements: mesh.num_indices as usize
         },
         gfx::Resource::Buffer(&mesh.ib),
@@ -135,6 +135,7 @@ pub fn setup_raytraced_shadows_scene(
 
     let mut instance_geometry_lookup = Vec::new();
 
+    /*
     // dodeca
     let dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
@@ -225,6 +226,18 @@ pub fn setup_raytraced_shadows_scene(
     commands.spawn((
         Position(vec3f(-wall_offset, 0.0, 0.0)),
         Scale(vec3f(thickness, face_size, face_size)),
+        Rotation(Quatf::identity()),
+        MeshComponent(cube_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        Billboard,
+        blas_from_mesh(&mut device, &cube_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &cube_mesh)?);
+    */
+
+    commands.spawn((
+        Position(vec3f(0.0, 0.0, 0.0)),
+        Scale(vec3f(bounds, bounds, bounds) * 5.0),
         Rotation(Quatf::identity()),
         MeshComponent(cube_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
