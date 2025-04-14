@@ -357,27 +357,15 @@ void scene_raygen_shader()
         payload
     );
 
-    if(payload.has_bounce_ray)
+    for(int i = 0; i < 10; ++i)
     {
-        RayDesc bounce_ray = payload.bounce_ray;
-
-        payload = default_payload();
-        TraceRay(
-            scene_tlas[resource_indices.y], 
-            RAY_FLAG_NONE, 
-            0xff, 
-            0,
-            2,
-            0, 
-            bounce_ray, 
-            payload
-        );
-
         if(payload.has_bounce_ray)
         {
             RayDesc bounce_ray = payload.bounce_ray;
+            int bounce_count = payload.bounce_count;
 
             payload = default_payload();
+            payload.bounce_count = bounce_count;
             TraceRay(
                 scene_tlas[resource_indices.y], 
                 RAY_FLAG_NONE, 
@@ -388,6 +376,12 @@ void scene_raygen_shader()
                 bounce_ray, 
                 payload
             );
+
+            // payload.col = float4(bounce_ray.Direction * 0.5 + 0.5, 1.0);
+        }
+        else
+        {
+            break;
         }
     }
 
@@ -450,7 +444,9 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     vs_input_mesh v1 = instance_vertex_buffers[lookup.vb_srv][i1];
     vs_input_mesh v2 = instance_vertex_buffers[lookup.vb_srv][i2];
 
-    float3 geo_normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
+    //float3 geo_normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
+
+    float3 geo_normal = normalize(v0.normal + (v1.normal - v0.normal) * u + (v2.normal - v0.normal) * v);
 
     if(lookup.material_type == 1)
     {
@@ -463,13 +459,14 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
         float3 ip = r0 + rd * rt;
 
         RayDesc ray;
-        ray.Origin = ip + geo_normal * 0.01;
+        ray.Origin = ip + geo_normal * 0.001;
         ray.Direction = reflect(rd, geo_normal);
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
 
         payload.has_bounce_ray = true;
         payload.bounce_ray = ray;
+        payload.bounce_count++;
 
         return;
     }
@@ -483,14 +480,35 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
         // intersction point
         float3 ip = r0 + rd * rt;
 
+        float refidx = 1.0003 / 1.52;
+        if(payload.bounce_count == 1)
+        {
+            //refidx = 1.52 / 1.0003;
+        }
+
+        float3 ray_dir = refract(rd, geo_normal, refidx);
+        float3 ray_start = ip + rd * 0.001;
+
+        if(length(ray_dir) == 0.0)
+        {
+            ray_dir = reflect(rd, geo_normal);
+            ray_start = ip + geo_normal * 0.001;
+        }
+
         RayDesc ray;
-        ray.Origin = ip + rd;
-        ray.Direction = refract(rd, geo_normal, 1.52);
+        ray.Origin = ray_start;
+        ray.Direction = ray_dir;
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
 
+        if(payload.bounce_count > 0)
+        {
+            ray.Direction = rd;
+        }
+
         payload.has_bounce_ray = true;
         payload.bounce_ray = ray;
+        payload.bounce_count++;
 
         return;
     }
