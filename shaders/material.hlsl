@@ -481,14 +481,16 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
         float3 ip = r0 + rd * rt;
 
         float refidx = 1.0003 / 1.52;
-        if(payload.bounce_count == 1)
+        if(payload.bounce_count & 1)
         {
-            //refidx = 1.52 / 1.0003;
+            refidx = 1.52 / 1.0003;
+            geo_normal *= -1.0;
         }
 
         float3 ray_dir = refract(rd, geo_normal, refidx);
         float3 ray_start = ip + rd * 0.001;
 
+        
         if(length(ray_dir) == 0.0)
         {
             ray_dir = reflect(rd, geo_normal);
@@ -501,10 +503,12 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
         ray.TMin = 0.001;
         ray.TMax = 10000.0;
 
-        if(payload.bounce_count > 0)
+        /*
+        if(payload.bounce_count > 1)
         {
             ray.Direction = rd;
         }
+        */
 
         payload.has_bounce_ray = true;
         payload.bounce_ray = ray;
@@ -570,7 +574,9 @@ void shadow_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInter
 [shader("miss")]
 void scene_miss_shader(inout RayPayload payload)
 {
-    payload.col = float4(0.0, 0.0, 0.0, 0.0);
+    float a = 0.5 * (WorldRayDirection().y + 1.0);
+    float3 gradient = (1.0-a)*float3(1.0, 1.0, 1.0) + a * float3(0.5, 0.7, 1.0);
+    payload.col = float4(gradient, 1.0);
 }
 
 ps_output ps_mesh_lit_rt_shadow(vs_output input) {
