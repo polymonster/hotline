@@ -5,7 +5,7 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "client (Debug)",
+            "name": "client (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/client.exe",
@@ -17,7 +17,7 @@
             "preLaunchTask": "pmbuild-debug"
         },
         {
-            "name": "client (Release)",
+            "name": "client (Win32|Release)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/release/client.exe",
@@ -29,7 +29,31 @@
             "preLaunchTask": "pmbuild-release"
         },
         {
-            "name": "triangle (Debug)",
+            "name": "window (Win32|Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/window.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "examples"
+        },
+        {
+            "name": "swap_chain (Win32|Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/swap_chain.exe",
+            "args": [],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "examples"
+        },
+        {
+            "name": "triangle (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/triangle.exe",
@@ -41,7 +65,7 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "bindless (Debug)",
+            "name": "bindless (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/bindless.exe",
@@ -53,7 +77,7 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "bindful (Debug)",
+            "name": "bindful (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/bindful.exe",
@@ -65,7 +89,7 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "imgui_demo (Debug)",
+            "name": "imgui_demo (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/imgui_demo.exe",
@@ -77,7 +101,7 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "play_video (Debug)",
+            "name": "play_video (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/play_video.exe",
@@ -89,19 +113,7 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "resource_tests (Debug)",
-            "type": "cppvsdbg",
-            "request": "launch",
-            "program": "${workspaceFolder}/target/debug/examples/resource_tests.exe",
-            "args": ["--test-threads=1", "--nocapture"],
-            "stopAtEntry": false,
-            "cwd": "${fileDirname}",
-            "environment": [],
-            "console": "externalTerminal",
-            "preLaunchTask": "examples"
-        },
-        {
-            "name": "raytraced_triangle (Debug)",
+            "name": "raytraced_triangle (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/raytraced_triangle.exe",
@@ -113,7 +125,19 @@
             "preLaunchTask": "examples"
         },
         {
-            "name": "tests (Debug)",
+            "name": "resource_tests (Win32|Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/resource_tests.exe",
+            "args": ["--test-threads=1", "--nocapture"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "examples"
+        },
+        {
+            "name": "tests (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/deps/tests-9d060b7b8785eb4b.exe",
