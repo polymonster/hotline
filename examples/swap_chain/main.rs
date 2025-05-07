@@ -101,14 +101,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         // execute command buffer
         device.execute(&cmd);
 
-        println!("swap {}", counter);
+        println!("swap {}", t);
         swap_chain.swap(&device);
-
-        // swap colours and inc counter
-        counter += 1;
-        if counter % 30 == 0 {
-            col_index = (col_index + 1) % colours.len();
-        }
 
         t += 1.0 / 600.0;
     }
