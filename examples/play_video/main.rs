@@ -1,12 +1,12 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::prelude::*;
 
 #[cfg(target_os = "windows")]
 use hotline_rs::os::win32 as os_platform;
+
+#[cfg(target_os = "windows")]
 use hotline_rs::gfx::d3d12 as gfx_platform;
 
+#[cfg(target_os = "windows")]
 use hotline_rs::av::wmf as av_platform;
 
 fn main() -> Result<(), hotline_rs::Error> {

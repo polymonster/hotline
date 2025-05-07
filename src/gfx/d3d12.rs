@@ -3571,7 +3571,6 @@ impl super::Device for Device {
         };
 
         // create instance descs
-        let num_instances = instances.len();
         let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = instances.iter()
             .map(|x| 
                 D3D12_RAYTRACING_INSTANCE_DESC {

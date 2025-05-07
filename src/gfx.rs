@@ -1,12 +1,15 @@
+// A null / syubbed implementation
+pub mod null;
+
+/// Implemets this interface with a Direct3D12 backend.
+#[cfg(target_os = "windows")]
+pub mod d3d12;
+
 use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use maths_rs::max;
-
-/// Implemets this interface with a Direct3D12 backend.
-#[cfg(target_os = "windows")]
-pub mod d3d12;
 
 type Error = super::Error;
 
