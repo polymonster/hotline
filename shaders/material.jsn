@@ -156,14 +156,14 @@
             }
             update_tlas: {
                 pipelines: []
-                function: "update_tlas2"
+                function: "update_tlas"
                 depends_on: ["debug"]
             }
             meshes: {
                 view: "main_view"
                 pipelines: ["mesh_lit_rt_shadow2"]
                 function: "render_meshes_bindless"
-                depends_on: ["update_tlas2"]
+                depends_on: ["update_tlas"]
             }
         }
         mesh_lit_rt_shadow: {

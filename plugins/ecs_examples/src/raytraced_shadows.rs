@@ -1,33 +1,11 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::gfx::{CpuAccessFlags, RaytracingTLAS, ResourceView};
-
 ///
 /// Raytraced Shadows
 /// 
 
 use crate::prelude::*;
-
-#[derive(Component)]
-pub struct BLAS {
-    pub blas: gfx_platform::RaytracingBLAS
-}
-
-#[derive(Component)]
-pub struct TLAS {
-    pub tlas: Option<gfx_platform::RaytracingTLAS>,
-    pub instance_buffer: Option<gfx_platform::Buffer>,
-    pub instance_buffer_len: usize,
-}
-
-#[repr(C)]
-pub struct GeometryLookup {
-    pub ib_srv: u32,
-    pub vb_srv: u32,
-    pub ib_stride: u32,
-    pub material_type: u32
-}
 
 /// Setup multiple draw calls with draw indexed and per draw call push constants for transformation matrix etc.
 #[no_mangle]
@@ -41,31 +19,11 @@ pub fn raytraced_shadows(client: &mut Client<gfx_platform::Device, os_platform::
             "animate_meshes",
             "animate_lights",
             "batch_lights",
-            "setup_tlas2"
+            "setup_tlas"
         ],
         render_graph: "mesh_lit_rt_shadow2",
         ..Default::default()
     }
-}
-
-pub fn blas_from_mesh(device: &mut ResMut<DeviceRes>, mesh: &pmfx::Mesh<gfx_platform::Device>) -> Result<BLAS, hotline_rs::Error> {
-    Ok(BLAS {
-        blas: device.create_raytracing_blas(&gfx::RaytracingBLASInfo {
-            geometry: gfx::RaytracingGeometryInfo::Triangles(
-                gfx::RaytracingTrianglesInfo {
-                    index_buffer: &mesh.ib,
-                    vertex_buffer: &mesh.vb,
-                    transform3x4: None,
-                    index_count: mesh.num_indices as usize,
-                    index_format: if mesh.index_size_bytes == 2 { gfx::Format::R16u } else { gfx::Format::R32u },
-                    vertex_count: mesh.num_vertices as usize,
-                    vertex_format: gfx::Format::RGB32f,
-                    vertex_stride: std::mem::size_of::<hotline_rs::primitives::Vertex3D>()
-                }),
-            geometry_flags: gfx::RaytracingGeometryFlags::OPAQUE,
-            build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE
-        })?
-    })
 }
 
 #[export_update_fn]
@@ -203,10 +161,11 @@ pub fn setup_raytraced_shadows_scene(
     ));
 
     commands.spawn(
-        TLAS {
+        TLASComponent {
             tlas: None,
             instance_buffer: None,
             instance_buffer_len: 0,
+            instance_geometry_buffer: None
         }
     );
     
@@ -221,92 +180,6 @@ pub fn animate_lights (
     let extent = 60.0;
     for (mut position, _) in &mut light_query {
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
-    }
-
-    Ok(())
-}
-
-
-#[export_update_fn]
-pub fn setup_tlas2(
-    mut device: ResMut<DeviceRes>,
-    mut pmfx: ResMut<PmfxRes>,
-    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
-    mut tlas_query: Query<&mut TLAS>,
-    mut commands: Commands) -> Result<(), hotline_rs::Error> {
-
-    // ..
-    for mut t in &mut tlas_query {
-        let mut instances = Vec::new();
-        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
-            let translate = Mat34f::from_translation(position.0);
-            let rotate = Mat34f::from(rotation.0);
-            let scale = Mat34f::from_scale(scale.0);
-            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
-            instances.push(
-                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
-                    transform: (flip * translate * rotate * scale).m,
-                    instance_id: index as u32,
-                    instance_mask: 0xff,
-                    hit_group_index: 0,
-                    instance_flags: 0,
-                    blas: &blas.blas
-                }
-            );
-        }
-        if t.tlas.is_none() {
-            let tlas = device.create_raytracing_tlas_with_heap(&gfx::RaytracingTLASInfo {
-                instances: &instances,
-                build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE |
-                    gfx::AccelerationStructureBuildFlags::ALLOW_UPDATE
-                },
-                &mut pmfx.shader_heap
-            )?;
-            let tlas_srv =  tlas.get_srv_index().expect("expect tlas to have an srv");
-            pmfx.push_constant_user_data[0] = tlas_srv as u32;
-            t.tlas = Some(tlas);
-        }
-    }
-
-    Ok(())
-}
-
-#[export_compute_fn]
-pub fn update_tlas2(
-    mut device: ResMut<DeviceRes>,
-    pmfx: &Res<PmfxRes>,
-    mut pass: &mut pmfx::ComputePass<gfx_platform::Device>,
-    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLAS)>,
-    mut tlas_query: Query<&mut TLAS>,
-) -> Result<(), hotline_rs::Error> {
-    let pmfx = &pmfx.0;
-
-    // update tlas
-    let mut first = true;
-    for mut t in &mut tlas_query {
-        let mut instances = Vec::new();
-        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
-            let translate = Mat34f::from_translation(position.0);
-            let rotate = Mat34f::from(rotation.0);
-            let scale = Mat34f::from_scale(scale.0);
-            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
-            instances.push(
-                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
-                    transform: (flip * translate * rotate * scale).m,
-                    instance_id: index as u32,
-                    instance_mask: 0xff,
-                    hit_group_index: 0,
-                    instance_flags: 0,
-                    blas: &blas.blas
-                }
-            );
-        }
-        
-        if let Some(tlas) = t.tlas.as_ref() {
-            let instance_buffer = device.create_raytracing_instance_buffer(&instances)?;
-            pass.cmd_buf.update_raytracing_tlas(tlas, &instance_buffer, instances.len(), gfx::AccelerationStructureRebuildMode::Refit);
-            t.instance_buffer = Some(instance_buffer);
-        }
     }
 
     Ok(())
