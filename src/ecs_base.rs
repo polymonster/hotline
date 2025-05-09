@@ -139,6 +139,7 @@ hotline_ecs!(Component, BufferComponent, gfx_platform::Buffer);
 hotline_ecs!(Component, TextureInstance, u32);
 hotline_ecs!(Component, TimeComponent, f32);
 hotline_ecs!(Component, CommandSignatureComponent, gfx_platform::CommandSignature);
+hotline_ecs!(Component, BLASComponent, gfx_platform::RaytracingBLAS);
 
 #[derive(Component)]
 pub struct InstanceBuffer {
@@ -227,6 +228,14 @@ pub struct LightComponent {
     pub falloff: f32,
     pub radius: f32,
     pub shadow_map_info: pmfx::ShadowMapInfo
+}
+
+#[derive(Component)]
+pub struct TLASComponent {
+    pub tlas: Option<gfx_platform::RaytracingTLAS>,
+    pub instance_buffer: Option<gfx_platform::Buffer>,
+    pub instance_geometry_buffer: Option<gfx_platform::Buffer>,
+    pub instance_buffer_len: usize,
 }
 
 impl Default for LightComponent {

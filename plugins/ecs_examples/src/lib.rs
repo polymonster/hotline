@@ -33,6 +33,7 @@ mod raytracing_pipeline;
 mod raytraced_shadows;
 
 use prelude::*;
+use hotline_rs::gfx::{RaytracingTLAS};
 
 pub fn load_material(
     device: &mut gfx_platform::Device,
@@ -78,6 +79,26 @@ pub fn load_material(
         normal: textures.remove(0),
         roughness: textures.remove(0)
     })
+}
+
+pub fn blas_from_mesh(device: &mut gfx_platform::Device, mesh: &pmfx::Mesh<gfx_platform::Device>) -> Result<BLASComponent, hotline_rs::Error> {
+    Ok(BLASComponent(
+        device.create_raytracing_blas(&gfx::RaytracingBLASInfo {
+            geometry: gfx::RaytracingGeometryInfo::Triangles(
+                gfx::RaytracingTrianglesInfo {
+                    index_buffer: &mesh.ib,
+                    vertex_buffer: &mesh.vb,
+                    transform3x4: None,
+                    index_count: mesh.num_indices as usize,
+                    index_format: if mesh.index_size_bytes == 2 { gfx::Format::R16u } else { gfx::Format::R32u },
+                    vertex_count: mesh.num_vertices as usize,
+                    vertex_format: gfx::Format::RGB32f,
+                    vertex_stride: std::mem::size_of::<hotline_rs::primitives::Vertex3D>()
+                }),
+            geometry_flags: gfx::RaytracingGeometryFlags::OPAQUE,
+            build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE
+        })?
+    ))
 }
 
 #[no_mangle]
@@ -555,6 +576,88 @@ pub fn dispatch_compute(
     Ok(())
 }
 
+#[export_update_fn]
+pub fn setup_tlas(
+    mut device: ResMut<DeviceRes>,
+    mut pmfx: ResMut<PmfxRes>,
+    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLASComponent)>,
+    mut tlas_query: Query<&mut TLASComponent>,
+    mut commands: Commands) -> Result<(), hotline_rs::Error> {
+
+    // setup tlas, first time only
+    for mut t in &mut tlas_query {
+        let mut instances = Vec::new();
+        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
+            let translate = Mat34f::from_translation(position.0);
+            let rotate = Mat34f::from(rotation.0);
+            let scale = Mat34f::from_scale(scale.0);
+            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
+            instances.push(
+                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
+                    transform: (flip * translate * rotate * scale).m,
+                    instance_id: index as u32,
+                    instance_mask: 0xff,
+                    hit_group_index: 0,
+                    instance_flags: 0,
+                    blas: &blas.0
+                }
+            );
+        }
+        if t.tlas.is_none() {
+            let tlas = device.create_raytracing_tlas_with_heap(&gfx::RaytracingTLASInfo {
+                instances: &instances,
+                build_flags: gfx::AccelerationStructureBuildFlags::PREFER_FAST_TRACE |
+                    gfx::AccelerationStructureBuildFlags::ALLOW_UPDATE
+                },
+                &mut pmfx.shader_heap
+            )?;
+            let tlas_srv =  tlas.get_srv_index().expect("expect tlas to have an srv");
+            pmfx.push_constant_user_data[0] = tlas_srv as u32;
+            t.tlas = Some(tlas);
+        }
+    }
+
+    Ok(())
+}
+
+#[export_compute_fn]
+pub fn update_tlas(
+    mut device: ResMut<DeviceRes>,
+    pmfx: &Res<PmfxRes>,
+    pass: &mut pmfx::ComputePass<gfx_platform::Device>,
+    mut entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLASComponent)>,
+    mut tlas_query: Query<&mut TLASComponent>,
+) -> Result<(), hotline_rs::Error> {
+    // update tlas
+    for mut t in &mut tlas_query {
+        let mut instances = Vec::new();
+        for (index, (position, scale, rotation, blas)) in &mut entities_query.iter().enumerate() {
+            let translate = Mat34f::from_translation(position.0);
+            let rotate = Mat34f::from(rotation.0);
+            let scale = Mat34f::from_scale(scale.0);
+            let flip = Mat34f::from_scale(vec3f(1.0, 1.0, 1.0));
+            instances.push(
+                gfx::RaytracingInstanceInfo::<gfx_platform::Device> {
+                    transform: (flip * translate * rotate * scale).m,
+                    instance_id: index as u32,
+                    instance_mask: 0xff,
+                    hit_group_index: 0,
+                    instance_flags: 0,
+                    blas: &blas.0
+                }
+            );
+        }
+        
+        if let Some(tlas) = t.tlas.as_ref() {
+            let instance_buffer = device.create_raytracing_instance_buffer(&instances)?;
+            pass.cmd_buf.update_raytracing_tlas(tlas, &instance_buffer, instances.len(), gfx::AccelerationStructureRebuildMode::Refit);
+            t.instance_buffer = Some(instance_buffer);
+        }
+    }
+
+    Ok(())
+}
+
 /// Register demos / examples by name... this assumes a function exists of the same name
 #[no_mangle]
 pub fn get_demos_ecs_examples() -> Vec<String> {
@@ -604,4 +707,5 @@ pub mod prelude {
     pub use export_macros::export_compute_fn;
     pub use crate::load_material;
     pub use hotline_rs::pmfx::ShadowMapInfo;
+    pub use crate::blas_from_mesh;
 }
