@@ -24,6 +24,7 @@ hot-lib-reloader = "0.6.4"
 libloading = "0.7.4"
 bevy_ecs = "0.15.0"
 ddsfile = "0.5.1"
+similar = "2.7.0"
 
 [dependencies.imgui-sys]
 version = "0.9.0"

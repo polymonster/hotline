@@ -1,0 +1,172 @@
+// guid: f49dd5c500000000
+// githash: 0x0ee78208
+// compiler version: 11.0.0.0 build 482 revision ee78208
+// profile: vertex
+// srt: yes
+// variant: vertex
+// code-size: 752
+// header-size: 368
+.pragma argument(target=common; chiprev=trinity-proto2)
+.shader
+  type(GS)
+  sgpr_count(62)
+  vgpr_count(12)
+  user_sgpr_count(16)
+  cxxsymbol("shaders::material_vv")
+  wavemode(wave64)
+  set_shader_type("geometry")  // v_primitive_id in v2
+  num_prims(64)
+  num_verts(64)
+  amp_factor(1)
+  passthrough(1)
+  gs_vgpr_component_count(3)
+  es_vgpr_component_count(3)
+  prim_shader(vs)
+  float_mode(kFloatModeRoundNearestEven|kFloatModeFlushDenormIn|kFloatModeFlushDenormOut, kFloatModeRoundNearestEven|kFloatModeAllowDenormIn|kFloatModeAllowDenormOut)
+  dx10_clamp(1)
+  user_sgpr_usage([0:3], kShaderInputUsageImmShaderResourceTable, 0) // s[8:11]
+  user_sgpr_usage([4:7], kShaderInputUsageImmConstBuffer, 0) // s[12:15]
+  user_sgpr_usage([8:11], kShaderInputUsageImmConstBuffer, 2) // s[16:19]
+  user_sgpr_usage([12:13], kShaderInputUsagePtrVertexBufferTable, 0) // s[20:21]
+  user_sgpr_usage([14:15], kShaderInputUsagePtrVertexAttribDescTable, 0) // s[22:23]
+  vertex_input_semantic(v[9:11], 0, "kTypeFloat3")
+
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\material_vv.pssl */
+  /* 10: VS_OUTPUT main(VS_INPUT input, ShaderResourceTable srt : S_SRT_DATA) */
+  s_inst_prefetch 0x3                                                    // 00000000: SOPP, BFA00003, 
+  s_bfe_u32 vcc1, s3, #0x80008                                           // 00000004: SOP2, 93EBFF03 00080008, 
+  s_and_b32 s0, s3, #0xff                                                // 0000000C: SOP2, 8700FF03 000000FF, 
+  s_lshl_b32 vcc0, vcc1, 12                                              // 00000014: SOP2, 8F6A8C6B, 
+  s_or_b32 m0, s0, vcc0                                                  // 00000018: SOP2, 887C6A00,  1cy stall (vcc0)
+  s_nop 0x0                                                              // 0000001C: SOPP, BF800000, 
+  s_sendmsg sendmsg(kMsgGsAllocReq)                                      // 00000020: SOPP, BF900009,  7cy stall (sa_m0)
+  s_sub_i32 vcc0, 64, vcc1                                               // 00000024: SOP2, 81EA6BC0, 
+  s_lshr_b64 exec[0:1], -1, vcc0                                         // 00000028: SOP2, 90FE6AC1,  1cy stall (vcc0)
+  exp prim, v0, off, off, off done                                       // 0000002C: EXP, F8000941 00000000, 
+  s_sub_i32 vcc0, 64, s0                                                 // 00000034: SOP2, 81EA00C0, 
+  s_waitcnt expcnt(0)                                                    // 00000038: SOPP, BF8CFF0F, 
+  s_lshr_b64 exec[0:1], -1, vcc0                                         // 0000003C: SOP2, 90FE6AC1, 
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\common.pssli */
+  /* 50: float3 position : POSITION; */
+  s_load_dword s40, s[22:23], null                                       // 00000040: SMEM, F4000A0B FA000000, 
+  s_mov_b32 s4, #0x22c0204                                               // 00000048: SOP1, BE8403FF 022C0204, 
+  s_mov_b32 s5, #0xfac03ac                                               // 00000050: SOP1, BE8503FF 0FAC03AC, 
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\material_vv.pssl */
+  /* 14: float4x4 worldMatrix = srt.m_worldMatrix[m_entityIndex]; */
+  s_buffer_load_dword s22, s[16:19], null                                // 00000058: SMEM, F4200588 FA000000,  6cy stall (sa_sdst)
+  /* 20:     output.position = mul(m_viewProjectionMatrix, worldPos); */
+  s_buffer_load_dwordx16 s[24:39], s[12:15], null                        // 00000060: SMEM, F4300606 FA000000, 
+  s_waitcnt lgkmcnt(0)                                                   // 00000068: SOPP, BF8CC07F, 34cy stall (lgkm_cnt)
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\common.pssli */
+  /* 50: float3 position : POSITION; */
+  s_lshl_b32 vcc1, s40, 4                                                // 0000006C: SOP2, 8F6B8428, 
+  s_bfe_u32 vcc0, s40, #0x1001a                                          // 00000070: SOP2, 93EAFF28 0001001A, 
+  s_and_b32 vcc1, vcc1, #0x1f0                                           // 00000078: SOP2, 876BFF6B 000001F0, 
+  s_cmp_eq_u32 0, vcc0                                                   // 00000080: SOPC, BF066A80, 
+  s_load_dwordx4 s[0:3], s[20:21], vcc1                                  // 00000084: SMEM, F408000A D6000000,  8cy stall (sa_sdst)
+  s_cselect_b64 s[6:7], exec[0:1], 0                                     // 0000008C: SOP2, 8586807E, 
+  s_bfe_u32 s12, s40, #0x70007                                           // 00000090: SOP2, 938CFF28 00070007, 
+  s_bfe_u32 vcc0, s40, #0x20005                                          // 00000098: SOP2, 93EAFF28 00020005, 
+  s_lshl_b32 s13, s12, 12                                                // 000000A0: SOP2, 8F0D8C0C, 
+  s_lshl4_add_u32 vcc1, vcc0, #0xc0000                                   // 000000A4: SOP2, 98EBFF6A 000C0000, 
+  s_waitcnt lgkmcnt(0)                                                   // 000000AC: SOPP, BF8CC07F, 26cy stall (lgkm_cnt)
+  s_and_b32 vcc0, s3, #0xfff80000                                        // 000000B0: SOP2, 876AFF03 FFF80000, 
+  s_bfe_u64 s[4:5], s[4:5], vcc1                                         // 000000B8: SOP2, 94846B04, 
+  s_or_b32 vcc0, vcc0, s13                                               // 000000BC: SOP2, 886A0D6A, 
+  v_cndmask_b32 v0, v8, v5, s[6:7]                                       // 000000C0: VOP3, D5010000 001A0B08, 
+  s_or_b32 vcc0, vcc0, s4                                                // 000000C8: SOP2, 886A046A,  5cy stall (va_ssrc with SGPR/VCC)
+  s_bfe_u32 vcc1, s40, #0xc000e                                          // 000000CC: SOP2, 93EBFF28 000C000E, 
+  s_cmp_eq_u32 s12, 0                                                    // 000000D4: SOPC, BF06800C, 
+  s_nop 0x0                                                              // 000000D8: SOPP, BF800000, 
+  s_cselect_b32 s3, s3, vcc0                                             // 000000DC: SOP2, 85036A03, 
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\material_vv.pssl */
+  /* 14: float4x4 worldMatrix = srt.m_worldMatrix[m_entityIndex]; */
+  s_lshl_b32 vcc0, s22, 6                                                // 000000E0: SOP2, 8F6A8616, 
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\common.pssli */
+  /* 50: float3 position : POSITION; */
+  buffer_load_format_xyz v[0:2], v0, s[0:3], vcc1 idxen                  // 000000E4: MUBUF, E0082000 6B000000,  8cy stall (sa_sdst)
+  /* C:\Users\gbdixonalex\AppData\Local\Temp\1jnuqdwd.uwb\Users\gbdixonalex\Desktop\material_vv.pssl */
+  /* 14: float4x4 worldMatrix = srt.m_worldMatrix[m_entityIndex]; */
+  s_buffer_load_dwordx16 s[40:55], s[8:11], vcc0                         // 000000EC: SMEM, F4300A04 D4000000, 
+  s_waitcnt vmcnt(0) & lgkmcnt(0)                                        // 000000F4: SOPP, BF8C0070, 88cy stall (vm_cnt)
+  /* 17: float4 worldPos = mul(worldMatrix, float4(input.position.xyz, 1.0)); */
+  v_mad_f32 v4, s40, v0, s52                                             // 000000F8: VOP3, D5410004 00D20028, 
+  v_mad_f32 v5, s41, v0, s53                                             // 00000100: VOP3, D5410005 00D60029, 
+  v_mad_f32 v6, s42, v0, s54                                             // 00000108: VOP3, D5410006 00DA002A, 
+  v_mad_f32 v0, s43, v0, s55                                             // 00000110: VOP3, D5410000 00DE002B, 
+  v_mac_f32 v4, s44, v1                                                  // 00000118: VOP2, 3E08022C, 
+  v_mad_f32 v3, v1, s45, v5                                              // 0000011C: VOP3, D5410003 04145B01, 
+  v_mac_f32 v6, s46, v1                                                  // 00000124: VOP2, 3E0C022E, 
+  v_mac_f32 v0, s47, v1                                                  // 00000128: VOP2, 3E00022F, 
+  v_mac_f32 v4, s48, v2                                                  // 0000012C: VOP2, 3E080430, 
+  v_mac_f32 v3, s49, v2                                                  // 00000130: VOP2, 3E060431, 
+  v_mad_f32 v1, v2, s50, v6                                              // 00000134: VOP3, D5410001 04186502, 
+  v_mac_f32 v0, s51, v2                                                  // 0000013C: VOP2, 3E000433, 
+  /* 20:     output.position = mul(m_viewProjectionMatrix, worldPos); */
+  v_mul_f32 v5, s24, v4                                                  // 00000140: VOP2, 100A0818, 
+  v_mul_f32 v6, s27, v4                                                  // 00000144: VOP2, 100C081B, 
+  v_mul_f32 v2, s26, v4                                                  // 00000148: VOP2, 1004081A, 
+  v_mul_f32 v7, s25, v4                                                  // 0000014C: VOP2, 100E0819, 
+  v_mad_f32 v4, s28, v3, v5                                              // 00000150: VOP3, D5410004 0416061C, 
+  v_mad_f32 v5, s31, v3, v6                                              // 00000158: VOP3, D5410005 041A061F, 
+  v_mac_f32 v2, s30, v3                                                  // 00000160: VOP2, 3E04061E, 
+  v_mac_f32 v7, s29, v3                                                  // 00000164: VOP2, 3E0E061D, 
+  v_mac_f32 v4, s32, v1                                                  // 00000168: VOP2, 3E080220, 
+  v_mac_f32 v5, s35, v1                                                  // 0000016C: VOP2, 3E0A0223, 
+  v_mac_f32 v2, s34, v1                                                  // 00000170: VOP2, 3E040222, 
+  v_mac_f32 v7, s33, v1                                                  // 00000174: VOP2, 3E0E0221, 
+  v_mad_f32 v3, s36, v0, v4                                              // 00000178: VOP3, D5410003 04120024, 
+  v_mac_f32 v5, s39, v0                                                  // 00000180: VOP2, 3E0A0027, 
+  v_mac_f32 v2, s38, v0                                                  // 00000184: VOP2, 3E040026, 
+  v_mac_f32 v7, s37, v0                                                  // 00000188: VOP2, 3E0E0025, 
+  /* 10: VS_OUTPUT main(VS_INPUT input, ShaderResourceTable srt : S_SRT_DATA) */
+  exp pos0, v3, v7, v2, v5 done                                          // 0000018C: EXP, F80008CF 05020703, 13cy stall (va_vdst)
+  /* 36: } */
+  s_endpgm                                                               // 00000194: SOPP, BF810000, 
+
+/*
+=== resources:
+0) class: srt        slot: 0   name:srt            type: ShaderResourceTable
+1) class: cb         slot: 0   name:ViewConstants  type: ConstantBuffer<ViewConstants>
+2) class: cb         slot: 2   name:DrawConstants  type: ConstantBuffer<DrawConstants>
+3) class: input      slot: 0   name:input.position semantic: POSITION index: 0 type: float3
+4) class: output     slot: 0   name:main.position  semantic: S_POSITION index: 0 type: float4
+
+=== user-types:
+struct MaterialProperties  { // size=32
+ float4 m_albedoColor;    // offset:0, unused
+ float4 m_emissiveColor;  // offset:16, unused
+};
+
+struct MaterialSRT  { // size=96
+ RegularBuffer<unsigned int> m_materialFlags;             // offset:0, unused
+ RegularBuffer<MaterialProperties> m_materialProperties;  // offset:16, unused
+ RegularBuffer<Texture2D<float4>> m_albedoTexture;        // offset:32, unused
+ RegularBuffer<Texture2D<float4>> m_normalTexture;        // offset:48, unused
+ RegularBuffer<Texture2D<float4>> m_roughnessTexture;     // offset:64, unused
+ RegularBuffer<Texture2D<float4>> m_emissiveTexture;      // offset:80, unused
+};
+
+struct ShaderResourceTable  { // size=24
+ RegularBuffer<float4x4> m_worldMatrix;  // offset:0
+ MaterialSRT* m_material;                // offset:16, unused
+};
+
+struct ViewConstants  { // size=208
+ float4x4 m_viewProjectionMatrix;         // offset:0
+ float4x4 m_inverseViewProjectionMatrix;  // offset:64, unused
+ float4 m_viewPosition;                   // offset:128, unused
+ float4 m_lightDirection;                 // offset:144, unused
+ float4 m_shadowFocusNearFar;             // offset:160, unused
+ float4 m_cascadeFocusFar;                // offset:176, unused
+ float4 m_time;                           // offset:192, unused
+};
+
+struct DrawConstants  { // size=16
+ unsigned int m_entityIndex;  // offset:0
+ int m_lodIndex;              // offset:4, unused
+ unsigned int m_debugOption;  // offset:8, unused
+ unsigned int m_unused;       // offset:12, unused
+};
+
+*/
