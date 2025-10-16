@@ -1393,16 +1393,11 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
     fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
-<<<<<<< HEAD
-
     // TODO: temp
     fn set_texture(&mut self, texture: &D::Texture, slot: u32);
     fn set_heap_render(&self, pipeline: &D::RenderPipeline, heap: &D::Heap);
-
-=======
     // TODO:
     fn set_tlas(&self, tlas: &D::RaytracingTLAS);
->>>>>>> master
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
     fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values

@@ -142,7 +142,6 @@
         }
     }
 
-<<<<<<< HEAD
     mac-data(base): {
         pmfx_dev: {
             explicit: true
@@ -160,7 +159,7 @@
                 "-f"
                 "-args"
                 "-Zpr"
-=======
+
     rt_shaders: {
         jsn_vars: {
             output_dir: "target/data/shaders"
@@ -171,15 +170,11 @@
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyClosestHitShader -Fo ${output_dir}/closesthit.cso -I . shaders/raytracing_example.hlsl"
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyMissShader -Fo ${output_dir}/miss.cso -I . shaders/raytracing_example.hlsl"
                 "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -Fo ${output_dir}/lib.cso -I . shaders/raytracing_example.hlsl"
->>>>>>> master
+
             ]
         }
     }
 
-<<<<<<< HEAD
-=======
-
->>>>>>> master
     // win32 debug client, plugins and data
     win32-debug(win32-data, hotline): {
         copy: {
