@@ -37,8 +37,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         rect: os::Rect {
             x: 100,
             y: 100,
-            width: 1280,
-            height: 720,
+            width: 1024,
+            height: 1024,
         },
         style: os::WindowStyleFlags::NONE,
         parent_handle: None,
@@ -112,10 +112,10 @@ fn main() -> Result<(), hotline_rs::Error> {
 
     let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_001.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_004.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_008.png"),
-        hotline_rs::get_src_data_path("textures/bear/bear_stomp_anim_012.png"),
+        hotline_rs::get_src_data_path("textures/monsters/breakfast_buds.jpg"),
+        hotline_rs::get_src_data_path("textures/monsters/coder.jpg"),
+        hotline_rs::get_src_data_path("textures/monsters/cereal.png"),
+        hotline_rs::get_src_data_path("textures/monsters/phone.jpg"),
     ];
     for file in files {
         let image = image::load_from_file(&file)?;

@@ -93,6 +93,18 @@
             "type": "cppvsdbg",
             "request": "launch",
             "program": "${workspaceFolder}/target/debug/examples/resource_tests.exe",
+            "args": ["--test-threads=1", "--nocapture"],
+            "stopAtEntry": false,
+            "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            "preLaunchTask": "examples"
+        },
+        {
+            "name": "raytraced_triangle (Debug)",
+            "type": "cppvsdbg",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/raytraced_triangle.exe",
             "args": [],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
@@ -104,12 +116,12 @@
             "name": "tests (Debug)",
             "type": "cppvsdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/debug/deps/tests-faa0b0c14953fde9.exe",
-            "args": ["--test-threads=1"],
+            "program": "${workspaceFolder}/target/debug/deps/tests-9d060b7b8785eb4b.exe",
+            "args": ["--test-threads=1", "--nocapture"],
             "stopAtEntry": false,
             "cwd": "${fileDirname}",
             "environment": [],
             "console": "externalTerminal",
-        }
+        },
     ]
 }

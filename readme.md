@@ -328,7 +328,7 @@ Any render functions are automatically added to the `Render` system set, but you
 ```rust
 // custom base set
 #[no_mangle]
-#[export_update_fn(in_base_set(MyCustsomSet::CustomUpdate))]
+#[export_update_fn(in_set(MyCustsomSet::CustomUpdate))]
 fn update_cameras() {
     // ..
 }
@@ -341,7 +341,7 @@ fn update_batch() {
 
 // in base set after render
 #[no_mangle]
-#[export_update_fn(in_base_set(MyCustsomSet::PostStep).before(SystemSets::Render))]
+#[export_update_fn(in_set(MyCustsomSet::PostStep).before(SystemSets::Render))]
 fn finalise() {
     // ..
 }
@@ -800,6 +800,12 @@ Test for implementing and verifying the imgui backend - this demonstrates the en
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/play_video.png" width="100%"/>
 
 A standalone example of video playback, it allows you to load a video file from disk so it can be used to test compatibility of different video formats. The current implementation uses windows media foundation and Direct3D12 device to perform video decoding. The `av` API provides access to decoded video frames as a native `gfx::Texture` and performs all decoding on the GPU.
+
+### Raytraced Triangle
+
+A basic example to setup raytracing pipeline, it creates a BLAS consisting of a triangle mesh, TLAS with a single instance of the BLAS
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/examples/raytraced_triangle.png" width="100%"/>
 
 ### Resource Tests
 

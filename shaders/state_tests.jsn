@@ -1,0 +1,186 @@
+import draw.jsn
+{
+    views: {
+        missing_camera_view: {
+            render_target: [
+                "main_colour"
+            ]
+            clear_colour: [0.45, 0.55, 0.60, 1.0]
+            depth_stencil: [
+                "main_depth"
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: "missing"
+        }
+    }
+    
+    render_target_blend_states: {
+        subtract: {
+            blend_enabled: true
+            src_blend: SrcColour
+            dst_blend: DstColour
+            blend_op: Subtract
+        }
+        rev_subtract: {
+            blend_enabled: true
+            src_blend: One
+            dst_blend: One
+            blend_op: RevSubtract
+        }
+        min: {
+            blend_enabled: true
+            src_blend: One
+            dst_blend: One
+            blend_op: Min
+        }
+        max: {
+            blend_enabled: true
+            src_blend: One
+            dst_blend: One
+            blend_op: Max
+        }
+        add_colour: {
+            blend_enabled: true
+            src_blend: SrcColour
+            dst_blend: DstColour
+            blend_op: Add
+        }
+        add_constant: {
+            blend_enabled: true
+            src_blend: SrcColour
+            dst_blend: One
+            blend_op: Add
+        }
+        max_colour: {
+            blend_enabled: true
+            src_blend: SrcColour
+            dst_blend: DstColour
+            blend_op: Max
+        }
+    }
+
+    pipelines: {
+        cull_none(mesh_push_draw_constants): {
+            raster_state: cull_none
+        }
+        cull_front(cull_none): {
+            raster_state: cull_front
+        }
+        cull_back(cull_none): {
+            raster_state: cull_back
+        }
+        blend_disabled(cull_none): {
+            vs: vs_mesh
+            ps: ps_constant_colour
+            blend_state: disabled
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+        }
+        blend_additive(blend_disabled): {
+            blend_state: additive
+        }
+        blend_alpha(blend_disabled): {
+            blend_state: alpha
+        }
+        blend_subtract(blend_disabled): {
+            blend_state: subtract
+        }
+        blend_rev_subtract(blend_disabled): {
+            blend_state: rev_subtract
+        }
+        blend_min(blend_disabled): {
+            blend_state: min
+        }
+        blend_max(blend_disabled): {
+            blend_state: max
+        }
+        blend_max_colour(blend_disabled): {
+            blend_state: max_colour
+        }
+        blend_add_constant(blend_disabled): {
+            blend_state: add_constant
+        }
+    }
+
+    render_graphs: {
+        raster_states: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            raster_meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["cull_none", "cull_front", "cull_back", "wireframe_overlay"]
+                function: "render_meshes_pipeline"
+                depends_on: ["debug"]
+            }
+        }
+
+        blend_states: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            blend_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "cull_back"
+                    "blend_disabled"
+                    "blend_additive"
+                    "blend_alpha"
+                    "blend_subtract"
+                    "blend_rev_subtract"
+                    "blend_min"
+                    "blend_max"
+                ]
+                function: "render_meshes_pipeline_coloured"
+                depends_on: ["debug"]
+            }
+        }
+
+        missing_view: {
+            missing_view: {
+                view: "missing"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+        }
+
+        missing_function: {
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_debug"]
+                function: "missing"
+            }
+        }
+
+        failing_pipeline: {
+            failing_pipeline: {
+                view: "main_view"
+                pipelines: ["missing"]
+                function: "render_debug"
+            }
+        }
+
+        missing_pipeline: {
+            missing_pipeline: {
+                view: "main_view"
+                pipelines: ["mesh_debug"]
+                function: "render_missing_pipeline"
+            }
+        }
+
+        missing_camera: {
+            missing_camera: {
+                view: "missing_camera_view"
+                pipelines: ["mesh_debug"]
+                function: "render_missing_camera"
+            }
+        }
+    }
+}

@@ -12,7 +12,7 @@ use hotline_rs::av::wmf as av_platform;
 fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {
-        name: String::from("window_set_rect"),
+        name: String::from("play_video"),
         window: false,
         num_buffers: 0,
         dpi_aware: true,

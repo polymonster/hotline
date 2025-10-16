@@ -19,3 +19,6 @@ Cargo.lock
 # pmbuild
 build/
 config.user.jsn
+
+# macos
+.DS_Store

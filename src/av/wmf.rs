@@ -69,23 +69,26 @@ impl NotifyEvents {
 
 #[allow(unused_must_use)]
 mod imp {
-    use windows::{core::*, Win32::Media::MediaFoundation::*};
-    #[implement(IMFMediaEngineNotify)]
+    use windows::Win32::Media::MediaFoundation::*;
+
+    #[windows_core::implement(IMFMediaEngineNotify)]
     pub struct MediaEngineNotify {
         pub notify: *mut super::NotifyEvents
+    }
+
+    #[allow(non_snake_case)]
+    impl IMFMediaEngineNotify_Impl for MediaEngineNotify_Impl {
+        fn EventNotify(&self, event: u32, _param1: usize, _param2: u32) -> ::windows::core::Result<()>  {
+            unsafe {
+                (*self.notify).event(event);
+            }
+            Ok(())
+        }
     }
 }
 pub use imp::*;
 
-#[allow(non_snake_case)]
-impl IMFMediaEngineNotify_Impl for MediaEngineNotify {
-    fn EventNotify(&self, event: u32, _param1: usize, _param2: u32) -> ::windows::core::Result<()>  {
-        unsafe {
-            (*self.notify).event(event);
-        }
-        Ok(())
-    }
-}
+
 
 fn new_notify_events() -> *mut NotifyEvents {
     unsafe {
@@ -115,7 +118,7 @@ impl VideoPlayer {
                 let mut ext_str = "".to_string();
                 let ext = err.GetExtendedErrorCode();
                 if let Err(e) = &ext {
-                    ext_str = e.message().to_string_lossy();
+                    ext_str = e.message().to_string()
                 }
 
                 // error code with extended info
@@ -140,7 +143,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
             D3D11CreateDevice(
                 &adapter, 
                 D3D_DRIVER_TYPE_UNKNOWN,
-                HINSTANCE(0), 
+                HINSTANCE(std::ptr::null_mut() as *mut _), 
                 D3D11_CREATE_DEVICE_VIDEO_SUPPORT | D3D11_CREATE_DEVICE_BGRA_SUPPORT,
                 None,
                 D3D11_SDK_VERSION,
@@ -152,7 +155,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
 
             // make thread safe
             let mt : ID3D11Multithread = device.cast()?;
-            mt.SetMultithreadProtected(BOOL::from(true));
+            let _ = mt.SetMultithreadProtected(BOOL::from(true));
 
             // setup media engine
             let mut reset_token : u32 = 0;
@@ -171,7 +174,7 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
                     attributes.SetUnknown(&MF_MEDIA_ENGINE_DXGI_MANAGER, &idxgi_manager)?;
                 }
 
-                attributes.SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0)?;
+                attributes.SetUINT32(&MF_MEDIA_ENGINE_VIDEO_OUTPUT_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM.0 as u32)?;
 
                 // create event callback
                 let notify = new_notify_events();

@@ -1,0 +1,90 @@
+{
+    include: [        
+        "draw.hlsl"
+    ]
+
+    pipelines: {
+        mesh_identity: {
+            vs: vs_mesh_identity
+            ps: ps_checkerboard
+            push_constants: [
+                "view_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        mesh_push_draw_constants: {
+            vs: vs_mesh
+            ps: ps_checkerboard
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        wireframe_overlay: {
+            vs: vs_mesh
+            ps: ps_wireframe
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            raster_state: wireframe
+            depth_stencil_state: depth_test_always
+            topology: "TriangleList"
+        }
+    }
+
+    render_graphs: {
+        mesh_draw_identity: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_identity"]
+                function: "draw_meshes"
+                depends_on: ["debug"]
+            }
+        }
+
+        mesh_draw_indexed_identity: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_identity"]
+                function: "draw_meshes_indexed"
+                depends_on: ["debug"]
+            }
+        }
+
+        mesh_wireframe_overlay: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_push_draw_constants"]
+                function: "render_meshes"
+                depends_on: ["debug"]
+            }
+            wireframe: {
+                view: "main_view_no_clear"
+                pipelines: ["wireframe_overlay"]
+                function: "render_meshes"
+                depends_on: ["meshes", "debug"]
+            }
+        }
+    }
+}

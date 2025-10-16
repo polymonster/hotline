@@ -21,7 +21,13 @@ use std::ffi::CString;
 
 use maths_rs::Vec4f;
 
+<<<<<<< HEAD
 use std::fs;
+=======
+use crate::static_ref;
+use crate::static_ref_mut;
+use crate::static_ref_array_mut;
+>>>>>>> master
 
 fn to_im_vec4(v: Vec4f) -> ImVec4 {
     unsafe {
@@ -399,65 +405,58 @@ fn render_draw_data<D: Device>(
     pipeline: &D::RenderPipeline,
 ) -> Result<(), super::Error> where D::RenderPipeline: gfx::Pipeline {
     unsafe {
-        let bb = cmd.get_backbuffer_index() as usize;
+        if draw_data.CmdListsCount > 0 && draw_data.TotalVtxCount > 0 {
+            let bb = cmd.get_backbuffer_index() as usize;
 
-        let mut buffers = &mut buffers[bb];
+            let buffers = &mut buffers[bb];
 
-        // resize vb
-        if draw_data.TotalVtxCount > buffers.vb_size {
-            buffers.vb = create_vertex_buffer::<D>(device, draw_data.TotalVtxCount)?;
-            buffers.vb_size = draw_data.TotalVtxCount;
-        }
+            // resize vb
+            if draw_data.TotalVtxCount > buffers.vb_size {
+                buffers.vb = create_vertex_buffer::<D>(device, draw_data.TotalVtxCount)?;
+                buffers.vb_size = draw_data.TotalVtxCount;
+            }
 
-        // resize ib
-        if draw_data.TotalIdxCount > buffers.ib_size {
-            buffers.ib = create_index_buffer::<D>(device, draw_data.TotalIdxCount)?;
-            buffers.ib_size = draw_data.TotalIdxCount;
-        }
+            // resize ib
+            if draw_data.TotalIdxCount > buffers.ib_size {
+                buffers.ib = create_index_buffer::<D>(device, draw_data.TotalIdxCount)?;
+                buffers.ib_size = draw_data.TotalIdxCount;
+            }
 
-        // update buffers
-        let imgui_cmd_lists =
-            std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
-        let mut vertex_write_offset = 0;
-        let mut index_write_offset = 0;
+            // update buffers
+            let imgui_cmd_lists =
+                std::slice::from_raw_parts(draw_data.CmdLists, draw_data.CmdListsCount as usize);
+            let mut vertex_write_offset = 0;
+            let mut index_write_offset = 0;
 
-        for imgui_cmd_list in imgui_cmd_lists {
-            // vertex
-            let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
-            let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
-            let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
-            buffers.vb.update(vertex_write_offset, vb_slice)?;
-            vertex_write_offset += vb_size_bytes;
-            // index
-            let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
-            let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
-            let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
-            buffers.ib.update(index_write_offset, ib_slice)?;
-            index_write_offset += ib_size_bytes;
-        }
+            for imgui_cmd_list in imgui_cmd_lists {
+                // vertex
+                let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
+                let vb_size_bytes = draw_vert.Size as usize * std::mem::size_of::<ImDrawVert>();
+                let vb_slice = std::slice::from_raw_parts(draw_vert.Data, draw_vert.Size as usize);
+                buffers.vb.update(vertex_write_offset, vb_slice)?;
+                vertex_write_offset += vb_size_bytes;
+                // index
+                let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
+                let ib_size_bytes = draw_index.Size as usize * std::mem::size_of::<ImDrawIdx>();
+                let ib_slice = std::slice::from_raw_parts(draw_index.Data, draw_index.Size as usize);
+                buffers.ib.update(index_write_offset, ib_slice)?;
+                index_write_offset += ib_size_bytes;
+            }
 
-        // update push constants
-        let l = draw_data.DisplayPos.x;
-        let r = draw_data.DisplayPos.x + draw_data.DisplaySize.x;
-        let t = draw_data.DisplayPos.y;
-        let b = draw_data.DisplayPos.y + draw_data.DisplaySize.y;
+            // update push constants
+            let l = draw_data.DisplayPos.x;
+            let r = draw_data.DisplayPos.x + draw_data.DisplaySize.x;
+            let t = draw_data.DisplayPos.y;
+            let b = draw_data.DisplayPos.y + draw_data.DisplaySize.y;
 
-        let mvp: [[f32; 4]; 4] = [
-            [2.0 / (r - l), 0.0, 0.0, 0.0],
-            [0.0, 2.0 / (t - b), 0.0, 0.0],
-            [0.0, 0.0, 0.5, 0.0],
-            [(r + l) / (l - r), (t + b) / (b - t), 0.0, 1.0],
-        ];
+            let mvp: [[f32; 4]; 4] = [
+                [2.0 / (r - l), 0.0, 0.0, 0.0],
+                [0.0, 2.0 / (t - b), 0.0, 0.0],
+                [0.0, 0.0, 0.5, 0.0],
+                [(r + l) / (l - r), (t + b) / (b - t), 0.0, 1.0],
+            ];
 
-        let viewport = gfx::Viewport {
-            x: 0.0,
-            y: 0.0,
-            width: draw_data.DisplaySize.x,
-            height: draw_data.DisplaySize.y,
-            min_depth: 0.0,
-            max_depth: 1.0,
-        };
-
+<<<<<<< HEAD
         cmd.begin_event(0xff1fb6c4, "imgui");
         cmd.set_viewport(&viewport);
         cmd.set_vertex_buffer(&buffers.vb, 0);
@@ -487,43 +486,84 @@ fn render_draw_data<D: Device>(
                     if clip_max_x < clip_min_x || clip_max_y < clip_min_y {
                         continue;
                     }
+=======
+            let viewport = gfx::Viewport {
+                x: 0.0,
+                y: 0.0,
+                width: draw_data.DisplaySize.x,
+                height: draw_data.DisplaySize.y,
+                min_depth: 0.0,
+                max_depth: 1.0,
+            };
+>>>>>>> master
 
-                    let scissor = gfx::ScissorRect {
-                        left: clip_min_x as i32,
-                        top: clip_min_y as i32,
-                        right: clip_max_x as i32,
-                        bottom: clip_max_y as i32,
-                    };
+            cmd.begin_event(0xff1fb6c4, "imgui");
+            cmd.set_viewport(&viewport);
+            cmd.set_vertex_buffer(&buffers.vb, 0);
+            cmd.set_index_buffer(&buffers.ib);
+            cmd.set_render_pipeline(pipeline);
+            cmd.push_render_constants(0, 16, 0, &mvp);
 
-                    let (srv, heap_id) = to_srv_heap_id(imgui_cmd.TextureId);
-                    if heap_id == device.get_shader_heap().get_heap_id() {
-                        // bind the device heap
-                        cmd.set_binding(pipeline, device.get_shader_heap(), 1, srv);
-                    }
+            let clip_off = draw_data.DisplayPos;
+            let mut global_vtx_offset = 0;
+            let mut global_idx_offset = 0;
+            for imgui_cmd_list in imgui_cmd_lists {
+                let imgui_cmd_buffer = (**imgui_cmd_list).CmdBuffer;
+                let imgui_cmd_data =
+                    std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
+                let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
+                let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
+                for cmd_data in imgui_cmd_data.iter().take(imgui_cmd_buffer.Size as usize) {
+                    let imgui_cmd = &cmd_data;
+                    if imgui_cmd.UserCallback.is_some() {
+                        // TODO:
+                    } 
                     else {
-                        // bund srv in another heap
-                        for heap in image_heaps {
-                            if heap.get_heap_id() == heap_id {
-                                cmd.set_binding(pipeline, heap, 1, srv);
-                                break;
+                        let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
+                        let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
+                        let clip_max_x = imgui_cmd.ClipRect.z - clip_off.x;
+                        let clip_max_y = imgui_cmd.ClipRect.w - clip_off.y;
+                        if clip_max_x < clip_min_x || clip_max_y < clip_min_y {
+                            continue;
+                        }
+
+                        let scissor = gfx::ScissorRect {
+                            left: clip_min_x as i32,
+                            top: clip_min_y as i32,
+                            right: clip_max_x as i32,
+                            bottom: clip_max_y as i32,
+                        };
+
+                        let (srv, heap_id) = to_srv_heap_id(imgui_cmd.TextureId);
+                        if heap_id == device.get_shader_heap().get_heap_id() {
+                            // bind the device heap
+                            cmd.set_binding(pipeline, device.get_shader_heap(), 1, srv);
+                        }
+                        else {
+                            // bund srv in another heap
+                            for heap in image_heaps {
+                                if heap.get_heap_id() == heap_id {
+                                    cmd.set_binding(pipeline, heap, 1, srv);
+                                    break;
+                                }
                             }
                         }
-                    }
 
-                    cmd.set_scissor_rect(&scissor);
-                    cmd.draw_indexed_instanced(
-                        imgui_cmd.ElemCount,
-                        1,
-                        imgui_cmd.IdxOffset + global_idx_offset,
-                        (imgui_cmd.VtxOffset + global_vtx_offset) as i32,
-                        0,
-                    );
+                        cmd.set_scissor_rect(&scissor);
+                        cmd.draw_indexed_instanced(
+                            imgui_cmd.ElemCount,
+                            1,
+                            imgui_cmd.IdxOffset + global_idx_offset,
+                            (imgui_cmd.VtxOffset + global_vtx_offset) as i32,
+                            0,
+                        );
+                    }
                 }
+                global_idx_offset += draw_index.Size as u32;
+                global_vtx_offset += draw_vert.Size as u32;
             }
-            global_idx_offset += draw_index.Size as u32;
-            global_vtx_offset += draw_vert.Size as u32;
+            cmd.end_event();
         }
-        cmd.end_event();
         Ok(())
     }
 }
@@ -534,7 +574,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         unsafe {
             igStyleColorsDark(std::ptr::null_mut());
 
-            let mut style = &mut *igGetStyle();
+            let style = &mut *igGetStyle();
             style.Colors[ImGuiCol_WindowBg as usize].w = 1.0;
             style.WindowRounding = 2.0;
             style.TabRounding = 2.0;
@@ -596,7 +636,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
     pub fn create(info: &mut ImGuiInfo<D, A>) -> Result<Self, super::Error> {
         unsafe {
             igCreateContext(std::ptr::null_mut());
-            let mut io = &mut *igGetIO();
+            let io = &mut *igGetIO();
 
             // io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
             // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
@@ -608,14 +648,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 let ini_file = parent.join("imgui.ini");
                 static mut NULL_INI_FILE : Option<CString> = None;
                 NULL_INI_FILE = Some(CString::new(ini_file.to_str().unwrap().to_string()).unwrap());
-                if let Some(i) = &NULL_INI_FILE {
+                if let Some(i) = static_ref!(NULL_INI_FILE) {
                     io.IniFilename = i.as_ptr() as _;
                 }
             };
 
             Self::style_colours_hotline();
 
-            let mut style = &mut *igGetStyle();
+            let style = &mut *igGetStyle();
             style.WindowRounding = 0.0;
             style.Colors[imgui_sys::ImGuiCol_WindowBg as usize].w = 1.0;
 
@@ -857,6 +897,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             // set ImGui mouse hovered viewport
             let platform_io = &mut *igGetPlatformIO();
             let num_vp = platform_io.Viewports.Size;
+
+            assert_ne!(platform_io.Viewports.Data, std::ptr::null_mut());
+
             let viewports = std::slice::from_raw_parts(platform_io.Viewports.Data, num_vp as usize);
 
             // find / reset hovered
@@ -874,7 +917,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
             // update mouse
             io.MouseWheel = app.get_mouse_wheel();
-            io.MouseWheelH = app.get_mouse_wheel();
+            //io.MouseWheelH = app.get_mouse_wheel();
             io.MouseDown = app.get_mouse_buttons();
 
             // update char inputs
@@ -958,6 +1001,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 ..Default::default()
             };
 
+            /*
             igSetNextWindowClass(&window_class);
 
             igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
@@ -966,6 +1010,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igGetContentRegionAvail(&mut avail);
 
             igEnd();
+            */
+
             igPopStyleVar(5);
         }
     }
@@ -1069,7 +1115,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let io = &mut *igGetIO();
 
             if SHOW_DEMO_WINDOW {
-                igShowDemoWindow(&mut SHOW_DEMO_WINDOW);
+                igShowDemoWindow(static_ref_mut!(SHOW_DEMO_WINDOW));
             }
 
             // 2. Show a simple window that we create ourselves. We use a Begin/End pair to created a named window.
@@ -1091,8 +1137,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                     "This is some useful text.\0".as_ptr() as *const i8,
                 );
 
-                igCheckbox("Demo Window\0".as_ptr() as *const i8, &mut SHOW_DEMO_WINDOW);
-                igCheckbox("Another Window\0".as_ptr() as *const i8, &mut SHOW_ANOTHER_WINDOW);
+                igCheckbox("Demo Window\0".as_ptr() as *const i8, static_ref_mut!(SHOW_DEMO_WINDOW));
+                igCheckbox("Another Window\0".as_ptr() as *const i8, static_ref_mut!(SHOW_ANOTHER_WINDOW));
 
                 igText(
                     "%f, %f : %f %f\0".as_ptr() as *const i8,
@@ -1104,7 +1150,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
                 igSliderFloat(
                     "float\0".as_ptr() as _,
-                    &mut SLIDER_FLOAT,
+                    static_ref_mut!(SLIDER_FLOAT),
                     0.0,
                     1.0,
                     "%.3f\0".as_ptr() as _,
@@ -1122,7 +1168,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                     "This is some useful text.\0".as_ptr() as *const i8,
                 );
 
-                igColorEdit3("clear color\0".as_ptr() as _, CLEAR_COLOUR.as_mut_ptr(), 0); // Edit 3 floats representing a color
+                igColorEdit3("color\0".as_ptr() as _, static_ref_array_mut!(CLEAR_COLOUR), 0); // Edit 3 floats representing a color
 
                 igText(
                     "Application average %.3f ms/frame (%.1f FPS)\0".as_ptr() as _,
@@ -1137,7 +1183,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             if SHOW_ANOTHER_WINDOW {
                 igBegin(
                     "Another Window\0".as_ptr() as *const i8,
-                    &mut SHOW_ANOTHER_WINDOW,
+                    static_ref_mut!(SHOW_ANOTHER_WINDOW),
                     ImGuiWindowFlags_None as i32,
                 );
 
@@ -1526,6 +1572,34 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igSaveIniSettingsToDisk(null_term_filename.as_ptr() as *const i8);
         }
     }
+
+    /// Return the horizontal scroll position of the current window
+    pub fn get_scroll_x(&self) -> f32 {
+        unsafe {
+            igGetScrollX()
+        }
+    }
+
+    /// Set the horizontal scroll position of the current window
+    pub fn set_scroll_x(&self, pos: f32) {
+        unsafe {
+            igSetScrollXFloat(pos)
+        }
+    }
+
+    /// Return the vertical scroll position of the current window
+    pub fn get_scroll_y(&self) -> f32 {
+        unsafe {
+            igGetScrollY()
+        }
+    }
+
+    /// Set the vertical scroll position of the current window
+    pub fn set_scroll_y(&self, pos: f32) {
+        unsafe {
+            igSetScrollYFloat(pos)
+        }
+    }
 }
 
 impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {
@@ -1592,7 +1666,7 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
     let io = &mut *igGetIO();
     let ud = &mut *(io.UserData as *mut UserData<D, A>);
     let device = &mut ud.device;
-    let mut vp_ref = &mut *vp;
+    let vp_ref = &mut *vp;
 
     // alloc viewport data
     let p_vd = new_viewport_data::<D, A>();
@@ -1656,7 +1730,7 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
 
 unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let vd = get_viewport_data::<D, A>(vp);
-    let mut vp_ref = &mut *vp;
+    let vp_ref = &mut *vp;
 
     if !vd.swap_chain.is_empty() {
         vd.swap_chain[0].wait_for_last_frame();
@@ -1668,11 +1742,30 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
     if !io.UserData.is_null() {
         get_user_data::<D, A>().app.destroy_window(&vd.window[0]);
     }
+<<<<<<< HEAD
 
     vd.swap_chain.clear();
     vd.cmd.clear();
     vd.buffers.clear();
     vd.window.clear();
+=======
+    
+    if !vd.swap_chain.is_empty() {
+        vd.swap_chain.clear();
+    }
+
+    if !vd.cmd.is_empty() {
+        vd.cmd.clear();
+    }
+
+    if !vd.buffers.is_empty() {
+        vd.buffers.clear();
+    }
+    
+    if !vd.window.is_empty() {
+        vd.window.clear();
+    }
+>>>>>>> master
 
     // drop and null allocated data
     std::ptr::drop_in_place(vp_ref.PlatformUserData as *mut ViewportData<D, A>);
@@ -1683,7 +1776,7 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
 
 unsafe extern "C" fn platform_update_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
     let window = get_viewport_window::<D, A>(vp);
-    let mut vp_ref = &mut *vp;
+    let vp_ref = &mut *vp;
     window.update(get_user_data::<D, A>().app);
     window.update_style(
         os::WindowStyleFlags::from(vp_ref.Flags),

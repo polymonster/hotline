@@ -88,6 +88,7 @@ pub fn get_src_data_path(asset: &str) -> String {
             String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
         }
         else {
+            println!("unable to find path for asset {}", asset);
             panic!();
         }
     }
@@ -139,6 +140,35 @@ fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
         }
     }
     files
+}
+
+// macros for static addr of convenience
+#[macro_export]
+macro_rules! static_ref{
+    ($place:expr) => {
+        &*std::ptr::addr_of!($place)
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_mut{
+    ($place:expr) => {
+        &mut *std::ptr::addr_of_mut!($place)
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_array{
+    ($place:expr) => {
+        &*std::ptr::addr_of!($place[0])
+    }
+}
+
+#[macro_export]
+macro_rules! static_ref_array_mut{
+    ($place:expr) => {
+        &mut *std::ptr::addr_of_mut!($place[0])
+    }
 }
 
 /// This is a hardcoded compile time selection of os backend for windows as win32

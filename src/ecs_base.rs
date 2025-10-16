@@ -243,7 +243,6 @@ impl Default for LightComponent {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
-#[system_set(base)]
 pub enum SystemSets {
     Setup,
     Update,
@@ -254,28 +253,28 @@ pub enum SystemSets {
 #[macro_export]
 macro_rules! system_func {
     ($func:expr) => {
-        Some($func.into_config())
+        Some($func.into_configs())
     }
 }
 
 #[macro_export]
 macro_rules! render_func {
     ($func:expr, $view:expr, $query:ty) => {
-        Some(render_func_closure![$func, $view, $query].into_config().in_base_set(SystemSets::Render))
+        Some(render_func_closure![$func, $view, $query].into_configs().in_set(SystemSets::Render))
     }
 }
 
 #[macro_export]
 macro_rules! compute_func {
     ($pass:expr) => {
-        Some(compute_func_closure![$pass].into_config().in_base_set(SystemSets::Render))
+        Some(compute_func_closure![$pass].into_configs().in_set(SystemSets::Render))
     }
 }
 
 #[macro_export]
 macro_rules! compute_func_query {
     ($func:expr, $pass:expr, $query:ty) => {
-        Some(compute_func_query_closure![$func, $pass, $query].into_config().in_base_set(SystemSets::Render))
+        Some(compute_func_query_closure![$func, $pass, $query].into_configs().in_set(SystemSets::Render))
     }
 }
 

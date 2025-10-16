@@ -3,7 +3,7 @@
     tools<windows>: {
         pmfx: "hotline-data/bin/win32/pmfx/pmfx.exe"
         texturec: "hotline-data/bin/win32/texturec/texturec.exe"
-        pmfx_dev: "../pmfx-shader/pmfx.py"
+        pmfx_dev: "py -3 ../pmfx-shader/pmfx.py"
     }
 
     tools<mac>: {
@@ -60,6 +60,7 @@
             data_dir: "target/data"
             temp_dir: "target/temp"
             src_data_dir: "hotline-data/src"
+            src_shader_dir: "shaders"
         }
 
         // clean build and temp dirs
@@ -116,8 +117,8 @@
         pmfx: {
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_0"
-                "-i ${src_data_dir}/shaders/"
+                "-shader_version 6_3"
+                "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
@@ -129,8 +130,8 @@
             explicit: true
             args: [
                 "-shader_platform hlsl"
-                "-shader_version 6_0"
-                "-i ${src_data_dir}/shaders/"
+                "-shader_version 6_3"
+                "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
@@ -141,6 +142,7 @@
         }
     }
 
+<<<<<<< HEAD
     mac-data(base): {
         pmfx_dev: {
             explicit: true
@@ -158,10 +160,26 @@
                 "-f"
                 "-args"
                 "-Zpr"
+=======
+    rt_shaders: {
+        jsn_vars: {
+            output_dir: "target/data/shaders"
+        }
+        shell: {
+            commands: [
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyRaygenShader -Fo ${output_dir}/raygen.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyClosestHitShader -Fo ${output_dir}/closesthit.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -E MyMissShader -Fo ${output_dir}/miss.cso -I . shaders/raytracing_example.hlsl"
+                "hotline-data\\bin\\win32\\pmfx\\bin\\dxc\\dxc.exe -T lib_6_3 -Fo ${output_dir}/lib.cso -I . shaders/raytracing_example.hlsl"
+>>>>>>> master
             ]
         }
     }
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> master
     // win32 debug client, plugins and data
     win32-debug(win32-data, hotline): {
         copy: {

@@ -7,6 +7,7 @@ use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfig;
+use bevy_ecs::schedule::SystemConfigs;
 
 use std::collections::HashMap;
 
@@ -30,7 +31,6 @@ struct BevyPlugin {
 }
 
 #[derive(Debug, Hash, PartialEq, Eq, Clone, SystemSet)]
-#[system_set(base)]
 pub enum CoreSystemSets {
     Update,
     Batch,
@@ -98,7 +98,7 @@ pub fn camera_constants_from_orbit(rot: &Vec3f, focus: &Vec3f, zoom: f32, aspect
     let proj = Mat4f::create_perspective_projection_lh_yup(f32::deg_to_rad(fov_degrees), aspect, 0.1, 10000.0);
     // translation matrix
     let translate_zoom = Mat4f::from_translation(vec3f(0.0, 0.0, zoom));
-    let translate_focus = Mat4f::from_translation(*focus);        
+    let translate_focus = Mat4f::from_translation(*focus);
     // build view / proj matrix
     let view = translate_focus * mat_rot * translate_zoom;
     let pos = view.get_column(3);
@@ -241,7 +241,7 @@ fn update_camera_fly(
 
     // generate proj matrix
     let aspect = pmfx.get_window_aspect("main_dock");
-    
+
     // assign view proj
     let constants = camera_constants_from_fly(&position, &camera.rot, aspect, 60.0);
     view_proj.0 = constants.view_projection_matrix;
@@ -255,9 +255,9 @@ fn update_cameras(
     time: Res<TimeRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut query: Query<(&Name, &mut Position, &mut Camera, &mut ViewProjectionMatrix)>) {
-    
+
     pmfx.get_world_buffers_mut().camera.clear();
-    
+
     for (name, mut position, mut camera, mut view_proj) in &mut query {
         match camera.camera_type {
             CameraType::Fly => {
@@ -284,33 +284,33 @@ fn update_cameras(
 
 impl BevyPlugin {
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
-    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfig> {
+    fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfigs> {
         // find by export name
         for (_, lib) in &client.libs {
             unsafe {
                 let exported_function_name = format!("export_{}", name);
                 if view_name.is_empty() {
                     // function with () no args
-                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfig>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn());
                     }
                 }
                 else {
                     // function with pass name args
-                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfig>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn(view_name.to_string()));
                     }
                 }
             }
         }
-        
+
         // deprecated using get_system function
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfig>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
                 if let Ok(hook_fn) = hook {
                     let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
@@ -408,7 +408,7 @@ impl BevyPlugin {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
-        
+
         // schedule
         client.imgui.separator();
         client.imgui.text("Schedule");
@@ -428,13 +428,13 @@ impl BevyPlugin {
 
         if self.errors.contains_key(graph) {
             client.imgui.colour_text(
-                &format!("Render Graph: {}: {}.", "error", graph), 
+                &format!("Render Graph: {}: {}.", "error", graph),
                 error_col
             );
 
             for err in &self.errors[graph] {
                 client.imgui.colour_text(
-                    &format!("  {}", err), 
+                    &format!("  {}", err),
                     error_col
                 );
             }
@@ -446,7 +446,7 @@ impl BevyPlugin {
                 render_function_names.push(format!("{}: {}", v.0, v.1));
             }
             self.status_ui_category(
-                &mut client.imgui, 
+                &mut client.imgui,
                 &format!("Render Graph ({}):", graph),
                 &render_function_names
             );
@@ -529,7 +529,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // dynamically change demos and lookup infos in other libs
         let schedule_info = self.get_demo_schedule_info(&mut client);
-        
+
         // get schedule or use default and warn the user
         self.schedule_info = if let Some(info) = schedule_info {
             info
@@ -558,16 +558,16 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         let info = &self.schedule_info;
 
         // core update
-        self.schedule.add_system(update_cameras.in_base_set(CoreSystemSets::Update));
-        self.schedule.add_system(update_main_camera_config.in_base_set(CoreSystemSets::Update));
+        self.schedule.add_systems(update_cameras.in_set(CoreSystemSets::Update));
+        self.schedule.add_systems(update_main_camera_config.in_set(CoreSystemSets::Update));
 
         // core batch functions do syncronised work to prepare buffers / matrices for drawing
-        self.schedule.add_system(update_world_matrices.in_base_set(SystemSets::Batch));
+        self.schedule.add_systems(update_world_matrices.in_set(SystemSets::Batch));
 
         // hook in setup funcs
         for func_name in &info.setup {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                self.setup_schedule.add_system(func);
+                self.setup_schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -577,7 +577,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in updates funcs
         for func_name in &info.update {
             if let Some(func) = self.get_system_function(func_name, "", &client) {
-                self.schedule.add_system(func);
+                self.schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -587,12 +587,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in render functions
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                self.schedule.add_system(func);
+                self.schedule.add_systems(func);
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
             }
         }
+
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
 
         // process sets in fixed order
@@ -631,7 +632,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            let (cam, vp, pos) = self.setup_camera();           
+            let (cam, vp, pos) = self.setup_camera();
             self.world.spawn((
                 ViewProjectionMatrix(vp),
                 pos,
@@ -658,7 +659,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
-        client.serialise_plugin_data("ecs", &self.session_info);
+        //client.serialise_plugin_data("ecs", &self.session_info);
+
         client
     }
 
@@ -720,7 +722,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
             // -/+ to toggle through demos, ignore test missing and test failing demos
             let wrap_len = demo_list.len();
-            
+
             let cur_demo_index = demo_list.iter().position(|d| *d == self.session_info.active_demo);
             if let Some(index) = cur_demo_index {
                 let keys = client.app.get_keys_pressed();

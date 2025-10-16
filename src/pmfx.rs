@@ -2,6 +2,8 @@
 
 use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
+use crate::gfx::RaytracingPipelineInfo;
+
 use crate::os;
 use crate::gfx;
 use crate::primitives;
@@ -130,6 +132,11 @@ type FormatPipelineMap<T> = HashMap<String, HashMap<u32, (PmfxHash, T)>>;
 type TrackedView<D> = (PmfxHash, Arc<Mutex<View<D>>>, String);
 type TrackedComputePass<D> = (PmfxHash, Arc<Mutex<ComputePass<D>>>);
 
+pub struct RaytracingPipelineBinding<D: gfx::Device> {
+    pub pipeline: D::RaytracingPipeline,
+    pub sbt: D::RaytracingShaderBindingTable,
+}
+
 /// Pmfx instance,containing render objects and resources
 pub struct Pmfx<D: gfx::Device> {
     /// Serialisation structure of a .pmfx file containing render states, pipelines and textures
@@ -144,6 +151,8 @@ pub struct Pmfx<D: gfx::Device> {
     render_pipelines: HashMap<PmfxHash, FormatPipelineMap<D::RenderPipeline>>,
     /// Compute Pipelines grouped by name then as a tuple (build_hash, pipeline)
     compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
+    /// Raytracing pipeline and sbt binding pair
+    raytracing_pipelines: HashMap<String, (PmfxHash, RaytracingPipelineBinding<D>)>,
     /// Shaders stored along with their build hash for quick checks if reload is necessary
     shaders: HashMap<String, (PmfxHash, D::Shader)>,
     /// Texture map of tracked texture info
@@ -329,12 +338,27 @@ struct BlendInfo {
     render_target: Vec<String>,
 }
 
+/// Information to fille out gfx::RaytracingShaderBindingTableInfo. It's mostly the same but doesnt have the pipleine requirement and need for typed Device
+#[derive(Serialize, Deserialize, Clone)]
+struct RaytracingShaderBindingTableInfo {
+    ray_generation_shader: String,
+    #[serde(default)]
+    miss_shaders: Vec<String>,
+    #[serde(default)]
+    hit_groups: Vec<String>,
+    #[serde(default)]
+    callable_shaders: Vec<String>
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
     cs: Option<String>,
+    lib: Option<Vec<String>>,
+    hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
+    sbt: Option<RaytracingShaderBindingTableInfo>,
     numthreads: Option<(u32, u32, u32)>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
@@ -929,6 +953,18 @@ fn to_gfx_clear_depth_stencil(clear_depth: Option<f32>, clear_stencil: Option<u8
     }
 }
 
+fn get_shader_entry_point_name(shader_name: Option<String>) -> Option<String> {
+    if let Some(shader_name) = shader_name {
+        Path::new(&shader_name)
+            .file_stem()
+            .and_then(|os_str| os_str.to_str())
+            .map(|s| s.to_string())
+    }
+    else {
+        None
+    }
+}
+
 impl<D> Pmfx<D> where D: gfx::Device {
     /// Create a new empty pmfx instance
     pub fn create(device: &mut D, shader_heap_size: usize) -> Self {
@@ -943,6 +979,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
+            raytracing_pipelines: HashMap::new(),
             shaders: HashMap::new(),
             textures: HashMap::new(),
             views: HashMap::new(),
@@ -2072,6 +2109,62 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
+    // Create a raytracing pipeline define in pmfx, with rg, ch, ah or mi shader stages
+    pub fn create_raytracing_pipeline(&mut self, device: &D, pipeline_name: &str) -> Result<(), super::Error> {
+        if self.pmfx.pipelines.contains_key(pipeline_name) {
+            // first create shaders if necessary
+            let folder = self.pmfx_folders.get(pipeline_name)
+                .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+
+            // for each permutation compile its lib shaders
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
+                let lib = pipeline.lib.expect("hotline_rs::pmfx:: ray tracing pipeline expects a lib member with a set of raytacing shaders");
+                for shader in lib {
+                    self.create_shader(device, Path::new(&folder), &Some(shader))?;
+                }
+            }
+            
+            // for each permutation create a pipeline
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                let shaders = pipeline.lib.expect("hotline_rs::pmfx:: ray tracing pipeline expects a lib member with a set of raytacing shaders")
+                    .iter()
+                    .map(|x| gfx::RaytracingShader {
+                        shader: self.get_shader(&Some(x.to_string())).unwrap(),
+                        entry_point: get_shader_entry_point_name(Some(x.to_string())).unwrap(),
+                    })
+                    .collect();
+
+                let raytracing_pipeline = device.create_raytracing_pipeline(&RaytracingPipelineInfo{
+                    shaders,
+                    pipeline_layout: pipeline.pipeline_layout.clone(),
+                    hit_groups: pipeline.hit_groups
+                })?;
+
+                let sbt_info = pipeline.sbt.expect("hotline_rs::pmfx:: ray tracing pipeline expects a shader binding table (sbt) to be defined in pmfx");
+                let sbt = device.create_raytracing_shader_binding_table(&gfx::RaytracingShaderBindingTableInfo{
+                    ray_generation_shader: sbt_info.ray_generation_shader,
+                    miss_shaders: sbt_info.miss_shaders,
+                    callable_shaders: sbt_info.callable_shaders,
+                    hit_groups: sbt_info.hit_groups,
+                    pipeline: &raytracing_pipeline
+                })?;
+
+                // insert pipeline into the hash map w/ hash
+                self.raytracing_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, RaytracingPipelineBinding {
+                    pipeline: raytracing_pipeline,
+                    sbt
+                }));
+            }
+
+            Ok(())
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+            })
+        }
+    }
+
     /// Returns a pmfx defined pipeline compatible with the supplied format hash if it exists
     pub fn get_render_pipeline_for_format<'stack>(&'stack self, pipeline_name: &str, format_hash: u64) -> Result<&'stack D::RenderPipeline, super::Error> {
         self.get_render_pipeline_permutation_for_format(pipeline_name, 0, format_hash)
@@ -2117,6 +2210,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
         else {
             Err(super::Error {
                 msg: format!("hotline_rs::pmfx:: could not find compute pipeline: {}", pipeline_name),
+            })
+        }
+    }
+ 
+    /// Fetch a prebuilt RaytracingPipelineBinding which is contains a RaytracingPipeline and RaytracingShaderBindingTable
+    pub fn get_raytracing_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Result<&'stack RaytracingPipelineBinding<D>, super::Error> {
+        if self.raytracing_pipelines.contains_key(pipeline_name) {
+            Ok(&self.raytracing_pipelines[pipeline_name].1)
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: could not find raytracing pipeline: {}", pipeline_name),
             })
         }
     }

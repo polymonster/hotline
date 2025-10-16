@@ -1,0 +1,256 @@
+{
+    textures: {
+        gbuffer_albedo: {
+            ratio: {
+                window: main_dock
+                scale: 1.0
+            }
+            format: RGBA16f
+            usage: ["ShaderResource", "RenderTarget"]
+            samples: 8
+        }
+        gbuffer_normal(gbuffer_albedo): {}
+        gbuffer_position(gbuffer_albedo): {}
+        gbuffer_depth(gbuffer_albedo): {
+            format: D24nS8u
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+
+        staging_output: {
+            ratio: {
+                window: main_dock
+                scale: 1.0
+            }
+            format: RGBA8n
+            usage: [UnorderedAccess, ShaderResource]
+        }
+
+        mip_mapped_colour: {
+            ratio: {
+                window: main_dock
+                scale: 1.0
+            }
+            format: RGBA8n
+            usage: ["ShaderResource", "RenderTarget"]
+            generate_mips: true
+            samples: 8
+        }
+
+        skybox_background: {
+            ratio: {
+                window: main_dock
+                scale: 1.0
+            }
+            format: RGBA8n
+            usage: ["ShaderResource", "RenderTarget", "UnorderedAccess"]
+        }
+
+        dynamic_cubemap: {
+            width: 2048
+            height: 2048
+            cubemap: true
+            array_layers: 6
+            usage: ["ShaderResource", "RenderTarget"]
+        }
+
+        cubemap_depth(dynamic_cubemap): {
+            format: D32f
+            usage: ["ShaderResource", "DepthStencil"]
+        }
+
+        static_cubemap: {
+            filepath: "textures/cubemap_yokahoma.dds"
+        }
+    }
+
+    views: {
+        heightmap_mrt_view: {
+            render_target: [
+                gbuffer_albedo
+                gbuffer_normal
+                gbuffer_position
+            ]
+            clear_colour: [0.45, 0.55, 0.60, 1.0]
+            depth_stencil: [
+                gbuffer_depth
+            ]
+            clear_depth: 0.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: main_camera
+        }
+
+        mip_map_view: {
+            render_target: [
+                mip_mapped_colour
+            ]
+            clear_colour: [0.45, 0.55, 0.60, 1.0]
+            depth_stencil: [
+                gbuffer_depth
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: main_camera
+        }
+
+        cubemap_view: {
+            render_target: [
+                dynamic_cubemap
+            ]
+            clear_colour: [0.0, 1.0, 1.0, 1.0]
+            depth_stencil: [
+                cubemap_depth
+            ]
+            clear_depth: 1.0
+            viewport: [0.0, 0.0, 1.0, 1.0, 0.0, 1.0]
+            camera: cubemap_camera
+        }
+
+        cubemap_view_no_clear(cubemap_view): {
+            clear_colour: null
+            clear_depth: null
+        }
+    }
+
+    pipelines: {
+        heightmap_mrt: {
+            vs: vs_heightmap
+            ps: ps_heightmap_example_mrt
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_greater
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+            ]
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+        heightmap_mrt_resolve: {
+            cs: cs_heightmap_mrt_resolve
+            push_constants: [
+                resources
+            ]
+        }
+        display_mips: {
+            cs: cs_display_mips
+            push_constants: [
+                resources
+            ]
+        }
+    }
+
+    render_graphs: {
+        multiple_render_targets: {
+            meshes: {
+                view: "heightmap_mrt_view"
+                pipelines: [
+                    "heightmap_mrt"
+                ]
+                function: "render_meshes"
+            }
+            resolve_mrt: {
+                function: "dispatch_compute"
+                pipelines: ["heightmap_mrt_resolve"]
+                uses: [
+                    ["staging_output", "Write"]
+                    ["gbuffer_albedo", "ReadMsaa"]
+                    ["gbuffer_normal", "ReadMsaa"]
+                    ["gbuffer_position", "ReadMsaa"]
+                    ["gbuffer_depth", "ReadMsaa"]
+                ]
+                target_dimension: "staging_output"
+                depends_on: ["meshes"]
+            }
+            blit_main_colour: {
+                view: "main_view"
+                pipelines: ["imdraw_blit"]
+                uses: [
+                    ["staging_output", "Read"]
+                ]
+                target_dimension: "staging_output"
+                function: "blit"
+                depends_on: ["resolve_mrt"]
+            }
+        }
+
+        generate_mip_maps: {
+            meshes: {
+                view: "mip_map_view"
+                pipelines: [
+                    "mesh_push_draw_constants"
+                ]
+                function: "render_meshes"
+            }
+            display_mips: {
+                function: "dispatch_compute"
+                pipelines: ["display_mips"]
+                uses: [
+                    ["staging_output", "Write"]
+                    ["mip_mapped_colour", "ReadMips"]
+                ]
+                target_dimension: "staging_output"
+                depends_on: ["meshes"]
+            }
+            blit_main_colour: {
+                view: "main_view"
+                pipelines: ["imdraw_blit"]
+                uses: [
+                    ["staging_output", "Read"]
+                ]
+                target_dimension: "staging_output"
+                function: "blit"
+                depends_on: ["display_mips"]
+            }
+        }
+
+        dynamic_cubemap: {
+            clear_cubemap_skybox: {
+                view: "cubemap_view"
+                cubemap: true
+                function: "cubemap_clear"
+                pipelines: [
+                    "cubemap_clear"
+                ]
+                uses: [
+                    ["static_cubemap", "Read"]
+                ]
+            }
+            cubemap: {
+                view: "cubemap_view_no_clear"
+                cubemap: true
+                pipelines: [
+                    "mesh_push_draw_constants"
+                ]
+                function: "render_meshes"
+                depends_on: [
+                    "clear_cubemap_skybox"
+                ]
+            }
+            clear_skybox: {
+                view: "main_view"
+                function: "cubemap_clear"
+                pipelines: ["cubemap_clear"]
+                uses: [
+                    ["static_cubemap", "Read"]
+                ]
+            }
+            chrome_ball: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "cubemap_reflect"
+                ]
+                function: "render_meshes_cubemap_reflect"
+                depends_on: ["clear_skybox", "cubemap"]
+            }
+            orbit_meshes: {
+                view: "main_view_no_clear"
+                pipelines: [
+                    "mesh_push_draw_constants"
+                ]
+                depends_on: ["clear_skybox", "chrome_ball"]
+                function: "render_orbit_meshes"
+            }
+        }
+    }
+}

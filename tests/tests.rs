@@ -1,4 +1,4 @@
-
+use std::{collections::HashMap, fmt::Debug};
 use hotline_rs::prelude::*;
 
 #[repr(C)]
@@ -409,7 +409,7 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     // test getting pass for format
     let fmt = ctx.swap_chain.get_backbuffer_pass().get_format_hash();
     let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array", fmt)?;
-    
+
     // texture array pipeline has 2 sets of push constants, so the resources bind onto 2
     // t0, space9 is Texture2DArray
     let slots = texture_pipeline.get_pipeline_slot(0, 10, gfx::DescriptorType::ShaderResource);
@@ -447,7 +447,7 @@ fn boot_empty_client() -> Result<(), hotline_rs::Error> {
         user_config: Some(config),
         ..Default::default()
     }).unwrap();
-    
+
     // run
     ctx.run_once()
 }
@@ -475,7 +475,7 @@ fn boot_client_empty_plugin() -> Result<(), hotline_rs::Error> {
         user_config: Some(config),
         ..Default::default()
     }).unwrap();
-    
+
     // run
     ctx.run_once()
 }
@@ -503,7 +503,7 @@ fn boot_client_missing_plugin() -> Result<(), hotline_rs::Error> {
         user_config: Some(config),
         ..Default::default()
     }).unwrap();
-    
+
     // run
     ctx.run_once()
 }
@@ -534,7 +534,7 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
         user_config: Some(config),
         ..Default::default()
     }).unwrap();
-    
+
     // run
     ctx.run_once()
 }
@@ -574,7 +574,7 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
 
                     // activate the current demo
                     plugin_defaults.as_object_mut().unwrap().insert(
-                        "active_demo".to_string(), 
+                        "active_demo".to_string(),
                         serde_json::Value::String(demo_name.to_string())
                     );
 
@@ -596,15 +596,14 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
         user_config: Some(config),
         ..Default::default()
     }).unwrap();
-    
+
     // run
     ctx.run_once()
 }
 
 //
 // error tests
-// 
-
+//
 #[test]
 fn test_missing_demo() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("test_missing_demo")
@@ -643,7 +642,6 @@ fn test_missing_camera() -> Result<(), hotline_rs::Error> {
 //
 // ecs examples
 //
-
 #[test]
 fn draw() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("draw")
