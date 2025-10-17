@@ -56,6 +56,43 @@
             raster_state: cull_back
             topology: "TriangleList"
         }
+
+        mesh_lit_rt_shadow: {
+            lib: ["scene_raygen_shader", "scene_closest_hit_shader", "scene_miss_shader", "shadow_closest_hit_shader"]
+            hit_groups: [
+                {
+                    name: "hit_group"
+                    closest_hit: "scene_closest_hit_shader"
+                    geometry: Triangles
+                }
+                {
+                    name: "shadows"
+                    closest_hit: "shadow_closest_hit_shader"
+                    geometry: Triangles
+                }
+            ]
+            sbt: {
+                ray_generation_shader: "scene_raygen_shader",
+                miss_shaders: ["scene_miss_shader"],
+                hit_groups: ["hit_group", "shadows"],
+            }
+			push_constants: [
+                ray_tracing_constants
+            ]
+        }
+        mesh_lit_rt_shadow2: {
+            vs: "vs_mesh",
+            ps: "ps_mesh_lit_rt_shadow"
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
+
         mesh_pbr_ibl: {
             vs: "vs_mesh",
             ps: "ps_mesh_pbr_ibl"
@@ -113,6 +150,52 @@
                 depends_on: ["debug"]
             }
         }
+
+        mesh_lit_rt_shadow2: {
+            debug: {
+                view: "main_view"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            update_tlas: {
+                pipelines: []
+                function: "update_tlas"
+                depends_on: ["debug"]
+            }
+            meshes: {
+                view: "main_view"
+                pipelines: ["mesh_lit_rt_shadow2"]
+                function: "render_meshes_bindless"
+                depends_on: ["update_tlas"]
+            }
+        }
+        mesh_lit_rt_shadow: {
+            update_tlas: {
+                pipelines: []
+                function: "update_tlas"
+            }
+            render_meshes_raytraced: {
+                pipelines: ["mesh_lit_rt_shadow"]
+                function: "render_meshes_raytraced"
+                uses: [
+					["staging_output", "Write"]
+				]
+                depends_on: [
+                    "update_tlas"
+                ]
+            }
+			blit_main_colour: {
+                view: "main_view"
+                pipelines: ["imdraw_blit"]
+                uses: [
+                    ["staging_output", "Read"]
+                ]
+                target_dimension: "staging_output"
+                function: "blit"
+                depends_on: ["render_meshes_raytraced"]
+            }
+        }
+
         mesh_pbr: {
             clear_cubemap_skybox: {
                 view: "main_view"

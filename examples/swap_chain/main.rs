@@ -6,6 +6,12 @@ use hotline_rs::*;
 use os::App;
 use os::Window;
 
+use maths_rs::Vec3f;
+use maths_rs::vec::vec3f;
+use maths_rs::vec::splat3f;
+use maths_rs::dot;
+use maths_rs::cos;
+
 use gfx::Device;
 
 #[cfg(target_os = "windows")]
@@ -56,46 +62,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     let mut cmd = device.create_cmd_buf(num_buffers);
 
-    let colours = [
-        gfx::ClearColour {
-            r: 1.00,
-            g: 0.00,
-            b: 0.00,
-            a: 1.00
-        },
-        gfx::ClearColour {
-            r: 0.00,
-            g: 1.00,
-            b: 0.00,
-            a: 1.00
-        },
-        gfx::ClearColour {
-            r: 0.00,
-            g: 0.00,
-            b: 1.00,
-            a: 1.00
-        },
-        gfx::ClearColour {
-            r: 0.00,
-            g: 1.00,
-            b: 1.00,
-            a: 1.00
-        },
-        gfx::ClearColour {
-            r: 1.00,
-            g: 0.00,
-            b: 1.00,
-            a: 1.00
-        },
-        gfx::ClearColour {
-            r: 1.00,
-            g: 1.00,
-            b: 0.00,
-            a: 1.00
-        }
-    ];
-    let mut col_index = 0;
-    let mut counter = 0;
+    let mut t = 0.0;
 
     while app.run() {
         // update the swap chain
@@ -104,8 +71,20 @@ fn main() -> Result<(), hotline_rs::Error> {
         // update window and swap chain
         window.update(&mut app);
 
+        // gen col... thx to IQ!! https://iquilezles.org/articles/palettes/
+        let a = vec3f(0.5, 0.5, 0.5);
+        let b = vec3f(0.5, 0.5, 0.5);
+        let c = vec3f(1.0, 1.0, 0.5);
+        let d = vec3f(0.80, 0.90, 0.30);
+        let col = a + b * cos(6.283185 * (c * t + d));
+
         let render_pass = device.create_render_pass(&RenderPassInfo{
-            rt_clear: Some(colours[col_index]),
+            rt_clear: Some(gfx::ClearColour {
+                r: col.x,
+                g: col.y,
+                b: col.z,
+                a: 1.0
+            }),
             render_targets: vec![swap_chain.get_backbuffer_texture()],
             depth_stencil: None,
             ds_clear: None,
@@ -120,14 +99,13 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmd.end_render_pass();
         cmd.close()?;
 
-        println!("swap {}", counter);
+        // execute command buffer
+        device.execute(&cmd);
+
+        println!("swap {}", t);
         swap_chain.swap(&device);
 
-        // swap colours and inc counter
-        counter += 1;
-        if counter % 30 == 0 {
-            col_index = (col_index + 1) % colours.len();
-        }
+        t += 1.0 / 600.0;
     }
 
     Ok(())

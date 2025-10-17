@@ -28,18 +28,15 @@ pub fn setup_generate_mip_maps(
 
     let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 32);
     let dim = 64;
-    let dim2 = dim / 2;
     let sphere_size = 5.0;
-
-    let half_extent = dim2 as f32 * sphere_size;
 
     let mut angle = 0.0;
     let mut offset = 0.0;
 
     let step = f32::tau() / dim as f32;
 
-    for y in 0..dim {    
-        for x in 0..dim {    
+    for _ in 0..dim {    
+        for _ in 0..dim {    
 
             let wave_x = f32::sin(angle) * (sphere_size + offset);
             let wave_y = f32::cos(angle) * (sphere_size + offset);

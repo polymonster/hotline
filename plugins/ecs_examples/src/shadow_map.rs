@@ -83,7 +83,6 @@ pub fn setup_shadow_map(
     let hex_mesh = hotline_rs::primitives::create_prism_mesh(&mut device.0, 6, false, true, 1.0, 1.0);
     
     let dim = 128;
-    let dim2 = dim / 2;
     let tile_size = 5.0;
 
     let half_extent = dim as f32 * tile_size;
@@ -139,10 +138,9 @@ pub fn setup_shadow_map(
 
     let dist = rand::distributions::Uniform::from(tile_size..tile_size * 10.0);
 
-    for y in 0..dim {    
+    for _ in 0..dim {    
         pos.x = start.x;
-        for x in 0..dim {
-
+        for _ in 0..dim {
             let h = dist.sample(&mut rng) as f32;
 
             commands.spawn((

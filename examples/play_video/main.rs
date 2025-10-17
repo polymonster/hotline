@@ -3,12 +3,6 @@
 
 use hotline_rs::prelude::*;
 
-#[cfg(target_os = "windows")]
-use hotline_rs::os::win32 as os_platform;
-use hotline_rs::gfx::d3d12 as gfx_platform;
-
-use hotline_rs::av::wmf as av_platform;
-
 fn main() -> Result<(), hotline_rs::Error> {
     // app
     let mut app = os_platform::App::create(os::AppInfo {

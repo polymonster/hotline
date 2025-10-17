@@ -1,10 +1,13 @@
-use std::any::Any;
-use crate::gfx;
-use crate::os;
+// A null / stubbed implementation
+pub mod null;
 
 /// Implements this interface for Windows Media Foundation with Direct3D12
 #[cfg(target_os = "windows")]
 pub mod wmf;
+
+use std::any::Any;
+use crate::gfx;
+use crate::os;
 
 /// Errors passed back from av backends
 pub type Error = super::Error;
