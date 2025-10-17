@@ -98,10 +98,11 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         }
-        else {
+        else {            
             Command::new("cargo")
                 .current_dir(&self.path)
                 .arg("build")
+                .env("CARGO_TERM_COLOR", "always")
                 .arg("-p")
                 .arg(&self.name)
                 .output()

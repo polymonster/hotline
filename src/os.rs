@@ -1,3 +1,6 @@
+// A null / syubbed implementation
+pub mod null;
+
 /// Implements this interface for windows win32 platfrom
 #[cfg(target_os = "windows")]
 pub mod win32;

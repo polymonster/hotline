@@ -2,6 +2,7 @@ extern crate proc_macro;
 
 use proc_macro::{TokenStream};
 use quote::{quote, ToTokens};
+use syn::{parse_macro_input, ItemFn};
 
 #[derive(Debug)]
 struct FunctionArg {
@@ -121,27 +122,26 @@ fn emit_update_order(attr: TokenStream, default_set: &str) -> String {
 #[proc_macro_attribute]
 pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {    
     let parsed = parse_fn(&item);
-
     // emit code to move function args into closure and pass them to function
     let (moves, pass) = emit_moves_and_pass_args(&parsed, &Vec::new());
-
     let order = emit_update_order(attr, "SystemSets :: Update");
-
-    // emit the closure code itself
+    
     let export_fn = format!("#[no_mangle] fn export_{}() -> SystemConfigs {{
         (move | {} | {{
             {} ({}).unwrap();
         }}).into_configs().{}
     }}", parsed.name, moves, parsed.name, pass, order);
 
-    // output the original item plus the generated export function
-    let concat = format!(
-        "{}\n{}", 
-        item.to_string(),
-        export_fn.to_string(),
-    );
-    
-    concat.parse().unwrap()
+    let input = parse_macro_input!(item as ItemFn);
+    let export_tokens : TokenStream = export_fn.parse().unwrap();
+    let expanded = quote! {
+        // The original function remains untouched
+        #input
+    };
+
+    let mut output = TokenStream::from(expanded);
+    output.extend(export_tokens);
+    output
 }
 
 
@@ -198,13 +198,15 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_string();
 
     // output the original item plus the generated export function
-    let concat = format!(
-        "{}\n{}", 
-        item.to_string(),
-        export_fn.to_string(),
-    );
-    
-    concat.parse().unwrap()
+    let export_tokens : TokenStream = export_fn.parse().unwrap();
+    let input = parse_macro_input!(item as ItemFn);
+    let expanded = quote! {
+        #input
+    };
+
+    let mut output = TokenStream::from(expanded);
+    output.extend(export_tokens);
+    output
 }
 
 #[proc_macro_attribute]
@@ -255,11 +257,13 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         .to_string();
 
     // output the original item plus the generated export function
-    let concat = format!(
-        "{}\n{}", 
-        item.to_string(),
-        export_fn.to_string(),
-    );
-    
-    concat.parse().unwrap()
+    let export_tokens : TokenStream = export_fn.parse().unwrap();
+    let input = parse_macro_input!(item as ItemFn);
+    let expanded = quote! {
+        #input
+    };
+
+    let mut output = TokenStream::from(expanded);
+    output.extend(export_tokens);
+    output
 }

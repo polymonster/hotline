@@ -172,6 +172,8 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
         ).unwrap(),
         ib: index_buffer,
         num_indices: indices.len() as u32,
+        num_vertices: vertices.len() as u32,
+        index_size_bytes: if max_index > 65535 { 4 } else { 2 },
         aabb_min,
         aabb_max
     }
@@ -600,6 +602,8 @@ pub fn create_unit_quad_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(indices.as_slice())
         ).unwrap(),
         num_indices: 6,
+        index_size_bytes: 2,
+        num_vertices: vertices.len() as u32,
         aabb_min: vec3f(-1.0, -1.0, 0.0),
         aabb_max: vec3f( 1.0,  1.0, 0.0)
     } 
@@ -666,6 +670,8 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(indices.as_slice())
         ).unwrap(),
         num_indices: 6,
+        index_size_bytes: 2,
+        num_vertices: vertices.len() as u32,
         aabb_min: vec3f(-1.0, -1.0, 0.0),
         aabb_max: vec3f( 1.0,  1.0, 0.0)
     } 
@@ -728,6 +734,8 @@ pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
             Some(indices.as_slice())
         ).unwrap(),
         num_indices: 3,
+        index_size_bytes: 2,
+        num_vertices: vertices.len() as u32,
         aabb_min,
         aabb_max
     } 

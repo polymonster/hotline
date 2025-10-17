@@ -905,7 +905,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
             // update mouse
             io.MouseWheel = app.get_mouse_wheel();
-            //io.MouseWheelH = app.get_mouse_wheel();
+            io.MouseWheelH = app.get_mouse_hwheel();
             io.MouseDown = app.get_mouse_buttons();
 
             // update char inputs
@@ -984,12 +984,12 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
             igPushStyleVarVec2(ImGuiStyleVar_WindowPadding as i32, IMVEC2_ZERO);
 
+            /*
             let window_class = ImGuiWindowClass {
                 DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoTabBar,
                 ..Default::default()
             };
 
-            /*
             igSetNextWindowClass(&window_class);
 
             igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);

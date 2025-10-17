@@ -6,6 +6,7 @@ use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
+
 use bevy_ecs::schedule::SystemConfig;
 use bevy_ecs::schedule::SystemConfigs;
 
@@ -562,7 +563,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.schedule.add_systems(update_main_camera_config.in_set(CoreSystemSets::Update));
 
         // core batch functions do syncronised work to prepare buffers / matrices for drawing
-        self.schedule.add_systems(update_world_matrices.in_set(SystemSets::Batch));
+        self.schedule.add_systems(update_world_matrices.in_set(SystemSets::Batch).after(SystemSets::Update));
 
         // hook in setup funcs
         for func_name in &info.setup {
@@ -587,7 +588,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // hook in render functions
         for (func_name, view_name) in &render_functions {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
-                self.schedule.add_systems(func);
+                self.schedule.add_systems(func.after(SystemSets::Batch));
             }
             else {
                 self.errors.entry(func_name.to_string()).or_insert(Vec::new());
@@ -603,7 +604,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             CoreSystemSets::Batch,
             SystemSets::Batch,
             CoreSystemSets::Render,
-            SystemSets::Render
+            SystemSets::Render,
         ).chain());
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
@@ -659,8 +660,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
-        //client.serialise_plugin_data("ecs", &self.session_info);
-
+        client.serialise_plugin_data("ecs", &self.session_info);
         client
     }
 

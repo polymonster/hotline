@@ -99,6 +99,10 @@ pub struct Mesh<D: gfx::Device> {
     pub ib: D::Buffer,
     /// Number of indices to draw from the index buffer
     pub num_indices: u32,
+    /// Size of index type in bytes
+    pub index_size_bytes: u32,
+    /// Number of vertices in the vertex buffer
+    pub num_vertices: u32,
     /// Bounding aabb min
     pub aabb_min: Vec3f,
     /// Bounding aabb mix
@@ -185,6 +189,8 @@ pub struct Pmfx<D: gfx::Device> {
     pub view_errors: Arc<Mutex<HashMap<String, String>>>,
     /// Tracks the currently active render graph name
     pub active_render_graph: String,
+    /// Quick access user data
+    pub push_constant_user_data: [u32; 4],
 }
 
 /// Contains frame statistics from the GPU for all pmfx jobs
@@ -350,6 +356,15 @@ struct RaytracingShaderBindingTableInfo {
     callable_shaders: Vec<String>
 }
 
+/// Enum for possible pipeline types 
+#[derive(Clone)]
+pub enum PipelineType {
+    None,
+    Render,
+    Compute,
+    Raytracing
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
@@ -399,8 +414,11 @@ enum ResourceUsage {
 
 #[derive(Serialize, Deserialize, Clone)]
 struct GraphPassInfo {
-    /// For render passes, specifies the view (render target, camera etc
+    /// For render passes, specifies the view (render target, camera etc)
     view: Option<String>,
+    /// Indicates it is a raytraced view, uses camera but RW texture
+    #[serde(default)]
+    raytraced: bool,
     /// Pipelines array that will use during this pass
     pipelines: Option<Vec<String>>,
     /// A function to call which can build draw or compute commands
@@ -705,7 +723,9 @@ pub struct WorldBufferInfo {
     /// cbv index of the camera
     pub camera: GpuBufferLookup,
     /// srv index of shadow matrices
-    pub shadow_matrix: GpuBufferLookup
+    pub shadow_matrix: GpuBufferLookup,
+    /// custom user data
+    pub user_data: [u32; 4]
 }
 
 pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> CameraConstants {
@@ -972,6 +992,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let shader_heap = device.create_heap(&gfx::HeapInfo {
             heap_type: gfx::HeapType::Shader,
             num_descriptors: shader_heap_size,
+            debug_name: Some("pmfx_shader_heap".to_string())
         });
         Pmfx {
             pmfx: File::new(),
@@ -997,6 +1018,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             unit_quad_mesh: primitives::create_unit_quad_mesh(device),
             total_stats: TotalStats::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
+            push_constant_user_data: [0; 4]
         }
     }
 
@@ -1031,7 +1053,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             spot_light: self.world_buffers.spot_light.get_lookup(),
             directional_light: self.world_buffers.directional_light.get_lookup(),
             camera: self.world_buffers.camera.get_lookup(),
-            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup()
+            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup(),
+            user_data: self.push_constant_user_data
         }
     }
 
@@ -1584,9 +1607,13 @@ impl<D> Pmfx<D> where D: gfx::Device {
             threads
         }
         else {
-            let pipeline = self.pmfx.pipelines.get(&pass_pipeline).unwrap();
-            if let Some(num_threads) = pipeline["0"].numthreads {
-                num_threads
+            if let Some(pipeline) = self.pmfx.pipelines.get(&pass_pipeline) {
+                if let Some(num_threads) = pipeline["0"].numthreads {
+                    num_threads
+                }
+                else {
+                    (1, 1, 1)
+                }
             }
             else {
                 (1, 1, 1)
@@ -1938,7 +1965,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     if let Some(view) = &instance.view {
                         // create transitions by inspecting view info
                         let pmfx_view = self.pmfx.views[view].clone();
-        
+
                         // if we need to write to a target we must make sure it is transitioned into render target state
                         for rt_name in pmfx_view.render_target {
                             self.create_texture_transition_barrier(
@@ -1965,7 +1992,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     }
                     else if let Some(pipelines) = &instance.pipelines {
                         for pipeline in pipelines {
-                            self.create_compute_pipeline(device, pipeline)?;
+                            let pipeline_type = self.get_pipeline_type(pipeline);
+                            match pipeline_type {
+                                PipelineType::Compute => self.create_compute_pipeline(device, pipeline)?,
+                                PipelineType::Raytracing => self.create_raytracing_pipeline(device, pipeline)?,
+                                _ => panic!("hotline::pmfx: error: compute views require compute or raytracing pipelines")
+                            }
                         }
                     }
 
@@ -2013,6 +2045,32 @@ impl<D> Pmfx<D> where D: gfx::Device {
             Err(super::Error {
                 msg: format!("hotline_rs::pmfx:: could not find render graph: {}", graph_name),
             })
+        }
+    }
+
+    /// Returns the pipeline type based on the config setup from pmfx, a vs indicates render pipeline (ps may be null), cs for compute and lib for raytracing. Returns `PipelineType::None` if the pipeline is not found or is invalid
+    pub fn get_pipeline_type(&self, pipeline_name: &str) -> PipelineType {
+        if self.pmfx.pipelines.contains_key(pipeline_name) {
+            if let Some((_, pipeline)) = self.pmfx.pipelines[pipeline_name].iter().next() {
+                if pipeline.vs.is_some() {
+                    PipelineType::Render
+                }
+                else if pipeline.cs.is_some() {
+                    PipelineType::Compute
+                }
+                else if pipeline.lib.is_some() {
+                    PipelineType::Raytracing
+                }
+                else {
+                    PipelineType::None
+                }
+            }
+            else {
+                PipelineType::None
+            }
+        }
+        else {
+            PipelineType::None
         }
     }
 

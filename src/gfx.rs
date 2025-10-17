@@ -1,12 +1,17 @@
+// A null / stubbed implementation
+pub mod null;
+
+/// Implemets this interface with a Direct3D12 backend.
+#[cfg(target_os = "windows")]
+pub mod d3d12;
+
 use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use maths_rs::max;
 
-/// Implemets this interface with a Direct3D12 backend.
-#[cfg(target_os = "windows")]
-pub mod d3d12;
+use null::*;
 
 type Error = super::Error;
 
@@ -169,6 +174,8 @@ pub struct HeapInfo {
     pub heap_type: HeapType,
     /// Total size of the heap in number of resources.
     pub num_descriptors: usize,
+    /// Optional debug name
+    pub debug_name: Option<String>
 }
 
 /// Options for heap types.
@@ -454,6 +461,22 @@ pub enum ShaderVisibility {
     Vertex,
     Fragment,
     Compute,
+}
+
+/// View types for creating secondary views for resources
+#[derive(Copy, Clone)]
+pub enum ResourceView {
+    ShaderResource,
+    UnorderedAccess,
+    ConstantBuffer
+}
+
+pub struct ResourceViewInfo {
+    pub view_type: ResourceView,
+    pub format: Format,
+    pub first_element: usize,
+    pub structure_byte_size: usize,
+    pub num_elements: usize
 }
 
 /// Describes space in the shader to send data to via `CmdBuf::push_constants`. 
@@ -786,6 +809,13 @@ pub enum RaytracingHitGeometry {
     ProceduralPrimitive
 }
 
+pub enum AccelerationStructureRebuildMode {
+    /// Quick refit will update the transforms only
+    Refit,
+    /// Full update will update BLAS topologies
+    Full
+}
+
 #[derive(Serialize, Deserialize, Clone)]
 pub struct RaytracingHitGroup {
     pub name: String,
@@ -825,6 +855,7 @@ pub struct RaytracingTrianglesInfo<'stack, D: Device> {
     pub vertex_count: usize,
     pub index_format: Format,
     pub vertex_format: Format,
+    pub vertex_stride: usize
 }
 
 /// Information to create a raytracing acceleration structure from aabbs
@@ -1161,6 +1192,21 @@ pub struct IndexBufferView {
     pub format: u32,
 }
 
+/// Resources that can be used with a uav_barrier in `CmdBuf`
+#[derive(Clone, Copy)]
+pub enum UavResource<'stack, D: Device> {
+    Texture(&'stack D::Texture),
+    Buffer(&'stack D::Buffer),
+    RaytracingTLAS(&'stack D::RaytracingTLAS),
+}
+
+/// Resources tha can have resource views created
+#[derive(Clone, Copy)]
+pub enum Resource<'stack, D: Device> {
+    Texture(&'stack D::Texture),
+    Buffer(&'stack D::Buffer),
+}
+
 /// A GPU device is used to create GPU resources, the device also contains a single a single command queue
 /// to which all command buffers will submitted and executed each frame. Default heaps for shader resources,
 /// render targets and depth stencils are also provided
@@ -1211,6 +1257,16 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         data: Option<&[T]>,
         heap: &mut Self::Heap
     ) -> Result<Self::Buffer, Error>;
+    /// Create an upload buffer from data for copying into other buffers
+    fn create_upload_buffer<T: Sized>(
+        &mut self,
+        data: &[T]
+    ) -> Result<Self::Buffer, Error>;
+    /// Create an upload buffer that can be used specifically for raytracing acceleration structure instances
+    fn create_raytracing_instance_buffer(
+        &mut self,
+        instances: &Vec<RaytracingInstanceInfo<Self>>
+    ) -> Result<Self::Buffer, Error>;
     /// Create a `Buffer` specifically for reading back data from the GPU mainly for `Query` use
     fn create_read_back_buffer(
         &mut self,
@@ -1230,6 +1286,13 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         heaps: TextureHeapInfo<Self>,
         data: Option<&[T]>,
     ) -> Result<Self::Texture, Error>;
+    /// Create a resource view (shader resource, unordered access or constant buffer) for the given `resource` within the specified `heap`
+    fn create_resource_view(
+        &mut self,
+        info: &ResourceViewInfo,
+        resource: Resource<Self>,
+        heap: &mut Self::Heap
+    ) -> Result<usize, Error>;
     /// Create a new render pipeline state object from the supplied `RenderPipelineInfo`
     fn create_render_pipeline(
         &self,
@@ -1257,6 +1320,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         info: &RaytracingBLASInfo<Self>
     ) -> Result<Self::RaytracingBLAS, Error>;
+    /// Create a top level acceleration structure from array of `RaytracingInstanceInfo` with specificed heap
+    fn create_raytracing_tlas_with_heap(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>,
+        heap: &mut Self::Heap
+    ) -> Result<Self::RaytracingTLAS, Error>;
     /// Create a top level acceleration structure from array of `RaytracingInstanceInfo`
     fn create_raytracing_tlas(
         &mut self,
@@ -1349,15 +1418,15 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// to complete, this value indicates the buffer number you should `write` to during the current frame 
     fn get_backbuffer_index(&self) -> u32;
     /// Begins a render pass, end must be called
-    fn begin_render_pass(&self, render_pass: &D::RenderPass);
+    fn begin_render_pass(&mut self, render_pass: &D::RenderPass);
     /// End a render pass must be called after `begin_render_pass` has been called
-    fn end_render_pass(&self);
+    fn end_render_pass(&mut self);
     /// Begin a names marker event which will be visible in tools such as PIX or RenderDoc
     fn begin_event(&mut self, colour: u32, name: &str);
     /// End an event that was started with `begin_event`
     fn end_event(&mut self);
     /// Similar to `begin_event/end_event` except it inserts a single marker point instead of a range
-    fn set_marker(&self, colour: u32, name: &str);
+    fn set_marker(&mut self, colour: u32, name: &str);
     /// Function to specifically insert a timestamp query and request readback into the `Buffer`
     /// read back the rsult with `Device::read_timestamps`
     fn timestamp_query(&mut self, heap: &mut D::QueryHeap, resolve_buffer: &mut D::Buffer);
@@ -1370,34 +1439,34 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn transition_barrier(&mut self, barrier: &TransitionBarrier<D>);
     /// Add a transition barrier for a sub resource (ie. resolve texture)
     fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<D>, subresource: Subresource);
+    /// Add a uav barrier for resources
+    fn uav_barrier(&mut self, resource: UavResource<D>);
     /// Set the viewport on the rasterizer stage
-    fn set_viewport(&self, viewport: &Viewport);
+    fn set_viewport(&mut self, viewport: &Viewport);
     /// Set the scissor rect on the rasterizer stage
-    fn set_scissor_rect(&self, scissor_rect: &ScissorRect);
+    fn set_scissor_rect(&mut self, scissor_rect: &ScissorRect);
     /// Set the index `buffer` to use for draw calls, the buffer should be created with `BufferUsage::INDEX`
-    fn set_index_buffer(&self, buffer: &D::Buffer);
+    fn set_index_buffer(&mut self, buffer: &D::Buffer);
     /// Set the index `buffer` on `slot` to use for draw calls, the buffer should be created with `BufferUsage::VERTEX`
-    fn set_vertex_buffer(&self, buffer: &D::Buffer, slot: u32);
+    fn set_vertex_buffer(&mut self, buffer: &D::Buffer, slot: u32);
     /// Set render pipeline for `draw` commands
-    fn set_render_pipeline(&self, pipeline: &D::RenderPipeline);
+    fn set_render_pipeline(&mut self, pipeline: &D::RenderPipeline);
     /// Set a compute pipeline for `dispatch`
-    fn set_compute_pipeline(&self, pipeline: &D::ComputePipeline);
+    fn set_compute_pipeline(&mut self, pipeline: &D::ComputePipeline);
     /// Set a raytracing pipeline for `dispatch_rays`
-    fn set_raytracing_pipeline(&self, pipeline: &D::RaytracingPipeline);
+    fn set_raytracing_pipeline(&mut self, pipeline: &D::RaytracingPipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
-    fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap);
+    fn set_heap<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap);
     /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
     /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
-    fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
-    // TODO:
-    fn set_tlas(&self, tlas: &D::RaytracingTLAS);
-    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the numbr of 32bit values
-    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
-    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the numbr of 32bit values
-    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
+    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
+    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values
+    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
-        &self,
+        &mut self,
         vertex_count: u32,
         instance_count: u32,
         start_vertex: u32,
@@ -1405,7 +1474,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Make an indexed draw call supplying index and instance counts, an index buffer should be bound
     fn draw_indexed_instanced(
-        &self,
+        &mut self,
         index_count: u32,
         instance_count: u32,
         start_index: u32,
@@ -1413,10 +1482,10 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         start_instance: u32,
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
-    fn dispatch(&self, group_count: Size3, numthreads: Size3);
+    fn dispatch(&mut self, group_count: Size3, numthreads: Size3);
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
-        &self,
+        &mut self,
         command: &D::CommandSignature, 
         max_command_count: u32, 
         argument_buffer: &D::Buffer, 
@@ -1425,9 +1494,11 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
         counter_buffer_offset: usize
     );
     /// Issue dispatch call for ray tracing with the specified `RaytracingShaderBindingTable` which is associated with the bound `RaytracingPipeline`
-    fn dispatch_rays(&self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
+    fn dispatch_rays(&mut self, sbt: &D::RaytracingShaderBindingTable, numthreads: Size3);
+    /// Update a raytracing TLAS with instance transform info contained in `instance_buffer` of length `instance_count`. Use `mode` to control quick refit or full rebuild
+    fn update_raytracing_tlas(&mut self, tlas: &D::RaytracingTLAS, instance_buffer: &D::Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
-    fn resolve_texture_subresource(&self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
+    fn resolve_texture_subresource(&mut self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
     /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 
     fn generate_mip_maps(&mut self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU

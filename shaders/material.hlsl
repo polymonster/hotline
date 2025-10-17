@@ -256,7 +256,7 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     float3 diffuse = irradiance * albedo;
 
     // specular / reflection
-    float spec_lod = 16.0; //log2(roughness * 10000.0);
+    float spec_lod = 16.0;
 
     float3 ks = f;
     float3 kd = (1.0 - ks) * (1.0 - metalness);
@@ -265,4 +265,360 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     float3 specular = prefilter * (f * brdf.x + brdf.y);
 
     return float4(((kd * max(diffuse, 0.0) + max(specular, 0.0))), 1.0);
+}
+
+struct RayPayload
+{
+    float4  col;
+    int     bounce_count;
+    bool    has_bounce_ray;
+    RayDesc bounce_ray;
+};
+
+RayPayload default_payload()
+{
+    RayPayload payload;
+    payload.col = float4(0.0, 0.0, 0.0, 0.0);
+    payload.bounce_count = 0;
+    payload.has_bounce_ray = false;
+
+    return payload;
+}
+
+cbuffer ray_tracing_constants : register(b0) {
+    float4x4    inverse_wvp;
+    int4        resource_indices; // x = uav output, y = scene_tlas
+};
+
+// basic ray traced shadow
+bool is_occluded(float3 origin, float3 direction, float tmin, float tmax)
+{
+    RayQuery<RAY_FLAG_CULL_BACK_FACING_TRIANGLES | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH> ray_query;
+
+    RayDesc desc;
+    desc.Origin = origin;
+    desc.TMin = tmin;
+    desc.Direction = direction;
+    desc.TMax = tmax;
+
+    ray_query.TraceRayInline(
+        scene_tlas[world_buffer_info.user_data.x],
+        RAY_FLAG_NONE,
+        0xff,
+        desc
+    );
+
+    ray_query.Proceed();
+
+    if (ray_query.CommittedStatus() == COMMITTED_TRIANGLE_HIT)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+[shader("raygeneration")]
+void scene_raygen_shader()
+{
+    //uv and ndc from dispatch dim
+    float2 uv = (float2)DispatchRaysIndex() / (float2)DispatchRaysDimensions();
+    float2 ndc = uv * 2.0 - 1.0;
+
+    float2 output_location = DispatchRaysIndex();
+    output_location.y = DispatchRaysDimensions().y - output_location.y;
+
+    // unproject ray
+    float4 near = float4(ndc.x, ndc.y, 0.0, 1.0);
+    float4 far = float4(ndc.x, ndc.y, 1.0, 1.0);
+    
+    float4 wnear = mul(inverse_wvp, near);
+    wnear /= wnear.w;
+    
+    float4 wfar = mul(inverse_wvp, far);
+    wfar /= wfar.w;
+
+    // ray desc
+    RayDesc ray;
+    ray.Origin = wnear.xyz;
+    ray.Direction = normalize(wfar.xyz - wnear.xyz);
+    ray.TMin = 0.001;
+    ray.TMax = 10000.0;
+
+    RayPayload payload = default_payload();
+    TraceRay(
+        scene_tlas[resource_indices.y], 
+        RAY_FLAG_NONE, 
+        0xff, 
+        0,
+        2,
+        0, 
+        ray, 
+        payload
+    );
+
+    for(int i = 0; i < 10; ++i)
+    {
+        if(payload.has_bounce_ray)
+        {
+            RayDesc bounce_ray = payload.bounce_ray;
+            int bounce_count = payload.bounce_count;
+
+            payload = default_payload();
+            payload.bounce_count = bounce_count;
+            TraceRay(
+                scene_tlas[resource_indices.y], 
+                RAY_FLAG_NONE, 
+                0xff, 
+                0,
+                2,
+                0, 
+                bounce_ray, 
+                payload
+            );
+
+            // payload.col = float4(bounce_ray.Direction * 0.5 + 0.5, 1.0);
+        }
+        else
+        {
+            break;
+        }
+    }
+
+    rw_textures[resource_indices.x][output_location] = payload.col;
+}
+
+struct GeometryLookup
+{
+    uint ib_srv;
+    uint vb_srv;
+    uint ib_stride;
+    uint material_type;
+};
+
+StructuredBuffer<GeometryLookup> instance_geometry_lookups : register(t1, space0);
+StructuredBuffer<uint> instance_index_buffers[] : register(t0, space13);
+StructuredBuffer<vs_input_mesh> instance_vertex_buffers[] : register(t0, space14);
+
+[shader("closesthit")]
+void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    uint iid = InstanceID();
+    uint tid = PrimitiveIndex();
+    GeometryLookup lookup = instance_geometry_lookups[iid];
+
+    // lookup vertex attribs
+    uint index = (tid * 3);
+
+    uint i0, i1, i2;
+    if(lookup.ib_stride == 2)
+    {
+        uint half_index = index / 2;
+        uint shift = index % 2;
+
+        if(shift == 0)
+        {
+            i0 = instance_index_buffers[lookup.ib_srv][half_index] & 0xffff;
+            i1 = (instance_index_buffers[lookup.ib_srv][half_index]) >> 16;
+            i2 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0xffff;
+        }
+        else
+        {
+            i0 = (instance_index_buffers[lookup.ib_srv][half_index] >> 16);
+            i1 = instance_index_buffers[lookup.ib_srv][half_index + 1] & 0xffff;
+            i2 = (instance_index_buffers[lookup.ib_srv][half_index + 1] >> 16);
+        }
+    }
+    else if(lookup.ib_stride == 4)
+    {
+        i0 = instance_index_buffers[lookup.ib_srv][index];
+        i1 = instance_index_buffers[lookup.ib_srv][index + 1];
+        i2 = instance_index_buffers[lookup.ib_srv][index + 2];
+    }
+
+    float u = attr.barycentrics.x;
+    float v = attr.barycentrics.y;
+    float w = 1.0f - u - v;
+
+    vs_input_mesh v0 = instance_vertex_buffers[lookup.vb_srv][i0];
+    vs_input_mesh v1 = instance_vertex_buffers[lookup.vb_srv][i1];
+    vs_input_mesh v2 = instance_vertex_buffers[lookup.vb_srv][i2];
+
+    //float3 geo_normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
+
+    float3 geo_normal = normalize(v0.normal + (v1.normal - v0.normal) * u + (v2.normal - v0.normal) * v);
+
+    if(lookup.material_type == 1)
+    {
+        // ray info
+        float3 r0 = WorldRayOrigin();
+        float3 rd = WorldRayDirection();
+        float rt = RayTCurrent();
+
+        // intersction point
+        float3 ip = r0 + rd * rt;
+
+        RayDesc ray;
+        ray.Origin = ip + geo_normal * 0.001;
+        ray.Direction = reflect(rd, geo_normal);
+        ray.TMin = 0.001;
+        ray.TMax = 10000.0;
+
+        payload.has_bounce_ray = true;
+        payload.bounce_ray = ray;
+        payload.bounce_count++;
+
+        return;
+    }
+    else if(lookup.material_type == 2)
+    {
+        // ray info
+        float3 r0 = WorldRayOrigin();
+        float3 rd = WorldRayDirection();
+        float rt = RayTCurrent();
+
+        // intersction point
+        float3 ip = r0 + rd * rt;
+
+        float refidx = 1.0003 / 1.52;
+        if(payload.bounce_count & 1)
+        {
+            refidx = 1.52 / 1.0003;
+            geo_normal *= -1.0;
+        }
+
+        float3 ray_dir = refract(rd, geo_normal, refidx);
+        float3 ray_start = ip + rd * 0.001;
+
+        
+        if(length(ray_dir) == 0.0)
+        {
+            ray_dir = reflect(rd, geo_normal);
+            ray_start = ip + geo_normal * 0.001;
+        }
+
+        RayDesc ray;
+        ray.Origin = ray_start;
+        ray.Direction = ray_dir;
+        ray.TMin = 0.001;
+        ray.TMax = 10000.0;
+
+        /*
+        if(payload.bounce_count > 1)
+        {
+            ray.Direction = rd;
+        }
+        */
+
+        payload.has_bounce_ray = true;
+        payload.bounce_ray = ray;
+        payload.bounce_count++;
+
+        return;
+    }
+    
+    float2 tx = v0.texcoord * u + v1.texcoord * w + v2.texcoord * v;
+
+    // checkerboard uv
+    float tu = (tx.x);
+    float tv = (tx.y);
+
+    float size = 8.0;
+    float x = tu * size;
+    float y = tv * size;
+
+    float ix;
+    modf(x, ix);
+    float rx = fmod(ix, 2.0) == 0.0 ? 0.0 : 1.0;
+
+    float iy;
+    modf(y, iy);
+    float ry = fmod(iy, 2.0) == 0.0 ? 0.0 : 1.0;
+
+    float rxy = rx + ry > 1.0 ? 0.0 : rx + ry;
+
+    float3 checkerboard = rxy < 0.001 ? 0.66 : 1.0;
+    
+    payload.col = float4(geo_normal, 1.0);
+
+    payload.col.xyz = payload.col.xyz * 0.5 + 0.5 * checkerboard;
+
+}
+
+[shader("anyhit")]
+void shadow_any_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    float3 r0 = WorldRayOrigin();
+    float3 rd = WorldRayDirection();
+    float rt = RayTCurrent();
+
+    // intersction point
+    float3 ip = r0 + rd * rt;
+
+    payload.col = float4(ip, 1.0);
+}
+
+[shader("closesthit")]
+void shadow_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleIntersectionAttributes attr)
+{
+    float3 r0 = WorldRayOrigin();
+    float3 rd = WorldRayDirection();
+    float rt = RayTCurrent();
+
+    // intersction point
+    float3 ip = r0 + rd * rt;
+
+    payload.col = float4(ip, 1.0);
+}
+
+[shader("miss")]
+void scene_miss_shader(inout RayPayload payload)
+{
+    float a = 0.5 * (WorldRayDirection().y + 1.0);
+    float3 gradient = (1.0-a)*float3(1.0, 1.0, 1.0) + a * float3(0.5, 0.7, 1.0);
+    payload.col = float4(gradient, 1.0);
+}
+
+ps_output ps_mesh_lit_rt_shadow(vs_output input) {
+    ps_output output;
+    output.colour = input.colour;
+
+    int i = 0;
+    float ks = 2.0;
+    float shininess = 32.0;
+    float roughness = 0.1;
+    float k = 0.3;
+
+    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
+    float3 n = input.normal;
+
+    // point lights
+    uint point_lights_id = world_buffer_info.point_light.x;
+    uint point_lights_count = world_buffer_info.point_light.y;
+    for(i = 0; i < point_lights_count; ++i) {
+        point_light_data light = point_lights[point_lights_id][i];
+
+        float3 l = normalize(input.world_pos.xyz - light.pos);
+        float rl = length(light.pos - input.world_pos.xyz);
+
+        float diffuse = lambert(l, n);
+        float specular = cook_torrance(l, n, v, roughness, k);
+
+        float atteniuation = point_light_attenuation(
+            light.pos,
+            light.radius,
+            input.world_pos.xyz
+        );
+
+        float4 light_colour = atteniuation * light.colour * diffuse;
+        light_colour += atteniuation * light.colour * specular;
+
+        bool occluded = is_occluded(input.world_pos.xyz + input.normal * 0.1, -l, 0.1, rl + 0.1);
+        
+        if(!occluded) {
+            output.colour += light_colour;
+        }
+    }
+
+    return output;
 }

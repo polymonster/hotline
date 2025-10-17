@@ -82,6 +82,7 @@ struct world_buffer_info_data {
     uint2 directional_light;
     uint2 camera;
     uint2 shadow_matrix;
+    uint4 user_data;
 }
 
 // info to lookup shadow srv and matrix
@@ -143,6 +144,9 @@ Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);
 TextureCube cubemaps[] : register(t0, space9);
 Texture2DArray texture_arrays[] : register(t0, space10);
 Texture3D volume_textures[] : register(t0, space11);
+
+// tlas
+RaytracingAccelerationStructure scene_tlas[] : register(t0, space12);
 
 // uav textures
 RWTexture2D<float4> rw_textures[] : register(u0, space0);

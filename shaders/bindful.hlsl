@@ -1,6 +1,8 @@
+//#pragma argument(developmentfeatures)
+
 struct vs_input {
     float3 position : POSITION; 
-    float4 colour : COLOR;
+    float4 uv : TEXCOORD0;
 };
 
 struct ps_input {
@@ -15,10 +17,14 @@ Texture2D texture3 : register(t3);
 
 SamplerState sampler0 : register(s0);
 
+cbuffer letterbox : register(b0, space0) {
+    float2 quad_scale;
+};
+
 ps_input vs_main(vs_input input) {
     ps_input output;
-    output.position = float4(input.position, 1.0);
-    output.uv = input.colour;
+    output.position = float4(input.position.xy * quad_scale, input.position.z, 1.0);
+    output.uv = input.uv;
     return output;
 }
 
