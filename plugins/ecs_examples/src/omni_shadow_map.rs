@@ -161,11 +161,11 @@ pub fn setup_omni_shadow_map(
 pub fn animate_omni_shadow (
     time: Res<TimeRes>, 
     mut pmfx: ResMut<PmfxRes>,
-    mut light_query: Query<(&mut Position, &mut Velocity, &LightComponent)>) -> Result<(), hotline_rs::Error> {
+    mut light_query: Query<(&mut Position, &LightComponent)>) -> Result<(), hotline_rs::Error> {
 
     let extent = 60.0;
 
-    for (mut position, mut velocity, component) in &mut light_query {
+    for (mut position, component) in &mut light_query {
         
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
 

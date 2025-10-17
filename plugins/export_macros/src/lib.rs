@@ -150,7 +150,7 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parsed = parse_fn(&item);
 
     // emit code to move function args into closure and pass them to function
-    let (moves, pass) = emit_moves_and_pass_args(&parsed, &vec!["pmfx :: View"]);
+    let (moves, pass) = emit_moves_and_pass_args(&parsed, &vec!["pmfx :: View", "< gfx_platform :: Device as Device > :: CmdBuf"]);
     let order = emit_update_order(attr, "SystemSets :: Render");
 
     let render_closure = quote! {
@@ -161,18 +161,19 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let err = match view {
                     Ok(v) => { 
                         let mut view = v.lock().unwrap();
+                        let mut cmd_buf = std::mem::take(&mut view.cmd_buf);
                         
                         let col = view.colour_hash;
-                        view.cmd_buf.begin_event(col, &view_name);
-
-                        view.cmd_buf.begin_render_pass(&view.pass);
-                        view.cmd_buf.set_viewport(&view.viewport);
-                        view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
+                        cmd_buf.begin_event(col, &view_name);
+                        cmd_buf.begin_render_pass(&view.pass);
+                        cmd_buf.set_viewport(&view.viewport);
+                        cmd_buf.set_scissor_rect(&view.scissor_rect);
                         let result = fn_name(fn_args);
+                        cmd_buf.end_render_pass();
+                        cmd_buf.end_event();
 
-                        view.cmd_buf.end_render_pass();
-                        view.cmd_buf.end_event();
+                        view.cmd_buf = cmd_buf;
+
                         result
                     }
                     Err(v) => {
@@ -214,7 +215,7 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let parsed = parse_fn(&item);
 
     // emit code to move function args into closure and pass them to function
-    let (moves, pass) = emit_moves_and_pass_args(&parsed, &vec!["pmfx :: ComputePass"]);
+    let (moves, pass) = emit_moves_and_pass_args(&parsed, &vec!["pmfx :: ComputePass", "< gfx_platform :: Device as Device > :: CmdBuf"]);
     let order = emit_update_order(attr, "SystemSets :: Render");
 
     let render_closure = quote! {
@@ -226,11 +227,13 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                 let err = match pass {
                     Ok(p) => {
                         let mut pass = p.lock().unwrap();
-                        pass.cmd_buf.begin_event(0xffffff, &pass_name);
+                        let mut cmd_buf = std::mem::take(&mut pass.cmd_buf);
 
+                        cmd_buf.begin_event(0xffffff, &pass_name);
                         let result = fn_name(fn_args);
+                        cmd_buf.end_event();
 
-                        pass.cmd_buf.end_event();
+                        pass.cmd_buf = cmd_buf;
 
                         Ok(())
                     }

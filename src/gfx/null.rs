@@ -130,11 +130,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn begin_render_pass(&self, render_pass: &RenderPass) {
+    fn begin_render_pass(&mut self, render_pass: &RenderPass) {
         unimplemented!()
     }
 
-    fn end_render_pass(&self) {
+    fn end_render_pass(&mut self) {
         unimplemented!()
     }
 
@@ -146,7 +146,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn set_marker(&self, colour: u32, name: &str) {
+    fn set_marker(&mut self, colour: u32, name: &str) {
         unimplemented!()
     }
 
@@ -174,52 +174,52 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn set_viewport(&self, viewport: &Viewport) {
+    fn set_viewport(&mut self, viewport: &Viewport) {
         unimplemented!()
     }
 
-    fn set_scissor_rect(&self, scissor_rect: &ScissorRect) {
+    fn set_scissor_rect(&mut self, scissor_rect: &ScissorRect) {
         unimplemented!()
     }
 
-    fn set_index_buffer(&self, buffer: &Buffer) {
+    fn set_index_buffer(&mut self, buffer: &Buffer) {
         unimplemented!()
     }
 
-    fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
+    fn set_vertex_buffer(&mut self, buffer: &Buffer, slot: u32) {
         unimplemented!()
     }
 
-    fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
+    fn set_render_pipeline(&mut self, pipeline: &RenderPipeline) {
         unimplemented!()
     }
 
-    fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
+    fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         unimplemented!()
     }
 
-    fn set_raytracing_pipeline(&self, pipeline: &RaytracingPipeline) {
+    fn set_raytracing_pipeline(&mut self, pipeline: &RaytracingPipeline) {
         unimplemented!()
     }
 
-    fn set_heap<T: Pipeline>(&self, pipeline: &T, heap: &Heap) {
+    fn set_heap<T: Pipeline>(&mut self, pipeline: &T, heap: &Heap) {
         unimplemented!()
     }
 
-    fn set_binding<T: Pipeline>(&self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
         unimplemented!()
     }
 
-    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         unimplemented!()
     }
 
-    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         unimplemented!()
     }
 
     fn draw_instanced(
-        &self,
+        &mut self,
         vertex_count: u32,
         instance_count: u32,
         start_vertex: u32,
@@ -229,7 +229,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn draw_indexed_instanced(
-        &self,
+        &mut self,
         index_count: u32,
         instance_count: u32,
         start_index: u32,
@@ -239,12 +239,12 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn dispatch(&self, group_count: Size3, numthreads: Size3) {
+    fn dispatch(&mut self, group_count: Size3, numthreads: Size3) {
         unimplemented!()
     }
 
     fn execute_indirect(
-        &self,
+        &mut self,
         command: &CommandSignature, 
         max_command_count: u32, 
         argument_buffer: &Buffer, 
@@ -255,7 +255,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
     
-    fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
+    fn dispatch_rays(&mut self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
         unimplemented!()
     }
 
@@ -263,7 +263,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn resolve_texture_subresource(&self, texture: &Texture, subresource: u32) -> Result<(), Error> {
+    fn resolve_texture_subresource(&mut self, texture: &Texture, subresource: u32) -> Result<(), Error> {
         unimplemented!()
     }
 

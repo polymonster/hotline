@@ -89,16 +89,17 @@ pub fn setup_texture2d_array(
 pub fn render_meshes_texture2d_array(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance, &AnimatedTexture), With<CylindricalBillboard>>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     // spherical billboard
     let inv_rot = Mat3f::from(camera.view_matrix.transpose());
@@ -110,12 +111,12 @@ pub fn render_meshes_texture2d_array(
 
     for (world_matrix, mesh, texture, animated_texture) in &mesh_query {
         let bbmat = world_matrix.0 * Mat4f::from(cyl_rot);
-        view.cmd_buf.push_render_constants(1, 12, 0, &bbmat);
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
+        cmd_buf.push_render_constants(1, 12, 0, &bbmat);
+        cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[texture.0, animated_texture.frame, 0, 0]));
 
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())

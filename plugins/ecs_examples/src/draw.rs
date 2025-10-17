@@ -49,18 +49,19 @@ pub fn setup_draw(
 pub fn draw_meshes(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     for (_, mesh) in &mesh_draw_query {
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_instanced(3, 1, 0, 0);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_instanced(3, 1, 0, 0);
     }
 
     Ok(())

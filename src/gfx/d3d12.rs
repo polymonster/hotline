@@ -176,7 +176,7 @@ pub struct RenderPipeline {
     lookup: RootSignatureLookup
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,
@@ -4143,7 +4143,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.bb_index as u32
     }
 
-    fn begin_render_pass(&self, render_pass: &RenderPass) {
+    fn begin_render_pass(&mut self, render_pass: &RenderPass) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.BeginRenderPass(
@@ -4158,7 +4158,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn end_render_pass(&self) {
+    fn end_render_pass(&mut self) {
         unsafe {
             let cmd4: ID3D12GraphicsCommandList4 = self.cmd().cast().unwrap();
             cmd4.EndRenderPass();
@@ -4291,7 +4291,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.in_flight_barriers[bb].push(barrier);
     }
 
-    fn set_viewport(&self, viewport: &super::Viewport) {
+    fn set_viewport(&mut self, viewport: &super::Viewport) {
         let d3d12_vp = D3D12_VIEWPORT {
             TopLeftX: viewport.x,
             TopLeftY: viewport.y,
@@ -4305,7 +4305,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
+    fn set_scissor_rect(&mut self, scissor_rect: &super::ScissorRect) {
         let d3d12_sr = RECT {
             left: scissor_rect.left,
             top: scissor_rect.top,
@@ -4318,7 +4318,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
+    fn set_vertex_buffer(&mut self, buffer: &Buffer, slot: u32) {
         let cmd = self.cmd();
         if buffer.vbv.is_some() {
             unsafe {
@@ -4327,7 +4327,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_index_buffer(&self, buffer: &Buffer) {
+    fn set_index_buffer(&mut self, buffer: &Buffer) {
         let cmd = self.cmd();
         if buffer.ibv.is_some() {
             unsafe {
@@ -4336,7 +4336,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
+    fn set_render_pipeline(&mut self, pipeline: &RenderPipeline) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRootSignature(&pipeline.root_signature);
@@ -4345,7 +4345,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
+    fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetComputeRootSignature(&pipeline.root_signature);
@@ -4353,7 +4353,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_raytracing_pipeline(&self, pipeline: &RaytracingPipeline) {
+    fn set_raytracing_pipeline(&mut self, pipeline: &RaytracingPipeline) {
         let cmd = self.cmd().cast::<ID3D12GraphicsCommandList4>().unwrap();
         unsafe {
             cmd.SetComputeRootSignature(&pipeline.root_signature);
@@ -4361,7 +4361,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
+    fn set_heap<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let slots = pipeline.get_pipeline_slots();
@@ -4387,7 +4387,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_binding<T: SuperPipleline>(&self, _: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&mut self, _: &T, heap: &Heap, slot: u32, offset: usize) {
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
@@ -4404,14 +4404,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_marker(&self, colour: u32, name: &str) {
+    fn set_marker(&mut self, colour: u32, name: &str) {
         let cmd = &self.command_list[self.bb_index];
         if self.pix.is_some() {
             self.pix.unwrap().set_marker_on_command_list(cmd, colour as u64, name);
         }
     }
 
-    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRoot32BitConstants(
@@ -4423,7 +4423,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         let cmd = self.cmd();
         unsafe {
             cmd.SetComputeRoot32BitConstants(
@@ -4436,7 +4436,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn draw_instanced(
-        &self,
+        &mut self,
         vertex_count: u32,
         instance_count: u32,
         start_vertex: u32,
@@ -4448,7 +4448,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn draw_indexed_instanced(
-        &self,
+        &mut self,
         index_count: u32,
         instance_count: u32,
         start_index: u32,
@@ -4466,14 +4466,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch(&self, group_count: Size3, _numthreads: Size3) {
+    fn dispatch(&mut self, group_count: Size3, _numthreads: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
         }
     }
 
     fn execute_indirect(
-        &self, 
+        &mut self, 
         command: &CommandSignature, 
         max_command_count: u32, 
         argument_buffer: &Buffer, 
@@ -4494,7 +4494,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
+    fn dispatch_rays(&mut self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
         unsafe {
             let dispatch_desc = D3D12_DISPATCH_RAYS_DESC {
                 RayGenerationShaderRecord: D3D12_GPU_VIRTUAL_ADDRESS_RANGE {
@@ -4645,7 +4645,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn resolve_texture_subresource(&self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
+    fn resolve_texture_subresource(&mut self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
         unsafe {
             if let Some(resolve) = &texture.resolved_resource {
                 self.cmd().ResolveSubresource(

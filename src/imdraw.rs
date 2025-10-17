@@ -257,14 +257,14 @@ impl<D> ImDraw<D> where D: gfx::Device {
         Ok(())     
     }
 
-    pub fn draw_2d(&mut self, cmd: &D::CmdBuf, buffer_index: usize) {
+    pub fn draw_2d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
         if buffer_index < self.vertices_2d.gpu_data.len() {
             cmd.set_vertex_buffer(&self.vertices_2d.gpu_data[buffer_index], 0);
             cmd.draw_instanced(self.vertices_2d.vertex_count, 1, 0, 0);
         }
     }
 
-    pub fn draw_3d(&mut self, cmd: &D::CmdBuf, buffer_index: usize) {
+    pub fn draw_3d(&mut self, cmd: &mut D::CmdBuf, buffer_index: usize) {
         if buffer_index < self.vertices_3d.gpu_data.len() {
             cmd.set_vertex_buffer(&self.vertices_3d.gpu_data[buffer_index], 0);
             cmd.draw_instanced(self.vertices_3d.vertex_count, 1, 0, 0);

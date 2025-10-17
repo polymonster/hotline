@@ -63,7 +63,7 @@ pub fn setup_dynamic_cubemap(
     let dist = rand::distributions::Uniform::from(0..orbit_meshes.len());
 
     let num_primitves = 32; 
-    for i in 0..num_primitves {
+    for _ in 0..num_primitves {
         let rv = normalize(vec3f(rng.gen(), rng.gen(), rng.gen()) * 2.0 - 1.0);
         let rr = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::tau();
         let offset : f32 = 20.0 + rng.gen::<f32>() * 20.0;
@@ -102,24 +102,23 @@ pub fn orbit_meshes(
 pub fn render_orbit_meshes(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent), Without<TextureInstance>>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
-    let mut mip = 0;
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
-        mip += 1;
+        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
@@ -130,26 +129,27 @@ pub fn render_orbit_meshes(
 pub fn render_meshes_cubemap_reflect(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let mut mip = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
+        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
 
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
 
         mip += 1;
     }
