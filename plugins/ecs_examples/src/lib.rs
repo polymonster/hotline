@@ -243,6 +243,7 @@ pub fn batch_bindless_draw_data(
 pub fn render_meshes_bindless(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     queries: (
         Query<(&InstanceBuffer, &MeshComponent)>,
         Query<(&MeshComponent, &WorldMatrix), Without<InstanceBuffer>>
@@ -256,20 +257,20 @@ pub fn render_meshes_bindless(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    cmd_buf.set_render_pipeline(&pipeline);
 
     // bind view push constants
     let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
-        view.cmd_buf.push_render_constants(slot.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_render_constants(slot.index, 4, 16, gfx::as_u8_slice(&camera.view_position));
+        cmd_buf.push_render_constants(slot.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        cmd_buf.push_render_constants(slot.index, 4, 16, gfx::as_u8_slice(&camera.view_position));
     }
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
     let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
-        view.cmd_buf.push_render_constants(
+        cmd_buf.push_render_constants(
             slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
 
@@ -278,7 +279,7 @@ pub fn render_meshes_bindless(
     if let Some(slot) = using_slot {
         for i in 0..view.use_indices.len() {
             let num_constants = gfx::num_32bit_constants(&view.use_indices[i]);
-            view.cmd_buf.push_compute_constants(
+            cmd_buf.push_compute_constants(
                 0, 
                 num_constants, 
                 i as u32 * num_constants, 
@@ -288,14 +289,14 @@ pub fn render_meshes_bindless(
     }
 
     // bind the shader resource heap
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     // instance batch draw calls
     for (instance_batch, mesh) in &instance_draw_query {
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.set_vertex_buffer(&instance_batch.buffer, 1);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
     }
 
     // single draw calls
@@ -303,16 +304,17 @@ pub fn render_meshes_bindless(
         // set the world matrix push constants
         let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
-            view.cmd_buf.push_render_constants(slot.index, 12, 0, &world_matrix.0);
+            cmd_buf.push_render_constants(slot.index, 12, 0, &world_matrix.0);
         }
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
 }
 
+/*
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
 #[no_mangle]
 #[export_render_fn]
@@ -693,6 +695,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "raytraced_shadows"
     ]
 }
+*/
 
 pub mod prelude {
     #[doc(hidden)]
