@@ -141,7 +141,6 @@ pub fn setup_shadow_map(
     for _ in 0..dim {    
         pos.x = start.x;
         for _ in 0..dim {
-
             let h = dist.sample(&mut rng) as f32;
 
             commands.spawn((

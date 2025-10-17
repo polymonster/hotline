@@ -1,8 +1,5 @@
 // TODO:
 
-// TODO cleanup
-// fix: Ignoring InitialState D3D12_RESOURCE_STATE_COPY_DEST. Buffers are effectively created in state D3D12_RESOURCE_STATE_COMMON.
-
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
 
@@ -10,11 +7,6 @@
 // - clear buffer (uav)
 // - buffers in pmfx
 // - clear buffers for compute
-
-// raytracing
-// - need to create srv for mesh ib and vb
-// - need a redirect buffer to lookup srv index from instance index
-// - read from index buffer and vertex buffer, interpolate triangles
 
 // effects
 // - perspective shadow map

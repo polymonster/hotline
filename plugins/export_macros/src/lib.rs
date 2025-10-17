@@ -126,7 +126,6 @@ pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let (moves, pass) = emit_moves_and_pass_args(&parsed, &Vec::new());
     let order = emit_update_order(attr, "SystemSets :: Update");
     
-    // create wrapper
     let export_fn = format!("#[no_mangle] fn export_{}() -> SystemConfigs {{
         (move | {} | {{
             {} ({}).unwrap();

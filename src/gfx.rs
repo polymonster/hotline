@@ -1,4 +1,4 @@
-// A null / syubbed implementation
+// A null / stubbed implementation
 pub mod null;
 
 /// Implemets this interface with a Direct3D12 backend.

@@ -75,11 +75,11 @@
                 ["${src_data_dir}/fonts", "${data_dir}/fonts"]
 
                 // default imgui layouts form the client.. todo. move to target
-                ["plugins/imgui.ini", "target/debug/imgui.ini"]
-                ["plugins/imgui.ini", "target/debug/deps/imgui.ini"]
-
                 ["plugins/imgui.ini", "target/release/imgui.ini"]
                 ["plugins/imgui.ini", "target/release/deps/imgui.ini"]
+
+                ["plugins/imgui.ini", "target/debug/imgui.ini"]
+                ["plugins/imgui.ini", "target/debug/deps/imgui.ini"]
 
                 // default user config for the client
                 ["plugins/user_config.json", "target/user_config.json"]
@@ -116,6 +116,7 @@
             args: [
                 "-shader_platform hlsl"
                 "-shader_version 6_5"
+
                 "-i ${src_shader_dir}/"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"

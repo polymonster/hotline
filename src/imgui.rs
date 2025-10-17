@@ -905,7 +905,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
             // update mouse
             io.MouseWheel = app.get_mouse_wheel();
-            io.MouseWheelH = app.get_mouse_wheel();
+            io.MouseWheelH = app.get_mouse_hwheel();
             io.MouseDown = app.get_mouse_buttons();
 
             // update char inputs
@@ -984,6 +984,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igPushStyleVarFloat(ImGuiStyleVar_WindowBorderSize as i32, 0.0);
             igPushStyleVarVec2(ImGuiStyleVar_WindowPadding as i32, IMVEC2_ZERO);
 
+            /*
             let window_class = ImGuiWindowClass {
                 DockNodeFlagsOverrideSet: ImGuiDockNodeFlags_NoTabBar,
                 ..Default::default()
@@ -997,6 +998,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igGetContentRegionAvail(&mut avail);
 
             igEnd();
+            */
+
             igPopStyleVar(5);
         }
     }
@@ -1555,6 +1558,34 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         unsafe {
             let null_term_filename = CString::new(format!("{}/imgui.ini", path)).unwrap();
             igSaveIniSettingsToDisk(null_term_filename.as_ptr() as *const i8);
+        }
+    }
+
+    /// Return the horizontal scroll position of the current window
+    pub fn get_scroll_x(&self) -> f32 {
+        unsafe {
+            igGetScrollX()
+        }
+    }
+
+    /// Set the horizontal scroll position of the current window
+    pub fn set_scroll_x(&self, pos: f32) {
+        unsafe {
+            igSetScrollXFloat(pos)
+        }
+    }
+
+    /// Return the vertical scroll position of the current window
+    pub fn get_scroll_y(&self) -> f32 {
+        unsafe {
+            igGetScrollY()
+        }
+    }
+
+    /// Set the vertical scroll position of the current window
+    pub fn set_scroll_y(&self, pos: f32) {
+        unsafe {
+            igSetScrollYFloat(pos)
         }
     }
 }

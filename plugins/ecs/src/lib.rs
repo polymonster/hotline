@@ -6,6 +6,8 @@ use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
 
 use bevy_ecs::prelude::*;
+
+use bevy_ecs::schedule::SystemConfig;
 use bevy_ecs::schedule::SystemConfigs;
 
 use std::collections::HashMap;
@@ -588,6 +590,9 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             if let Some(func) = self.get_system_function(func_name, view_name, &client) {
                 self.schedule.add_systems(func.after(SystemSets::Batch));
             }
+            else {
+                self.errors.entry(func_name.to_string()).or_insert(Vec::new());
+            }
         }
 
         self.render_graph_hash = client.pmfx.get_render_graph_hash(&info.render_graph);
@@ -656,7 +661,6 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // write back session info which will be serialised to disk and reloaded between sessions
         client.serialise_plugin_data("ecs", &self.session_info);
-
         client
     }
 

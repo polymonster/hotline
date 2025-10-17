@@ -356,6 +356,7 @@ struct RaytracingShaderBindingTableInfo {
     callable_shaders: Vec<String>
 }
 
+/// Enum for possible pipeline types 
 #[derive(Clone)]
 pub enum PipelineType {
     None,
@@ -1617,7 +1618,6 @@ impl<D> Pmfx<D> where D: gfx::Device {
             else {
                 (1, 1, 1)
             }
-            //let pipeline = self.pmfx.pipelines.get(&pass_pipeline).unwrap();
         };
 
         // hashes

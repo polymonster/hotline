@@ -63,6 +63,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut cmd = device.create_cmd_buf(num_buffers);
 
     let mut t = 0.0;
+
     while app.run() {
         // update the swap chain
         swap_chain.update::<os_platform::App>(&mut device, &window, &mut cmd);

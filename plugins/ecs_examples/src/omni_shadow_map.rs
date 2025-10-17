@@ -165,7 +165,7 @@ pub fn animate_omni_shadow (
 
     let extent = 60.0;
 
-    for (mut position, _, component) in &mut light_query {
+    for (mut position, mut velocity, component) in &mut light_query {
         
         position.0 = vec3f(sin(time.accumulated), cos(time.accumulated), cos(time.accumulated)) * extent;
 

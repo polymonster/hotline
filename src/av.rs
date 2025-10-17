@@ -1,4 +1,4 @@
-// A null / syubbed implementation
+// A null / stubbed implementation
 pub mod null;
 
 /// Implements this interface for Windows Media Foundation with Direct3D12

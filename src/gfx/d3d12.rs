@@ -1818,6 +1818,7 @@ impl super::Device for Device {
                 },
                 heap_id
             );
+            d3d12_debug_name!(shader_heap.heap, "device_shader_heap");
 
             // rtv
             heap_id += 1;
@@ -1830,6 +1831,7 @@ impl super::Device for Device {
                 },
                 heap_id
             );
+            d3d12_debug_name!(rtv_heap.heap, "device_render_target_heap");
             
             // dsv
             heap_id += 1;
@@ -1842,6 +1844,7 @@ impl super::Device for Device {
                 },
                 heap_id
             );
+            d3d12_debug_name!(dsv_heap.heap, "device_depth_stencil_heap");
 
             // query feature flags
             let mut feature_flags = DeviceFeatureFlags::NONE;
@@ -1853,7 +1856,6 @@ impl super::Device for Device {
                 std::ptr::addr_of!(options5) as *mut _, 
                 std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS5>() as u32).is_ok() {
                 if options5.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED {
-                    println!("raytracing tier = {:?}", options5.RaytracingTier);
                     feature_flags |= super::DeviceFeatureFlags::RAYTRACING;
                 }
             }
@@ -3565,6 +3567,7 @@ impl super::Device for Device {
         &mut self,
         instances: &Vec<RaytracingInstanceInfo<Self>>
     ) -> result::Result<Buffer, super::Error> {
+
         // pack 24: 8 bits
         let pack_24_8 = |a, b| {
             (a & 0x00ffffff) | ((b & 0x000000ff) << 24)
