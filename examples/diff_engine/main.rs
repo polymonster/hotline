@@ -9,7 +9,21 @@ use gfx::{CmdBuf, Device, SwapChain};
 
 use similar::{Algorithm, TextDiff, ChangeTag};
 
-use std::{fs::File, io::Read};
+use std::{fs::File, io::Read, sync::RwLock, sync::Arc};
+
+#[derive(Clone)]
+struct LineDiff {
+    pos: usize,
+    len: usize,
+    op: String
+}
+
+struct LineDiffs {
+    lhs_diff: RwLock<Vec<LineDiff>>,
+    rhs_diff: RwLock<Vec<LineDiff>>,
+    lhs: String,
+    rhs: String
+}
 
 fn format_string_lines(input: &str) -> Vec<String> {
     let sanitized = input.replace("\r\n", "\n").replace("\t", "    ");
@@ -121,15 +135,6 @@ fn main() -> Result<(), hotline_rs::Error> {
     for _ in 0..iter_len {
         if lhs_pos < lhs_diff.len() && rhs_pos < rhs_diff.len() {
 
-            /*
-            if lhs_pos == 25258 {
-                println!("LHS: iter {} {} / {}", lhs_pos, rhs_pos, iter_len);
-                println!("LHS: lhs {}", lhs_diff[lhs_pos]);
-                println!("LHS: rhs {}", rhs_diff[rhs_pos]);
-                println!("LHS: pad {} {}", lhs_pad, rhs_pad);
-            }
-            */
-
             if lhs_diff[lhs_pos] == rhs_diff[rhs_pos] {
                 if lhs_pad {
                     let pad_count = rhs_pos - lhs_pos;
@@ -170,6 +175,70 @@ fn main() -> Result<(), hotline_rs::Error> {
             rhs_pos += 1;
         }
     }
+
+    assert_eq!(lhs_diff.len(), rhs_diff.len());
+
+    let lines_diffs: Arc<Vec<LineDiffs>> = Arc::new(
+        (0..lhs_diff.len()).enumerate().map(|(index, _)| LineDiffs {
+            lhs_diff: RwLock::new(Vec::new()),
+            rhs_diff: RwLock::new(Vec::new()),
+            lhs: lhs_diff[index].clone(),
+            rhs: rhs_diff[index].clone()
+        }).collect()
+    );
+
+    let line_count = lhs_diff.len();
+
+    // async work
+    let mut handles = vec![];
+    let lines_clone = Arc::clone(&lines_diffs);
+    handles.push(std::thread::spawn(move || {
+        for i in 0..line_count {
+            let diff = TextDiff::from_words(&lines_diffs[i].lhs, &lines_diffs[i].rhs);
+            let mut lhs_pos = 0;
+            let mut rhs_pos = 0;
+            if i == 32 {
+                println!("{}", lines_diffs[i].lhs);
+                println!("{}", lines_diffs[i].rhs);
+            }
+            for op in diff.ops() {
+                for change in diff.iter_changes(op) {
+                    let change_str = change.as_str().unwrap();
+                    match change.tag() {
+                        ChangeTag::Delete => { 
+                            if i == 32 {
+                                println!("Delete {} -> {}", lhs_pos, change_str.len());
+                            }
+                            lines_diffs[i].lhs_diff.write().expect("").push(LineDiff {
+                                op: "-".to_string(),
+                                pos: lhs_pos,
+                                len: change_str.len()
+                            });
+                            lhs_pos += change_str.len()
+                        },
+                        ChangeTag::Insert => {
+                            if i == 32 {
+                                println!("Insert {} -> {}", lhs_pos, change_str.len());
+                            }
+                            lines_diffs[i].rhs_diff.write().expect("").push(LineDiff {
+                                op: "+".to_string(),
+                                pos: rhs_pos,
+                                len: change_str.len()
+                            });
+                            rhs_pos += change_str.len();
+                        },
+                        ChangeTag::Equal => {
+                            if i == 32 {
+                                println!("Equal {} -> {}", lhs_pos, change_str.len());
+                            }
+                            lhs_pos += change_str.len();
+                            rhs_pos += change_str.len();
+                        }
+                    }
+                }
+            }
+    }}));
+
 
     // 
     let mut scroll_y = 0.0;
@@ -219,9 +288,49 @@ fn main() -> Result<(), hotline_rs::Error> {
                 scroll_y = imgui.get_scroll_y();
             }
             for (index, line) in diff.iter().enumerate() {
+
                 imgui.text(&format!("{}", index));
                 imgui.same_line();
 
+
+                if name == "rhs" {
+                    if index == 32 {
+                        println!("{}", line);
+                    }
+                    let line_diffs = lines_clone[index].rhs_diff.read().expect("").to_vec();
+                    let mut marks = Vec::new();
+                    marks.resize_with(line.len(), || {
+                        0
+                    });
+
+                    for line_diff in &line_diffs {
+                        imgui.highlight_text(&line, line_diff.pos, line_diff.len);
+
+                        for i in line_diff.pos..(line_diff.pos+line_diff.len) {
+                            marks[i] = 1;
+                        }
+                    }
+
+                    if index == 32 {
+                        for m in &marks {
+                            if *m == 0 {
+                                print!(" ");
+                            }   
+                            else {
+                                print!("_");
+                            }
+                        }
+                        println!("");
+                    }
+                }
+                else {
+                    let line_diffs = lines_clone[index].lhs_diff.read().expect("").to_vec();
+                    for line_diff in &line_diffs {
+                        imgui.highlight_text(&line, line_diff.pos, line_diff.len);
+                    }
+                }
+
+                imgui.same_line();
                 if line.chars().nth(0).unwrap() == '-' {
                     imgui.colour_text(&line, vec4f(1.0, 0.0, 0.0, 1.0));
                 }

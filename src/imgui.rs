@@ -1251,6 +1251,38 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         }
     }
 
+    pub fn highlight_text(&mut self, text: &str, pos: usize, len: usize) {
+        unsafe {
+            let mut cursor_pos = ImVec2::zero();
+            igGetCursorScreenPos(&mut cursor_pos);
+
+            let pre_slice: String = text.chars().skip(0).take(pos).collect();
+            let highlight_slice: String = text.chars().skip(pos).take(len).collect();
+            
+            let null_term_pre_text = CString::new(pre_slice).unwrap();
+            let mut pre_slice_size = ImVec2::zero();
+            igCalcTextSize(&mut pre_slice_size, null_term_pre_text.as_ptr() as *const i8, std::ptr::null(), false, 0.0);
+
+            let null_term_highlight_text = CString::new(highlight_slice).unwrap();
+            let mut highlight_slice_size = ImVec2::zero();
+            igCalcTextSize(&mut highlight_slice_size, null_term_highlight_text.as_ptr() as *const i8, std::ptr::null(), false, 0.0);
+
+            let draw_list = igGetWindowDrawList();
+            ImDrawList_AddRectFilled(
+                draw_list,
+                ImVec2 { 
+                    x: cursor_pos.x + pre_slice_size.x, y: cursor_pos.y
+                },
+                ImVec2 { 
+                    x: cursor_pos.x + pre_slice_size.x + highlight_slice_size.x, y: cursor_pos.y + highlight_slice_size.y 
+                }, 
+                0xffffffff, 
+                0.0, 
+                0
+            );
+        }
+    }
+
     /// Push a style colour using ImGuiCol_ flags
     pub fn push_style_colour(&mut self, flags: ImGuiStyleVar, col: Vec4f) {
         unsafe {
