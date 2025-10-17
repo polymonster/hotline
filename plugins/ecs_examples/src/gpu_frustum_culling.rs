@@ -1,5 +1,5 @@
 // currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "macos")]
+#![cfg(target_os = "windows")]
 
 use crate::prelude::*;
 
@@ -332,12 +332,13 @@ pub fn swirling_meshes(
 pub fn dispatch_compute_frustum_cull(
     pmfx: &Res<PmfxRes>,
     pass: &mut pmfx::ComputePass<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     indirect_draw_query: Query<&DrawIndirectComponent>) 
     -> Result<(), hotline_rs::Error> {
     
     for indirect_draw in &indirect_draw_query {
         // clears the counter
-        pass.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: None,
             buffer: Some(&indirect_draw.dynamic_buffer),
             state_before: gfx::ResourceState::IndirectArgument,
@@ -345,9 +346,9 @@ pub fn dispatch_compute_frustum_cull(
         });
     
         let offset = indirect_draw.dynamic_buffer.get_counter_offset().unwrap();
-        pass.cmd_buf.copy_buffer_region(&indirect_draw.dynamic_buffer, offset, &indirect_draw.counter_reset, 0, std::mem::size_of::<u32>());
+        cmd_buf.copy_buffer_region(&indirect_draw.dynamic_buffer, offset, &indirect_draw.counter_reset, 0, std::mem::size_of::<u32>());
     
-        pass.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: None,
             buffer: Some(&indirect_draw.dynamic_buffer),
             state_before: gfx::ResourceState::CopyDst,
@@ -356,17 +357,17 @@ pub fn dispatch_compute_frustum_cull(
 
         // run the shader to cull the entities
         let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline).unwrap();
-        pass.cmd_buf.set_compute_pipeline(pipeline);
+        cmd_buf.set_compute_pipeline(pipeline);
 
         // resource index info for looking up input (draw all info) / output (culled draw call info)
         let slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
             // output uav
-            pass.cmd_buf.push_compute_constants(slot.index, 1, 0, 
+            cmd_buf.push_compute_constants(slot.index, 1, 0, 
                 gfx::as_u8_slice(&indirect_draw.dynamic_buffer.get_uav_index().unwrap()));
 
             // input srv
-            pass.cmd_buf.push_compute_constants(slot.index, 1, 4, 
+            cmd_buf.push_compute_constants(slot.index, 1, 4, 
                 gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
         }
         
@@ -374,13 +375,13 @@ pub fn dispatch_compute_frustum_cull(
         let world_buffer_info = pmfx.get_world_buffer_info();
         let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
         if let Some(slot) = slot {
-            pass.cmd_buf.push_compute_constants(
+            cmd_buf.push_compute_constants(
                 slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
         }
 
-        pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+        cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
-        pass.cmd_buf.dispatch(
+        cmd_buf.dispatch(
             gfx::Size3 {
                 x: indirect_draw.max_count / pass.numthreads.x,
                 y: pass.numthreads.y,
@@ -390,7 +391,7 @@ pub fn dispatch_compute_frustum_cull(
         );
 
         // transition to `IndirectArgument`
-        pass.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
+        cmd_buf.transition_barrier(&gfx::TransitionBarrier {
             texture: None,
             buffer: Some(&indirect_draw.dynamic_buffer),
             state_before: gfx::ResourceState::UnorderedAccess,
@@ -406,26 +407,27 @@ pub fn dispatch_compute_frustum_cull(
 pub fn draw_meshes_indirect_culling(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     indirect_draw_query: Query<&DrawIndirectComponent>) 
     -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
 
-    view.cmd_buf.set_render_pipeline(&pipeline);
+    cmd_buf.set_render_pipeline(&pipeline);
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
     let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = slot {
-        view.cmd_buf.push_render_constants(
+        cmd_buf.push_render_constants(
             slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
     }
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     for indirect_draw in &indirect_draw_query {
-        view.cmd_buf.execute_indirect(
+        cmd_buf.execute_indirect(
             &indirect_draw.signature,
             indirect_draw.max_count,
             &indirect_draw.dynamic_buffer,

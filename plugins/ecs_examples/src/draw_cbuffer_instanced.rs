@@ -1,5 +1,5 @@
 // currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "macos")]
+#![cfg(target_os = "windows")]
 
 ///
 /// Draw cbuffer Instanced
@@ -97,6 +97,7 @@ pub fn setup_draw_cbuffer_instanced(
 pub fn draw_meshes_cbuffer_instanced(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     instance_draw_query: Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
 ) -> Result<(), hotline_rs::Error> {
         
@@ -107,13 +108,13 @@ pub fn draw_meshes_cbuffer_instanced(
     for (instance_batch, mesh, pipeline) in &instance_draw_query {
         // set pipeline per batch
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        cmd_buf.set_render_pipeline(pipeline);
+        cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
         // bind the constant buffer (cbv) on the slot for b1, space0 specified in the shader
         let pipeline_slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ConstantBuffer);
         if let Some(pipeline_slot) = pipeline_slot {
-            view.cmd_buf.set_binding(
+            cmd_buf.set_binding(
                 pipeline, 
                 instance_batch.heap.as_ref().unwrap(), 
                 pipeline_slot.index, 
@@ -122,9 +123,9 @@ pub fn draw_meshes_cbuffer_instanced(
         }
 
         // bind vb, ib and draw instanced
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, instance_batch.instance_count, 0, 0, 0);
     }
 
     Ok(())

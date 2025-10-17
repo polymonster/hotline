@@ -176,7 +176,7 @@ pub struct RenderPipeline {
     lookup: RootSignatureLookup
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct CmdBuf {
     bb_index: usize,
     command_allocator: Vec<ID3D12CommandAllocator>,

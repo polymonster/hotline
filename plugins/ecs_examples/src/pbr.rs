@@ -1,5 +1,5 @@
 // currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "macos")]
+#![cfg(target_os = "windows")]
 
 ///
 /// Cubemap
@@ -90,6 +90,7 @@ pub fn setup_pbr(
 pub fn render_meshes_pbr(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     state: &Res<State>,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &TextureInstance)>) -> Result<(), hotline_rs::Error> {
         
@@ -97,11 +98,11 @@ pub fn render_meshes_pbr(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    view.cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let rc = 8;
     let mut i = 0;
@@ -115,13 +116,13 @@ pub fn render_meshes_pbr(
             0.0
         };
 
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 4, 12, gfx::as_u8_slice(&[roughness, metalness, 0.0, 0.0]));
-        view.cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, state.lut_srv, 0, 0]));
+        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(1, 4, 12, gfx::as_u8_slice(&[roughness, metalness, 0.0, 0.0]));
+        cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, state.lut_srv, 0, 0]));
 
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
 
         i += 1;
     }

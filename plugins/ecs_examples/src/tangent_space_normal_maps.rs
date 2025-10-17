@@ -1,5 +1,5 @@
 // currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "macos")]
+#![cfg(target_os = "windows")]
 
 /// 
 /// Tangent Space Normal Maps
@@ -52,6 +52,7 @@ pub fn setup_tangent_space_normal_maps(
 pub fn render_meshes_debug_tangent_space(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     queries: (
         Query<&TextureComponent>,
         Query<(&WorldMatrix, &MeshComponent)>
@@ -62,24 +63,24 @@ pub fn render_meshes_debug_tangent_space(
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(pipeline);
-    view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.set_render_pipeline(pipeline);
+    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-    view.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let (texture_query, mesh_draw_query) = queries;
 
     // bind first texture
     if let Some(texture) = (&texture_query).into_iter().next() {
         let usrv = texture.get_srv_index().unwrap() as u32;
-        view.cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
+        cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
     }
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
