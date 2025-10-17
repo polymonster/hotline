@@ -471,12 +471,12 @@ impl super::Window<App> for Window {
 
     /// Const pointer
     fn as_ptr(&self) -> *const Self {
-        self.as_ptr()
+        unimplemented!()
     }
 
     /// Mut pointer
     fn as_mut_ptr(&mut self) -> *mut Self {
-        self.as_mut_ptr()
+        unimplemented!()
     }
 }
 

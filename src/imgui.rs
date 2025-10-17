@@ -20,14 +20,11 @@ use std::ffi::CStr;
 use std::ffi::CString;
 
 use maths_rs::Vec4f;
-
-<<<<<<< HEAD
 use std::fs;
-=======
+
 use crate::static_ref;
 use crate::static_ref_mut;
 use crate::static_ref_array_mut;
->>>>>>> master
 
 fn to_im_vec4(v: Vec4f) -> ImVec4 {
     unsafe {
@@ -456,37 +453,6 @@ fn render_draw_data<D: Device>(
                 [(r + l) / (l - r), (t + b) / (b - t), 0.0, 1.0],
             ];
 
-<<<<<<< HEAD
-        cmd.begin_event(0xff1fb6c4, "imgui");
-        cmd.set_viewport(&viewport);
-        cmd.set_vertex_buffer(&buffers.vb, 0);
-        cmd.set_index_buffer(&buffers.ib);
-        cmd.set_render_pipeline(pipeline);
-        cmd.push_render_constants(0, 16, 0, &mvp);
-
-        let clip_off = draw_data.DisplayPos;
-        let mut global_vtx_offset = 0;
-        let mut global_idx_offset = 0;
-        for imgui_cmd_list in imgui_cmd_lists {
-            let imgui_cmd_buffer = (**imgui_cmd_list).CmdBuffer;
-            let imgui_cmd_data =
-                std::slice::from_raw_parts(imgui_cmd_buffer.Data, imgui_cmd_buffer.Size as usize);
-            let draw_vert = &(*(*imgui_cmd_list)).VtxBuffer;
-            let draw_index = &(*(*imgui_cmd_list)).IdxBuffer;
-            for cmd_data in imgui_cmd_data.iter().take(imgui_cmd_buffer.Size as usize) {
-                let imgui_cmd = &cmd_data;
-                if imgui_cmd.UserCallback.is_some() {
-                    // TODO:
-                }
-                else {
-                    let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
-                    let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
-                    let clip_max_x = imgui_cmd.ClipRect.z - clip_off.x;
-                    let clip_max_y = imgui_cmd.ClipRect.w - clip_off.y;
-                    if clip_max_x < clip_min_x || clip_max_y < clip_min_y {
-                        continue;
-                    }
-=======
             let viewport = gfx::Viewport {
                 x: 0.0,
                 y: 0.0,
@@ -495,7 +461,6 @@ fn render_draw_data<D: Device>(
                 min_depth: 0.0,
                 max_depth: 1.0,
             };
->>>>>>> master
 
             cmd.begin_event(0xff1fb6c4, "imgui");
             cmd.set_viewport(&viewport);
@@ -517,7 +482,7 @@ fn render_draw_data<D: Device>(
                     let imgui_cmd = &cmd_data;
                     if imgui_cmd.UserCallback.is_some() {
                         // TODO:
-                    } 
+                    }
                     else {
                         let clip_min_x = imgui_cmd.ClipRect.x - clip_off.x;
                         let clip_min_y = imgui_cmd.ClipRect.y - clip_off.y;
@@ -1742,14 +1707,7 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
     if !io.UserData.is_null() {
         get_user_data::<D, A>().app.destroy_window(&vd.window[0]);
     }
-<<<<<<< HEAD
 
-    vd.swap_chain.clear();
-    vd.cmd.clear();
-    vd.buffers.clear();
-    vd.window.clear();
-=======
-    
     if !vd.swap_chain.is_empty() {
         vd.swap_chain.clear();
     }
@@ -1761,11 +1719,10 @@ unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiVi
     if !vd.buffers.is_empty() {
         vd.buffers.clear();
     }
-    
+
     if !vd.window.is_empty() {
         vd.window.clear();
     }
->>>>>>> master
 
     // drop and null allocated data
     std::ptr::drop_in_place(vp_ref.PlatformUserData as *mut ViewportData<D, A>);

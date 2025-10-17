@@ -111,8 +111,13 @@ pub fn get_data_path(asset: &str) -> String {
         // back 2 (examples)
         let data_path = exe_path.parent().unwrap().join("../../data");
         if data_path.exists() {
-            let path = std::fs::canonicalize(data_path.join(asset)).unwrap();
-            String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+            let path = std::fs::canonicalize(data_path.join(asset));
+            if let Ok(path) = path {
+                String::from(path.to_str().unwrap()).replace("\\\\?\\", "")
+            }
+            else {
+                panic!();
+            }
         }
         else {
             // unable to locate data

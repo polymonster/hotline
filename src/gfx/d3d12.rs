@@ -88,22 +88,22 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_begin_event: BeginEventOnCommandList = self.begin_event;
-            let p_cmd_list = 
+            let p_cmd_list =
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_begin_event(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
             // this ensures we drop the command_list ref
-            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list);
         }
     }
 
     pub fn end_event_on_command_list(&self, command_list: &ID3D12GraphicsCommandList) {
         unsafe {
             let fn_end_event: EndEventOnCommandList = self.end_event;
-            let p_cmd_list = 
+            let p_cmd_list =
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_end_event(p_cmd_list);
             // this ensures we drop the command_list ref
-            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list);
         }
     }
 
@@ -116,11 +116,11 @@ impl WinPixEventRuntime {
         unsafe {
             let null_name = CString::new(name).unwrap();
             let fn_set_marker: SetMarkerOnCommandList = self.set_marker;
-            let p_cmd_list = 
+            let p_cmd_list =
                 std::mem::transmute::<ID3D12GraphicsCommandList, *const core::ffi::c_void>(command_list.clone());
             fn_set_marker(p_cmd_list, color, PSTR(null_name.as_ptr() as _));
             // this ensures we drop the command_list ref
-            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list); 
+            let _cc = std::mem::transmute::<*const core::ffi::c_void, ID3D12GraphicsCommandList>(p_cmd_list);
         }
     }
 }
@@ -247,7 +247,7 @@ pub struct RenderPass {
     ds: Option<D3D12_RENDER_PASS_DEPTH_STENCIL_DESC>,
     ds_format: DXGI_FORMAT,
     sample_count: u32,
-    format_hash: u64 
+    format_hash: u64
 }
 
 #[derive(Clone)]
@@ -260,7 +260,7 @@ type DesciptorSlotLookup = HashMap<u64, PipelineSlotInfo>;
 #[derive(Clone)]
 struct RootSignatureLookup {
     root_signature: ID3D12RootSignature,
-    /// lookup for all slots based on register, space and 
+    /// lookup for all slots based on register, space and
     slot_lookup: DesciptorSlotLookup,
     /// All descriptors (non push constant or samplers)
     descriptor_slots: Vec<u32>
@@ -271,7 +271,7 @@ struct FreeList {
     list: Mutex<Vec<usize>>
 }
 
-/// Thread safe ref counted free-list that can be safely used in drop traits 
+/// Thread safe ref counted free-list that can be safely used in drop traits
 type FreeListRef = std::sync::Arc<FreeList>;
 
 impl FreeList {
@@ -858,15 +858,15 @@ struct GenerateMipMapConstants {
 fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputePipeline, super::Error> {
     let filepath = super::super::get_data_path("shaders/util/cs_mip_chain_texture2d.csc");
     let shader_data = std::fs::read(filepath)?;
-    
+
     device.create_compute_pipeline(&ComputePipelineInfo{
         cs: &device.create_shader(&ShaderInfo{
                 shader_type: super::ShaderType::Compute,
                 compile_info: None
-            }, 
+            },
             &shader_data
         )?,
-        pipeline_layout: PipelineLayout { 
+        pipeline_layout: PipelineLayout {
             push_constants: Some(vec![super::PushConstantInfo {
                 visibility: super::ShaderVisibility::Compute,
                 num_values: GenerateMipMapConstants::num_constants(),
@@ -889,7 +889,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                     register_space: 0,
                 }
             ]),
-            static_samplers: None 
+            static_samplers: None
         }
     })
 }
@@ -987,7 +987,7 @@ pub fn get_hardware_adapter(
         }
 
         let adapter = factory.EnumAdapters1(selected_index as u32)?;
-        
+
         let desc = adapter.GetDesc1()?;
 
         if D3D12CreateDevice(
@@ -1073,7 +1073,7 @@ fn create_heap(device: &D3D12DeviceVersion, info: &HeapInfo, id: u16) -> Heap {
     }
 }
 
-fn create_query_heap(device: &D3D12DeviceVersion, info: &QueryHeapInfo) -> QueryHeap {    
+fn create_query_heap(device: &D3D12DeviceVersion, info: &QueryHeapInfo) -> QueryHeap {
     let mut heap = None;
     let desc = D3D12_QUERY_HEAP_DESC {
         Type: to_d3d12_query_heap_type(info.heap_type),
@@ -1158,7 +1158,7 @@ fn align_buffer_data_size(size_bytes: usize, usage: super::BufferUsage) -> usize
     else if usage.contains(super::BufferUsage::APPEND_COUNTER) {
         // must align the original buffer to D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT and then add a u32 counter
         align_pow2(size_bytes as u64, D3D12_UAV_COUNTER_PLACEMENT_ALIGNMENT as u64) as usize + std::mem::size_of::<u32>()
-    }   
+    }
     else {
         size_bytes
     }
@@ -1243,7 +1243,7 @@ impl super::Heap<Device> for Heap {
 impl QueryHeap {
     fn allocate(&mut self) -> usize {
         let alloc = self.alloc_index;
-        assert!(self.alloc_index < self.capacity, 
+        assert!(self.alloc_index < self.capacity,
             "hotline::gfx::d3d12:: overflowed query heap with {} queries", self.alloc_index);
         self.alloc_index += 1;
         alloc
@@ -1332,7 +1332,7 @@ impl Device {
             visibility: super::ShaderVisibility
         }
 
-        let mut visibility_map: 
+        let mut visibility_map:
             HashMap<u64, RangeInfo> = HashMap::new();
 
         let mut descriptor_root_params = Vec::new();
@@ -1340,7 +1340,7 @@ impl Device {
             for binding in bindings {
                 let count = if binding.num_descriptors.is_some() {
                     binding.num_descriptors.unwrap()
-                } 
+                }
                 else {
                     u32::MAX
                 };
@@ -1445,7 +1445,7 @@ impl Device {
             let sig = signature.unwrap();
             let slice : &[u8] = std::slice::from_raw_parts(sig.GetBufferPointer() as *mut u8, sig.GetBufferSize());
             let sig = self.device.CreateRootSignature(0, slice)?;
-            
+
             Ok(RootSignatureLookup {
                 root_signature: sig,
                 slot_lookup: lookup,
@@ -1478,9 +1478,9 @@ impl Device {
         passes
     }
 
-    #[allow(clippy::too_many_arguments)] 
+    #[allow(clippy::too_many_arguments)]
     fn upload_texture_data_subresource(
-        &mut self, 
+        &mut self,
         width: u64,
         height: u64,
         depth: u32,
@@ -1490,7 +1490,7 @@ impl Device {
         dxgi_format: DXGI_FORMAT,
         resource: &ID3D12Resource,
         upload_resources: &mut Vec<ID3D12Resource>) -> std::result::Result<(), super::Error> {
-        
+
         let tpb = super::texels_per_block_for_format(format);
         let align_width = width.max(tpb);
         let align_height = height.max(tpb);
@@ -1500,7 +1500,7 @@ impl Device {
         let upload_pitch = super::align_pow2(row_pitch, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT as u64);
         let upload_size = align_height * upload_pitch * depth as u64;
         let src_size = super::size_for_format(format, width, height, depth);
-        
+
         unsafe {
             let mut upload: Option<ID3D12Resource> = None;
             self.device.CreateCommittedResource(
@@ -1530,11 +1530,11 @@ impl Device {
             )?;
             let back = upload_resources.len();
             upload_resources.push(upload.unwrap());
-    
+
             // copy data to upload buffer
             let mut map_data = std::ptr::null_mut();
             upload_resources[back].Map(0, None, Some(&mut map_data))?;
-            
+
             if row_pitch == upload_pitch {
                 // copy the entire mip level in 1 go
                 let src = data;
@@ -1553,7 +1553,7 @@ impl Device {
             }
 
             upload_resources[back].Unmap(0, None);
-    
+
             // copy resource
             let src = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: std::mem::transmute_copy(&upload_resources[back]),
@@ -1571,7 +1571,7 @@ impl Device {
                     },
                 },
             };
-    
+
             let dst = D3D12_TEXTURE_COPY_LOCATION {
                 pResource: std::mem::transmute_copy(resource),
                 Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
@@ -1579,22 +1579,22 @@ impl Device {
                     SubresourceIndex: subresource,
                 },
             };
-    
+
             self.command_list.CopyTextureRegion(&dst, 0, 0, 0, &src, None);
         }
         Ok(())
     }
 
     fn upload_texture_data<T>(
-        &mut self, 
-        info: &TextureInfo, 
-        data: &[T], 
+        &mut self,
+        info: &TextureInfo,
+        data: &[T],
         dxgi_format: DXGI_FORMAT,
-        resource: &ID3D12Resource, 
+        resource: &ID3D12Resource,
         initial_state: D3D12_RESOURCE_STATES) -> std::result::Result<(), super::Error> {
 
         let mut data_itr = data.as_ptr() as *const u8;
-        let mut upload_resources = Vec::new(); 
+        let mut upload_resources = Vec::new();
 
         for layer in 0..info.array_layers {
             let mut mip_width = info.width;
@@ -1627,19 +1627,19 @@ impl Device {
                 D3D12_RESOURCE_STATE_COPY_DEST,
                 initial_state,
             );
-    
+
             self.command_list.ResourceBarrier(&[barrier.clone()]);
             let _: D3D12_RESOURCE_TRANSITION_BARRIER =
                 std::mem::ManuallyDrop::into_inner(barrier.Anonymous.Transition);
 
             self.command_list.Close()?;
-    
+
             let cmd = Some(self.command_list.cast().unwrap());
             self.command_queue.ExecuteCommandLists(&[cmd]);
 
             let fence: ID3D12Fence = self.device.CreateFence(0, D3D12_FENCE_FLAG_NONE)?;
             self.command_queue.Signal(&fence, 1)?;
-    
+
             let event = CreateEventA(None, false, false, None)?;
             fence.SetEventOnCompletion(1, event)?;
             WaitForSingleObject(event, INFINITE);
@@ -1822,7 +1822,7 @@ impl super::Device for Device {
                 heap_id
             );
             d3d12_debug_name!(rtv_heap.heap, "device_render_target_heap");
-            
+
             // dsv
             heap_id += 1;
             let dsv_heap = create_heap(
@@ -1841,8 +1841,8 @@ impl super::Device for Device {
             // ray tracing
             let options5 = D3D12_FEATURE_DATA_D3D12_OPTIONS5::default();
             if device.CheckFeatureSupport(
-                D3D12_FEATURE_D3D12_OPTIONS5, 
-                std::ptr::addr_of!(options5) as *mut _, 
+                D3D12_FEATURE_D3D12_OPTIONS5,
+                std::ptr::addr_of!(options5) as *mut _,
                 std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS5>() as u32).is_ok() {
                 if options5.RaytracingTier != D3D12_RAYTRACING_TIER_NOT_SUPPORTED {
                     feature_flags |= super::DeviceFeatureFlags::RAYTRACING;
@@ -1852,8 +1852,8 @@ impl super::Device for Device {
             // mesh shader
             let options7 = D3D12_FEATURE_DATA_D3D12_OPTIONS7::default();
             if device.CheckFeatureSupport(
-                D3D12_FEATURE_D3D12_OPTIONS7, 
-                std::ptr::addr_of!(options7) as *mut _, 
+                D3D12_FEATURE_D3D12_OPTIONS7,
+                std::ptr::addr_of!(options7) as *mut _,
                 std::mem::size_of::<D3D12_FEATURE_DATA_D3D12_OPTIONS7>() as u32).is_ok() {
                 if options7.MeshShaderTier != D3D12_MESH_SHADER_TIER_NOT_SUPPORTED {
                     feature_flags |= super::DeviceFeatureFlags::MESH_SAHDER;
@@ -1882,7 +1882,7 @@ impl super::Device for Device {
             if let Ok(pipeline) = create_generate_mip_maps_pipeline(&device) {
                 device.generate_mip_maps_pipeline = Some(pipeline);
             }
-            
+
             device
         }
     }
@@ -2183,7 +2183,7 @@ impl super::Device for Device {
                 std::ptr::copy_nonoverlapping(src.as_ptr() as *mut u8, bytes.as_mut_ptr(), src.len());
             }
 
-            // validate DXBC 
+            // validate DXBC
             let mut valid = true;
             let validate = [b'D', b'X', b'B', b'C'];
             for i in 0..4 {
@@ -2311,7 +2311,7 @@ impl super::Device for Device {
                 // initial state
                 if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
                     D3D12_RESOURCE_STATE_GENERIC_READ
-                } 
+                }
                 else if data.is_some() {
                     D3D12_RESOURCE_STATE_COPY_DEST
                 }
@@ -2663,7 +2663,7 @@ impl super::Device for Device {
             let shader_heap = if let Some(shader_heap) = heaps.shader {
                 shader_heap
             }
-            else { 
+            else {
                 self.shader_heap.as_mut().unwrap()
             };
 
@@ -2671,15 +2671,15 @@ impl super::Device for Device {
             let rtv_heap = if let Some(rtv_heap) = heaps.render_target {
                 rtv_heap
             }
-            else { 
+            else {
                 &mut self.rtv_heap
-            };      
+            };
 
             // select user specified depth stencil heap or default
             let dsv_heap = if let Some(dsv_heap) = heaps.depth_stencil {
                 dsv_heap
             }
-            else { 
+            else {
                 &mut self.dsv_heap
             };
 
@@ -2738,7 +2738,7 @@ impl super::Device for Device {
 
                 srv_index = Some(shader_heap.get_handle_index(&h));
             }
-            
+
             // create a srv for resolve texture for msaa
             let mut resolved_srv_index = None;
             let mut resolved_format = DXGI_FORMAT_UNKNOWN;
@@ -2871,11 +2871,11 @@ impl super::Device for Device {
                 for mip in 0..info.mip_levels {
                     let h = shader_heap.allocate();
                     self.device.CreateUnorderedAccessView(
-                        if let Some(resolved_resource) = &resolved_resource { 
-                            resolved_resource 
-                        } 
-                        else { 
-                            &resource 
+                        if let Some(resolved_resource) = &resolved_resource {
+                            resolved_resource
+                        }
+                        else {
+                            &resource
                         },
                         None,
                         Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
@@ -2938,10 +2938,10 @@ impl super::Device for Device {
             let target_sample_count = desc.SampleDesc.Count;
             if sample_count.is_none() {
                 sample_count = Some(target_sample_count);
-            } 
+            }
             else if sample_count.unwrap() != target_sample_count {
                 return Err( super::Error {
-                    msg: format!("Sample counts must match on all targets: expected {} samples, found {}", 
+                    msg: format!("Sample counts must match on all targets: expected {} samples, found {}",
                     sample_count.unwrap(),
                     target_sample_count
                 )});
@@ -3076,7 +3076,7 @@ impl super::Device for Device {
         for rt in &formats {
             rt.0.hash(&mut fmthash);
         }
-        
+
         Ok(RenderPass {
             rt,
             ds,
@@ -3118,7 +3118,7 @@ impl super::Device for Device {
     ) -> result::Result<RaytracingPipeline, super::Error> {
 
         let mut subobjects = Vec::new();
-        
+
         // rt shader config // TODO: move consts into info struct
         let max_payload_size: u32 = 64; // Max size for ray payload (in bytes)
         let max_attribute_size: u32 = 32; // Max size for intersection attributes (in bytes)
@@ -3191,11 +3191,11 @@ impl super::Device for Device {
                 // widen strings
                 let vpos = wide_hit_group_strings.len();
                 wide_hit_group_strings.push(os::win32::string_to_wide(group.name.clone()));
-                wide_hit_group_strings.push(if let Some(entry) = group.any_hit.as_ref() { 
+                wide_hit_group_strings.push(if let Some(entry) = group.any_hit.as_ref() {
                     os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
-                wide_hit_group_strings.push(if let Some(entry) = group.closest_hit.as_ref() { 
+                wide_hit_group_strings.push(if let Some(entry) = group.closest_hit.as_ref() {
                     os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
-                wide_hit_group_strings.push(if let Some(entry) = group.intersection.as_ref() { 
+                wide_hit_group_strings.push(if let Some(entry) = group.intersection.as_ref() {
                     os::win32::string_to_wide(entry.clone()) } else { Vec::new() });
                 // create desc
                 let hit_group_desc = D3D12_HIT_GROUP_DESC {
@@ -3239,7 +3239,7 @@ impl super::Device for Device {
         &self,
         info: &super::RaytracingShaderBindingTableInfo<Self>
     ) -> result::Result<RaytracingShaderBindingTable, super::Error> {
-        unsafe { 
+        unsafe {
             let create_shader_table = |idents : Vec<*mut c_void> | -> ShaderTable {
                 if idents.is_empty() {
                     ShaderTable {
@@ -3441,7 +3441,7 @@ impl super::Device for Device {
         // create instance descslea
         let num_instances = info.instances.len();
         let instance_descs: Vec<D3D12_RAYTRACING_INSTANCE_DESC> = info.instances.iter()
-            .map(|x| 
+            .map(|x|
                 D3D12_RAYTRACING_INSTANCE_DESC {
                 Transform: x.transform,
                 _bitfield1: pack_24_8(x.instance_id, x.instance_mask),
@@ -3515,7 +3515,7 @@ impl super::Device for Device {
         unsafe {
             let cmd = self.command_list.cast::<ID3D12GraphicsCommandList4>()
                 .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList4 availability to create raytracing blas");
-            cmd.BuildRaytracingAccelerationStructure(&tlas_desc, None);            
+            cmd.BuildRaytracingAccelerationStructure(&tlas_desc, None);
             cmd.Close()?;
         }
 
@@ -3530,10 +3530,10 @@ impl super::Device for Device {
     }
 
     fn create_indirect_render_command<T: Sized>(
-        &mut self, 
+        &mut self,
         arguments: Vec<super::IndirectArgument>,
         pipeline: Option<&RenderPipeline>) -> result::Result<CommandSignature, super::Error> {
-        
+
         let descs = arguments.iter().map(|arg|
             match arg.argument_type {
                 super::IndirectArgumentType::PushConstants => {
@@ -3604,7 +3604,7 @@ impl super::Device for Device {
         Ok(CommandSignature {
             command_signature: sig.unwrap()
         })
-    }    
+    }
 
     fn execute(&self, cmd: &CmdBuf) {
         unsafe {
@@ -3636,7 +3636,7 @@ impl super::Device for Device {
                     let layout = std::alloc::Layout::from_size_align(size, 4)?;
                     let data = std::alloc::alloc(layout);
 
-                    assert!(size <= layout.size(), 
+                    assert!(size <= layout.size(),
                         "{} vs {}", size, layout.size());
 
                     info_queue.GetMessage(i, Some(data as *mut D3D12_MESSAGE), &mut size)?;
@@ -3688,12 +3688,12 @@ impl super::Device for Device {
             row_pitch: size,
             slice_pitch: size,
         };
-    
+
         if rr.is_complete(swap_chain) {
-            let map = rr.map(&MapInfo { 
-                subresource: 0, 
-                read_start: 0, 
-                read_end: size 
+            let map = rr.map(&MapInfo {
+                subresource: 0,
+                read_start: 0,
+                read_end: size
             });
             if let Ok(map) = map {
                 rr.unmap();
@@ -3728,15 +3728,15 @@ impl super::Device for Device {
         let size_bytes = Self::get_pipeline_statistics_size_bytes();
         let data = self.read_buffer(swap_chain, buffer, size_bytes, frame_written_fence);
         if let Some(data) = data {
-            let d3d12_query_stats: D3D12_QUERY_DATA_PIPELINE_STATISTICS = unsafe { 
-                std::ptr::read_unaligned(data.data.as_ptr() as *const _) 
+            let d3d12_query_stats: D3D12_QUERY_DATA_PIPELINE_STATISTICS = unsafe {
+                std::ptr::read_unaligned(data.data.as_ptr() as *const _)
             };
 
             Some(super::PipelineStatistics{
                 input_assembler_vertices: d3d12_query_stats.IAVertices,
                 input_assembler_primitives: d3d12_query_stats.IAPrimitives,
                 vertex_shader_invocations: d3d12_query_stats.VSInvocations,
-                pixel_shader_primitives: d3d12_query_stats.PSInvocations, 
+                pixel_shader_primitives: d3d12_query_stats.PSInvocations,
                 compute_shader_invocations: d3d12_query_stats.CSInvocations
             })
         }
@@ -3746,7 +3746,7 @@ impl super::Device for Device {
     }
 
     fn get_timestamp_size_bytes() -> usize {
-        8 // U64 
+        8 // U64
     }
 
     fn get_pipeline_statistics_size_bytes() -> usize {
@@ -3779,7 +3779,7 @@ impl SwapChain {
                     .SetEventOnCompletion(fv, self.fence_event)
                     .expect("hotline_rs::gfx::d3d12: failed to set on completion event!");
                 WaitForMultipleObjects(
-                    &[self.swap_chain.GetFrameLatencyWaitableObject(), self.fence_event], 
+                    &[self.swap_chain.GetFrameLatencyWaitableObject(), self.fence_event],
                     true, INFINITE);
             }
             else {
@@ -3816,7 +3816,7 @@ impl super::SwapChain<Device> for SwapChain {
         if (size.x != self.width || size.y != self.height) && size.x > 0 && size.y > 0 {
             unsafe {
                 self.wait_for_frame(self.bb_index);
-                
+
                 cmd.drop_complete_in_flight_barriers(cmd.bb_index);
 
                 // add the rtv's to free list
@@ -3901,7 +3901,7 @@ impl super::SwapChain<Device> for SwapChain {
             if hr.is_err() {
                 panic!("hotline_rs::gfx::d3d12: warning: present failed! {}", hr);
             }
-            
+
             // signal fence
             let fv = self.fence_last_signalled_value + 1;
             device
@@ -3985,7 +3985,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         else {
             Ok(())
         }
-    }   
+    }
 
     fn get_backbuffer_index(&self) -> u32 {
         self.bb_index as u32
@@ -3997,7 +3997,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             cmd4.BeginRenderPass(
                 Some(render_pass.rt.as_slice()), // TODO_WIN .. could be simplified
                 if let Some(ds) = &render_pass.ds {
-                    Some(ds) 
+                    Some(ds)
                 } else {
                     None
                 },
@@ -4033,15 +4033,15 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn timestamp_query(&mut self, heap: &mut QueryHeap, resolve_buffer: &mut Buffer) {
         // alloc and insert the query
         let index = heap.allocate();
-        unsafe { 
+        unsafe {
             let cmd = &self.command_list[self.bb_index];
             cmd.EndQuery(&heap.heap, D3D12_QUERY_TYPE_TIMESTAMP, index as u32);
             let cmd = &self.command_list[self.bb_index];
             cmd.ResolveQueryData(
                 &heap.heap,
                 D3D12_QUERY_TYPE_TIMESTAMP,
-                index as u32, 1, 
-                resolve_buffer.resource.as_ref().unwrap(), 
+                index as u32, 1,
+                resolve_buffer.resource.as_ref().unwrap(),
                 0
             );
         }
@@ -4059,15 +4059,15 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn end_query(&mut self, heap: &mut QueryHeap, query_type: QueryType, index: usize, resolve_buffer: &mut Buffer) {
-        unsafe { 
+        unsafe {
             let cmd = &self.command_list[self.bb_index];
             cmd.EndQuery(&heap.heap, to_d3d12_query_type(query_type), index as u32);
             let cmd = &self.command_list[self.bb_index];
             cmd.ResolveQueryData(
                 &heap.heap,
                 to_d3d12_query_type(query_type),
-                index as u32, 1, 
-                resolve_buffer.resource.as_ref().unwrap(), 
+                index as u32, 1,
+                resolve_buffer.resource.as_ref().unwrap(),
                 0
             );
         }
@@ -4098,7 +4098,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<Device>, subresource: Subresource) {        
+    fn transition_barrier_subresource(&mut self, barrier: &TransitionBarrier<Device>, subresource: Subresource) {
         if let Some(tex) = &barrier.texture {
             let res = match subresource {
                 super::Subresource::Resource => tex.resource.as_ref().unwrap(),
@@ -4299,10 +4299,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn execute_indirect(
-        &self, 
-        command: &CommandSignature, 
-        max_command_count: u32, 
-        argument_buffer: &Buffer, 
+        &self,
+        command: &CommandSignature,
+        max_command_count: u32,
+        argument_buffer: &Buffer,
         argument_buffer_offset: usize,
         counter_buffer: Option<&Buffer>,
         counter_buffer_offset: usize
@@ -4310,11 +4310,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         let counter_buffer_resource = counter_buffer.map(|buf| buf.resource.as_ref().unwrap());
         unsafe {
             self.cmd().ExecuteIndirect(
-                &command.command_signature, 
-                max_command_count, 
+                &command.command_signature,
+                max_command_count,
                 argument_buffer.resource.as_ref().unwrap(),
-                argument_buffer_offset as u64, 
-                counter_buffer_resource, 
+                argument_buffer_offset as u64,
+                counter_buffer_resource,
                 counter_buffer_offset as u64
             );
         }
@@ -4451,7 +4451,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             else {
                 texture.resource.as_ref().unwrap().GetDesc()
             };
-            
+
             if desc.MipLevels <= 1 || texture.subresource_uav_index.len() < desc.MipLevels as usize {
                 Err(super::Error {
                     msg: "hotline_rs::d3d12:: texture was not created with GENERATE_MIP_MAPS_FLAG".to_string()
@@ -4512,7 +4512,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                         self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i-1]));
                         self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i]));
                     }
-                    
+
                     self.dispatch(
                         Size3 {
                             x: (mipw as f32 / 32.0).ceil() as u32,
@@ -4546,18 +4546,18 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn copy_buffer_region(
-        &mut self, 
-        dst_buffer: &Buffer, 
-        dst_offset: usize, 
-        src_buffer: &Buffer, 
+        &mut self,
+        dst_buffer: &Buffer,
+        dst_offset: usize,
+        src_buffer: &Buffer,
         src_offset: usize,
         num_bytes: usize
     ) {
         unsafe {
             self.cmd().CopyBufferRegion(
-                dst_buffer.resource.as_ref().unwrap(), 
+                dst_buffer.resource.as_ref().unwrap(),
                 dst_offset as u64,
-                src_buffer.resource.as_ref().unwrap(), 
+                src_buffer.resource.as_ref().unwrap(),
                 src_offset  as u64,
                 num_bytes as u64
             );
@@ -4628,7 +4628,7 @@ impl super::Buffer<Device> for Buffer {
             Err(super::Error{
                 msg: "hotline_rs::d3d12:: buffer was created with CpuAccessFlags::PERSISTENTLY_MAPPED use write to update it instead of update".to_string()
             })
-        } 
+        }
         else {
             let update_bytes = data.len() * std::mem::size_of::<T>();
             let range = D3D12_RANGE { Begin: 0, End: 0 };
@@ -4672,17 +4672,17 @@ impl super::Buffer<Device> for Buffer {
     }
 
     fn get_vbv(&self) -> Option<VertexBufferView> {
-        self.vbv.map(|vbv| VertexBufferView { 
-            location: vbv.BufferLocation, 
-            size_bytes: vbv.SizeInBytes, 
+        self.vbv.map(|vbv| VertexBufferView {
+            location: vbv.BufferLocation,
+            size_bytes: vbv.SizeInBytes,
             stride_bytes: vbv.StrideInBytes
         })
     }
 
     fn get_ibv(&self) -> Option<IndexBufferView> {
-        self.ibv.map(|ibv| IndexBufferView { 
-            location: ibv.BufferLocation, 
-            size_bytes: ibv.SizeInBytes, 
+        self.ibv.map(|ibv| IndexBufferView {
+            location: ibv.BufferLocation,
+            size_bytes: ibv.SizeInBytes,
             format: ibv.Format.0 as u32
         })
     }
@@ -4694,7 +4694,7 @@ impl super::Buffer<Device> for Buffer {
     fn map(&mut self, info: &MapInfo) -> *mut u8 {
         if !self.persistent_mapped_data.is_null() {
             self.persistent_mapped_data as *mut u8
-        } 
+        }
         else {
             let range = D3D12_RANGE {
                 Begin: info.read_start,

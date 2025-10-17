@@ -19,6 +19,7 @@ use super::ReadBackRequest as SuperReadBackRequest;
 use super::Heap as SuperHeap;
 use super::Pipeline as SuperPipleline;
 
+use std::alloc::Layout;
 use std::collections::HashMap;
 use std::result;
 
@@ -113,7 +114,7 @@ impl super::SwapChain<Device> for SwapChain {
         0
     }
 
-    fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) {
+    fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) -> bool {
         objc::rc::autoreleasepool(|| {
             let draw_size = window.get_size();
             self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
@@ -132,6 +133,9 @@ impl super::SwapChain<Device> for SwapChain {
             self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
             self.backbuffer_pass_no_clear = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, None);
         });
+
+        // TODO: check usage
+        true
     }
 
     fn get_backbuffer_index(&self) -> u32 {
@@ -306,6 +310,10 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     }
 
+    fn set_raytracing_pipeline(&self, pipeline: &RaytracingPipeline) {
+        unimplemented!()
+    }
+
     fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
 
     }
@@ -324,7 +332,9 @@ impl super::CmdBuf<Device> for CmdBuf {
                 // TODO: need to know data types (Texture, Buffer)
                 // assign textures to slots
                 heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
-                    slot.argument_encoder.set_texture(index as u64, texture);
+                    if let Some(texture) = texture {
+                        slot.argument_encoder.set_texture(index as u64, texture);
+                    }
                 });
 
                 // TODO: need to know what stages to bind on
@@ -356,7 +366,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         if rp.fragment_descriptor_slots.len() > 0 {
             if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
                 d.argument_encoder.set_argument_buffer(&d.argument_buffer, 0);
-                d.argument_encoder.set_texture(slot as u64, &heap.texture_slots[offset]);
+                if let Some(texture) = heap.texture_slots[offset].as_ref() {
+                    d.argument_encoder.set_texture(slot as u64, &texture);
+                }
             }
         }
     }
@@ -476,6 +488,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         src_region: Option<Region>
     ) {
     }
+
+    fn set_tlas(&self, tlas: &RaytracingTLAS) {
+        unimplemented!()
+    }
+
+    fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
+        unimplemented!()
+    }
 }
 
 pub struct Buffer {
@@ -530,7 +550,8 @@ impl super::Buffer<Device> for Buffer {
 
 pub struct Shader {
     lib: metal::Library,
-    data: Vec<u8>
+    data: *const u8,
+    data_size: usize
 }
 
 impl super::Shader<Device> for Shader {}
@@ -713,8 +734,8 @@ enum HeapResourceType {
 #[derive(Clone)]
 pub struct Heap {
     mtl_heap: metal::Heap,
-    texture_slots: Vec<metal::Texture>,
-    buffer_slots: Vec<metal::Buffer>,
+    texture_slots: Vec<Option<metal::Texture>>,
+    buffer_slots: Vec<Option<metal::Buffer>>,
     resource_type: Vec<HeapResourceType>,
     offset: usize,
     id: u16
@@ -725,8 +746,8 @@ impl Heap {
         let srv = self.offset;
         self.offset += 1;
         unsafe {
-            self.texture_slots.resize(self.offset, std::mem::transmute(0 as usize));
-            self.buffer_slots.resize(self.offset, std::mem::transmute(0 as usize));
+            self.texture_slots.resize(self.offset, None);
+            self.buffer_slots.resize(self.offset, None);
         }
         self.resource_type.resize(self.offset, HeapResourceType::None);
         srv
@@ -756,6 +777,22 @@ impl super::QueryHeap<Device> for QueryHeap {
 }
 
 pub struct CommandSignature {
+
+}
+
+pub struct RaytracingPipeline {
+
+}
+
+pub struct RaytracingShaderBindingTable {
+
+}
+
+pub struct RaytracingBLAS {
+
+}
+
+pub struct RaytracingTLAS {
 
 }
 
@@ -933,6 +970,10 @@ impl super::Device for Device {
     type Heap = Heap;
     type QueryHeap = QueryHeap;
     type CommandSignature = CommandSignature;
+    type RaytracingPipeline = RaytracingPipeline;
+    type RaytracingShaderBindingTable = RaytracingShaderBindingTable;
+    type RaytracingBLAS = RaytracingBLAS;
+    type RaytracingTLAS = RaytracingTLAS;
 
     fn create(info: &super::DeviceInfo) -> Device {
         objc::rc::autoreleasepool(|| {
@@ -943,11 +984,11 @@ impl super::Device for Device {
             // adapter info
             let adapter_info = AdapterInfo {
                 name: device.name().to_string(),
-                description: "".to_string(),
+                description: "Metal".to_string(),
                 dedicated_video_memory: device.recommended_max_working_set_size() as usize,
                 dedicated_system_memory: 0,
                 shared_system_memory: 0,
-                available: vec![]
+                available: vec![device.name().to_string()]
             };
 
             // feature info
@@ -964,6 +1005,10 @@ impl super::Device for Device {
                 metal_device: device
             }
        })
+    }
+
+    fn get_feature_flags(&self) -> &DeviceFeatureFlags {
+        unimplemented!()
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
@@ -1043,41 +1088,20 @@ impl super::Device for Device {
         objc::rc::autoreleasepool(|| {
             let pipeline_state_descriptor = metal::RenderPipelineDescriptor::new();
 
-            //let vs_data = info.vs.unwrap().data.to_vec();
-            //let lib = self.metal_device.new_library_with_data(vs_data.as_slice())?;
-
-            let vvs = info.vs.unwrap().lib.get_function("vs_main", None).unwrap();
-            println!("lib: {:?}", info.vs.unwrap().lib);
-
-            pipeline_state_descriptor.set_vertex_function(Some(&vvs));
-
-            //let ps_data = info.fs.unwrap().data.to_vec();
-            //let lib = self.metal_device.new_library_with_data(ps_data.as_slice())?;
-
-            let pps = info.fs.unwrap().lib.get_function("ps_main", None).unwrap();
-
-            pipeline_state_descriptor.set_fragment_function(Some(&pps));
-
-            /*
             if let Some(vs) = info.vs {
-                let lib = self.metal_device.new_library_with_data(vs.data.as_slice())?;
-                let vvs = lib.get_function("vs_main", None).unwrap();
-
-                pipeline_state_descriptor.set_vertex_function(Some(&vvs));
-
-                //println!("vs {:?}", vs.function);
-                //pipeline_state_descriptor.set_vertex_function(Some(&vs.function));
+                unsafe {
+                    let lib = self.metal_device.new_library_with_data(std::slice::from_raw_parts(vs.data, vs.data_size))?;
+                    let vvs = lib.get_function("vs_main", None).unwrap();
+                    pipeline_state_descriptor.set_vertex_function(Some(&vvs));
+                }
             };
             if let Some(fs) = info.fs {
-                let lib = self.metal_device.new_library_with_data(fs.data.as_slice())?;
-                let pps = lib.get_function("ps_main", None).unwrap();
-
-                pipeline_state_descriptor.set_fragment_function(Some(&pps));
-
-                //println!("fs {:?}", fs.function);
-                //pipeline_state_descriptor.set_fragment_function(Some(&fs.function));
+                unsafe {
+                    let lib = self.metal_device.new_library_with_data(std::slice::from_raw_parts(fs.data, fs.data_size))?;
+                    let pps = lib.get_function("ps_main", None).unwrap();
+                    pipeline_state_descriptor.set_fragment_function(Some(&pps));
+                }
             };
-            */
 
             // vertex attribs
             let vertex_desc = metal::VertexDescriptor::new();
@@ -1175,8 +1199,14 @@ impl super::Device for Device {
         src: &[T],
     ) -> std::result::Result<Shader, super::Error> {
         objc::rc::autoreleasepool(|| {
-            let mut data_copy = Vec::<u8>::new();
-            let data = slice_as_u8_slice(src);
+
+            let (data, data_size) = unsafe {
+                let src = slice_as_u8_slice(src);
+                let data = std::alloc::alloc(Layout::from_size_align(src.len() + 1, 8)?);
+                std::ptr::write_bytes(data, 0x0, src.len() + 1);
+                std::ptr::copy_nonoverlapping(src.as_ptr(), data, src.len());
+                (data, src.len())
+            };
 
             let lib = if let Some(compile_info) = info.compile_info.as_ref() {
 
@@ -1196,14 +1226,17 @@ impl super::Device for Device {
                 */
             }
             else {
-                self.metal_device.new_library_with_data(data)?
+                unsafe {
+                    self.metal_device.new_library_with_data(std::slice::from_raw_parts(data, data_size))?
+                }
             };
 
             let names = lib.function_names();
             if names.len() == 1 {
                 Ok(Shader{
                     lib: lib.to_owned(),
-                    data: data.to_vec()
+                    data: data as *const u8,
+                    data_size: data_size
                 })
             }
             else {
@@ -1336,7 +1369,7 @@ impl super::Device for Device {
 
             // srv
             let srv_index = self.shader_heap.allocate();
-            self.shader_heap.texture_slots[srv_index] = tex.to_owned();
+            self.shader_heap.texture_slots[srv_index] = Some(tex.to_owned());
 
             Ok(Texture{
                 metal_texture: tex,
@@ -1391,6 +1424,34 @@ impl super::Device for Device {
                 desc: descriptor.to_owned()
             })
         })
+    }
+
+    fn create_raytracing_pipeline(
+        &self,
+        info: &super::RaytracingPipelineInfo<Self>,
+    ) -> result::Result<RaytracingPipeline, super::Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_blas(
+        &mut self,
+        info: &RaytracingBLASInfo<Self>
+    ) -> result::Result<RaytracingBLAS, super::Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_shader_binding_table(
+        &self,
+        info: &super::RaytracingShaderBindingTableInfo<Self>
+    ) -> result::Result<RaytracingShaderBindingTable, super::Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_tlas(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>
+    ) -> result::Result<RaytracingTLAS, super::Error> {
+        unimplemented!()
     }
 
     fn create_compute_pipeline(
@@ -1494,3 +1555,17 @@ unsafe impl Sync for CommandSignature {}
 
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
+
+impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
+impl super::RaytracingShaderBindingTable<Device> for RaytracingShaderBindingTable {}
+impl super::RaytracingBLAS<Device> for RaytracingBLAS {}
+
+impl super::RaytracingTLAS<Device> for RaytracingTLAS {
+    fn get_srv_index(&self) -> Option<usize> {
+        unimplemented!()
+    }
+
+    fn get_shader_heap_id(&self) -> u16 {
+        unimplemented!()
+    }
+}

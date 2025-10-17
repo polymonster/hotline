@@ -16,7 +16,7 @@ pub struct Reloader {
 }
 
 /// Query reload status with a responder:
-/// if 
+/// if
 #[derive(PartialEq, Clone, Copy)]
 pub enum ReloadState {
     /// No action needs taking
@@ -75,7 +75,7 @@ impl Reloader {
         *lock
     }
 
-    /// Once data is cleaned up and it is safe to proceed this functions must be called 
+    /// Once data is cleaned up and it is safe to proceed this functions must be called
     pub fn complete_reload(&mut self) {
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
@@ -107,6 +107,8 @@ impl Reloader {
 
     /// Background thread will watch for changed filestamps among the registered files from the responder
     fn file_watcher_thread(&self) {
+        return;
+
         let lock = self.lock.clone();
         let mut cur_mtime = SystemTime::now();
         let mut first_time_check = true;

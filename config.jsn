@@ -152,13 +152,16 @@
                 "-metal_sdk macosx"
                 "-discrete_binding 0"
                 "-discrete_binding 1"
-                "-i ${src_data_dir}/shaders/"
+                "-i ${src_shader_dir}"
                 "-o ${data_dir}/shaders"
                 "-t ${temp_dir}/shaders"
                 "-num_threads 1"
                 "-f"
                 "-args"
                 "-Zpr"
+            ]
+        }
+    }
 
     rt_shaders: {
         jsn_vars: {
