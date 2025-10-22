@@ -180,7 +180,7 @@ impl super::App for App {
         unimplemented!()
     }
 
-    fn enumerate_display_monitors() -> Vec<MonitorInfo> {
+    fn enumerate_display_monitors(&self) -> Vec<MonitorInfo> {
         unimplemented!()
     }
 
