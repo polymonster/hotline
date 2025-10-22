@@ -137,7 +137,7 @@ fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
         }
         else {
             files.push(path.to_str().unwrap().to_string());
-        }   
+        }
     }
     files
 }
@@ -197,7 +197,7 @@ pub mod prelude {
         imgui,
         image,
 
-        // platform specific 
+        // platform specific
         gfx_platform,
         os_platform,
         av_platform,
@@ -230,15 +230,13 @@ pub mod prelude {
     };
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         // modules
         gfx,
         os,
-        client,
-        plugin,
         pmfx,
         imgui,
 
@@ -248,8 +246,6 @@ pub mod prelude {
         pmfx::Pmfx,
         imgui::ImGui,
         imdraw::ImDraw,
-        client::{Client, HotlineInfo, PluginInfo},
-        plugin::{Plugin},
         av::{VideoPlayer},
     };
 }

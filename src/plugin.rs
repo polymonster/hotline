@@ -1,9 +1,11 @@
+#![cfg(target_os = "windows")]
+
 use crate::client::*;
 use crate::gfx;
 use crate::os;
 use crate::reloader;
 
-use std::process::ExitStatus; 
+use std::process::ExitStatus;
 use std::process::Command;
 use std::io::{self, Write};
 
@@ -98,7 +100,7 @@ impl reloader::ReloadResponder for PluginReloadResponder {
                 .output()
                 .expect("hotline::hot_lib:: hot lib failed to build!")
         }
-        else {            
+        else {
             Command::new("cargo")
                 .current_dir(&self.path)
                 .arg("build")
@@ -125,12 +127,12 @@ impl reloader::ReloadResponder for PluginReloadResponder {
 
 /// Macro to instantiate a new hotline plugin, simply defined a concrete plugin type:
 /// struct EmptyPlugin;
-/// 
+///
 /// You can implement the `Plugin` trait for `EmptyPlugin`
 /// impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
 /// ..
 /// }
-/// 
+///
 /// Then use this macro to make the plugin loadable from a dll
 /// hotline_plugin![EmptyPlugin];
 #[macro_export]
@@ -144,31 +146,31 @@ macro_rules! hotline_plugin {
             let ptr = Box::into_raw(Box::new(plugin));
             ptr.cast()
         }
-        
+
         // c-abi wrapper for `Plugin::update`
         #[no_mangle]
         pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            unsafe { 
+            unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.update(client)
             }
         }
-        
+
         // c-abi wrapper for `Plugin::setup`
         #[no_mangle]
         pub fn setup(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            unsafe { 
+            unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.setup(client)
             }
         }
-        
+
         // c-abi wrapper for `Plugin::reload`
         #[no_mangle]
         pub fn unload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            unsafe { 
+            unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 plugin.unload(client)
@@ -178,7 +180,7 @@ macro_rules! hotline_plugin {
         // c-abi wrapper for `Plugin::reload`
         #[no_mangle]
         pub fn ui(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void, imgui_ctx: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
-            unsafe { 
+            unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
                 client.imgui.set_current_context(imgui_ctx);
