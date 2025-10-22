@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::{*, prelude::{Pipeline, Texture}};
+use hotline_rs::{*, prelude::*};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
@@ -10,6 +10,12 @@ use gfx::{CmdBuf, Device, SwapChain, RenderPass};
 struct Vertex {
     position: [f32; 3],
     color: [f32; 4],
+}
+
+#[repr(C)]
+struct LetterboxPushConstants {
+    x: f32,
+    y: f32
 }
 
 fn main() -> Result<(), hotline_rs::Error> {
@@ -38,8 +44,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         rect: os::Rect {
             x: 100,
             y: 100,
-            width: 1024,
-            height: 1024,
+            width: 1280,
+            height: 720,
         },
         style: os::WindowStyleFlags::NONE,
         parent_handle: None,
@@ -152,7 +158,6 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
 
-        // set bindings
         let srv0 =  textures[0].get_srv_index().unwrap();
         let srv1 =  textures[1].get_srv_index().unwrap();
         let srv2 =  textures[2].get_srv_index().unwrap();
@@ -177,6 +182,23 @@ fn main() -> Result<(), hotline_rs::Error> {
         if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
             cmdbuffer.set_binding(pso_pmfx, dev.get_shader_heap(), t3.index, srv3);
         }
+
+        // lookup push constants for letterboxing the quad
+        if let Some(c0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
+            let pc = if vp_rect.width >= vp_rect.height {
+                LetterboxPushConstants {
+                    x: vp_rect.height as f32 / vp_rect.width as f32,
+                    y: 1.0
+                }
+            }
+            else {
+                LetterboxPushConstants {
+                    x: 1.0,
+                    y: vp_rect.width as f32 / vp_rect.height as f32
+                }
+            };
+            cmdbuffer.push_render_constants(c0.index, 2, 0, gfx::as_u8_slice(&pc));
+        }
         
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
@@ -196,7 +218,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         dev.execute(&cmdbuffer);
 
-        swap_chain.swap(&dev);
+        swap_chain.swap(&mut dev);
         ci = (ci + 1) % 4;
     }
 

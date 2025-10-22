@@ -1,7 +1,7 @@
 // currently windows only because here we need a concrete gfx and os implementation
 #![cfg(target_os = "windows")]
 
-use hotline_rs::*;
+use hotline_rs::{*, prelude::*};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
@@ -10,6 +10,12 @@ use gfx::{CmdBuf, Device, SwapChain, RenderPass};
 struct Vertex {
     position: [f32; 3],
     color: [f32; 4],
+}
+
+#[repr(C)]
+struct LetterboxPushConstants {
+    x: f32,
+    y: f32
 }
 
 fn main() -> Result<(), hotline_rs::Error> {
@@ -38,8 +44,8 @@ fn main() -> Result<(), hotline_rs::Error> {
         rect: os::Rect {
             x: 100,
             y: 100,
-            width: 1024,
-            height: 1024,
+            width: 1280,
+            height: 720,
         },
         style: os::WindowStyleFlags::NONE,
         parent_handle: None,
@@ -55,10 +61,10 @@ fn main() -> Result<(), hotline_rs::Error> {
             a: 1.00,
         }),
     };
-    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
+    let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?; // 2
 
     // cmd buffer
-    let mut cmdbuffer = dev.create_cmd_buf(2);
+    let mut cmdbuffer = dev.create_cmd_buf(2); // 2
 
     // vertex buffer
     let vertices = [
@@ -128,26 +134,13 @@ fn main() -> Result<(), hotline_rs::Error> {
         textures.push(tex);
     }
 
-    // push constants
-    let constants: [f32; 4] = [1.0, 1.0, 0.0, 1.0];
-
-    // constant buffer
-    let mut cbuffer: [f32; 64] = [0.0; 64];
-    cbuffer[0] = 1.0;
-    cbuffer[1] = 0.0;
-    cbuffer[2] = 1.0;
-    cbuffer[3] = 1.0;
-
-    let info = gfx::BufferInfo {
-        usage: gfx::BufferUsage::CONSTANT_BUFFER,
-        cpu_access: gfx::CpuAccessFlags::NONE,
-        format: gfx::Format::Unknown,
-        stride: cbuffer.len() * 4,
-        num_elements: 1,
-        initial_state: gfx::ResourceState::VertexConstantBuffer
-    };
-
-    let _constant_buffer = dev.create_buffer(&info, data![gfx::as_u8_slice(&cbuffer)]);
+    // srv indices are used to index into descriptor arrays
+    let srv_indices = [
+        textures[0].get_srv_index().unwrap() as u32,
+        textures[1].get_srv_index().unwrap() as u32,
+        textures[2].get_srv_index().unwrap() as u32,
+        textures[3].get_srv_index().unwrap() as u32,
+    ];
 
     // render target
     let rt_info = gfx::TextureInfo {
@@ -164,21 +157,6 @@ fn main() -> Result<(), hotline_rs::Error> {
     };
     let render_target = dev.create_texture(&rt_info, data![]).unwrap();
 
-    // depth stencil target
-    let ds_info = gfx::TextureInfo {
-        format: gfx::Format::D24nS8u,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::DEPTH_STENCIL,
-        initial_state: gfx::ResourceState::DepthStencil,
-    };
-    let depth_stencil = dev.create_texture::<u8>(&ds_info, None).unwrap();
-
     // pass for render target with depth stencil
     let render_target_pass = dev
         .create_render_pass(&gfx::RenderPassInfo {
@@ -189,7 +167,7 @@ fn main() -> Result<(), hotline_rs::Error> {
                 b: 1.0,
                 a: 1.0,
             }),
-            depth_stencil: Some(&depth_stencil),
+            depth_stencil: None, //Some(&depth_stencil),
             ds_clear: Some(gfx::ClearDepthStencil {
                 depth: Some(1.0),
                 stencil: None,
@@ -224,7 +202,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // compute pass
         cmdbuffer.set_marker(0xff00ffff, "Frame Start");
-
+        
         cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
         cmdbuffer.set_compute_pipeline(pso_compute);
         cmdbuffer.set_heap(pso_compute, dev.get_shader_heap());
@@ -288,7 +266,27 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
 
-        cmdbuffer.push_render_constants(0, 4, 0, constants.as_slice());
+        // lookup push constants for letterboxing the quad and push the data
+        if let Some(c0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
+            let pc = if vp_rect.width >= vp_rect.height {
+                LetterboxPushConstants {
+                    x: vp_rect.height as f32 / vp_rect.width as f32,
+                    y: 1.0
+                }
+            }
+            else {
+                LetterboxPushConstants {
+                    x: 1.0,
+                    y: vp_rect.width as f32 / vp_rect.height as f32
+                }
+            };
+            cmdbuffer.push_render_constants(c0.index, 2, 0, gfx::as_u8_slice(&pc));
+        }
+
+        // lookup push srv indices and push the data
+        if let Some(c1) = pso_pmfx.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants) {
+            cmdbuffer.push_render_constants(c1.index, 4, 0, gfx::as_u8_slice(&srv_indices));
+        }
 
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
 
@@ -306,7 +304,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         dev.execute(&cmdbuffer);
 
-        swap_chain.swap(&dev);
+        swap_chain.swap(&mut dev);
         ci = (ci + 1) % 4;
     }
 

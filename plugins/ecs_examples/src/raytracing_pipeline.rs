@@ -198,10 +198,10 @@ pub fn setup_raytracing_pipeline_scene(
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(
-    mut device: ResMut<DeviceRes>,
+    device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
-    entities_query: Query<(&mut Position, &mut Scale, &mut Rotation, &BLASComponent)>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     tlas_query: Query<&mut TLASComponent>,
 ) -> Result<(), hotline_rs::Error> {
     let pmfx = &pmfx.0;
@@ -217,36 +217,36 @@ pub fn render_meshes_raytraced(
             if let Some(tlas) = &t.tlas {
                 // set pipeline
                 let raytracing_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
-                pass.cmd_buf.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
+                cmd_buf.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
 
                 let slot = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
                 if let Some(slot) = slot {
                     // camera constants
                     let inv = camera.view_projection_matrix.inverse();
-                    pass.cmd_buf.push_compute_constants(slot.index, 16, 0, &inv);
+                    cmd_buf.push_compute_constants(slot.index, 16, 0, &inv);
 
                     // output uav
-                    pass.cmd_buf.push_compute_constants(slot.index, 1, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
+                    cmd_buf.push_compute_constants(slot.index, 1, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
 
                     // scene tlas
                     let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
-                    pass.cmd_buf.push_compute_constants(slot.index, 1, 17, gfx::as_u8_slice(&srv0));
+                    cmd_buf.push_compute_constants(slot.index, 1, 17, gfx::as_u8_slice(&srv0));
 
                     // point light info
                     let world_buffer_info = pmfx.get_world_buffer_info();
-                    pass.cmd_buf.push_compute_constants(slot.index, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
+                    cmd_buf.push_compute_constants(slot.index, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
                 }
 
-                pass.cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
+                cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
                 
                 let second_slot = raytracing_pipeline.pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
                 if let Some(second_slot) = second_slot {
                     let srv_buffer = t.instance_geometry_buffer.as_ref().unwrap().get_srv_index().unwrap();
-                    pass.cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
+                    cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
                 }
 
                 // dispatch
-                pass.cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
+                cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
                     x: output_size.0 as u32,
                     y: output_size.1 as u32,
                     z: 1

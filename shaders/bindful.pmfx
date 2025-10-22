@@ -16,7 +16,10 @@
             ps: ps_main,
             static_samplers: {
                 sampler0: "wrap_linear"
-            }
+            },
+            push_constants: [
+                "letterbox"
+            ]
             topology: "TriangleList"
         }
     }

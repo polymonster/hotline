@@ -1,6 +1,6 @@
 {
     include: [
-        "bindless.hlsl"
+        "imgui.hlsl"
     ]
     sampler_states: {
         wrap_linear: {
@@ -11,20 +11,15 @@
         }
     }
     pipelines: {
-        bindless: {
+        default: {
             vs: vs_main,
             ps: ps_main,
             push_constants: [
-                "letterbox",
-                "srv_indices"
-            ]
+                "proj_matrix"
+            ],
             static_samplers: {
                 sampler0: "wrap_linear"
             }
-            topology: "TriangleList"
-        }
-        compute_rw: {
-            cs: "cs_main"
         }
     }
 }

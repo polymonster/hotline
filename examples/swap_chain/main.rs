@@ -6,10 +6,7 @@ use hotline_rs::*;
 use os::App;
 use os::Window;
 
-use maths_rs::Vec3f;
 use maths_rs::vec::vec3f;
-use maths_rs::vec::splat3f;
-use maths_rs::dot;
 use maths_rs::cos;
 
 use gfx::Device;
