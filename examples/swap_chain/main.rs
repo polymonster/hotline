@@ -6,25 +6,10 @@ use hotline_rs::*;
 use os::App;
 use os::Window;
 
-use maths_rs::Vec3f;
 use maths_rs::vec::vec3f;
-use maths_rs::vec::splat3f;
-use maths_rs::dot;
 use maths_rs::cos;
 
 use gfx::Device;
-
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-
-#[cfg(target_os = "windows")]
-use gfx::d3d12 as gfx_platform;
-
-#[cfg(target_os = "macos")]
-use os::macos as os_platform;
-
-#[cfg(target_os = "macos")]
-use gfx::mtl as gfx_platform;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // create an app

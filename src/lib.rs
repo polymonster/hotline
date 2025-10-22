@@ -241,7 +241,7 @@ pub mod prelude {
         imgui,
 
         // traits
-        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,
@@ -249,3 +249,16 @@ pub mod prelude {
         av::{VideoPlayer},
     };
 }
+
+/// This is a hardcoded compile time selection of os backend for macos as winnit
+#[cfg(target_os = "macos")]
+pub use os::macos as os_platform;
+
+/// This is a hardcoded compile time selection of os backend for macos as null
+#[cfg(target_os = "macos")]
+pub use gfx::null as gfx_platform;
+
+/// This is a hardcoded compile time selection of os backend for macos as  null
+#[cfg(target_os = "macos")]
+pub use av::null as av_platform;
+
