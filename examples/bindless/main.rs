@@ -1,7 +1,4 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
-use hotline_rs::{*, prelude::*};
+use hotline_rs::*;
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
@@ -116,7 +113,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
     pmfx.create_compute_pipeline(&dev, "compute_rw")?;
     pmfx.create_render_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
-    
+
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
     let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
@@ -260,7 +257,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_scissor_rect(&scissor);
 
         cmdbuffer.set_render_pipeline(pso_pmfx);
-        
+
         cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
 
         cmdbuffer.set_index_buffer(&index_buffer);

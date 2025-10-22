@@ -1,7 +1,5 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::prelude::*;
+use hotline_rs::*;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app
@@ -53,7 +51,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         fonts: vec![
             imgui::FontInfo{
                 filepath: hotline_rs::get_data_path("fonts/roboto_medium.ttf"),
-                glyph_ranges: None 
+                glyph_ranges: None
             },
             imgui::FontInfo{
                 filepath: hotline_rs::get_data_path("fonts/font_awesome.ttf"),
@@ -62,6 +60,7 @@ fn main() -> Result<(), hotline_rs::Error> {
                 ])
             }
         ],
+        monitors: app.enumerate_display_monitors()
     };
 
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();

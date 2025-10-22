@@ -11,18 +11,6 @@ use maths_rs::cos;
 
 use gfx::Device;
 
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-
-#[cfg(target_os = "windows")]
-use gfx::d3d12 as gfx_platform;
-
-#[cfg(target_os = "macos")]
-use os::macos as os_platform;
-
-#[cfg(target_os = "macos")]
-use gfx::mtl as gfx_platform;
-
 fn main() -> Result<(), hotline_rs::Error> {
     // create an app
     println!("create app!");

@@ -42,6 +42,9 @@ use super::AccelerationStructureRebuildMode;
 use super::Resource;
 use super::RaytracingInstanceInfo;
 use super::ResourceViewInfo;
+use super::DescriptorType;
+use super::PipelineType;
+
 
 use crate::os::Window;
 use crate::os::App;
@@ -245,16 +248,16 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn execute_indirect(
         &mut self,
-        command: &CommandSignature, 
-        max_command_count: u32, 
-        argument_buffer: &Buffer, 
+        command: &CommandSignature,
+        max_command_count: u32,
+        argument_buffer: &Buffer,
         argument_buffer_offset: usize,
         counter_buffer: Option<&Buffer>,
         counter_buffer_offset: usize
     ) {
         unimplemented!()
     }
-    
+
     fn dispatch_rays(&mut self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
         unimplemented!()
     }
@@ -276,10 +279,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn copy_buffer_region(
-        &mut self, 
-        dst_buffer: &Buffer, 
-        dst_offset: usize, 
-        src_buffer: &Buffer, 
+        &mut self,
+        dst_buffer: &Buffer,
+        dst_offset: usize,
+        src_buffer: &Buffer,
         src_offset: usize,
         num_bytes: usize
     ) {
@@ -465,7 +468,7 @@ impl super::Device for Device {
     }
 
     fn create_indirect_render_command<T: Sized>(
-        &mut self, 
+        &mut self,
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error> {
@@ -655,6 +658,47 @@ impl super::RaytracingTLAS<Device> for RaytracingTLAS {
     }
 }
 
+impl super::Pipeline for RenderPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        unimplemented!()
+    }
+}
+
+impl super::Pipeline for ComputePipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        unimplemented!()
+    }
+}
+
+impl super::Pipeline for RaytracingPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        unimplemented!()
+    }
+}
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
