@@ -1,4 +1,5 @@
 use hotline_rs::*;
+use hotline_rs::prelude::*;
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
