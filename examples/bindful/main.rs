@@ -196,7 +196,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             };
             cmdbuffer.push_render_constants(c0.index, 2, 0, gfx::as_u8_slice(&pc));
         }
-        
+
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);
