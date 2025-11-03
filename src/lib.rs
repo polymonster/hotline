@@ -137,7 +137,7 @@ fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
         }
         else {
             files.push(path.to_str().unwrap().to_string());
-        }   
+        }
     }
     files
 }
@@ -197,7 +197,7 @@ pub mod prelude {
         imgui,
         image,
 
-        // platform specific 
+        // platform specific
         gfx_platform,
         os_platform,
         av_platform,
@@ -230,26 +230,35 @@ pub mod prelude {
     };
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(target_os = "macos")]
 pub mod prelude {
     #[doc(hidden)]
     pub use crate::{
         // modules
         gfx,
         os,
-        client,
-        plugin,
         pmfx,
         imgui,
 
         // traits
-        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass},
+        gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,
         imdraw::ImDraw,
-        client::{Client, HotlineInfo, PluginInfo},
-        plugin::{Plugin},
         av::{VideoPlayer},
     };
 }
+
+/// This is a hardcoded compile time selection of os backend for macos as winnit
+#[cfg(target_os = "macos")]
+pub use os::macos as os_platform;
+
+/// This is a hardcoded compile time selection of os backend for macos as null
+#[cfg(target_os = "macos")]
+pub use gfx::null as gfx_platform;
+
+/// This is a hardcoded compile time selection of os backend for macos as  null
+#[cfg(target_os = "macos")]
+pub use av::null as av_platform;
+

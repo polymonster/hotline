@@ -1,7 +1,4 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
-use hotline_rs::{*, prelude::*};
+use hotline_rs::{*, prelude::{Pipeline, Texture}};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
@@ -113,7 +110,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/bindful"))?;
     pmfx.create_render_pipeline(&dev, "bindful", swap_chain.get_backbuffer_pass())?;
-    
+
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindful", fmt)?;
 
@@ -199,7 +196,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             };
             cmdbuffer.push_render_constants(c0.index, 2, 0, gfx::as_u8_slice(&pc));
         }
-        
+
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
         cmdbuffer.draw_indexed_instanced(6, 1, 0, 0, 0);

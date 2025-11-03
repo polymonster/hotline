@@ -726,7 +726,7 @@ impl super::App for App {
         (self.keyboard_input_enabled, self.mouse_input_enabled)
     }
 
-    fn enumerate_display_monitors() -> Vec<super::MonitorInfo> {
+    fn enumerate_display_monitors(&self) -> Vec<super::MonitorInfo> {
         unsafe {
             static_ref_mut!(MONITOR_ENUM).clear();
             let _ = EnumDisplayMonitors(HDC::default(), None, Some(enum_func), LPARAM(0));

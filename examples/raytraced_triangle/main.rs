@@ -15,10 +15,6 @@ use gfx::SwapChain;
 use os::App;
 use os::Window;
 
-#[cfg(target_os = "windows")]
-use os::win32 as os_platform;
-use gfx::d3d12 as gfx_platform;
-
 /// Create an rw texture output for raytracing to write into
 fn create_raytracing_output(device: &mut gfx_platform::Device, window_rect: &os::Rect<i32>) -> gfx_platform::Texture {
     let rw_info = gfx::TextureInfo {
@@ -96,7 +92,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         -0.25, 0.25, 1.0,
         0.25, 0.25, 1.0
     ];
-    
+
     let vertex_buffer = device.create_buffer(&gfx::BufferInfo {
         usage: BufferUsage::UPLOAD,
         cpu_access: gfx::CpuAccessFlags::WRITE,
@@ -127,8 +123,8 @@ fn main() -> Result<(), hotline_rs::Error> {
     let tlas = device.create_raytracing_tlas(&RaytracingTLASInfo {
         instances: &vec![RaytracingInstanceInfo {
             transform: [
-                1.0, 0.0, 0.0, 0.0, 
-                0.0, 1.0, 0.0, 0.0, 
+                1.0, 0.0, 0.0, 0.0,
+                0.0, 1.0, 0.0, 0.0,
                 0.0, 0.0, 1.0, 0.0
             ],
             instance_id: 0,
@@ -163,7 +159,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         let raytracing_pipeline = pmfx.get_raytracing_pipeline("raytracing")?;
         cmd.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
-        
+
         // bind rw tex on u0
         let uav0 =  raytracing_output.get_uav_index().expect("expect raytracing_output to have a uav");
         if let Some(u0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::UnorderedAccess) {
@@ -175,14 +171,14 @@ fn main() -> Result<(), hotline_rs::Error> {
         let aspect = window_rect.width as f32 / window_rect.height as f32;
         cmd.push_compute_constants(0, 8, 0, gfx::as_u8_slice(&[
             // viewport
-            -1.0 + border, 
+            -1.0 + border,
             -1.0 + border * aspect,
-             1.0 - border, 
+             1.0 - border,
              1.0 - border * aspect,
             // scissor
-            -1.0 + border / aspect, 
+            -1.0 + border / aspect,
             -1.0 + border,
-             1.0 - border / aspect, 
+             1.0 - border / aspect,
              1.0 - border
         ]));
 

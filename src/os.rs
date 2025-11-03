@@ -5,6 +5,10 @@ pub mod null;
 #[cfg(target_os = "windows")]
 pub mod win32;
 
+/// Implements this interface for windows macos platfrom
+#[cfg(target_os = "macos")]
+pub mod macos;
+
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 
@@ -144,7 +148,7 @@ bitflags! {
 
     /// Flags to control the open file dialog window
     pub struct OpenFileDialogFlags : u32 {
-        /// Open dialog to look for files 
+        /// Open dialog to look for files
         const FILES = 1<<0;
         /// Open dialog to look for folders
         const FOLDERS = 1<<1;
@@ -217,7 +221,7 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     /// Get value for whether (keyboard, mouse) input is enabled
     fn get_input_enabled(&self) -> (bool, bool);
     /// Enumerate all display monitors
-    fn enumerate_display_monitors() -> Vec<MonitorInfo>;
+    fn enumerate_display_monitors(&self) -> Vec<MonitorInfo>;
     /// Sets the mouse cursor
     fn set_cursor(&self, cursor: &Cursor);
     /// Opens a native open file dialog window, exts are provided to filer selections. ie vec![".txt", ".png"]
