@@ -89,6 +89,18 @@
             "preLaunchTask": "examples"
         },
         {
+            "name": "bindful (macOS|Debug)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/bindful",
+            "args": [],
+            "stopAtEntry": false,
+            // "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            // "preLaunchTask": "examples"
+        },
+        {
             "name": "imgui_demo (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",

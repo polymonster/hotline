@@ -198,9 +198,10 @@ fn main() -> Result<(), hotline_rs::Error> {
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
 
+        /*
         // compute pass
         cmdbuffer.set_marker(0xff00ffff, "Frame Start");
-        
+
         cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
         cmdbuffer.set_compute_pipeline(pso_compute);
         cmdbuffer.set_heap(pso_compute, dev.get_shader_heap());
@@ -237,6 +238,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             state_after: gfx::ResourceState::ShaderResource,
         });
         cmdbuffer.end_event();
+        */
 
         // main pass
         cmdbuffer.begin_event(0xff0000ff, "Main Pass");

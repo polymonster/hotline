@@ -251,7 +251,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn set_viewport(&self, viewport: &super::Viewport) {
+    fn set_viewport(&mut self, viewport: &super::Viewport) {
         objc::rc::autoreleasepool(|| {
             self.render_encoder
             .as_ref()
@@ -267,7 +267,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
-    fn set_scissor_rect(&self, scissor_rect: &super::ScissorRect) {
+    fn set_scissor_rect(&mut self, scissor_rect: &super::ScissorRect) {
         objc::rc::autoreleasepool(|| {
             self.render_encoder
             .as_ref()
@@ -281,7 +281,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
-    fn set_vertex_buffer(&self, buffer: &Buffer, slot: u32) {
+    fn set_vertex_buffer(&mut self, buffer: &Buffer, slot: u32) {
         objc::rc::autoreleasepool(|| {
             self.render_encoder
                 .as_ref()
@@ -295,7 +295,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         self.bound_index_stride = buffer.element_stride;
     }
 
-    fn set_render_pipeline(&self, pipeline: &RenderPipeline) {
+    fn set_render_pipeline(&mut self, pipeline: &RenderPipeline) {
         objc::rc::autoreleasepool(|| {
             self.render_encoder
                 .as_ref()
@@ -310,24 +310,22 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
-    fn set_compute_pipeline(&self, pipeline: &ComputePipeline) {
+    fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
 
     }
 
-    fn set_raytracing_pipeline(&self, pipeline: &RaytracingPipeline) {
+    fn set_raytracing_pipeline(&mut self, pipeline: &RaytracingPipeline) {
         unimplemented!()
     }
 
-    fn set_heap<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap) {
-
-    }
-
-    fn set_heap_render(&self, pipeline: &RenderPipeline, heap: &Heap) {
+    fn set_heap<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap) {
         self.render_encoder
             .as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
             .use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
 
+        let pipeline = (pipeline as *const T) as *const RenderPipeline;
+        let pipeline = unsafe { &*pipeline };
 
         pipeline.fragment_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
             if let Some(slot) = slot {
@@ -346,7 +344,6 @@ impl super::CmdBuf<Device> for CmdBuf {
             }
         });
 
-        /*
         pipeline.vertex_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
             if let Some(slot) = slot {
                 slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
@@ -354,18 +351,17 @@ impl super::CmdBuf<Device> for CmdBuf {
                 // TODO: need to know data types (Texture, Buffer)
                 // assign textures to slots
                 heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
-                    slot.argument_encoder.set_texture(index as u64, texture);
+                    slot.argument_encoder.set_texture(index as u64, texture.as_ref().unwrap());
                 });
 
                 // TODO: need to know what stages to bind on
                 self.render_encoder.as_ref().unwrap().set_vertex_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
             }
         });
-        */
     }
 
     // TODO: needs stage
-    fn set_binding<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
         let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
         if rp.fragment_descriptor_slots.len() > 0 {
             if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
@@ -377,6 +373,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    #[cfg(target_os = "ignore")]
     fn set_texture(&mut self, texture: &Texture, slot: u32) {
         self.render_encoder.as_ref().unwrap().set_fragment_texture(slot as u64, Some(&texture.metal_texture));
     }
@@ -384,7 +381,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_marker(&mut self, colour: u32, name: &str) {
     }
 
-    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
         // TODO: need to know the stages and the buffer offset
         self.render_encoder
         .as_ref()
@@ -394,11 +391,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         .set_vertex_bytes(1,  num_values as u64 * 4, data.as_ptr() as _);
     }
 
-    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
     }
 
     fn draw_instanced(
-        &self,
+        &mut self,
         vertex_count: u32,
         instance_count: u32,
         start_vertex: u32,
@@ -419,7 +416,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn draw_indexed_instanced(
-        &self,
+        &mut self,
         index_count: u32,
         instance_count: u32,
         start_index: u32,
@@ -443,11 +440,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
-    fn dispatch(&self, group_count: Size3, _numthreads: Size3) {
+    fn dispatch(&mut self, group_count: Size3, _numthreads: Size3) {
     }
 
     fn execute_indirect(
-        &self,
+        &mut self,
         command: &CommandSignature,
         max_command_count: u32,
         argument_buffer: &Buffer,
@@ -463,7 +460,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
-    fn resolve_texture_subresource(&self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
+    fn resolve_texture_subresource(&mut self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
         Ok(())
     }
 
@@ -493,7 +490,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     ) {
     }
 
-    fn dispatch_rays(&self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
+    fn dispatch_rays(&mut self, sbt: &RaytracingShaderBindingTable, numthreads: Size3) {
         unimplemented!()
     }
 
@@ -1452,13 +1449,6 @@ impl super::Device for Device {
         unimplemented!()
     }
 
-    fn create_raytracing_tlas(
-        &mut self,
-        info: &RaytracingTLASInfo<Self>
-    ) -> result::Result<RaytracingTLAS, super::Error> {
-        unimplemented!()
-    }
-
     fn create_compute_pipeline(
         &self,
         info: &super::ComputePipelineInfo<Self>,
@@ -1531,6 +1521,45 @@ impl super::Device for Device {
     fn get_counter_alignment() -> usize {
         0
     }
+
+    fn create_upload_buffer<T: Sized>(
+        &mut self,
+        data: &[T]
+    ) -> Result<Buffer, Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_instance_buffer(
+        &mut self,
+        instances: &Vec<RaytracingInstanceInfo<Self>>
+    ) -> Result<Buffer, Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_tlas(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>
+    ) -> Result<Self::RaytracingTLAS, Error> {
+        unimplemented!()
+    }
+
+    fn create_resource_view(
+        &mut self,
+        info: &ResourceViewInfo,
+        resource: Resource<Device>,
+        heap: &mut Heap
+    ) -> Result<usize, super::Error> {
+        unimplemented!()
+    }
+
+    fn create_raytracing_tlas_with_heap(
+        &mut self,
+        info: &RaytracingTLASInfo<Self>,
+        heap: &mut Heap
+    ) -> Result<RaytracingTLAS, Error> {
+        unimplemented!()
+    }
+
 }
 
 unsafe impl Send for Device {}

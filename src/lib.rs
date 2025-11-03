@@ -256,7 +256,7 @@ pub use os::macos as os_platform;
 
 /// This is a hardcoded compile time selection of os backend for macos as null
 #[cfg(target_os = "macos")]
-pub use gfx::null as gfx_platform;
+pub use gfx::mtl as gfx_platform;
 
 /// This is a hardcoded compile time selection of os backend for macos as  null
 #[cfg(target_os = "macos")]
