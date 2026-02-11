@@ -7,4 +7,4 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
-hotline-rs = { path = "../.." }
+hotline-rs.workspace = true

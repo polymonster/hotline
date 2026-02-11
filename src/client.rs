@@ -515,7 +515,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
         let abs_path = if path == "/plugins" {
-            super::get_data_path("../../plugins")
+            super::get_data_path("../..")
         }
         else {
             String::from(path)
@@ -527,6 +527,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             .to_str().unwrap().to_string();
 
         let src_path = PathBuf::from(abs_path.to_string())
+            .join("plugins")
             .join(name)
             .join("src")
             .join("lib.rs")
