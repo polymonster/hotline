@@ -31,6 +31,7 @@ mod dynamic_cubemap;
 mod pbr;
 mod raytracing_pipeline;
 mod raytraced_shadows;
+mod claude;
 
 use prelude::*;
 use hotline_rs::gfx::{RaytracingTLAS};
@@ -699,7 +700,8 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "omni_shadow_map",
         "pbr",
         "raytracing_pipeline",
-        "raytraced_shadows"
+        "raytraced_shadows",
+        "claude"
     ]
 }
 
