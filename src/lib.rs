@@ -127,6 +127,19 @@ pub fn get_exe_path(asset: &str) -> String {
     String::from(exe_path.join(asset).to_str().unwrap())
 }
 
+/// Read data wraps fs::read but provides better error messages appending the filepath
+pub fn read_data<P: AsRef<std::path::Path>>(filepath: P) -> Result<Vec<u8>, Error> {
+    let data = std::fs::read(&filepath);
+    if let Ok(data) = data {
+        Ok(data)
+    }
+    else {
+        Err(Error {
+            msg: format!("{:?} ({:?})", data, filepath.as_ref())
+        })
+    }
+}
+
 /// Recursivley get files from folder as a vector
 fn get_files_recursive(dir: &str, mut files: Vec<String>) -> Vec<String> {
     let paths = std::fs::read_dir(dir).unwrap();

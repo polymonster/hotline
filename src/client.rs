@@ -127,6 +127,7 @@ impl Default for HotlineInfo {
 }
 
 /// Hotline client data members
+#[repr(C)]
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
     pub device: D,
@@ -507,7 +508,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
         // execute the main window command buffer + swap
         self.device.execute(&self.cmd_buf);
-        self.swap_chain.swap(&self.device);
+        self.swap_chain.swap(&mut self.device);
     }
 
     /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
@@ -551,7 +552,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         let lib = hot_lib_reloader::LibReloader::new(&lib_path, name, None).unwrap();
         unsafe {
             // create instance if it is a Plugin trait
-            let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+            let create = lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes());
 
             let instance = if let Ok(create) = create {
                 // create function returns pointer to instance
@@ -748,10 +749,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         for plugin in &mut plugins {
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
-                let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
+                let ui = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void, *mut core::ffi::c_void)>("ui".as_bytes());
                 if let Ok(ui_fn) = ui {
                     let imgui_ctx = self.imgui.get_current_context();
-                    self = ui_fn(self, plugin.instance, imgui_ctx);
+                    ui_fn(&mut self, plugin.instance, imgui_ctx);
                 }
             }
         }
@@ -782,9 +783,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             if plugin.state != PluginState::None {
                 unsafe {
                     let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                    let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                    let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
                     if let Ok(unload_fn) = unload {
-                        self = unload_fn(self, plugin.instance);
+                        unload_fn(&mut self, plugin.instance);
                     }
                 }
             }
@@ -831,7 +832,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
                 // create a new instance of the plugin
                 unsafe {
-                    let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                    let create = lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes());
                     if let Ok(create_fn) = create {
                         plugin.instance = create_fn();
                     }
@@ -846,9 +847,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
                 if plugin.state == PluginState::Setup {
-                    let setup = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                    let setup = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("setup".as_bytes());
                     if let Ok(setup_fn) = setup {
-                        self = setup_fn(self, plugin.instance);
+                        setup_fn(&mut self, plugin.instance);
                     }
                 }
             }
@@ -859,9 +860,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             for plugin in &mut plugins {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
                 unsafe {
-                    let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                    let update = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("update".as_bytes());
                     if let Ok(update_fn) = update {
-                        self = update_fn(self, plugin.instance);
+                        update_fn(&mut self, plugin.instance);
                     }
                 }
                 plugin.state = PluginState::None;
@@ -879,9 +880,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         for plugin in &plugins {
             unsafe {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
                 if let Ok(unload_fn) = unload {
-                    self = unload_fn(self, plugin.instance);
+                    unload_fn(&mut self, plugin.instance);
                 }
             }
         }
@@ -1033,7 +1034,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
             // execute the main window command buffer + swap
             self.device.execute(&self.cmd_buf);
-            self.swap_chain.swap(&self.device);
+            self.swap_chain.swap(&mut self.device);
 
             self.swap_chain.wait_for_last_frame();
 

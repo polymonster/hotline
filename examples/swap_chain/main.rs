@@ -88,7 +88,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         device.execute(&cmd);
 
         println!("swap {}", t);
-        swap_chain.swap(&device);
+        swap_chain.swap(&mut device);
 
         t += 1.0 / 600.0;
     }

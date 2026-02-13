@@ -631,6 +631,7 @@ pub fn setup_tlas(
 }
 
 #[export_compute_fn]
+#[allow(unused_variables)]
 pub fn update_tlas(
     mut device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,

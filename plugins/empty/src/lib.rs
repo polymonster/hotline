@@ -11,10 +11,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
         }
     }
 
-    fn setup(&mut self, client: Client<gfx_platform::Device, os_platform::App>) 
-        -> Client<gfx_platform::Device, os_platform::App> {
+    fn setup(&mut self, _client: &mut Client<gfx_platform::Device, os_platform::App>) {
         println!("plugin setup");
-        client
     }
 
     fn update(&mut self, client: client::Client<gfx_platform::Device, os_platform::App>)
@@ -23,16 +21,12 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
         client
     }
 
-    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-        -> Client<gfx_platform::Device, os_platform::App> {
+    fn unload(&mut self, _client: &mut Client<gfx_platform::Device, os_platform::App>) {
         println!("plugin unload");
-        client
     }
 
-    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-    -> Client<gfx_platform::Device, os_platform::App> {
+    fn ui(&mut self, _client: &mut Client<gfx_platform::Device, os_platform::App>) {
         println!("plugin ui");
-        client
     }
 }
 

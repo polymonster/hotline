@@ -115,7 +115,7 @@ impl super::SwapChain<Device> for SwapChain {
         unimplemented!()
     }
 
-    fn swap(&mut self, device: &Device) {
+    fn swap(&mut self, device: &mut Device) {
         unimplemented!()
     }
 }
@@ -475,7 +475,7 @@ impl super::Device for Device {
         unimplemented!()
     }
 
-    fn execute(&self, cmd: &Self::CmdBuf) {
+    fn execute(&mut self, cmd: &Self::CmdBuf) {
         unimplemented!()
     }
 

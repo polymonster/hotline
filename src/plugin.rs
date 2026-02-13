@@ -26,13 +26,13 @@ pub trait Plugin<D: gfx::Device, A: os::App> {
     /// Create a new instance of the plugin
     fn create() -> Self where Self: Sized;
     /// Called when the plugin is loaded and after a reload has happened, setup resources and state in here
-    fn setup(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn setup(&mut self, client: &mut Client<D, A>);
     /// Called each and every frame, here put your update and render logic
     fn update(&mut self, client: Client<D, A>) -> Client<D, A>;
     // Called where it is safe to make imgui calls
-    fn ui(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn ui(&mut self, client: &mut Client<D, A>);
     // Called when the plugin is to be unloaded, this will clean up
-    fn unload(&mut self, client: Client<D, A>) -> Client<D, A>;
+    fn unload(&mut self, client: &mut Client<D, A>);
 }
 
 /// Utility function to build all plugins, this can be used to bootstrap them if they don't exist
@@ -141,7 +141,7 @@ macro_rules! hotline_plugin {
         /// Plugins are created on the heap and the instance is passed from the client to the plugin function calls
         // c-abi wrapper for `Plugin::create`
         #[no_mangle]
-        pub fn create() -> *mut core::ffi::c_void {
+        pub extern "C" fn create() -> *mut core::ffi::c_void {
             let plugin = $input::create();
             let ptr = Box::into_raw(Box::new(plugin));
             ptr.cast()
@@ -149,42 +149,45 @@ macro_rules! hotline_plugin {
 
         // c-abi wrapper for `Plugin::update`
         #[no_mangle]
-        pub fn update(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+        pub extern "C" fn update(client_ptr: *mut client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) {
             unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
-                plugin.update(client)
+                // take client on the stack to pass ownership (bevy ecs needs to move resources in/out of World)
+                let client: client::Client<gfx_platform::Device, os_platform::App> = std::ptr::read(client_ptr);
+                let client = plugin.update(client);
+                std::ptr::write(client_ptr, client);
             }
         }
 
         // c-abi wrapper for `Plugin::setup`
         #[no_mangle]
-        pub fn setup(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+        pub extern "C" fn setup(client: *mut client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) {
             unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
-                plugin.setup(client)
+                plugin.setup(&mut (*client));
             }
         }
 
-        // c-abi wrapper for `Plugin::reload`
+        // c-abi wrapper for `Plugin::unload`
         #[no_mangle]
-        pub fn unload(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+        pub extern "C" fn unload(client: *mut client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void) {
             unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
-                plugin.unload(client)
+                plugin.unload(&mut (*client));
             }
         }
 
-        // c-abi wrapper for `Plugin::reload`
+        // c-abi wrapper for `Plugin::ui`
         #[no_mangle]
-        pub fn ui(mut client: client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void, imgui_ctx: *mut core::ffi::c_void) -> client::Client<gfx_platform::Device, os_platform::App> {
+        pub extern "C" fn ui(client: *mut client::Client<gfx_platform::Device, os_platform::App>, ptr: *mut core::ffi::c_void, imgui_ctx: *mut core::ffi::c_void) {
             unsafe {
                 let plugin = ptr.cast::<$input>();
                 let plugin = plugin.as_mut().unwrap();
-                client.imgui.set_current_context(imgui_ctx);
-                plugin.ui(client)
+                (*client).imgui.set_current_context(imgui_ctx);
+                plugin.ui(&mut (*client));
             }
         }
     }
