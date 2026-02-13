@@ -1889,6 +1889,16 @@ pub const fn components_for_format(format: Format) -> u32 {
     }
 }
 
+/// Returns true if `format` is a depth texture format
+pub fn is_depth_format(format: Format) -> bool {
+    match format {
+        Format::D32f => true,
+        Format::D24nS8u => true,
+        Format::D16n => true,
+        _ => false
+    }
+}
+
 /// Returns the row pitch of an image in bytes: width * block size
 pub fn row_pitch_for_format(format: Format, width: u64) -> u64 {
     let tpb = texels_per_block_for_format(format);
