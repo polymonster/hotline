@@ -33,7 +33,6 @@ pub fn setup_raytraced_shadows_scene(
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
-    let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 32);
     let dodeca_mesh = hotline_rs::primitives::create_dodecahedron_mesh(&mut device.0);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0);
@@ -42,7 +41,6 @@ pub fn setup_raytraced_shadows_scene(
     let bounds = 100.0;
 
     // point light
-    let light_bounds = bounds * 0.75;
     let light_pos = vec3f(100.0, 0.0, 100.0);
     let light_radius = 256.0;
     commands.spawn((
@@ -71,7 +69,7 @@ pub fn setup_raytraced_shadows_scene(
     let shape_size = bounds * 0.1;
 
     // dodeca
-    let dodeca_blas = commands.spawn((
+    let _dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
         Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),

@@ -54,14 +54,14 @@ git submodule update --init --recursive
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the hotline library and the client, fetch the hotline-data repository
+// build the hotline library and client
 cargo build
 
 // build the data
 hotline-data\pmbuild win32-data
 
-// then build plugins
-cargo build --manifest-path plugins/Cargo.toml
+// build plugins
+cargo build -p ecs -p ecs_examples
 
 // run the client
 cargo run client

@@ -8,6 +8,7 @@ use crate::prelude::*;
 /// 
 
 #[repr(packed)]
+#[allow(dead_code)]
 pub struct DrawIndirectArgs {
     pub vertex_buffer: gfx::VertexBufferView,
     pub index_buffer: gfx::IndexBufferView,

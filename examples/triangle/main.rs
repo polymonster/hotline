@@ -168,7 +168,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         device.execute(&cmd);
 
         // swap for the next frame
-        swap_chain.swap(&device);
+        swap_chain.swap(&mut device);
     }
 
     // must wait for the final frame to be completed

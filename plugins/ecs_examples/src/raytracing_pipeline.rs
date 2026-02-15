@@ -77,7 +77,7 @@ pub fn setup_raytracing_pipeline_scene(
 
     let mut instance_geometry_lookup = Vec::new();
 
-    let dodeca_blas = commands.spawn((
+    let _dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
         Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
@@ -198,7 +198,7 @@ pub fn setup_raytracing_pipeline_scene(
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(
-    device: ResMut<DeviceRes>,
+    _device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
@@ -206,10 +206,10 @@ pub fn render_meshes_raytraced(
 ) -> Result<(), hotline_rs::Error> {
     let pmfx = &pmfx.0;
 
-    let mut heap = pmfx.shader_heap.clone();
+    let _heap = pmfx.shader_heap.clone();
 
     let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
-    let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
+    let _output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
 
     let camera = pmfx.get_camera_constants("main_camera");
     if let Ok(camera) = camera {

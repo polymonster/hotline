@@ -150,6 +150,19 @@
                 depends_on: ["debug"]
             }
         }
+        mesh_lit_dark: {
+            debug: {
+                view: "main_view_black"
+                pipelines: ["imdraw_3d"]
+                function: "render_debug"
+            }
+            meshes: {
+                view: "main_view_black"
+                pipelines: ["mesh_lit"]
+                function: "render_meshes_bindless"
+                depends_on: ["debug"]
+            }
+        }
 
         mesh_lit_rt_shadow2: {
             debug: {

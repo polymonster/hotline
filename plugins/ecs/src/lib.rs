@@ -290,14 +290,14 @@ impl BevyPlugin {
                 let exported_function_name = format!("export_{}", name);
                 if view_name.is_empty() {
                     // function with () no args
-                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfigs>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern "C" fn() -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn());
                     }
                 }
                 else {
                     // function with pass name args
-                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern "C" fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn(view_name.to_string()));
                     }
@@ -309,7 +309,7 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern "C" fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
                 if let Ok(hook_fn) = hook {
                     let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
@@ -327,7 +327,7 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_demos_{}", lib_name).to_string();
-                let list = lib.get_symbol::<unsafe extern fn() ->  Vec<String>>(function_name.as_bytes());
+                let list = lib.get_symbol::<unsafe extern "C" fn() ->  Vec<String>>(function_name.as_bytes());
                 if let Ok(list_fn) = list {
                     let mut lib_demos = list_fn();
                     demos.append(&mut lib_demos);
@@ -352,7 +352,7 @@ impl BevyPlugin {
             for (_, lib) in &client.libs {
                 unsafe {
                     let function_name = format!("{}", self.session_info.active_demo).to_string();
-                    let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
+                    let demo = lib.get_symbol::<unsafe extern "C" fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
                     if let Ok(demo_fn) = demo {
                         return Some(demo_fn(client));
                     }
@@ -364,24 +364,21 @@ impl BevyPlugin {
     }
 
     /// If we change demo or need to rebuild render graphs we need to invoke this, code changes will already invoke setup
-    fn resetup(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn resetup(&mut self, client: &mut PlatformClient) {
         // serialize
         client.serialise_plugin_data("ecs", &self.session_info);
         // unload / setup
         client.swap_chain.wait_for_last_frame();
-        client = self.unload(client);
+        self.unload(client);
         client.pmfx.unload_views();
         self.setup(client)
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
-    fn check_for_changes(&mut self, client: PlatformClient) -> PlatformClient {
+    fn check_for_changes(&mut self, client: &mut PlatformClient) {
         // render graph itself has chaned
         if self.render_graph_hash != client.pmfx.get_render_graph_hash(&self.schedule_info.render_graph) {
-            self.resetup(client)
-        }
-        else {
-            client
+            self.resetup(client);
         }
     }
 
@@ -403,7 +400,7 @@ impl BevyPlugin {
         }
     }
 
-    fn schedule_ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn schedule_ui(&mut self, client: &mut PlatformClient) {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
@@ -472,7 +469,6 @@ impl BevyPlugin {
                 }
             }
         }
-        client
     }
 
     fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
@@ -520,14 +516,14 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
     }
 
-    fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn setup(&mut self, client: &mut PlatformClient) {
         // clear errors
         self.errors = HashMap::new();
 
         self.session_info = client.deserialise_plugin_data("ecs");
 
         // dynamically change demos and lookup infos in other libs
-        let schedule_info = self.get_demo_schedule_info(&mut client);
+        let schedule_info = self.get_demo_schedule_info(client);
 
         // get schedule or use default and warn the user
         self.schedule_info = if let Some(info) = schedule_info {
@@ -607,14 +603,13 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;
-        client
     }
 
     fn update(&mut self, mut client: PlatformClient) -> PlatformClient {
         let session_info = self.session_info.clone();
 
         // check for any changes
-        client = self.check_for_changes(client);
+        self.check_for_changes(&mut client);
 
         // clear pmfx view errors before we render
         client.pmfx.view_errors.lock().unwrap().clear();
@@ -662,15 +657,14 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client
     }
 
-    fn unload(&mut self, client: PlatformClient) -> PlatformClient {
+    fn unload(&mut self, _client: &mut PlatformClient) {
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
         self.world = World::default();
-        client
     }
 
-    fn ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn ui(&mut self, client: &mut PlatformClient) {
         let mut open = true;
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
@@ -790,7 +784,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 }
             }
 
-            client = self.schedule_ui(client);
+            self.schedule_ui(client);
         }
 
         // preform any re-setup actions
@@ -801,11 +795,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                     self.session_info.main_camera = Some(default_cameras[&self.session_info.active_demo]);
                 }
             }
-            client = self.resetup(client);
+            self.resetup(client);
         }
 
         client.imgui.end();
-        client
     }
 }
 

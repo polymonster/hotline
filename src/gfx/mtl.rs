@@ -162,7 +162,7 @@ impl super::SwapChain<Device> for SwapChain {
         &mut self.backbuffer_pass_no_clear
     }
 
-    fn swap(&mut self, device: &Device) {
+    fn swap(&mut self, device: &mut Device) {
         objc::rc::autoreleasepool(|| {
             let cmd = device.command_queue.new_command_buffer();
             cmd.present_drawable(&self.drawable);
@@ -1476,7 +1476,7 @@ impl super::Device for Device {
         })
     }
 
-    fn execute(&self, cmd: &CmdBuf) {
+    fn execute(&mut self, cmd: &CmdBuf) {
 
     }
 

@@ -7,10 +7,10 @@ edition = "2021"
 crate-type = ["rlib", "dylib"]
 
 [dependencies]
-hotline-rs = { path = "../.." }
-maths-rs = "0.2.3"
-bevy_ecs = "0.15.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.81"
-font-awesome = "0.2.0"
-bitflags = "1.3.2"
+hotline-rs.workspace = true
+maths-rs.workspace = true
+bevy_ecs.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+font-awesome.workspace = true
+bitflags.workspace = true

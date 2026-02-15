@@ -243,7 +243,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         dev.execute(&cmdbuffer);
 
-        swap_chain.swap(&dev);
+        swap_chain.swap(&mut dev);
         ci = (ci + 1) % 4;
     }
 
