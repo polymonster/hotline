@@ -166,6 +166,7 @@ pub fn setup_blend_test(
 pub fn render_meshes_pipeline_coloured(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent, &PipelineComponent, &Colour)>) -> Result<(), hotline_rs::Error> {
         
     let pmfx = &pmfx;
@@ -175,14 +176,14 @@ pub fn render_meshes_pipeline_coloured(
     for (world_matrix, mesh, pipeline, colour) in &mesh_draw_query {
         // set pipeline per mesh
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
-        view.cmd_buf.set_render_pipeline(pipeline);
-        view.cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        view.cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        view.cmd_buf.push_render_constants(1, 4, 12, &colour.0);
+        cmd_buf.set_render_pipeline(pipeline);
+        cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(1, 4, 12, &colour.0);
 
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     Ok(())
@@ -279,7 +280,6 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
     }
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_camera(
     pmfx: &Res<PmfxRes>) -> Result<(), hotline_rs::Error> {
@@ -287,7 +287,6 @@ pub fn render_missing_camera(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_pipeline(
     pmfx: &Res<PmfxRes>,

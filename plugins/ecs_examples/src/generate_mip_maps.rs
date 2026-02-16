@@ -20,7 +20,6 @@ pub fn generate_mip_maps(client: &mut Client<gfx_platform::Device, os_platform::
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_generate_mip_maps(
     mut device: ResMut<DeviceRes>,

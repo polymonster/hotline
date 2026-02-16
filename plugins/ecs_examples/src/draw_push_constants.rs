@@ -20,7 +20,6 @@ pub fn draw_push_constants(client: &mut Client<gfx_platform::Device, os_platform
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_push_constants(
     mut device: ResMut<DeviceRes>,

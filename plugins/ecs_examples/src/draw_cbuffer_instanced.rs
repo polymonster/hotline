@@ -24,7 +24,6 @@ pub fn draw_cbuffer_instanced(client: &mut Client<gfx_platform::Device, os_platf
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_cbuffer_instanced(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -92,7 +91,6 @@ pub fn setup_draw_cbuffer_instanced(
 }
 
 /// Renders all scene instance batches with cbuffer instance buffer
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_cbuffer_instanced(
     pmfx: &Res<PmfxRes>,

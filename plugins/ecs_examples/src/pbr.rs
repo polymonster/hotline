@@ -26,7 +26,6 @@ pub fn pbr(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Sched
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_pbr(
     mut device: ResMut<DeviceRes>,
@@ -85,7 +84,6 @@ pub fn setup_pbr(
 }
 
 /// Renders all scene meshes with a irradiance and specular cubemaps bound to perform image based pbr lighting
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_pbr(
     pmfx: &Res<PmfxRes>,

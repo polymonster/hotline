@@ -23,7 +23,6 @@ pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_pl
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_tangent_space_normal_maps(
     mut device: ResMut<DeviceRes>,
@@ -47,7 +46,6 @@ pub fn setup_tangent_space_normal_maps(
 }
 
 /// Renders all scene meshes with a constant normal map texture, used to debug tangent space on meshes
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_debug_tangent_space(
     pmfx: &Res<PmfxRes>,

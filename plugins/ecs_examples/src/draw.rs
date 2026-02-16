@@ -23,7 +23,6 @@ pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Sche
 }
 
 /// Adds a single triangle mesh
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -44,7 +43,6 @@ pub fn setup_draw(
 }
 
 /// Renders meshes with a draw call (non-indexed) (single triangle)
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes(
     pmfx: &Res<PmfxRes>,

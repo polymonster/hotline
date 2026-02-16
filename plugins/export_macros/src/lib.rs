@@ -154,15 +154,15 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let order = emit_update_order(attr, "SystemSets :: Render");
 
     let render_closure = quote! {
-        #[no_mangle] 
+        #[no_mangle]
         fn export_fn_name(view_name: String) -> SystemConfigs {
             (move | fn_move | {
                 let view = pmfx.get_view(&view_name);
-                let err = match view {
-                    Ok(v) => { 
-                        let mut view = v.lock().unwrap();
-                        let mut cmd_buf = std::mem::take(&mut view.cmd_buf);
-                        
+                let cmd_buf = pmfx.get_pass_cmd_buf(&view_name);
+                let err = match (view, cmd_buf) {
+                    (Ok(v), Ok(mut cmd_buf)) => {
+                        let view = v.lock().unwrap();
+
                         let col = view.colour_hash;
                         cmd_buf.begin_event(col, &view_name);
                         cmd_buf.begin_render_pass(&view.pass);
@@ -172,13 +172,14 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
                         cmd_buf.end_render_pass();
                         cmd_buf.end_event();
 
-                        view.cmd_buf = cmd_buf;
+                        drop(view);
+                        pmfx.submit_pass_cmd_buf(&view_name, cmd_buf).ok();
 
                         result
                     }
-                    Err(v) => {
+                    (Err(e), _) | (_, Err(e)) => {
                         Err(hotline_rs::Error {
-                            msg: v.msg
+                            msg: e.msg
                         })
                     }
                 };
@@ -219,27 +220,27 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let order = emit_update_order(attr, "SystemSets :: Render");
 
     let render_closure = quote! {
-        #[no_mangle] 
+        #[no_mangle]
         fn export_fn_name(pass_name: String) -> SystemConfigs {
             (move | fn_move | {
-                
                 let pass = pmfx.get_compute_pass(&pass_name);
-                let err = match pass {
-                    Ok(p) => {
+                let cmd_buf = pmfx.get_pass_cmd_buf(&pass_name);
+                let err = match (pass, cmd_buf) {
+                    (Ok(p), Ok(mut cmd_buf)) => {
                         let mut pass = p.lock().unwrap();
-                        let mut cmd_buf = std::mem::take(&mut pass.cmd_buf);
 
                         cmd_buf.begin_event(0xffffff, &pass_name);
                         let result = fn_name(fn_args);
                         cmd_buf.end_event();
 
-                        pass.cmd_buf = cmd_buf;
+                        drop(pass);
+                        pmfx.submit_pass_cmd_buf(&pass_name, cmd_buf).ok();
 
                         Ok(())
                     }
-                    Err(p) => {
+                    (Err(e), _) | (_, Err(e)) => {
                         Err(hotline_rs::Error {
-                            msg: p.msg
+                            msg: e.msg
                         })
                     }
                 };

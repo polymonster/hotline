@@ -57,7 +57,7 @@ pub struct View<D: gfx::Device> {
     /// Dimension of a resource for use when blitting
     pub blit_dimension: Vec2f,
     /// A command buffer ready to be used to buffer draw / render commands
-    pub cmd_buf: D::CmdBuf,
+    // pub cmd_buf: D::CmdBuf,
     /// Name of camera this view intends to be used with
     pub camera: String,
     /// This is the name of a single pipeline used for all draw calls in the view. supplied in data as `pipelines: ["name"]`
@@ -71,8 +71,8 @@ pub type ViewRef<D> = Arc<Mutex<View<D>>>;
 
 /// Equivalent to a `View` this is a graph node which only requires compute
 pub struct ComputePass<D: gfx::Device> {
-    /// A command buffer ready to be used to buffer compute cmmands
-    pub cmd_buf: D::CmdBuf,
+    /// A marker to keep the pass `D: gfx::Device`
+    pub phantom_data: std::marker::PhantomData<D>,
     /// The name of a single pipeline used for this compute pass
     pub pass_pipline: String,
     /// Hash of the view name
@@ -86,7 +86,7 @@ pub struct ComputePass<D: gfx::Device> {
     // An vector of resource view indices supplied by info inside the `uses` section
     // they will be supplied in order they are specified in the `pmfx` file
     // and may be srv or uav depending on `ResourceUsage`
-    pub use_indices: Vec<ResourceUse>
+    pub use_indices: Vec<ResourceUse>,
 }
 pub type ComputePassRef<D> = Arc<Mutex<ComputePass<D>>>;
 
@@ -179,6 +179,8 @@ pub struct Pmfx<D: gfx::Device> {
     view_texture_refs: HashMap<String, HashSet<String>>,
     /// Container to hold overall GPU stats
     total_stats: TotalStats,
+    // cmdbuffer allocations for each view / pass
+    cmd_bufs: Mutex<HashMap<String, D::CmdBuf>>,
     /// Heaps for shader resource view allocations
     pub shader_heap: D::Heap,
     /// Unit quad mesh for fullscreen passes on the raster pipeline
@@ -1018,7 +1020,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
             unit_quad_mesh: primitives::create_unit_quad_mesh(device),
             total_stats: TotalStats::new(),
             view_errors: Arc::new(Mutex::new(HashMap::new())),
-            push_constant_user_data: [0; 4]
+            push_constant_user_data: [0; 4],
+            cmd_bufs: Mutex::new(HashMap::new())
         }
     }
 
@@ -1495,15 +1498,18 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 right: (size.0 as f32 * pmfx_view.scissor[2]) as i32,
                 bottom: (size.1 as f32 * pmfx_view.scissor[3]) as i32
             },
-            cmd_buf: device.create_cmd_buf(2),
+            // cmd_buf: device.create_cmd_buf(2),
             camera: camera_name,
             view_pipeline,
             use_indices,
             blit_dimension: Vec2f::from((target_size.0 as f32, target_size.1 as f32))
         };
 
-        self.views.insert(graph_pass_multi_name.to_string(), 
+        self.views.insert(graph_pass_multi_name.to_string(),
             (pmfx_view.hash, Arc::new(Mutex::new(view)), view_name.to_string()));
+
+        // allocate cmd_buf for this view
+        self.cmd_bufs.lock().unwrap().insert(graph_pass_multi_name.to_string(), device.create_cmd_buf(2));
 
         // create stats
         self.pass_stats.insert(graph_pass_multi_name.to_string(), PassStats::new(device, 2));
@@ -1631,7 +1637,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let colour_hash : u32 = hash.finish() as u32 | 0xff000000;
         
         let pass = ComputePass {
-            cmd_buf: device.create_cmd_buf(2),
+            phantom_data: std::marker::PhantomData,
             pass_pipline: pass_pipeline,
             name_hash,
             colour_hash,
@@ -1653,10 +1659,38 @@ impl<D> Pmfx<D> where D: gfx::Device {
             (0, Arc::new(Mutex::new(pass)))
         );
 
+        // allocate cmd_buf for this compute pass
+        self.cmd_bufs.lock().unwrap().insert(graph_pass_name.to_string(), device.create_cmd_buf(2));
+
         // create stats
         self.pass_stats.insert(graph_pass_name.to_string(), PassStats::new(device, 2));
 
         Ok(())
+    }
+
+    pub fn get_pass_cmd_buf(&self, pass_name: &str) -> Result<D::CmdBuf, super::Error> {
+        let mut cmd_bufs = self.cmd_bufs.lock().unwrap();
+        if let Some(cmd_buf) = cmd_bufs.remove(pass_name) {
+            Ok(cmd_buf)
+        }
+        else {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: cmd_buf: {} not found", pass_name)
+            })
+        }
+    }
+
+    pub fn submit_pass_cmd_buf(&self, pass_name: &str, cmd_buf: D::CmdBuf) -> Result<(), super::Error> {
+        let mut cmd_bufs = self.cmd_bufs.lock().unwrap();
+        if cmd_bufs.contains_key(pass_name) {
+            Err(super::Error {
+                msg: format!("hotline_rs::pmfx:: cmd_buf: {} cannot insert twice", pass_name)
+            })
+        }
+        else {
+            cmd_bufs.insert(pass_name.to_string(), cmd_buf);
+            Ok(())
+        }
     }
 
     /// Return a reference to a compute pass if the pass exists or error otherwise
@@ -2628,30 +2662,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Resets all command buffers, this assumes they have been used and need to be reset for the next frame
     pub fn reset(&mut self, swap_chain: &D::SwapChain) {
-        // TODO: collapse minimise
-        for (name, view) in &self.views {
-            // rest only command buffers that are in use
-            if self.command_queue.contains(name) {
-                let view = view.clone();
-                let mut view = view.1.lock().unwrap();
-                view.cmd_buf.reset(swap_chain);
+        let mut cmd_bufs = self.cmd_bufs.lock().unwrap();
+        for name in &self.command_queue.clone() {
+            if let Some(cmd_buf) = cmd_bufs.get_mut(name) {
+                cmd_buf.reset(swap_chain);
 
                 // inserts markers for timing and tracking pipeline stats
                 let mut stats = self.pass_stats.remove(name).unwrap();
-                Self::stats_start(&mut view.cmd_buf, &mut stats);
-                self.pass_stats.insert(name.to_string(), stats);
-            }
-        }
-        for (name, pass) in &self.compute_passes {
-            // rest only command buffers that are in use
-            if self.command_queue.contains(name) {
-                let pass = pass.clone();
-                let mut pass = pass.1.lock().unwrap();
-                pass.cmd_buf.reset(swap_chain);
-
-                // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(name).unwrap();
-                Self::stats_start(&mut pass.cmd_buf, &mut stats);
+                Self::stats_start(cmd_buf, &mut stats);
                 self.pass_stats.insert(name.to_string(), stats);
             }
         }
@@ -2702,37 +2720,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
     pub fn execute(
         &mut self,
         device: &mut D) {
-        for node in &self.command_queue {
+        let mut cmd_bufs = self.cmd_bufs.lock().unwrap();
+        for node in &self.command_queue.clone() {
             if self.barriers.contains_key(node) {
                 // transition barriers
                 device.execute(&self.barriers[node]);
             }
-            // TODO: collapse minimise
-            else if self.views.contains_key(node) {
-                // execute a view
-                let view = self.views[node].clone();
-                let view = &mut view.1.lock().unwrap();
-
+            else if let Some(cmd_buf) = cmd_bufs.get_mut(node) {
                 // inserts markers for timing and tracking pipeline stats
                 let mut stats = self.pass_stats.remove(node).unwrap();
-                Self::stats_end(&mut view.cmd_buf, &mut stats);
+                Self::stats_end(cmd_buf, &mut stats);
                 self.pass_stats.insert(node.to_string(), stats);
 
-                view.cmd_buf.close().unwrap();
-                device.execute(&view.cmd_buf);
-            }
-            else if self.compute_passes.contains_key(node) {
-                // dispatch a compute pass
-                let pass = self.compute_passes[node].clone();
-                let pass = &mut pass.1.lock().unwrap();
-
-                // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(node).unwrap();
-                Self::stats_end(&mut pass.cmd_buf, &mut stats);
-                self.pass_stats.insert(node.to_string(), stats);
-
-                pass.cmd_buf.close().unwrap();
-                device.execute(&pass.cmd_buf);
+                cmd_buf.close().unwrap();
+                device.execute(cmd_buf);
             }
         }
     }

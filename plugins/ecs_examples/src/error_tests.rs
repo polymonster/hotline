@@ -94,7 +94,6 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
     }
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_camera(
     pmfx: &Res<PmfxRes>) -> Result<(), hotline_rs::Error> {
@@ -102,7 +101,6 @@ pub fn render_missing_camera(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_pipeline(
     pmfx: &Res<PmfxRes>,

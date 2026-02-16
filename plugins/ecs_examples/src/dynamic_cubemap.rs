@@ -26,7 +26,6 @@ pub fn dynamic_cubemap(client: &mut Client<gfx_platform::Device, os_platform::Ap
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_dynamic_cubemap(
     mut device: ResMut<DeviceRes>,
@@ -83,7 +82,6 @@ pub fn setup_dynamic_cubemap(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn orbit_meshes(
     time: Res<TimeRes>, 
@@ -97,7 +95,6 @@ pub fn orbit_meshes(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_orbit_meshes(
     pmfx: &Res<PmfxRes>,
@@ -124,7 +121,6 @@ pub fn render_orbit_meshes(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_cubemap_reflect(
     pmfx: &Res<PmfxRes>,

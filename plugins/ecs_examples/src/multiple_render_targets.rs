@@ -19,7 +19,6 @@ pub fn multiple_render_targets(client: &mut Client<gfx_platform::Device, os_plat
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_multiple_render_targets(
     mut device: ResMut<DeviceRes>,

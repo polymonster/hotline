@@ -25,7 +25,6 @@ pub fn omni_shadow_map(client: &mut Client<gfx_platform::Device, os_platform::Ap
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_omni_shadow_map(
     mut device: ResMut<DeviceRes>,
@@ -156,7 +155,6 @@ pub fn setup_omni_shadow_map(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn animate_omni_shadow (
     time: Res<TimeRes>, 
@@ -175,7 +173,6 @@ pub fn animate_omni_shadow (
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn animate_meshes (
     time: Res<TimeRes>, 

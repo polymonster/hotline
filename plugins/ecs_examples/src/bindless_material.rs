@@ -28,7 +28,6 @@ pub fn bindless_material(client: &mut Client<gfx_platform::Device, os_platform::
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_bindless_material(
     mut device: ResMut<DeviceRes>,

@@ -22,7 +22,6 @@ pub fn texture2d_array(client: &mut Client<gfx_platform::Device, os_platform::Ap
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_texture2d_array(
     mut device: ResMut<DeviceRes>,
@@ -84,7 +83,6 @@ pub fn setup_texture2d_array(
 }
 
 /// Renders a texture2d test passing the texture index and frame index to the shader for sampling along with a world matrix.
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_texture2d_array(
     pmfx: &Res<PmfxRes>,
@@ -122,7 +120,6 @@ pub fn render_meshes_texture2d_array(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn animate_textures(
     time: Res<TimeRes>,

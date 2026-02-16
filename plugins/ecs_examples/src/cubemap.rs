@@ -20,7 +20,6 @@ pub fn cubemap(client: &mut Client<gfx_platform::Device, os_platform::App>) -> S
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_cubemap(
     mut device: ResMut<DeviceRes>,
@@ -65,7 +64,6 @@ pub fn setup_cubemap(
 }
 
 /// Renders all scene meshes with a cubemap applied and samples the separate mip levels in the shader per entity
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_cubemap(
     pmfx: &Res<PmfxRes>,
