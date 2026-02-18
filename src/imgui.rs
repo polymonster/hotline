@@ -344,6 +344,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 num_descriptors: Some(1),
                 shader_register: 0,
                 register_space: 0,
+                resource_type: Some(gfx::ResourceType::Texture2D),
             }]),
             static_samplers: Some(vec![gfx::SamplerBinding {
                 visibility: gfx::ShaderVisibility::Fragment,

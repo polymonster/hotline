@@ -1,9 +1,6 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::*;
+use hotline_rs::prelude::*;
 use hotline_rs::client::*;
-
 
 fn main() -> Result<(), hotline_rs::Error> {
 

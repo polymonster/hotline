@@ -1,5 +1,3 @@
-#![cfg(target_os = "windows")]
-
 use crate::gfx;
 use crate::gfx::ReadBackRequest;
 use crate::os;

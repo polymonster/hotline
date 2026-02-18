@@ -850,6 +850,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                     num_descriptors: None,
                     shader_register: 0,
                     register_space: 0,
+                    resource_type: Some(super::ResourceType::Texture2D),
                 },
                 super::DescriptorBinding {
                     visibility: super::ShaderVisibility::Compute,
@@ -857,6 +858,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                     num_descriptors: None,
                     shader_register: 0,
                     register_space: 0,
+                    resource_type: Some(super::ResourceType::RWTexture2D),
                 }
             ]),
             static_samplers: None 

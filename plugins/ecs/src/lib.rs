@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::pmfx::CameraConstants;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;

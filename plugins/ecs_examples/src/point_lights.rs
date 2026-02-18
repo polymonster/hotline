@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use crate::prelude::*;
 
 ///
@@ -61,10 +58,10 @@ pub fn setup_point_lights(
     ];
 
     // square number of rows and columns
-    let rc = 100.0;
+    let rc = 20.0;
     let irc = rc as i32;
 
-    let size = 10.0;
+    let size = 4.0;
     let half_size = size * 0.5;    
     let step = size * half_size;
     let half_extent = (rc-1.0) * step * 0.5;

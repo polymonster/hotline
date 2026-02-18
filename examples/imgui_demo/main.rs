@@ -1,7 +1,14 @@
-use hotline_rs::*;
+use hotline_rs::{*, prelude::*};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain};
+
+#[repr(C)]
+struct Vertex {
+    position: [f32; 2],
+    uv: [f32; 2],
+    color: [f32; 4],
+}
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app
@@ -66,6 +73,81 @@ fn main() -> Result<(), hotline_rs::Error> {
         monitors: app.enumerate_display_monitors()
     };
     let mut imgui = imgui::ImGui::create(&mut imgui_info).unwrap();
+
+    // dummy vb
+    let vertices = [
+        Vertex {
+            position: [-1.0, -1.0],
+            uv: [0.0, 0.0],
+            color: [0.0, 0.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [-1.0, 1.0],
+            uv: [0.0, 0.0],
+            color: [0.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [1.0, 1.0],
+            uv: [0.0, 0.0],
+            color: [1.0, 1.0, 0.0, 1.0],
+        },
+        Vertex {
+            position: [1.0, -1.0],
+            uv: [0.0, 0.0],
+            color: [1.0, 0.0, 0.0, 1.0],
+        },
+    ];
+
+    
+    let info = gfx::BufferInfo {
+        usage: gfx::BufferUsage::VERTEX,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<Vertex>(),
+        num_elements: 4,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
+    };
+
+    let vertex_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&vertices)))?;
+
+    // index buffer
+    let indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+    let info = gfx::BufferInfo {
+        usage: gfx::BufferUsage::INDEX,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::R16u,
+        stride: std::mem::size_of::<u16>(),
+        num_elements: 6,
+        initial_state: gfx::ResourceState::IndexBuffer
+    };
+    let index_buffer = dev.create_buffer(&info, Some(gfx::as_u8_slice(&indices)))?;
+
+    // create imgui shader
+    let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
+    pmfx.load(&hotline_rs::get_data_path("shaders/imgui"))?;
+    pmfx.create_render_pipeline(&dev, "default", swap_chain.get_backbuffer_pass())?;
+    let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
+    let pso_pmfx = pmfx.get_render_pipeline_for_format("default", fmt)?;
+
+    // create pipeline manually
+    let vsc_filepath = crate::get_data_path("shaders/imgui/vs_main.vsc");
+    let psc_filepath = crate::get_data_path("shaders/imgui/ps_main.psc");
+
+    let vsc_data = std::fs::read(vsc_filepath)?;
+    let psc_data = std::fs::read(psc_filepath)?;
+
+    let vs_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Vertex,
+        compile_info: None
+    };
+
+    let ps_info = gfx::ShaderInfo {
+        shader_type: gfx::ShaderType::Fragment,
+        compile_info: None
+    };
+
+    let vs = dev.create_shader(&vs_info, &vsc_data)?;
+    let fs = dev.create_shader(&ps_info, &psc_data)?;
 
     // ..
     let mut ci = 0;

@@ -1,7 +1,4 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
-use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
+use crate::{client, pmfx, imdraw, prelude::*};
 
 use bevy_ecs::prelude::*;
 use maths_rs::prelude::*;
