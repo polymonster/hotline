@@ -677,6 +677,51 @@ pub fn create_billboard_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     } 
 }
 
+/// Create an indexed unit triangle mesh instance with specified vertices
+pub fn create_triangle_mesh_with_vertices<D: gfx::Device>(dev: &mut D, v0: Vertex3D, v1: Vertex3D, v2: Vertex3D) -> pmfx::Mesh<D> {
+    // quad veritces
+    let vertices: Vec<Vertex3D> = vec![
+        v0,
+        v1,
+        v2
+    ];
+
+    let indices: Vec<u16> = vec![
+        0,  1,  2
+    ];
+
+    let aabb_min = vertices.iter().fold( Vec3f::max_value(), |acc, v| min(acc, v.position));
+    let aabb_max = vertices.iter().fold(-Vec3f::max_value(), |acc, v| max(acc, v.position));
+
+    pmfx::Mesh {
+        vb: dev.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::VERTEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 3,
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<Vertex3D>(),
+                initial_state: gfx::ResourceState::VertexConstantBuffer
+            }, 
+            Some(vertices.as_slice())
+        ).unwrap(),
+        ib: dev.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::INDEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: 3,
+                format: gfx::Format::R16u,
+                stride: std::mem::size_of::<u16>(),
+                initial_state: gfx::ResourceState::IndexBuffer
+            },
+            Some(indices.as_slice())
+        ).unwrap(),
+        num_indices: 3,
+        index_size_bytes: 2,
+        num_vertices: vertices.len() as u32,
+        aabb_min,
+        aabb_max
+    } 
+}
+
 /// Create an indexed unit triangle mesh instance with the front face pointing +z 
 pub fn create_triangle_mesh<D: gfx::Device>(dev: &mut D) -> pmfx::Mesh<D> {
     // quad veritces

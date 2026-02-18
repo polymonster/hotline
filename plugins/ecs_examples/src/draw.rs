@@ -4,6 +4,8 @@
 
 use crate::prelude::*;
 
+use hotline_rs::primitives::Vertex3D;
+
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
 pub fn draw(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
@@ -28,13 +30,39 @@ pub fn setup_draw(
     let pos = Mat34f::identity();
     let scale = Mat34f::from_scale(splat3f(100.0));
 
-    let tri_mesh = hotline_rs::primitives::create_triangle_mesh(&mut device.0);
+    // front face
+    let v0 = Vertex3D {
+        position: vec3f(0.0, 0.0, 100.0),
+        texcoord: vec2f(0.0, 1.0),
+        normal: vec3f(0.0, 0.0, 1.0),
+        tangent: vec3f(1.0, 0.0, 0.0),
+        bitangent: vec3f(0.0, 1.0, 0.0),
+    };
+
+    let v1 = Vertex3D {
+        position: vec3f(-100.0, 0.0, -100.00),
+        texcoord: vec2f(1.0, 1.0),
+        normal: vec3f(0.0, 0.0, 1.0),
+        tangent: vec3f(1.0, 0.0, 0.0),
+        bitangent: vec3f(0.0, 1.0, 0.0),
+    };
+
+    let v2 = Vertex3D {
+        position: vec3f(200.0, 0.0, 0.0),
+        texcoord: vec2f(0.5, 0.0),
+        normal: vec3f(0.0, 0.0, 1.0),
+        tangent: vec3f(1.0, 0.0, 0.0),
+        bitangent: vec3f(0.0, 1.0, 0.0),
+    };
+
+    let tri_mesh = hotline_rs::primitives::create_triangle_mesh_with_vertices(&mut device.0, v0, v1, v2);
     commands.spawn((
         Position(Vec3f::zero()),
         Velocity(Vec3f::one()),
         MeshComponent(tri_mesh),
         WorldMatrix(pos * scale)
     ));
+
 
     Ok(())
 }
@@ -46,7 +74,7 @@ pub fn draw_meshes(
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
+
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
