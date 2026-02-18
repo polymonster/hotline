@@ -82,7 +82,11 @@ pub struct SessionInfo {
     /// Default camera for a demo, can be set by the camera button in the UI
     pub default_cameras: Option<HashMap<String, CameraInfo>>,
     /// Debug draw flags
-    pub debug_draw_flags: DebugDrawFlags
+    pub debug_draw_flags: DebugDrawFlags,
+    /// Per-demo camera state, auto-saved on demo switch
+    pub demo_cameras: Option<HashMap<String, CameraInfo>>,
+    /// Per-demo debug draw flags, auto-saved on demo switch
+    pub demo_debug_flags: Option<HashMap<String, DebugDrawFlags>>,
 }
 
 /// This macro allows you to create a newtype which will automatically deref and deref_mut

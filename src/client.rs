@@ -221,10 +221,26 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             depth_stencil_heap_size: info.depth_stencil_heap_size,
         });
 
+        // validate saved window rect is visible on a connected monitor and clamp to keep title bar accessible
+        let monitors = app.enumerate_display_monitors();
+        let mut window_rect = user_config.main_window_rect;
+        let target_monitor = monitors.iter().find(|m| {
+            let mid_x = window_rect.x + window_rect.width / 2;
+            mid_x >= m.rect.x && mid_x < m.rect.x + m.rect.width
+        });
+        if let Some(monitor) = target_monitor {
+            // clamp position to keep the window within the monitor's work area (excludes taskbar)
+            let work = &monitor.client_rect;
+            window_rect.x = window_rect.x.max(work.x).min(work.x + work.width - window_rect.width);
+            window_rect.y = window_rect.y.max(work.y).min(work.y + work.height - window_rect.height);
+        } else {
+            window_rect = info.window_rect;
+        };
+
         // main window
         let main_window = app.create_window(os::WindowInfo {
             title: info.name.to_string(),
-            rect: user_config.main_window_rect,
+            rect: window_rect,
             style: os::WindowStyleFlags::NONE,
             parent_handle: None,
         });
@@ -405,25 +421,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // track any changes and write once
         let mut invalidated = false;
 
-        // main window pos / size
-        let current = self.main_window.get_window_rect();
-        if current.x > 0 && current.y > 0 && self.user_config.main_window_rect != current {
-            self.user_config.main_window_rect = self.main_window.get_window_rect();
-            invalidated = true;
-        }
-
-        // console window pos / size
-        if let Some(console_window_rect) = self.user_config.console_window_rect {
-            let current = self.app.get_console_window_rect();
-            if current.x > 0 && current.y > 0 && console_window_rect != current {
-                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+        // main window pos / size (skip if minimised to avoid saving bad coordinates)
+        if !self.main_window.is_minimised() {
+            let current = self.main_window.get_window_rect();
+            if self.user_config.main_window_rect != current {
+                self.user_config.main_window_rect = current;
                 invalidated = true;
             }
         }
-        else {
-            let current = self.app.get_console_window_rect();
-            if current.x > 0 && current.y > 0 {
-                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+
+        // console window pos / size
+        let console_current = self.app.get_console_window_rect();
+        if console_current.width > 0 && console_current.height > 0 {
+            if self.user_config.console_window_rect != Some(console_current) {
+                self.user_config.console_window_rect = Some(console_current);
                 invalidated = true;
             }
         }
