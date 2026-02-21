@@ -3,6 +3,8 @@ use hotline_rs::{*, prelude::*};
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain};
 
+use std::fs;
+
 #[repr(C)]
 struct Vertex {
     position: [f32; 2],
@@ -53,21 +55,13 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = dev.create_swap_chain::<os_platform::App>(&swap_chain_info, &win)?;
     let mut cmdbuffer = dev.create_cmd_buf(2);
 
-    let exe_path = std::env::current_exe().ok().unwrap();
-    let asset_path = exe_path.parent().unwrap().join("../..");
-
-    let font_path = asset_path
-        .join("data/fonts/roboto_medium.ttf")
-        .to_str()
-        .unwrap()
-        .to_string();
-
+    let roboto = get_data_path("fonts/roboto_medium.ttf");
     let mut imgui_info = imgui::ImGuiInfo {
         device: &mut dev,
         swap_chain: &mut swap_chain,
         main_window: &win,
         fonts: vec![imgui::FontInfo {
-            filepath: font_path,
+            filepath: roboto,
             glyph_ranges: None
         }],
         monitors: app.enumerate_display_monitors()
