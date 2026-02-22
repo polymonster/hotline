@@ -33,6 +33,7 @@ mod raytracing_pipeline;
 mod raytraced_shadows;
 mod claude;
 mod ratrace;
+mod ratrace2;
 
 use prelude::*;
 use hotline_rs::gfx::{RaytracingTLAS};
@@ -699,7 +700,8 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "raytracing_pipeline",
         "raytraced_shadows",
         "claude",
-        "ratrace"
+        "ratrace",
+        "ratrace2"
     ]
 }
 

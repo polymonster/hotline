@@ -165,6 +165,65 @@ fn update_camera_orbit(
     pmfx.update_camera_constants(&name, &constants);
 }
 
+fn update_camera_editor(
+    app: &AppRes,
+    pmfx: &mut PmfxRes,
+    camera: &mut Camera,
+    position: &mut Position,
+    view_proj: &mut ViewProjectionMatrix,
+    name: &String
+) {
+    let drag = app.get_mouse_pos_delta();
+    let wheel = app.get_mouse_wheel();
+    let buttons = app.get_mouse_buttons();
+    let drag = vec2f(drag.x as f32, drag.y as f32);
+
+    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
+
+    // speed modifier
+    let boost_speed = 2.0;
+    let mut scroll_speed = 100.0;
+    let control_speed = 0.1;
+
+    if enable_keyboard {
+        // modifiers
+        if app.is_sys_key_down(os::SysKey::Shift) {
+            // speed boost
+            scroll_speed *= boost_speed;
+        }
+        else if app.is_sys_key_down(os::SysKey::Ctrl) {
+            // fine control
+            scroll_speed *= control_speed;
+        }
+    }
+
+    if enable_mouse {
+        if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
+            let right = view_proj.get_row(0).xyz();
+            let up = view_proj.get_row(1).xyz();
+            camera.focus += up * -drag.y;
+            camera.focus += right * -drag.x;
+        }
+        else {
+            if buttons[os::MouseButton::Left as usize] && app.is_sys_key_down(os::SysKey::Alt) {
+                camera.rot -= Vec3f::from((drag.yx(), 0.0));
+            }
+            camera.zoom += wheel * scroll_speed;
+            camera.zoom = max(camera.zoom, 1.0);
+        }
+    }
+
+    // generate proj matrix
+    let aspect = pmfx.get_window_aspect("main_dock");
+
+    let constants = camera_constants_from_orbit(&camera.rot, &camera.focus, camera.zoom, aspect, 60.0);
+    view_proj.0 = constants.view_projection_matrix;
+    position.0 = constants.view_position.xyz();
+
+    // update camera in pmfx
+    pmfx.update_camera_constants(&name, &constants);
+}
+
 fn update_camera_fly(
     app: &AppRes,
     time: &TimeRes,
@@ -261,6 +320,9 @@ fn update_cameras(
             },
             CameraType::Orbit => {
                 update_camera_orbit(&app, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
+            },
+            CameraType::Editor => {
+                update_camera_editor(&app, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
             }
             _ => continue
         }
@@ -484,6 +546,7 @@ impl BevyPlugin {
         let zoom = main_camera.zoom;
         let constants = match main_camera.camera_type {
             CameraType::Orbit => camera_constants_from_orbit(&rot, &focus, zoom, main_camera.aspect, main_camera.fov),
+            CameraType::Editor => camera_constants_from_orbit(&rot, &focus, zoom, main_camera.aspect, main_camera.fov),
             _ => camera_constants_from_fly(&pos, &rot, main_camera.aspect, main_camera.fov)
         };
         (
@@ -611,6 +674,12 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // clear pmfx view errors before we render
         client.pmfx.view_errors.lock().unwrap().clear();
 
+        // capture viewport info from imgui dock before moving resources
+        let viewport_info = ViewportInfo {
+            pos: client.imgui.get_main_dock_pos(),
+            size: client.imgui.get_main_dock_size(),
+        };
+
         // move hotline resource into world
         self.world.insert_resource(session_info);
         self.world.insert_resource(DeviceRes(client.device));
@@ -620,6 +689,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(ImDrawRes(client.imdraw));
         self.world.insert_resource(UserConfigRes(client.user_config));
         self.world.insert_resource(TimeRes(client.time));
+        self.world.insert_resource(ImGuiRes(client.imgui));
+        self.world.insert_resource(viewport_info);
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
@@ -647,6 +718,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
         client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
         client.time = self.world.remove_resource::<TimeRes>().unwrap().0;
+        client.imgui = self.world.remove_resource::<ImGuiRes>().unwrap().0;
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
@@ -714,13 +786,15 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             for (mut camera, _) in &mut main_camera_query.iter_mut(&mut self.world) {
                 let camera_types = vec![
                     "Fly".to_string(),
-                    "Orbit".to_string()
+                    "Orbit".to_string(),
+                    "Editor".to_string(),
                 ];
                 let selected = format!("{:?}", camera.camera_type);
                 let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
                 camera.camera_type = match selected.as_str() {
                     "Fly" => CameraType::Fly,
                     "Orbit" => CameraType::Orbit,
+                    "Editor" => CameraType::Editor,
                     _ => CameraType::Fly
                 };
             }
