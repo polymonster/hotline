@@ -110,34 +110,50 @@ impl<R> DropList<R> {
     }
 
     /// Cleanup resources that have been waiting long enough.
-    /// Returns heap allocations to the free list when resources have waited more than `num_bb` frames.
+    /// Returns heap allocations that should be returned to the free list.
+    /// `current_frame` is the current frame index
+    /// `num_bb` is the number of back buffers (resources must wait this many frames)
     pub fn cleanup(&self, current_frame: usize, num_bb: usize, free_list: &FreeListRef) {
-        let mut drop_list = self.list.lock().unwrap();
-        let mut complete_indices = Vec::new();
-        
-        for (res_index, drop_res) in drop_list.iter_mut().enumerate() {
-            // initialise the frame, and then wait
-            if drop_res.frame == 0 {
-                drop_res.frame = current_frame;
-            } else {
-                let diff = current_frame.saturating_sub(drop_res.frame);
-                if diff > num_bb {
-                    // waited long enough — add heap allocations to free list
-                    for alloc in &drop_res.heap_allocs {
-                        free_list.push(*alloc);
+        // Collect resources to drop OUTSIDE the mutex to avoid holding lock during deallocation
+        let to_drop: Vec<DropResource<R>> = {
+            let mut drop_list = self.list.lock().unwrap();
+            let initial_len = drop_list.len();
+            
+            // Partition: extract items ready to drop, keep the rest
+            let mut ready_to_drop = Vec::new();
+            drop_list.retain_mut(|drop_res| {
+                if drop_res.frame == 0 {
+                    drop_res.frame = current_frame;
+                    true // keep - just tagged
+                } else {
+                    let diff = current_frame.saturating_sub(drop_res.frame);
+                    if diff > num_bb {
+                        // Ready to drop - move heap allocs to free list
+                        for alloc in &drop_res.heap_allocs {
+                            free_list.push(*alloc);
+                        }
+                        // Take the resources out for deferred drop
+                        ready_to_drop.push(DropResource {
+                            resources: std::mem::take(&mut drop_res.resources),
+                            frame: drop_res.frame,
+                            heap_allocs: Vec::new(), // already processed
+                        });
+                        false // remove from list
+                    } else {
+                        true // keep - still waiting
                     }
-                    drop_res.resources.clear();
-                    drop_res.heap_allocs.clear();
-                    complete_indices.push(res_index);
                 }
+            });
+            
+            if initial_len > 0 || ready_to_drop.len() > 0 {
+                println!("DropList cleanup: {} items, dropping {}, {} remaining", 
+                    initial_len, ready_to_drop.len(), drop_list.len());
             }
-        }
-
-        // remove complete items in reverse order
-        complete_indices.reverse();
-        for i in complete_indices {
-            drop_list.remove(i);
-        }
+            
+            ready_to_drop
+        };
+        // Resources drop here, OUTSIDE the mutex lock
+        drop(to_drop);
     }
 }
 
@@ -557,6 +573,41 @@ pub struct PipelineLayout {
     pub static_samplers: Option<Vec<SamplerBinding>>,
 }
 
+/// Describes the specific resource type for a descriptor binding (from shader reflection).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ResourceType {
+    /// 2D texture (Texture2D)
+    Texture2D,
+    /// 2D texture array (Texture2DArray)
+    Texture2DArray,
+    /// 3D volume texture (Texture3D)
+    Texture3D,
+    /// Cubemap texture (TextureCube)
+    TextureCube,
+    /// Multi-sampled 2D texture (Texture2DMS)
+    #[serde(rename = "Texture2DMS")]
+    Texture2DMS,
+    /// Read-write 2D texture (RWTexture2D)
+    RWTexture2D,
+    /// Read-write 3D texture (RWTexture3D)  
+    RWTexture3D,
+    /// Structured buffer (StructuredBuffer)
+    StructuredBuffer,
+    /// Read-write structured buffer (RWStructuredBuffer)
+    RWStructuredBuffer,
+    /// Constant buffer (cbuffer/ConstantBuffer)
+    #[serde(alias = "cbuffer")]
+    ConstantBuffer,
+    /// Byte address buffer (ByteAddressBuffer)
+    ByteAddressBuffer,
+    /// Read-write byte address buffer (RWByteAddressBuffer)
+    RWByteAddressBuffer,
+    /// Generic buffer (Buffer)
+    Buffer,
+    /// Raytracing acceleration structure
+    RaytracingAccelerationStructure,
+}
+
 /// Describes a range of resources for access on the GPU.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DescriptorBinding {
@@ -570,6 +621,9 @@ pub struct DescriptorBinding {
     pub binding_type: DescriptorType,
     /// Number of descriptors in this table, use `None` for unbounded.
     pub num_descriptors: Option<u32>,
+    /// Resource type from shader compiler (e.g. Texture2D, StructuredBuffer, etc.)
+    #[serde(default)]
+    pub resource_type: Option<ResourceType>,
 }
 
 /// Describes the type of descriptor binding to create.

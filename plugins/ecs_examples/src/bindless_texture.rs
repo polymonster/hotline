@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 /// 
 /// Bindless Texture
 /// 
@@ -19,7 +16,6 @@ pub fn bindless_texture(client: &mut Client<gfx_platform::Device, os_platform::A
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_bindless_texture(
     mut device: ResMut<DeviceRes>,
@@ -147,7 +143,6 @@ pub fn setup_bindless_texture(
 }
 
 /// Renders all scene meshes with a material instance component, using push constants to push texture ids
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_bindless_texture(
     pmfx: &Res<PmfxRes>,

@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 /// 
 /// Bindless Material
 /// 
@@ -28,7 +25,6 @@ pub fn bindless_material(client: &mut Client<gfx_platform::Device, os_platform::
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_bindless_material(
     mut device: ResMut<DeviceRes>,

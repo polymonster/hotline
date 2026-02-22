@@ -34,7 +34,6 @@ pub fn claude(client: &mut Client<gfx_platform::Device, os_platform::App>) -> Sc
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_claude(
     mut device: ResMut<DeviceRes>,
@@ -160,7 +159,6 @@ pub fn setup_claude(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn update_claude(
     time: Res<TimeRes>,

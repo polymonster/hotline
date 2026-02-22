@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Blend States
 ///
@@ -22,7 +19,6 @@ pub fn blend_states(client: &mut Client<gfx_platform::Device, os_platform::App>)
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_blend_states(
     mut device: ResMut<DeviceRes>,
@@ -102,7 +98,6 @@ pub fn setup_blend_states(
 }
 
 /// Renders all scene meshes with a pipeline component, binding a new pipeline each draw with matrix + colour push constants
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_pipeline_coloured(
     pmfx: &Res<PmfxRes>,

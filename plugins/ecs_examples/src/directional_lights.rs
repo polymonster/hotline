@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use crate::prelude::*;
 
 ///
@@ -24,7 +21,6 @@ pub fn directional_lights(client: &mut Client<gfx_platform::Device, os_platform:
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_directional_lights(
     mut device: ResMut<DeviceRes>,
@@ -100,7 +96,6 @@ pub fn setup_directional_lights(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn animate_directional_lights(
     time: Res<TimeRes>, 

@@ -240,7 +240,6 @@ pub fn batch_bindless_draw_data(
 }
 
 /// Renders all meshes, either instanced or single calls providing bindless lookup info
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_bindless(
     pmfx: &Res<PmfxRes>,
@@ -317,7 +316,6 @@ pub fn render_meshes_bindless(
 }
 
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes(
     pmfx: &Res<PmfxRes>,
@@ -386,7 +384,6 @@ pub fn render_meshes(
 }
 
 /// Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
-#[no_mangle]
 #[export_render_fn]
 pub fn render_debug(
     pmfx: &Res<PmfxRes>,
@@ -407,7 +404,7 @@ pub fn render_debug(
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
-    let bb = view.cmd_buf.get_backbuffer_index();
+    let bb = cmd_buf.get_backbuffer_index();
 
     // grid
     if session_info.debug_draw_flags.contains(DebugDrawFlags::GRID) {
@@ -473,7 +470,6 @@ pub fn render_debug(
 }
 
 /// Blit a single fullscreen texture into the render target
-#[no_mangle]
 #[export_render_fn]
 pub fn blit(
     pmfx: &Res<PmfxRes>,
@@ -512,7 +508,6 @@ pub fn blit(
 }
 
 /// Blit a single fullscreen texture into the render target
-#[no_mangle]
 #[export_render_fn]
 pub fn cubemap_clear(
     pmfx: &Res<PmfxRes>,

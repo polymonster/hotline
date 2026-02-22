@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Draw Indirect
 ///
@@ -21,7 +18,6 @@ pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_indirect(
     mut device: ResMut<DeviceRes>,
@@ -109,7 +105,6 @@ pub fn setup_draw_indirect(
 }
 
 /// Renders meshes indirectly in a basic way, we issues some execute indirect draw whit arguments pre-populated in a buffer
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_indirect(
     pmfx: &Res<PmfxRes>,

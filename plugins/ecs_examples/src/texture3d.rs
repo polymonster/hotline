@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Texture3D
 ///
@@ -20,7 +17,6 @@ pub fn texture3d(client: &mut Client<gfx_platform::Device, os_platform::App>) ->
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_texture3d(
     mut device: ResMut<DeviceRes>,
@@ -59,7 +55,6 @@ pub fn setup_texture3d(
 }
 
 /// Renders a texture3d test from a loaded (pre-generated signed distance field), the shader ray marches the volume
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_texture3d(
     pmfx: &Res<PmfxRes>,

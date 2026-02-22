@@ -14,10 +14,11 @@ use crate::gfx::Device;
 use crate::gfx::SwapChain;
 use crate::gfx::Texture;
 
+use maths_rs::Vec4f;
+
 use std::ffi::CStr;
 use std::ffi::CString;
-
-use maths_rs::Vec4f;
+use std::fs;
 
 use crate::static_ref;
 use crate::static_ref_mut;
@@ -240,64 +241,24 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
     let device = &info.device;
     let swap_chain = &info.swap_chain;
 
-    // TODO: temp: compile shaders
-    let src = "
-        cbuffer vertexBuffer : register(b0)
-        {
-            float4x4 ProjectionMatrix;
-        };
-        struct VS_INPUT
-        {
-            float2 pos : POSITION;
-            float4 col : COLOR0;
-            float2 uv  : TEXCOORD0;
-        };
+    let vsc_filepath = crate::get_data_path("shaders/imgui/vs_main.vsc");
+    let psc_filepath = crate::get_data_path("shaders/imgui/ps_main.psc");
 
-        struct PS_INPUT
-        {
-            float4 pos : SV_POSITION;
-            float4 col : COLOR0;
-            float2 uv  : TEXCOORD0;
-        };
-
-        PS_INPUT VSMain(VS_INPUT input)
-        {
-            PS_INPUT output;
-            output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
-            output.col = input.col;
-            output.uv  = input.uv;
-            return output;
-        }
-
-        SamplerState sampler0 : register(s0);
-        Texture2D texture0 : register(t0);
-
-        float4 PSMain(PS_INPUT input) : SV_Target
-        {
-            float4 out_col = input.col * texture0.Sample(sampler0, input.uv);
-            return out_col;
-        }";
+    let vsc_data = fs::read(vsc_filepath)?;
+    let psc_data = fs::read(psc_filepath)?;
 
     let vs_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Vertex,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("VSMain"),
-            target: String::from("vs_5_0"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
+        compile_info: None
     };
 
-    let fs_info = gfx::ShaderInfo {
+    let ps_info = gfx::ShaderInfo {
         shader_type: gfx::ShaderType::Fragment,
-        compile_info: Some(gfx::ShaderCompileInfo {
-            entry_point: String::from("PSMain"),
-            target: String::from("ps_5_0"),
-            flags: gfx::ShaderCompileFlags::NONE,
-        }),
+        compile_info: None
     };
 
-    let vs = device.create_shader(&vs_info, src.as_bytes())?;
-    let fs = device.create_shader(&fs_info, src.as_bytes())?;
+    let vs = device.create_shader(&vs_info, &vsc_data)?;
+    let fs = device.create_shader(&ps_info, &psc_data)?;
 
     device.create_render_pipeline(&gfx::RenderPipelineInfo {
         vs: Some(&vs),
@@ -344,6 +305,7 @@ fn create_render_pipeline<D: Device, A: App>(info: &ImGuiInfo<D, A>) -> Result<D
                 num_descriptors: Some(1),
                 shader_register: 0,
                 register_space: 0,
+                resource_type: Some(gfx::ResourceType::Texture2D),
             }]),
             static_samplers: Some(vec![gfx::SamplerBinding {
                 visibility: gfx::ShaderVisibility::Fragment,

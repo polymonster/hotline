@@ -230,14 +230,6 @@ pub mod prelude {
         // macros
         hotline_plugin,
         system_func,
-        render_func,
-        render_func_closure,
-
-        compute_func,
-        compute_func_closure,
-        compute_func_query,
-        compute_func_query_closure,
-
         demos,
         systems
     };

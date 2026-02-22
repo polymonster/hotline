@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::pmfx::CameraConstants;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
@@ -679,21 +676,37 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let (open, selected) = client.imgui.combo_list("Demo", &demo_list, &self.session_info.active_demo);
             if open {
                 if selected != self.session_info.active_demo {
+                    // save current demo's camera and debug flags
+                    let old_demo = self.session_info.active_demo.clone();
+                    if let Some(camera) = self.session_info.main_camera {
+                        self.session_info.demo_cameras
+                            .get_or_insert_with(HashMap::new)
+                            .insert(old_demo.clone(), camera);
+                    }
+                    self.session_info.demo_debug_flags
+                        .get_or_insert_with(HashMap::new)
+                        .insert(old_demo, self.session_info.debug_draw_flags);
+
                     // update session info
                     self.session_info.active_demo = selected;
                     resetup = true;
                 }
             }
 
-            // camera type select
+            // save per-demo camera + debug draw defaults
             if client.imgui.button_size(font_awesome::strs::CAMERA, 32.0, 0.0) {
-                // save default
-                if self.session_info.default_cameras.is_none() {
-                    self.session_info.default_cameras = Some(HashMap::new());
+                let demo = self.session_info.active_demo.clone();
+                if let Some(camera) = self.session_info.main_camera {
+                    self.session_info.default_cameras
+                        .get_or_insert_with(HashMap::new)
+                        .insert(demo.clone(), camera);
+                    self.session_info.demo_cameras
+                        .get_or_insert_with(HashMap::new)
+                        .insert(demo.clone(), camera);
                 }
-                let default_cam_map = self.session_info.default_cameras.as_mut().unwrap();
-                let entry = default_cam_map.entry(self.session_info.active_demo.to_string()).or_default();
-                *entry = self.session_info.main_camera.unwrap();
+                self.session_info.demo_debug_flags
+                    .get_or_insert_with(HashMap::new)
+                    .insert(demo, self.session_info.debug_draw_flags);
             }
             client.imgui.same_line();
 
@@ -789,12 +802,21 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // preform any re-setup actions
         if resetup {
-            // set camera to the default position for the selected demo
-            if let Some(default_cameras) = &self.session_info.default_cameras {
-                if default_cameras.contains_key(&self.session_info.active_demo) {
-                    self.session_info.main_camera = Some(default_cameras[&self.session_info.active_demo]);
-                }
+            let demo = &self.session_info.active_demo.clone();
+
+            // restore per-demo camera: demo_cameras takes priority, then default_cameras, then keep current
+            if let Some(cam) = self.session_info.demo_cameras.as_ref().and_then(|m| m.get(demo)) {
+                self.session_info.main_camera = Some(*cam);
+            } else if let Some(cam) = self.session_info.default_cameras.as_ref().and_then(|m| m.get(demo)) {
+                self.session_info.main_camera = Some(*cam);
             }
+
+            // restore per-demo debug draw flags
+            self.session_info.debug_draw_flags = self.session_info.demo_debug_flags
+                .as_ref()
+                .and_then(|m| m.get(demo).copied())
+                .unwrap_or_default();
+
             self.resetup(client);
         }
 

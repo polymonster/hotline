@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Generate Mip Maps
 /// 
@@ -20,7 +17,6 @@ pub fn generate_mip_maps(client: &mut Client<gfx_platform::Device, os_platform::
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_generate_mip_maps(
     mut device: ResMut<DeviceRes>,

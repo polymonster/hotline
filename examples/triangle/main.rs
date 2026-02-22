@@ -1,4 +1,5 @@
 use hotline_rs::*;
+use hotline_rs::prelude::{gfx_platform, os_platform};
 
 use gfx::CmdBuf;
 use gfx::Device;

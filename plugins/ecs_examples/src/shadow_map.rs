@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Shadow Map
 /// 
@@ -73,7 +70,6 @@ pub fn shadow_map(client: &mut Client<gfx_platform::Device, os_platform::App>) -
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_shadow_map(
     mut device: ResMut<DeviceRes>,
@@ -160,7 +156,6 @@ pub fn setup_shadow_map(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn batch_shadow_matrices(mut pmfx: ResMut<PmfxRes>) -> Result<(), hotline_rs::Error> {
     pmfx.get_world_buffers_mut().shadow_matrix.clear();
