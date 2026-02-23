@@ -54,11 +54,11 @@ git submodule update --init --recursive
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the hotline library and client
+// build the hotline library
 cargo build
 
 // build the data
-hotline-data\pmbuild win32-data
+cargo build --features build_data
 
 // build plugins
 cargo build -p ecs -p ecs_examples
@@ -74,20 +74,11 @@ Any code changes made to the plugin libs will cause a rebuild and reload to happ
 To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled [pmbuild](https://github.com/polymonster/pmbuild) in the `hotline-data` repository and use the following commands which bundle together build steps:
 
 ```text
-// show aavailable build profiles
-hotline-data\pmbuild -help
+// build lib, plugins and data
+cargo build --workspace --features build_data
 
-// build release
-hotline-data\pmbuild win32-release
-
-// build debug
-hotline-data\pmbuild win32-debug
-
-// run the client 
-hotline-data\pmbuild win32-debug -run
-
-// build and run the client 
-hotline-data\pmbuild win32-release -all -run
+// run the client
+cargo run client
 ```
 
 ### Building from Visual Studio Code
