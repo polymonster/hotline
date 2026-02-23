@@ -448,6 +448,7 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     //float3 geo_normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
 
     float3 geo_normal = normalize(v0.normal + (v1.normal - v0.normal) * u + (v2.normal - v0.normal) * v);
+    geo_normal = normalize(mul(geo_normal, (float3x3)WorldToObject3x4()));
 
     if(lookup.material_type == 1)
     {

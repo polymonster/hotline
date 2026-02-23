@@ -777,7 +777,7 @@ fn to_d3d12_raytracing_acceleration_structure_build_flags
 
 fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStructureRebuildMode) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS {
     match mode {
-        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE,
+        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
         AccelerationStructureRebuildMode::Full => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE
     }
 }
