@@ -1014,6 +1014,17 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         }
     }
 
+    /// Return the screen position of the main dock content region top-left corner
+    pub fn get_main_dock_pos(&self) -> (f32, f32) {
+        unsafe {
+            igBegin(MAIN_DOCK_NAME, std::ptr::null_mut(), 0);
+            let mut pos = IMVEC2_ZERO;
+            igGetCursorScreenPos(&mut pos);
+            igEnd();
+            (pos.x, pos.y)
+        }
+    }
+
     /// Call this each frame to render the `ImGui` data, `image_heaps` can be empty if you are only
     /// using the default device heap via `device.create_texture`
     pub fn render(

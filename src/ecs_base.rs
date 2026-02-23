@@ -1,4 +1,4 @@
-use crate::{client, pmfx, imdraw, prelude::*};
+use crate::{client, pmfx, imdraw, imgui, prelude::*};
 
 use bevy_ecs::prelude::*;
 use maths_rs::prelude::*;
@@ -56,6 +56,15 @@ impl Default for CameraInfo {
             fov: 60.0
         }
     }
+}
+
+/// Screen-space info for the main dock viewport (where the 3D scene is rendered)
+#[derive(Resource, Default, Clone)]
+pub struct ViewportInfo {
+    /// Screen position of the viewport content top-left
+    pub pos: (f32, f32),
+    /// Size of the viewport content area
+    pub size: (f32, f32),
 }
 
 bitflags! {
@@ -118,6 +127,7 @@ hotline_ecs!(Resource, AppRes, os_platform::App);
 hotline_ecs!(Resource, MainWindowRes,os_platform::Window);
 hotline_ecs!(Resource, ImDrawRes, imdraw::ImDraw<gfx_platform::Device>);
 hotline_ecs!(Resource, UserConfigRes, client::UserConfig);
+hotline_ecs!(Resource, ImGuiRes, imgui::ImGui<gfx_platform::Device, os_platform::App>);
 
 //
 // Components
@@ -219,6 +229,7 @@ pub enum CameraType {
     None,
     Fly,
     Orbit,
+    Editor
 }
 
 #[derive(Component)]
