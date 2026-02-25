@@ -3145,8 +3145,8 @@ impl super::Device for Device {
 
         // root signature, for now we use a global one per pipeline
         let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
-        let global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
-            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone())) // TODO: cleanup
+        let mut global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
+            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone()))
         };
         let global_root_signature_subobject = D3D12_STATE_SUBOBJECT {
             Type: D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE,
@@ -3209,9 +3209,12 @@ impl super::Device for Device {
                 &state_object_desc,
             )?;
 
+            // Release the temporary clone — D3D12 holds its own internal ref via state_object
+            std::mem::ManuallyDrop::drop(&mut global_root_signature.pGlobalRootSignature);
+
             Ok(RaytracingPipeline {
                 state_object,
-                root_signature: root_signature.root_signature.clone(), // TODO:
+                root_signature: root_signature.root_signature.clone(),
                 lookup: root_signature
             })
         }
