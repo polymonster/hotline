@@ -1266,7 +1266,7 @@ pub trait Pipeline {
     /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&PipelineSlotInfo>;
-    /// Returns a vec of all pipeline slot indices 
+    #[doc(hidden)]
     fn get_pipeline_slots(&self) -> &Vec<u32>;
     /// Returns the pipeline type
     fn get_pipeline_type() -> PipelineType;
