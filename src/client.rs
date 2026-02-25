@@ -479,7 +479,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
 
-            self.cmd_buf.set_binding(pipeline, heap, 1, srv);
+            self.cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
 
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);

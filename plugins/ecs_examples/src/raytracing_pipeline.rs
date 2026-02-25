@@ -263,11 +263,8 @@ pub fn render_meshes_raytraced(
 
                 cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
                 
-                let second_slot = raytracing_pipeline.pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
-                if let Some(second_slot) = second_slot {
-                    let srv_buffer = t.instance_geometry_buffer.as_ref().unwrap().get_srv_index().unwrap();
-                    cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
-                }
+                let srv_buffer = t.instance_geometry_buffer.as_ref().unwrap().get_srv_index().unwrap();
+                cmd_buf.set_binding(&raytracing_pipeline.pipeline, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv_buffer);
 
                 // dispatch
                 cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {

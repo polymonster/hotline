@@ -494,10 +494,7 @@ pub fn blit(
         cmd_buf.push_render_constants(slot.index, 2, 0, &view.blit_dimension);
     }
 
-    let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
@@ -534,10 +531,7 @@ pub fn cubemap_clear(
         cmd_buf.push_render_constants(slot.index, 16, 0, &inv);
     }
 
-    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);

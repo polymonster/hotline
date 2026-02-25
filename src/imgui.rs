@@ -489,13 +489,13 @@ fn render_draw_data<D: Device>(
                         let (srv, heap_id) = to_srv_heap_id(imgui_cmd.TextureId);
                         if heap_id == device.get_shader_heap().get_heap_id() {
                             // bind the device heap
-                            cmd.set_binding(pipeline, device.get_shader_heap(), 1, srv);
+                            cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv);
                         }
                         else {
                             // bund srv in another heap
                             for heap in image_heaps {
                                 if heap.get_heap_id() == heap_id {
-                                    cmd.set_binding(pipeline, heap, 1, srv);
+                                    cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
                                     break;
                                 }
                             }

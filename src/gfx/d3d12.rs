@@ -4355,7 +4355,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_binding<T: SuperPipleline>(&mut self, _: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
@@ -4363,13 +4364,14 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             match T::get_pipeline_type() {
                 super::PipelineType::Render => {
-                    self.cmd().SetGraphicsRootDescriptorTable(slot, base);
+                    self.cmd().SetGraphicsRootDescriptorTable(slot.index, base);
                 },
                 super::PipelineType::Compute => {
-                    self.cmd().SetComputeRootDescriptorTable(slot, base);
+                    self.cmd().SetComputeRootDescriptorTable(slot.index, base);
                 }
             }
         }
+        Some(())
     }
 
     fn set_marker(&mut self, colour: u32, name: &str) {

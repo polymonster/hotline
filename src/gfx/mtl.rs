@@ -365,16 +365,18 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     // TODO: needs stage
-    fn set_binding<T: SuperPipleline>(&self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
         let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
         if rp.fragment_descriptor_slots.len() > 0 {
             if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
                 d.argument_encoder.set_argument_buffer(&d.argument_buffer, 0);
                 if let Some(texture) = heap.texture_slots[offset].as_ref() {
-                    d.argument_encoder.set_texture(slot as u64, &texture);
+                    d.argument_encoder.set_texture(slot.index as u64, &texture);
                 }
             }
         }
+        Some(())
     }
 
     fn set_texture(&mut self, texture: &Texture, slot: u32) {
