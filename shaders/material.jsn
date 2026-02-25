@@ -212,7 +212,6 @@
         mesh_pbr: {
             clear_cubemap_skybox: {
                 view: "main_view"
-                cubemap: true
                 function: "cubemap_clear"
                 pipelines: [
                     "cubemap_clear"
