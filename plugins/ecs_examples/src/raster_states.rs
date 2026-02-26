@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Raster States
 ///
@@ -23,7 +20,6 @@ pub fn raster_states(client: &mut Client<gfx_platform::Device, os_platform::App>
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_raster_states(
     mut device: ResMut<DeviceRes>,
@@ -70,7 +66,6 @@ pub fn setup_raster_states(
 }
 
 /// Renders all scene meshes with a pipeline component, binding a new pipeline each draw
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_pipeline(
     pmfx: &Res<PmfxRes>,

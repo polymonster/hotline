@@ -24,7 +24,6 @@ pub fn point_lights(client: &mut Client<gfx_platform::Device, os_platform::App>)
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_point_lights(
     mut device: ResMut<DeviceRes>,
@@ -96,7 +95,6 @@ pub fn setup_point_lights(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn animate_point_lights(
     time: Res<TimeRes>, 

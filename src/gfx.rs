@@ -13,9 +13,159 @@ use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
+use std::sync::{Arc, Mutex};
 use maths_rs::max;
 
 type Error = super::Error;
+
+//
+// Common types for deferred resource cleanup
+//
+
+/// A thread-safe free list for tracking available heap slot indices
+pub struct FreeList {
+    pub list: Mutex<Vec<usize>>
+}
+
+/// Thread safe ref counted free-list that can be safely used in drop traits
+pub type FreeListRef = Arc<FreeList>;
+
+impl FreeList {
+    /// Create a new empty free list
+    pub fn new() -> FreeListRef {
+        Arc::new(FreeList {
+            list: Mutex::new(Vec::new())
+        })
+    }
+
+    /// Push an index back to the free list for reuse
+    pub fn push(&self, index: usize) {
+        let mut list = self.list.lock().unwrap();
+        list.push(index);
+    }
+
+    /// Pop an index from the free list, returns None if empty
+    pub fn pop(&self) -> Option<usize> {
+        let mut list = self.list.lock().unwrap();
+        list.pop()
+    }
+
+    /// Check if the free list is empty
+    pub fn is_empty(&self) -> bool {
+        let list = self.list.lock().unwrap();
+        list.is_empty()
+    }
+}
+
+impl Default for FreeList {
+    fn default() -> Self {
+        FreeList {
+            list: Mutex::new(Vec::new())
+        }
+    }
+}
+
+/// Structure to track resources and resource view allocations in `Drop` traits.
+/// Generic over the resource type R (e.g. ID3D12Resource for D3D12)
+pub struct DropResource<R> {
+    /// Resources to be dropped after waiting for GPU completion
+    pub resources: Vec<R>,
+    /// Frame number when the resource was dropped (0 = not yet initialised)
+    pub frame: usize,
+    /// Heap allocation indices to return to the free list
+    pub heap_allocs: Vec<usize>,
+}
+
+impl<R> DropResource<R> {
+    /// Create a new drop resource entry
+    pub fn new(resources: Vec<R>, heap_allocs: Vec<usize>) -> Self {
+        DropResource {
+            resources,
+            frame: 0,
+            heap_allocs,
+        }
+    }
+}
+
+/// A thread-safe drop list for deferred resource cleanup.
+/// Generic over the resource type R.
+pub struct DropList<R> {
+    pub list: Mutex<Vec<DropResource<R>>>
+}
+
+/// Thread safe ref counted drop-list that can be safely used in drop traits,
+/// tracks the frame a resource was dropped on so it can be waited on
+pub type DropListRef<R> = Arc<DropList<R>>;
+
+impl<R> DropList<R> {
+    /// Create a new empty drop list
+    pub fn new() -> DropListRef<R> {
+        Arc::new(DropList {
+            list: Mutex::new(Vec::new())
+        })
+    }
+
+    /// Push a resource to the drop list for deferred cleanup
+    pub fn push(&self, resource: DropResource<R>) {
+        let mut list = self.list.lock().unwrap();
+        list.push(resource);
+    }
+
+    /// Cleanup resources that have been waiting long enough.
+    /// Returns heap allocations that should be returned to the free list.
+    /// `current_frame` is the current frame index
+    /// `num_bb` is the number of back buffers (resources must wait this many frames)
+    pub fn cleanup(&self, current_frame: usize, num_bb: usize, free_list: &FreeListRef) {
+        // Collect resources to drop OUTSIDE the mutex to avoid holding lock during deallocation
+        let to_drop: Vec<DropResource<R>> = {
+            let mut drop_list = self.list.lock().unwrap();
+            let initial_len = drop_list.len();
+
+            // Partition: extract items ready to drop, keep the rest
+            let mut ready_to_drop = Vec::new();
+            drop_list.retain_mut(|drop_res| {
+                if drop_res.frame == 0 {
+                    drop_res.frame = current_frame;
+                    true // keep - just tagged
+                } else {
+                    let diff = current_frame.saturating_sub(drop_res.frame);
+                    if diff > num_bb {
+                        // Ready to drop - move heap allocs to free list
+                        for alloc in &drop_res.heap_allocs {
+                            free_list.push(*alloc);
+                        }
+                        // Take the resources out for deferred drop
+                        ready_to_drop.push(DropResource {
+                            resources: std::mem::take(&mut drop_res.resources),
+                            frame: drop_res.frame,
+                            heap_allocs: Vec::new(), // already processed
+                        });
+                        false // remove from list
+                    } else {
+                        true // keep - still waiting
+                    }
+                }
+            });
+
+            if initial_len > 0 || ready_to_drop.len() > 0 {
+                println!("DropList cleanup: {} items, dropping {}, {} remaining",
+                    initial_len, ready_to_drop.len(), drop_list.len());
+            }
+
+            ready_to_drop
+        };
+        // Resources drop here, OUTSIDE the mutex lock
+        drop(to_drop);
+    }
+}
+
+impl<R> Default for DropList<R> {
+    fn default() -> Self {
+        DropList {
+            list: Mutex::new(Vec::new())
+        }
+    }
+}
 
 /// Macro to pass data!\[expression\] or data!\[\] (None) to a create function, so you don't have to deduce a 'T'.
 #[macro_export]
@@ -91,7 +241,7 @@ pub struct ScissorRect {
 /// u = unsigned integer,
 /// i = signed integer,
 /// f = float
-#[derive(Copy, Clone, Serialize, Deserialize, Hash, PartialEq)]
+#[derive(Copy, Clone, Serialize, Deserialize, Hash, PartialEq, Debug)]
 pub enum Format {
     Unknown,
     R16n,
@@ -425,6 +575,41 @@ pub struct PipelineLayout {
     pub static_samplers: Option<Vec<SamplerBinding>>,
 }
 
+/// Describes the specific resource type for a descriptor binding (from shader reflection).
+#[derive(Clone, Copy, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
+pub enum ResourceType {
+    /// 2D texture (Texture2D)
+    Texture2D,
+    /// 2D texture array (Texture2DArray)
+    Texture2DArray,
+    /// 3D volume texture (Texture3D)
+    Texture3D,
+    /// Cubemap texture (TextureCube)
+    TextureCube,
+    /// Multi-sampled 2D texture (Texture2DMS)
+    #[serde(rename = "Texture2DMS")]
+    Texture2DMS,
+    /// Read-write 2D texture (RWTexture2D)
+    RWTexture2D,
+    /// Read-write 3D texture (RWTexture3D)
+    RWTexture3D,
+    /// Structured buffer (StructuredBuffer)
+    StructuredBuffer,
+    /// Read-write structured buffer (RWStructuredBuffer)
+    RWStructuredBuffer,
+    /// Constant buffer (cbuffer/ConstantBuffer)
+    #[serde(alias = "cbuffer")]
+    ConstantBuffer,
+    /// Byte address buffer (ByteAddressBuffer)
+    ByteAddressBuffer,
+    /// Read-write byte address buffer (RWByteAddressBuffer)
+    RWByteAddressBuffer,
+    /// Generic buffer (Buffer)
+    Buffer,
+    /// Raytracing acceleration structure
+    RaytracingAccelerationStructure,
+}
+
 /// Describes a range of resources for access on the GPU.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct DescriptorBinding {
@@ -438,6 +623,9 @@ pub struct DescriptorBinding {
     pub binding_type: DescriptorType,
     /// Number of descriptors in this table, use `None` for unbounded.
     pub num_descriptors: Option<u32>,
+    /// Resource type from shader compiler (e.g. Texture2D, StructuredBuffer, etc.)
+    #[serde(default)]
+    pub resource_type: Option<ResourceType>,
 }
 
 /// Describes the type of descriptor binding to create.
@@ -456,7 +644,7 @@ pub enum DescriptorType {
 }
 
 /// Describes the visibility of which shader stages can access a descriptor.
-#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[derive(Copy, Clone, Hash, PartialEq, Eq, Serialize, Deserialize, Default, Debug)]
 pub enum ShaderVisibility {
     #[default]
     All,
@@ -526,7 +714,7 @@ pub struct InputElementInfo {
 }
 
 /// Describes the frequency of which elements are fetched from a vertex input element.
-#[derive(Clone, Serialize, Deserialize)]
+#[derive(Clone, Copy, Serialize, Deserialize)]
 pub enum InputSlotClass {
     PerVertex,
     PerInstance,
@@ -941,6 +1129,7 @@ pub struct ClearColour {
 }
 
 /// Values to clear depth stencil buffers during a `RenderPass`
+#[derive(Copy, Clone)]
 pub struct ClearDepthStencil {
     /// Clear value for the depth buffer. Use `None` to preserve existing contents.
     pub depth: Option<f32>,
@@ -1079,7 +1268,7 @@ pub trait Pipeline {
     /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&PipelineSlotInfo>;
-    /// Returns a vec of all pipeline slot indices
+    #[doc(hidden)]
     fn get_pipeline_slots(&self) -> &Vec<u32>;
     /// Returns the pipeline type
     fn get_pipeline_type() -> PipelineType;
@@ -1340,7 +1529,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
     /// Execute a command buffer on the internal device command queue which still hold references
-    fn execute(&self, cmd: &Self::CmdBuf);
+    fn execute(&mut self, cmd: &Self::CmdBuf);
     /// Borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
     fn get_shader_heap(&self) -> &Self::Heap;
     /// Mutably borrow the internally managed shader resource heap the device creates, for binding buffers / textures in shaders
@@ -1402,7 +1591,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     /// Returns the current backbuffer pass without a clear mutably
     fn get_backbuffer_pass_no_clear_mut(&mut self) -> &mut D::RenderPass;
     /// Call swap at the end of the frame to swap the back buffer, we rotate through n-buffers
-    fn swap(&mut self, device: &D);
+    fn swap(&mut self, device: &mut D);
 }
 
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
@@ -1459,9 +1648,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_raytracing_pipeline(&mut self, pipeline: &D::RaytracingPipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
     fn set_heap<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap);
-    /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
-    /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
-    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
+    /// Binds a descriptor from `heap` at `offset` to the pipeline slot identified by `register`, `space`, and `descriptor_type`.
+    /// Returns `Some(())` if the slot was found and the binding was set, or `None` if the slot does not exist in this pipeline's layout (silent no-op).
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: DescriptorType, heap: &D::Heap, offset: usize) -> Option<()>;
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
     fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values
@@ -1753,6 +1942,16 @@ pub const fn components_for_format(format: Format) -> u32 {
         Format::BC3nSRGB => 4,
         Format::BC4n => 1,
         Format::BC5n => 2,
+    }
+}
+
+/// Returns true if `format` is a depth texture format
+pub fn is_depth_format(format: Format) -> bool {
+    match format {
+        Format::D32f => true,
+        Format::D24nS8u => true,
+        Format::D16n => true,
+        _ => false
     }
 }
 

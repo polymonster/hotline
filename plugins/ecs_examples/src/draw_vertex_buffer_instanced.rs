@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Draw Vertex Buffer Instanced
 /// 
@@ -24,7 +21,6 @@ pub fn draw_vertex_buffer_instanced(client: &mut Client<gfx_platform::Device, os
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_vertex_buffer_instanced(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -83,7 +79,6 @@ pub fn setup_draw_vertex_buffer_instanced(
 }
 
 /// Renders all scene instance batches with vertex instance buffer
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_vertex_buffer_instanced(
     pmfx: &Res<PmfxRes>,

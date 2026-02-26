@@ -1,4 +1,5 @@
 use hotline_rs::*;
+use hotline_rs::prelude::{gfx_platform, os_platform};
 
 use gfx::CmdBuf;
 use gfx::Device;
@@ -168,7 +169,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         device.execute(&cmd);
 
         // swap for the next frame
-        swap_chain.swap(&device);
+        swap_chain.swap(&mut device);
     }
 
     // must wait for the final frame to be completed

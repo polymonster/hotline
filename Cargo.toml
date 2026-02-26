@@ -1,3 +1,22 @@
+[workspace]
+resolver = "2"
+members = [
+    ".",
+    "plugins/empty",
+    "plugins/ecs",
+    "plugins/ecs_examples",
+    "plugins/export_macros",
+]
+
+[workspace.dependencies]
+hotline-rs = { path = "." }
+maths-rs = "0.2.3"
+bitflags = "1.3.2"
+bevy_ecs = "0.15.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0.81"
+font-awesome = "0.2.0"
+
 [package]
 name = "hotline-rs"
 version = "0.3.2"
@@ -13,16 +32,16 @@ license-file = "license"
 exclude = ["config.user.jsn", "hotline-data"]
 
 [dependencies]
-maths-rs = "0.2.3"
-bitflags = "1.3.2"
+maths-rs.workspace = true
+bitflags.workspace = true
 stb_image_rust = "2.27.2"
 stb_image_write_rust = "1.16.1"
-font-awesome = "0.2.0"
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0.81"
+font-awesome.workspace = true
+serde.workspace = true
+serde_json.workspace = true
 hot-lib-reloader = "0.6.4"
 libloading = "0.7.4"
-bevy_ecs = "0.15.0"
+bevy_ecs.workspace = true
 ddsfile = "0.5.1"
 
 [build-dependencies]
@@ -100,6 +119,13 @@ required-features = ["client"]
 
 [profile.dev]
 opt-level = 0
+
+[profile.dev.package.empty]
+opt-level = 1
+[profile.dev.package.ecs]
+opt-level = 1
+[profile.dev.package.ecs_examples]
+opt-level = 1
 
 [profile.release]
 lto = "off"

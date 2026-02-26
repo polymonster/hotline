@@ -143,7 +143,7 @@ fn swap_chain_buffer() -> Result<(), hotline_rs::Error> {
         cmd.close()?;
 
         dev.execute(&cmd);
-        swap_chain.swap(&dev);
+        swap_chain.swap(&mut dev);
 
         std::thread::sleep(std::time::Duration::from_millis(60));
         i = (i + 1) % clears_colours.len();
@@ -329,7 +329,7 @@ fn draw_triangle() -> Result<(), hotline_rs::Error> {
         device.execute(&cmd);
 
         // swap for the next frame
-        swap_chain.swap(&device);
+        swap_chain.swap(&mut device);
 
         break;
     }

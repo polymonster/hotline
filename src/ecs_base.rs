@@ -1,7 +1,4 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
-use crate::{client, pmfx, imdraw, gfx_platform, os_platform};
+use crate::{client, pmfx, imdraw, imgui, prelude::*};
 
 use bevy_ecs::prelude::*;
 use maths_rs::prelude::*;
@@ -61,6 +58,15 @@ impl Default for CameraInfo {
     }
 }
 
+/// Screen-space info for the main dock viewport (where the 3D scene is rendered)
+#[derive(Resource, Default, Clone)]
+pub struct ViewportInfo {
+    /// Screen position of the viewport content top-left
+    pub pos: (f32, f32),
+    /// Size of the viewport content area
+    pub size: (f32, f32),
+}
+
 bitflags! {
     #[derive(Serialize, Deserialize, Resource, Default)]
     pub struct DebugDrawFlags: u32 {
@@ -82,7 +88,11 @@ pub struct SessionInfo {
     /// Default camera for a demo, can be set by the camera button in the UI
     pub default_cameras: Option<HashMap<String, CameraInfo>>,
     /// Debug draw flags
-    pub debug_draw_flags: DebugDrawFlags
+    pub debug_draw_flags: DebugDrawFlags,
+    /// Per-demo camera state, auto-saved on demo switch
+    pub demo_cameras: Option<HashMap<String, CameraInfo>>,
+    /// Per-demo debug draw flags, auto-saved on demo switch
+    pub demo_debug_flags: Option<HashMap<String, DebugDrawFlags>>,
 }
 
 /// This macro allows you to create a newtype which will automatically deref and deref_mut
@@ -117,6 +127,7 @@ hotline_ecs!(Resource, AppRes, os_platform::App);
 hotline_ecs!(Resource, MainWindowRes,os_platform::Window);
 hotline_ecs!(Resource, ImDrawRes, imdraw::ImDraw<gfx_platform::Device>);
 hotline_ecs!(Resource, UserConfigRes, client::UserConfig);
+hotline_ecs!(Resource, ImGuiRes, imgui::ImGui<gfx_platform::Device, os_platform::App>);
 
 //
 // Components
@@ -218,6 +229,7 @@ pub enum CameraType {
     None,
     Fly,
     Orbit,
+    Editor
 }
 
 #[derive(Component)]
@@ -263,163 +275,6 @@ pub enum SystemSets {
 macro_rules! system_func {
     ($func:expr) => {
         Some($func.into_configs())
-    }
-}
-
-#[macro_export]
-macro_rules! render_func {
-    ($func:expr, $view:expr, $query:ty) => {
-        Some(render_func_closure![$func, $view, $query].into_configs().in_set(SystemSets::Render))
-    }
-}
-
-#[macro_export]
-macro_rules! compute_func {
-    ($pass:expr) => {
-        Some(compute_func_closure![$pass].into_configs().in_set(SystemSets::Render))
-    }
-}
-
-#[macro_export]
-macro_rules! compute_func_query {
-    ($func:expr, $pass:expr, $query:ty) => {
-        Some(compute_func_query_closure![$func, $pass, $query].into_configs().in_set(SystemSets::Render))
-    }
-}
-
-/// This macro can be used to export a system render function for bevy ecs. You can pass a compatible 
-/// system function with a `view` name which can be looked up when the function is called
-/// so that a single render function can have different views
-#[macro_export]
-macro_rules! render_func_closure {
-    ($func:expr, $view_name:expr, $query:ty) => {
-        move |
-            pmfx: Res<PmfxRes>,
-            q: $query | {
-                let view = pmfx.get_view(&$view_name);
-                let err = match view {
-                    Ok(v) => { 
-                        let mut view = v.lock().unwrap();
-                        
-                        let col = view.colour_hash;
-                        view.cmd_buf.begin_event(col, &$view_name);
-                        view.cmd_buf.begin_render_pass(&view.pass);
-                        view.cmd_buf.set_viewport(&view.viewport);
-                        view.cmd_buf.set_scissor_rect(&view.scissor_rect);
-
-                        let result = $func(
-                            &pmfx,
-                            &view,
-                            q
-                        );
-
-                        view.cmd_buf.end_render_pass();
-                        view.cmd_buf.end_event();
-                        result
-                    }
-                    Err(v) => {
-                        Err(hotline_rs::Error {
-                            msg: v.msg
-                        })
-                    }
-                };
-
-                // record errors
-                if let Err(err) = err {
-                    pmfx.log_error(&$view_name, &err.msg);
-                }
-        }
-    }
-}
-
-/// This macro can be used to export a system compute function for bevy ecs. You can pass a compatible 
-/// system function with a `pass` name which can be looked up when the function is called
-#[macro_export]
-macro_rules! compute_func_closure {
-    ($pass_name:expr) => {
-        move | pmfx: Res<PmfxRes> | {
-                
-                let pass = pmfx.get_compute_pass(&$pass_name);
-                let err = match pass {
-                    Ok(p) => {
-                        let mut pass = p.lock().unwrap();
-                        let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline).unwrap();
-
-                        pass.cmd_buf.begin_event(0xffffff, &$pass_name);
-                        pass.cmd_buf.set_compute_pipeline(&pipeline);
-
-                        let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-                        if let Some(slot) = using_slot {
-                            for i in 0..pass.use_indices.len() {
-                                let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-                                pass.cmd_buf.push_compute_constants(
-                                    0, 
-                                    num_constants, 
-                                    i as u32 * num_constants, 
-                                    gfx::as_u8_slice(&pass.use_indices[i])
-                                );
-                            }
-                        }
-
-                        pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
-                        
-                        pass.cmd_buf.dispatch(
-                            pass.group_count,
-                            pass.numthreads
-                        );
-                        pass.cmd_buf.end_event();
-
-                        Ok(())
-                    }
-                    Err(p) => {
-                        Err(hotline_rs::Error {
-                            msg: p.msg
-                        })
-                    }
-                };
-
-                // record errors
-                if let Err(err) = err {
-                    pmfx.log_error(&$pass_name, &err.msg);
-                }
-            }
-    }
-}
-
-#[macro_export]
-macro_rules! compute_func_query_closure {
-    ($func:expr, $pass_name:expr, $query:ty) => {
-        move | 
-            pmfx: Res<PmfxRes>,
-            q: $query  | {
-                let pass = pmfx.get_compute_pass(&$pass_name);
-                let err = match pass {
-                    Ok(p) => {
-                        let mut pass = p.lock().unwrap();
-                        pass.cmd_buf.begin_event(0xffffff, &$pass_name);
-
-                        let result = $func(
-                            &pmfx,
-                            &mut pass,
-                            q
-                        );
-
-                        pass.cmd_buf.end_event();
-
-                        Ok(())
-                    }
-                    Err(p) => {
-                        Err(hotline_rs::Error {
-                            msg: p.msg
-                        })
-                    }
-                };
-
-                // record errors
-                if let Err(err) = err {
-                    pmfx.log_error(&$pass_name, &err.msg);
-                }
-            }
     }
 }
 

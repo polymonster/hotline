@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use crate::prelude::*;
 
 ///
@@ -8,6 +5,7 @@ use crate::prelude::*;
 /// 
 
 #[repr(packed)]
+#[allow(dead_code)]
 pub struct DrawIndirectArgs {
     pub vertex_buffer: gfx::VertexBufferView,
     pub index_buffer: gfx::IndexBufferView,
@@ -47,7 +45,6 @@ pub fn gpu_frustum_culling(
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_gpu_frustum_culling(
     mut device: ResMut<DeviceRes>,
@@ -312,7 +309,6 @@ pub fn setup_gpu_frustum_culling(
     Ok(())
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn swirling_meshes(
     time: Res<TimeRes>, 
@@ -327,7 +323,6 @@ pub fn swirling_meshes(
     Ok(())
 }
 
-#[no_mangle]
 #[export_compute_fn]
 pub fn dispatch_compute_frustum_cull(
     pmfx: &Res<PmfxRes>,
@@ -402,7 +397,6 @@ pub fn dispatch_compute_frustum_cull(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_indirect_culling(
     pmfx: &Res<PmfxRes>,

@@ -1,5 +1,3 @@
-#![cfg(target_os = "windows")]
-
 use crate::gfx;
 use crate::gfx::ReadBackRequest;
 use crate::os;
@@ -127,6 +125,7 @@ impl Default for HotlineInfo {
 }
 
 /// Hotline client data members
+#[repr(C)]
 pub struct Client<D: gfx::Device, A: os::App> {
     pub app: A,
     pub device: D,
@@ -220,10 +219,26 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             depth_stencil_heap_size: info.depth_stencil_heap_size,
         });
 
+        // validate saved window rect is visible on a connected monitor and clamp to keep title bar accessible
+        let monitors = app.enumerate_display_monitors();
+        let mut window_rect = user_config.main_window_rect;
+        let target_monitor = monitors.iter().find(|m| {
+            let mid_x = window_rect.x + window_rect.width / 2;
+            mid_x >= m.rect.x && mid_x < m.rect.x + m.rect.width
+        });
+        if let Some(monitor) = target_monitor {
+            // clamp position to keep the window within the monitor's work area (excludes taskbar)
+            let work = &monitor.client_rect;
+            window_rect.x = window_rect.x.max(work.x).min(work.x + work.width - window_rect.width);
+            window_rect.y = window_rect.y.max(work.y).min(work.y + work.height - window_rect.height);
+        } else {
+            window_rect = info.window_rect;
+        };
+
         // main window
         let main_window = app.create_window(os::WindowInfo {
             title: info.name.to_string(),
-            rect: user_config.main_window_rect,
+            rect: window_rect,
             style: os::WindowStyleFlags::NONE,
             parent_handle: None,
         });
@@ -404,25 +419,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // track any changes and write once
         let mut invalidated = false;
 
-        // main window pos / size
-        let current = self.main_window.get_window_rect();
-        if current.x > 0 && current.y > 0 && self.user_config.main_window_rect != current {
-            self.user_config.main_window_rect = self.main_window.get_window_rect();
-            invalidated = true;
-        }
-
-        // console window pos / size
-        if let Some(console_window_rect) = self.user_config.console_window_rect {
-            let current = self.app.get_console_window_rect();
-            if current.x > 0 && current.y > 0 && console_window_rect != current {
-                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+        // main window pos / size (skip if minimised to avoid saving bad coordinates)
+        if !self.main_window.is_minimised() {
+            let current = self.main_window.get_window_rect();
+            if self.user_config.main_window_rect != current {
+                self.user_config.main_window_rect = current;
                 invalidated = true;
             }
         }
-        else {
-            let current = self.app.get_console_window_rect();
-            if current.x > 0 && current.y > 0 {
-                self.user_config.console_window_rect = Some(self.app.get_console_window_rect());
+
+        // console window pos / size
+        let console_current = self.app.get_console_window_rect();
+        if console_current.width > 0 && console_current.height > 0 {
+            if self.user_config.console_window_rect != Some(console_current) {
+                self.user_config.console_window_rect = Some(console_current);
                 invalidated = true;
             }
         }
@@ -469,7 +479,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
 
-            self.cmd_buf.set_binding(pipeline, heap, 1, srv);
+            self.cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
 
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
@@ -507,19 +517,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
         // execute the main window command buffer + swap
         self.device.execute(&self.cmd_buf);
-        self.swap_chain.swap(&self.device);
+        self.swap_chain.swap(&mut self.device);
     }
 
     /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
-    pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
-        let abs_path = if path == "/plugins" {
-            super::get_data_path("../../plugins")
-        }
-        else {
-            String::from(path)
-        };
+    pub fn add_plugin_lib(&mut self, name: &str, _path: &str) {
+        let abs_path = super::get_data_path("../..");
 
         let lib_path = PathBuf::from(abs_path.to_string())
             .join("target")
@@ -527,6 +532,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             .to_str().unwrap().to_string();
 
         let src_path = PathBuf::from(abs_path.to_string())
+            .join("plugins")
             .join(name)
             .join("src")
             .join("lib.rs")
@@ -550,7 +556,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         let lib = hot_lib_reloader::LibReloader::new(&lib_path, name, None).unwrap();
         unsafe {
             // create instance if it is a Plugin trait
-            let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+            let create = lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes());
 
             let instance = if let Ok(create) = create {
                 // create function returns pointer to instance
@@ -747,10 +753,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         for plugin in &mut plugins {
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
-                let ui = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void, *mut core::ffi::c_void) -> Self>("ui".as_bytes());
+                let ui = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void, *mut core::ffi::c_void)>("ui".as_bytes());
                 if let Ok(ui_fn) = ui {
                     let imgui_ctx = self.imgui.get_current_context();
-                    self = ui_fn(self, plugin.instance, imgui_ctx);
+                    ui_fn(&mut self, plugin.instance, imgui_ctx);
                 }
             }
         }
@@ -781,9 +787,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             if plugin.state != PluginState::None {
                 unsafe {
                     let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                    let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                    let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
                     if let Ok(unload_fn) = unload {
-                        self = unload_fn(self, plugin.instance);
+                        unload_fn(&mut self, plugin.instance);
                     }
                 }
             }
@@ -830,7 +836,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
                 // create a new instance of the plugin
                 unsafe {
-                    let create = lib.get_symbol::<unsafe extern fn() -> *mut core::ffi::c_void>("create".as_bytes());
+                    let create = lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes());
                     if let Ok(create_fn) = create {
                         plugin.instance = create_fn();
                     }
@@ -845,9 +851,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
                 if plugin.state == PluginState::Setup {
-                    let setup = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("setup".as_bytes());
+                    let setup = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("setup".as_bytes());
                     if let Ok(setup_fn) = setup {
-                        self = setup_fn(self, plugin.instance);
+                        setup_fn(&mut self, plugin.instance);
                     }
                 }
             }
@@ -858,9 +864,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             for plugin in &mut plugins {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
                 unsafe {
-                    let update = lib.get_symbol::<unsafe extern fn(Self, *mut core::ffi::c_void) -> Self>("update".as_bytes());
+                    let update = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("update".as_bytes());
                     if let Ok(update_fn) = update {
-                        self = update_fn(self, plugin.instance);
+                        update_fn(&mut self, plugin.instance);
                     }
                 }
                 plugin.state = PluginState::None;
@@ -878,9 +884,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         for plugin in &plugins {
             unsafe {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                let unload = lib.get_symbol::<unsafe extern fn(Self, PluginInstance) -> Self>("unload".as_bytes());
+                let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
                 if let Ok(unload_fn) = unload {
-                    self = unload_fn(self, plugin.instance);
+                    unload_fn(&mut self, plugin.instance);
                 }
             }
         }
@@ -1032,7 +1038,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
             // execute the main window command buffer + swap
             self.device.execute(&self.cmd_buf);
-            self.swap_chain.swap(&self.device);
+            self.swap_chain.swap(&mut self.device);
 
             self.swap_chain.wait_for_last_frame();
 

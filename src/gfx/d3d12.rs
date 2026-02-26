@@ -20,7 +20,6 @@ use std::collections::{HashMap, hash_map::DefaultHasher};
 use std::ffi::{CStr, CString, c_void};
 use std::result;
 use std::str;
-use std::sync::Mutex;
 
 use windows::{
     core::*, Win32::Foundation::*, Win32::Graphics::Direct3D::Fxc::*, Win32::Graphics::Direct3D::*,
@@ -37,9 +36,9 @@ macro_rules! d3d12_debug_name {
     }
 }
 
-type BeginEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
-type EndEventOnCommandList = extern "stdcall" fn(*const core::ffi::c_void) -> i32;
-type SetMarkerOnCommandList = extern "stdcall" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
+type BeginEventOnCommandList = extern "system" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
+type EndEventOnCommandList = extern "system" fn(*const core::ffi::c_void) -> i32;
+type SetMarkerOnCommandList = extern "system" fn(*const core::ffi::c_void, u64, PSTR) -> i32;
 
 #[derive(Copy, Clone)]
 struct WinPixEventRuntime {
@@ -196,7 +195,7 @@ pub struct Buffer {
     cbv_index: Option<usize>,
     uav_index: Option<usize>,
     counter_offset: Option<usize>,
-    drop_list: Option<DropListRef>,
+    drop_list: Option<D3d12DropListRef>,
     persistent_mapped_data: *mut c_void
 }
 
@@ -210,7 +209,7 @@ pub struct Shader {
 pub struct TextureTarget {
     ptr: D3D12_CPU_DESCRIPTOR_HANDLE,
     index: usize,
-    drop_list: DropListRef,
+    drop_list: D3d12DropListRef,
 }
 
 #[derive(Clone)]
@@ -226,7 +225,7 @@ pub struct Texture {
     subresource_uav_index: Vec<usize>,
     shared_handle: Option<HANDLE>,
     // drop list for srv, uav and resolved srv
-    drop_list: Option<DropListRef>,
+    drop_list: Option<D3d12DropListRef>,
     // the id of the shader heap for (uav, srv etc)
     shader_heap_id: Option<u16>
 }
@@ -266,44 +265,8 @@ struct RootSignatureLookup {
     descriptor_slots: Vec<u32>
 }
 
-/// A free list thread safe with mutex
-struct FreeList {
-    list: Mutex<Vec<usize>>
-}
-
-/// Thread safe ref counted free-list that can be safely used in drop traits 
-type FreeListRef = std::sync::Arc<FreeList>;
-
-impl FreeList {
-    fn new() -> std::sync::Arc<FreeList> {
-        std::sync::Arc::new(FreeList {
-            list: Mutex::new(Vec::new())
-        })
-    }
-}
-
-/// Structure to track resources and resoure view allocations in `Drop` traits
-struct DropResource {
-    resources: Vec<ID3D12Resource>,
-    frame: usize,
-    heap_allocs: Vec<usize>
-}
-
-struct DropList {
-    list: Mutex<Vec<DropResource>>
-}
-
-/// Thread safe ref counted drop-list that can be safely used in drop traits,
-/// tracks the frame a resource was dropped on so it can be waited on
-type DropListRef = std::sync::Arc<DropList>;
-
-impl DropList {
-    fn new() -> std::sync::Arc<DropList> {
-        std::sync::Arc::new(DropList {
-            list: Mutex::new(Vec::new())
-        })
-    }
-}
+/// D3D12-specific type alias for drop lists tracking ID3D12Resource
+type D3d12DropListRef = DropListRef<ID3D12Resource>;
 
 #[derive(Clone)]
 pub struct Heap {
@@ -313,7 +276,7 @@ pub struct Heap {
     capacity: usize,
     offset: usize,
     free_list: FreeListRef,
-    drop_list: DropListRef,
+    drop_list: D3d12DropListRef,
     id: u16
 }
 
@@ -814,7 +777,7 @@ fn to_d3d12_raytracing_acceleration_structure_build_flags
 
 fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStructureRebuildMode) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS {
     match mode {
-        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE,
+        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
         AccelerationStructureRebuildMode::Full => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE
     }
 }
@@ -887,6 +850,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                     num_descriptors: None,
                     shader_register: 0,
                     register_space: 0,
+                    resource_type: Some(super::ResourceType::Texture2D),
                 },
                 super::DescriptorBinding {
                     visibility: super::ShaderVisibility::Compute,
@@ -894,6 +858,7 @@ fn create_generate_mip_maps_pipeline(device: &Device) -> result::Result<ComputeP
                     num_descriptors: None,
                     shader_register: 0,
                     register_space: 0,
+                    resource_type: Some(super::ResourceType::RWTexture2D),
                 }
             ]),
             static_samplers: None 
@@ -3180,8 +3145,8 @@ impl super::Device for Device {
 
         // root signature, for now we use a global one per pipeline
         let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
-        let global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
-            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone())) // TODO: cleanup
+        let mut global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
+            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone()))
         };
         let global_root_signature_subobject = D3D12_STATE_SUBOBJECT {
             Type: D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE,
@@ -3244,9 +3209,12 @@ impl super::Device for Device {
                 &state_object_desc,
             )?;
 
+            // Release the temporary clone — D3D12 holds its own internal ref via state_object
+            std::mem::ManuallyDrop::drop(&mut global_root_signature.pGlobalRootSignature);
+
             Ok(RaytracingPipeline {
                 state_object,
-                root_signature: root_signature.root_signature.clone(), // TODO:
+                root_signature: root_signature.root_signature.clone(),
                 lookup: root_signature
             })
         }
@@ -3762,7 +3730,7 @@ impl super::Device for Device {
         })
     }    
 
-    fn execute(&self, cmd: &CmdBuf) {
+    fn execute(&mut self, cmd: &CmdBuf) {
         unsafe {
             let command_list = Some(cmd.command_list[cmd.bb_index].cast().unwrap());
             self.command_queue.ExecuteCommandLists(&[command_list]);
@@ -4049,7 +4017,7 @@ impl super::SwapChain<Device> for SwapChain {
         &mut self.backbuffer_passes_no_clear[self.bb_index]
     }
 
-    fn swap(&mut self, device: &Device) {
+    fn swap(&mut self, device: &mut Device) {
         unsafe {
             // present
             let hr = self.swap_chain.Present(1, DXGI_PRESENT::default());
@@ -4387,7 +4355,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_binding<T: SuperPipleline>(&mut self, _: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
@@ -4395,13 +4364,14 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             match T::get_pipeline_type() {
                 super::PipelineType::Render => {
-                    self.cmd().SetGraphicsRootDescriptorTable(slot, base);
+                    self.cmd().SetGraphicsRootDescriptorTable(slot.index, base);
                 },
                 super::PipelineType::Compute => {
-                    self.cmd().SetComputeRootDescriptorTable(slot, base);
+                    self.cmd().SetComputeRootDescriptorTable(slot.index, base);
                 }
             }
         }
+        Some(())
     }
 
     fn set_marker(&mut self, colour: u32, name: &str) {

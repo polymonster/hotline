@@ -31,6 +31,7 @@ mod dynamic_cubemap;
 mod pbr;
 mod raytracing_pipeline;
 mod raytraced_shadows;
+mod claude;
 
 use prelude::*;
 use hotline_rs::gfx::{RaytracingTLAS};
@@ -238,7 +239,6 @@ pub fn batch_bindless_draw_data(
 }
 
 /// Renders all meshes, either instanced or single calls providing bindless lookup info
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes_bindless(
     pmfx: &Res<PmfxRes>,
@@ -315,7 +315,6 @@ pub fn render_meshes_bindless(
 }
 
 ///Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes(
     pmfx: &Res<PmfxRes>,
@@ -384,7 +383,6 @@ pub fn render_meshes(
 }
 
 /// Renders all meshes generically with a single pipeline which and be specified in the .pmfx view
-#[no_mangle]
 #[export_render_fn]
 pub fn render_debug(
     pmfx: &Res<PmfxRes>,
@@ -405,7 +403,7 @@ pub fn render_debug(
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
-    let bb = view.cmd_buf.get_backbuffer_index();
+    let bb = cmd_buf.get_backbuffer_index();
 
     // grid
     if session_info.debug_draw_flags.contains(DebugDrawFlags::GRID) {
@@ -471,7 +469,6 @@ pub fn render_debug(
 }
 
 /// Blit a single fullscreen texture into the render target
-#[no_mangle]
 #[export_render_fn]
 pub fn blit(
     pmfx: &Res<PmfxRes>,
@@ -497,10 +494,7 @@ pub fn blit(
         cmd_buf.push_render_constants(slot.index, 2, 0, &view.blit_dimension);
     }
 
-    let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
@@ -510,7 +504,6 @@ pub fn blit(
 }
 
 /// Blit a single fullscreen texture into the render target
-#[no_mangle]
 #[export_render_fn]
 pub fn cubemap_clear(
     pmfx: &Res<PmfxRes>,
@@ -538,10 +531,7 @@ pub fn cubemap_clear(
         cmd_buf.push_render_constants(slot.index, 16, 0, &inv);
     }
 
-    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
@@ -630,6 +620,7 @@ pub fn setup_tlas(
 }
 
 #[export_compute_fn]
+#[allow(unused_variables)]
 pub fn update_tlas(
     mut device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
@@ -699,7 +690,8 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "omni_shadow_map",
         "pbr",
         "raytracing_pipeline",
-        "raytraced_shadows"
+        "raytraced_shadows",
+        "claude"
     ]
 }
 

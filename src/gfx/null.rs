@@ -115,7 +115,7 @@ impl super::SwapChain<Device> for SwapChain {
         unimplemented!()
     }
 
-    fn swap(&mut self, device: &Device) {
+    fn swap(&mut self, device: &mut Device) {
         unimplemented!()
     }
 }
@@ -209,7 +209,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
         unimplemented!()
     }
 
@@ -475,7 +475,7 @@ impl super::Device for Device {
         unimplemented!()
     }
 
-    fn execute(&self, cmd: &Self::CmdBuf) {
+    fn execute(&mut self, cmd: &Self::CmdBuf) {
         unimplemented!()
     }
 

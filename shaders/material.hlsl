@@ -166,11 +166,12 @@ ps_output ps_mesh_lit(vs_output input) {
     int i = 0;
     float ks = 2.0;
     float shininess = 32.0;
-    float roughness = 0.1;
+    float roughness = 0.7;
     float k = 0.3;
 
     float3 v = normalize(input.world_pos.xyz - view_position.xyz);
     float3 n = input.normal;
+
 
     // point lights
     uint point_lights_id = world_buffer_info.point_light.x;
@@ -447,6 +448,7 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     //float3 geo_normal = normalize(v0.normal * u + v1.normal * v + v2.normal * w);
 
     float3 geo_normal = normalize(v0.normal + (v1.normal - v0.normal) * u + (v2.normal - v0.normal) * v);
+    geo_normal = normalize(mul(geo_normal, (float3x3)WorldToObject3x4()));
 
     if(lookup.material_type == 1)
     {

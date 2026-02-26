@@ -11,7 +11,7 @@
             "program": "${workspaceFolder}/target/debug/client.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "pmbuild-debug"
@@ -23,7 +23,7 @@
             "program": "${workspaceFolder}/target/release/client.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "pmbuild-release"
@@ -35,7 +35,7 @@
             "program": "${workspaceFolder}/target/debug/examples/window.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -47,7 +47,7 @@
             "program": "${workspaceFolder}/target/debug/examples/swap_chain.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -59,7 +59,7 @@
             "program": "${workspaceFolder}/target/debug/examples/triangle.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -71,7 +71,7 @@
             "program": "${workspaceFolder}/target/debug/examples/bindless.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -83,7 +83,7 @@
             "program": "${workspaceFolder}/target/debug/examples/bindful.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -107,7 +107,7 @@
             "program": "${workspaceFolder}/target/debug/examples/imgui_demo.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -119,7 +119,7 @@
             "program": "${workspaceFolder}/target/debug/examples/play_video.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -131,7 +131,7 @@
             "program": "${workspaceFolder}/target/debug/examples/resource_tests.exe",
             "args": ["--test-threads=1", "--nocapture"],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -143,7 +143,7 @@
             "program": "${workspaceFolder}/target/debug/examples/raytraced_triangle.exe",
             "args": [],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
             "preLaunchTask": "examples"
@@ -155,7 +155,7 @@
             "program": "${workspaceFolder}/target/debug/deps/tests-9d060b7b8785eb4b.exe",
             "args": ["--test-threads=1", "--nocapture"],
             "stopAtEntry": false,
-            "cwd": "${fileDirname}",
+            "cwd": "${workspaceFolder}",
             "environment": [],
             "console": "externalTerminal",
         },

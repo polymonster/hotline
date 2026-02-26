@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Multiple Render Targets
 /// 
@@ -19,7 +16,6 @@ pub fn multiple_render_targets(client: &mut Client<gfx_platform::Device, os_plat
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_multiple_render_targets(
     mut device: ResMut<DeviceRes>,

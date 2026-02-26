@@ -1,15 +1,17 @@
+use hotline_rs::*;
+use hotline_rs::prelude::*;
 use hotline_rs::gfx::CmdBuf;
 use hotline_rs::gfx::RenderPassInfo;
 use hotline_rs::gfx::SwapChain;
-use hotline_rs::*;
 
 use os::App;
 use os::Window;
 
+use gfx::Device;
+
+use maths_rs::Vec3f;
 use maths_rs::vec::vec3f;
 use maths_rs::cos;
-
-use gfx::Device;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // create an app
@@ -88,7 +90,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         device.execute(&cmd);
 
         println!("swap {}", t);
-        swap_chain.swap(&device);
+        swap_chain.swap(&mut device);
 
         t += 1.0 / 600.0;
     }

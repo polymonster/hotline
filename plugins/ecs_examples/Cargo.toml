@@ -4,12 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["rlib", "dylib"]
+crate-type = ["cdylib"]
 
 [dependencies]
-hotline-rs = { path = "../.." }
+hotline-rs.workspace = true
 export_macros = { path = "../export_macros" }
-maths-rs = "0.2.3"
-bevy_ecs = "0.15.0"
+maths-rs.workspace = true
+bevy_ecs.workspace = true
 rand = "0.8.5"
-bitflags = "1.3.2"
+bitflags.workspace = true

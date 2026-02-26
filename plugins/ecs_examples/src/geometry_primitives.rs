@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Geometry Primitives
 /// 
@@ -30,7 +27,6 @@ pub fn geometry_primitives(client: &mut Client<gfx_platform::Device, os_platform
 }
 
 /// Sets up one of each primitive, evenly spaced and tiled so its easy to extend and add more
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_geometry_primitives(
     mut device: ResMut<DeviceRes>,
@@ -129,7 +125,6 @@ pub fn setup_geometry_primitives(
 }
 
 /// Rotate all meshes continuously about the y-axis by delta time
-#[no_mangle]
 #[export_update_fn]
 pub fn rotate_meshes(
     time: Res<TimeRes>, 

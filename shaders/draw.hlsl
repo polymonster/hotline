@@ -31,12 +31,14 @@ vs_output vs_mesh(vs_input_mesh input) {
     float4 pos = float4(input.position.xyz, 1.0);
     pos.xyz = mul(world_matrix, pos);
 
+    float3x3 rot = (float3x3)world_matrix;
+
     vs_output output;
     output.position = mul(view_projection_matrix, pos);
     output.world_pos = pos;
     output.texcoord = float4(input.texcoord, 0.0, 0.0);
     output.colour = material_colour;
-    output.normal = input.normal.xyz;
+    output.normal = normalize(mul(rot, input.normal.xyz));
     
     return output;
 }

@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use hotline_rs::pmfx::CameraConstants;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
@@ -168,6 +165,65 @@ fn update_camera_orbit(
     pmfx.update_camera_constants(&name, &constants);
 }
 
+fn update_camera_editor(
+    app: &AppRes,
+    pmfx: &mut PmfxRes,
+    camera: &mut Camera,
+    position: &mut Position,
+    view_proj: &mut ViewProjectionMatrix,
+    name: &String
+) {
+    let drag = app.get_mouse_pos_delta();
+    let wheel = app.get_mouse_wheel();
+    let buttons = app.get_mouse_buttons();
+    let drag = vec2f(drag.x as f32, drag.y as f32);
+
+    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
+
+    // speed modifier
+    let boost_speed = 2.0;
+    let mut scroll_speed = 100.0;
+    let control_speed = 0.1;
+
+    if enable_keyboard {
+        // modifiers
+        if app.is_sys_key_down(os::SysKey::Shift) {
+            // speed boost
+            scroll_speed *= boost_speed;
+        }
+        else if app.is_sys_key_down(os::SysKey::Ctrl) {
+            // fine control
+            scroll_speed *= control_speed;
+        }
+    }
+
+    if enable_mouse {
+        if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
+            let right = view_proj.get_row(0).xyz();
+            let up = view_proj.get_row(1).xyz();
+            camera.focus += up * -drag.y;
+            camera.focus += right * -drag.x;
+        }
+        else {
+            if buttons[os::MouseButton::Left as usize] && app.is_sys_key_down(os::SysKey::Alt) {
+                camera.rot -= Vec3f::from((drag.yx(), 0.0));
+            }
+            camera.zoom += wheel * scroll_speed;
+            camera.zoom = max(camera.zoom, 1.0);
+        }
+    }
+
+    // generate proj matrix
+    let aspect = pmfx.get_window_aspect("main_dock");
+
+    let constants = camera_constants_from_orbit(&camera.rot, &camera.focus, camera.zoom, aspect, 60.0);
+    view_proj.0 = constants.view_projection_matrix;
+    position.0 = constants.view_position.xyz();
+
+    // update camera in pmfx
+    pmfx.update_camera_constants(&name, &constants);
+}
+
 fn update_camera_fly(
     app: &AppRes,
     time: &TimeRes,
@@ -264,6 +320,9 @@ fn update_cameras(
             },
             CameraType::Orbit => {
                 update_camera_orbit(&app, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
+            },
+            CameraType::Editor => {
+                update_camera_editor(&app, &mut pmfx, &mut camera, &mut position, &mut view_proj, name);
             }
             _ => continue
         }
@@ -290,14 +349,14 @@ impl BevyPlugin {
                 let exported_function_name = format!("export_{}", name);
                 if view_name.is_empty() {
                     // function with () no args
-                    let hook = lib.get_symbol::<unsafe extern fn() -> SystemConfigs>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern "C" fn() -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn());
                     }
                 }
                 else {
                     // function with pass name args
-                    let hook = lib.get_symbol::<unsafe extern fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
+                    let hook = lib.get_symbol::<unsafe extern "C" fn(String) -> SystemConfigs>(exported_function_name.as_bytes());
                     if let Ok(hook_fn) = hook {
                         return Some(hook_fn(view_name.to_string()));
                     }
@@ -309,7 +368,7 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
-                let hook = lib.get_symbol::<unsafe extern fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
+                let hook = lib.get_symbol::<unsafe extern "C" fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
                 if let Ok(hook_fn) = hook {
                     let desc = hook_fn(name.to_string(), view_name.to_string());
                     if desc.is_some() {
@@ -327,7 +386,7 @@ impl BevyPlugin {
         for (lib_name, lib) in &client.libs {
             unsafe {
                 let function_name = format!("get_demos_{}", lib_name).to_string();
-                let list = lib.get_symbol::<unsafe extern fn() ->  Vec<String>>(function_name.as_bytes());
+                let list = lib.get_symbol::<unsafe extern "C" fn() ->  Vec<String>>(function_name.as_bytes());
                 if let Ok(list_fn) = list {
                     let mut lib_demos = list_fn();
                     demos.append(&mut lib_demos);
@@ -352,7 +411,7 @@ impl BevyPlugin {
             for (_, lib) in &client.libs {
                 unsafe {
                     let function_name = format!("{}", self.session_info.active_demo).to_string();
-                    let demo = lib.get_symbol::<unsafe extern fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
+                    let demo = lib.get_symbol::<unsafe extern "C" fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
                     if let Ok(demo_fn) = demo {
                         return Some(demo_fn(client));
                     }
@@ -364,24 +423,21 @@ impl BevyPlugin {
     }
 
     /// If we change demo or need to rebuild render graphs we need to invoke this, code changes will already invoke setup
-    fn resetup(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn resetup(&mut self, client: &mut PlatformClient) {
         // serialize
         client.serialise_plugin_data("ecs", &self.session_info);
         // unload / setup
         client.swap_chain.wait_for_last_frame();
-        client = self.unload(client);
+        self.unload(client);
         client.pmfx.unload_views();
         self.setup(client)
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
-    fn check_for_changes(&mut self, client: PlatformClient) -> PlatformClient {
+    fn check_for_changes(&mut self, client: &mut PlatformClient) {
         // render graph itself has chaned
         if self.render_graph_hash != client.pmfx.get_render_graph_hash(&self.schedule_info.render_graph) {
-            self.resetup(client)
-        }
-        else {
-            client
+            self.resetup(client);
         }
     }
 
@@ -403,7 +459,7 @@ impl BevyPlugin {
         }
     }
 
-    fn schedule_ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn schedule_ui(&mut self, client: &mut PlatformClient) {
         let error_col = vec4f(1.0, 0.0, 0.3, 1.0);
         let warning_col = vec4f(1.0, 7.0, 0.0, 1.0);
         let default_col = vec4f(1.0, 1.0, 1.0, 1.0);
@@ -472,7 +528,6 @@ impl BevyPlugin {
                 }
             }
         }
-        client
     }
 
     fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
@@ -491,6 +546,7 @@ impl BevyPlugin {
         let zoom = main_camera.zoom;
         let constants = match main_camera.camera_type {
             CameraType::Orbit => camera_constants_from_orbit(&rot, &focus, zoom, main_camera.aspect, main_camera.fov),
+            CameraType::Editor => camera_constants_from_orbit(&rot, &focus, zoom, main_camera.aspect, main_camera.fov),
             _ => camera_constants_from_fly(&pos, &rot, main_camera.aspect, main_camera.fov)
         };
         (
@@ -520,14 +576,14 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         }
     }
 
-    fn setup(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn setup(&mut self, client: &mut PlatformClient) {
         // clear errors
         self.errors = HashMap::new();
 
         self.session_info = client.deserialise_plugin_data("ecs");
 
         // dynamically change demos and lookup infos in other libs
-        let schedule_info = self.get_demo_schedule_info(&mut client);
+        let schedule_info = self.get_demo_schedule_info(client);
 
         // get schedule or use default and warn the user
         self.schedule_info = if let Some(info) = schedule_info {
@@ -607,17 +663,22 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // we defer the actual setup system calls until the update where resources will be inserted into the world
         self.run_setup = true;
-        client
     }
 
     fn update(&mut self, mut client: PlatformClient) -> PlatformClient {
         let session_info = self.session_info.clone();
 
         // check for any changes
-        client = self.check_for_changes(client);
+        self.check_for_changes(&mut client);
 
         // clear pmfx view errors before we render
         client.pmfx.view_errors.lock().unwrap().clear();
+
+        // capture viewport info from imgui dock before moving resources
+        let viewport_info = ViewportInfo {
+            pos: client.imgui.get_main_dock_pos(),
+            size: client.imgui.get_main_dock_size(),
+        };
 
         // move hotline resource into world
         self.world.insert_resource(session_info);
@@ -628,6 +689,8 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         self.world.insert_resource(ImDrawRes(client.imdraw));
         self.world.insert_resource(UserConfigRes(client.user_config));
         self.world.insert_resource(TimeRes(client.time));
+        self.world.insert_resource(ImGuiRes(client.imgui));
+        self.world.insert_resource(viewport_info);
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
@@ -655,6 +718,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client.imdraw = self.world.remove_resource::<ImDrawRes>().unwrap().0;
         client.user_config = self.world.remove_resource::<UserConfigRes>().unwrap().0;
         client.time = self.world.remove_resource::<TimeRes>().unwrap().0;
+        client.imgui = self.world.remove_resource::<ImGuiRes>().unwrap().0;
         self.session_info = self.world.remove_resource::<SessionInfo>().unwrap();
 
         // write back session info which will be serialised to disk and reloaded between sessions
@@ -662,15 +726,14 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         client
     }
 
-    fn unload(&mut self, client: PlatformClient) -> PlatformClient {
+    fn unload(&mut self, _client: &mut PlatformClient) {
         // drop everything while its safe
         self.setup_schedule = Schedule::default();
         self.schedule = Schedule::default();
         self.world = World::default();
-        client
     }
 
-    fn ui(&mut self, mut client: PlatformClient) -> PlatformClient {
+    fn ui(&mut self, client: &mut PlatformClient) {
         let mut open = true;
         let mut resetup = false;
         if client.imgui.begin("ecs", &mut open, imgui::WindowFlags::NONE) {
@@ -685,21 +748,37 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             let (open, selected) = client.imgui.combo_list("Demo", &demo_list, &self.session_info.active_demo);
             if open {
                 if selected != self.session_info.active_demo {
+                    // save current demo's camera and debug flags
+                    let old_demo = self.session_info.active_demo.clone();
+                    if let Some(camera) = self.session_info.main_camera {
+                        self.session_info.demo_cameras
+                            .get_or_insert_with(HashMap::new)
+                            .insert(old_demo.clone(), camera);
+                    }
+                    self.session_info.demo_debug_flags
+                        .get_or_insert_with(HashMap::new)
+                        .insert(old_demo, self.session_info.debug_draw_flags);
+
                     // update session info
                     self.session_info.active_demo = selected;
                     resetup = true;
                 }
             }
 
-            // camera type select
+            // save per-demo camera + debug draw defaults
             if client.imgui.button_size(font_awesome::strs::CAMERA, 32.0, 0.0) {
-                // save default
-                if self.session_info.default_cameras.is_none() {
-                    self.session_info.default_cameras = Some(HashMap::new());
+                let demo = self.session_info.active_demo.clone();
+                if let Some(camera) = self.session_info.main_camera {
+                    self.session_info.default_cameras
+                        .get_or_insert_with(HashMap::new)
+                        .insert(demo.clone(), camera);
+                    self.session_info.demo_cameras
+                        .get_or_insert_with(HashMap::new)
+                        .insert(demo.clone(), camera);
                 }
-                let default_cam_map = self.session_info.default_cameras.as_mut().unwrap();
-                let entry = default_cam_map.entry(self.session_info.active_demo.to_string()).or_default();
-                *entry = self.session_info.main_camera.unwrap();
+                self.session_info.demo_debug_flags
+                    .get_or_insert_with(HashMap::new)
+                    .insert(demo, self.session_info.debug_draw_flags);
             }
             client.imgui.same_line();
 
@@ -707,13 +786,15 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             for (mut camera, _) in &mut main_camera_query.iter_mut(&mut self.world) {
                 let camera_types = vec![
                     "Fly".to_string(),
-                    "Orbit".to_string()
+                    "Orbit".to_string(),
+                    "Editor".to_string(),
                 ];
                 let selected = format!("{:?}", camera.camera_type);
                 let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
                 camera.camera_type = match selected.as_str() {
                     "Fly" => CameraType::Fly,
                     "Orbit" => CameraType::Orbit,
+                    "Editor" => CameraType::Editor,
                     _ => CameraType::Fly
                 };
             }
@@ -790,22 +871,30 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
                 }
             }
 
-            client = self.schedule_ui(client);
+            self.schedule_ui(client);
         }
 
         // preform any re-setup actions
         if resetup {
-            // set camera to the default position for the selected demo
-            if let Some(default_cameras) = &self.session_info.default_cameras {
-                if default_cameras.contains_key(&self.session_info.active_demo) {
-                    self.session_info.main_camera = Some(default_cameras[&self.session_info.active_demo]);
-                }
+            let demo = &self.session_info.active_demo.clone();
+
+            // restore per-demo camera: demo_cameras takes priority, then default_cameras, then keep current
+            if let Some(cam) = self.session_info.demo_cameras.as_ref().and_then(|m| m.get(demo)) {
+                self.session_info.main_camera = Some(*cam);
+            } else if let Some(cam) = self.session_info.default_cameras.as_ref().and_then(|m| m.get(demo)) {
+                self.session_info.main_camera = Some(*cam);
             }
-            client = self.resetup(client);
+
+            // restore per-demo debug draw flags
+            self.session_info.debug_draw_flags = self.session_info.demo_debug_flags
+                .as_ref()
+                .and_then(|m| m.get(demo).copied())
+                .unwrap_or_default();
+
+            self.resetup(client);
         }
 
         client.imgui.end();
-        client
     }
 }
 

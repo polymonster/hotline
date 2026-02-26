@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Draw Indexed
 ///
@@ -21,7 +18,6 @@ pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>)
 }
 
 /// Set's up a single cube mesh. The draw all is made with `draw_meshes` in `draw.rs` 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_indexed(
     mut device: ResMut<DeviceRes>,
@@ -42,7 +38,6 @@ pub fn setup_draw_indexed(
 }
 
 /// Renders meshes with an indexed draw call
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_indexed(
     pmfx: &Res<PmfxRes>,

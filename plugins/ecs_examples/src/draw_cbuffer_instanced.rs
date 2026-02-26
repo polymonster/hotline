@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Draw cbuffer Instanced
 ///
@@ -24,7 +21,6 @@ pub fn draw_cbuffer_instanced(client: &mut Client<gfx_platform::Device, os_platf
     }
 }
 
-#[no_mangle]
 #[export_update_fn]
 pub fn setup_draw_cbuffer_instanced(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
@@ -92,7 +88,6 @@ pub fn setup_draw_cbuffer_instanced(
 }
 
 /// Renders all scene instance batches with cbuffer instance buffer
-#[no_mangle]
 #[export_render_fn]
 pub fn draw_meshes_cbuffer_instanced(
     pmfx: &Res<PmfxRes>,
@@ -112,15 +107,11 @@ pub fn draw_meshes_cbuffer_instanced(
         cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
         // bind the constant buffer (cbv) on the slot for b1, space0 specified in the shader
-        let pipeline_slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ConstantBuffer);
-        if let Some(pipeline_slot) = pipeline_slot {
-            cmd_buf.set_binding(
-                pipeline, 
-                instance_batch.heap.as_ref().unwrap(), 
-                pipeline_slot.index, 
-                instance_batch.buffer.get_cbv_index().unwrap()
-            );
-        }
+        cmd_buf.set_binding(
+            pipeline, 1, 0, gfx::DescriptorType::ConstantBuffer,
+            instance_batch.heap.as_ref().unwrap(),
+            instance_batch.buffer.get_cbv_index().unwrap()
+        );
 
         // bind vb, ib and draw instanced
         cmd_buf.set_index_buffer(&mesh.0.ib);

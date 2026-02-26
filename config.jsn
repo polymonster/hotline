@@ -43,7 +43,7 @@
         client: {
             type: shell
             commands: [
-                "cargo build --manifest-path plugins/Cargo.toml ${config_flags}"
+                "cargo build -p empty -p ecs -p ecs_examples ${config_flags}"
             ]
         }
         plugins: {

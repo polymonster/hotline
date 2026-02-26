@@ -70,6 +70,7 @@ pub fn setup_raytracing_pipeline_scene(
     let cube_mesh = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     let sphere_mesh = hotline_rs::primitives::create_sphere_mesh(&mut device.0, 32);
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
+    let helix_mesh = hotline_rs::primitives::create_helix_mesh(&mut device.0, 32, 4);
     
     let bounds = 100.0;
     let shape_bounds = bounds * 0.6;
@@ -77,7 +78,7 @@ pub fn setup_raytracing_pipeline_scene(
 
     let mut instance_geometry_lookup = Vec::new();
 
-    let dodeca_blas = commands.spawn((
+    let _dodeca_blas = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
         Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
@@ -107,15 +108,38 @@ pub fn setup_raytracing_pipeline_scene(
     ));
     instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh, 2)?);
 
+    // glass sphere — moved forward towards camera so you can look through it
     commands.spawn((
-        Position(vec3f(shape_bounds * 0.123, shape_bounds * -0.6, shape_bounds * -0.8)),
-        Scale(splat3f(shape_size * 2.0)),
+        Position(vec3f(shape_bounds * 0.5, shape_bounds * -0.5, shape_bounds * 0.9)),
+        Scale(splat3f(shape_size * 3.0)),
         Rotation(Quatf::identity()),
         MeshComponent(sphere_mesh.clone()),
         WorldMatrix(Mat34f::identity()),
         blas_from_mesh(&mut device, &sphere_mesh)?
     ));
     instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &sphere_mesh, 2)?);
+
+    // chrome helix
+    commands.spawn((
+        Position(vec3f(shape_bounds * -0.5, shape_bounds * 0.3, shape_bounds * 1.5)),
+        Scale(splat3f(shape_size * 1.5)),
+        Rotation(Quatf::identity()),
+        MeshComponent(helix_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &helix_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &helix_mesh, 1)?);
+
+    // glass helix
+    commands.spawn((
+        Position(vec3f(shape_bounds * 0.6, shape_bounds * -0.7, shape_bounds * 0.4)),
+        Scale(splat3f(shape_size * 1.5)),
+        Rotation(Quatf::identity()),
+        MeshComponent(helix_mesh.clone()),
+        WorldMatrix(Mat34f::identity()),
+        blas_from_mesh(&mut device, &helix_mesh)?
+    ));
+    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &helix_mesh, 2)?);
 
     // walls
     let thickness = bounds * 0.1;
@@ -198,7 +222,7 @@ pub fn setup_raytracing_pipeline_scene(
 
 #[export_compute_fn]
 pub fn render_meshes_raytraced(
-    device: ResMut<DeviceRes>,
+    _device: ResMut<DeviceRes>,
     pmfx: &Res<PmfxRes>,
     pass: &pmfx::ComputePass<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
@@ -206,10 +230,10 @@ pub fn render_meshes_raytraced(
 ) -> Result<(), hotline_rs::Error> {
     let pmfx = &pmfx.0;
 
-    let mut heap = pmfx.shader_heap.clone();
+    let _heap = pmfx.shader_heap.clone();
 
     let output_size = pmfx.get_texture_2d_size("staging_output").expect("expected staging_output");
-    let output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
+    let _output_tex = pmfx.get_texture("staging_output").expect("expected staging_output");
 
     let camera = pmfx.get_camera_constants("main_camera");
     if let Ok(camera) = camera {
@@ -239,11 +263,8 @@ pub fn render_meshes_raytraced(
 
                 cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
                 
-                let second_slot = raytracing_pipeline.pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
-                if let Some(second_slot) = second_slot {
-                    let srv_buffer = t.instance_geometry_buffer.as_ref().unwrap().get_srv_index().unwrap();
-                    cmd_buf.set_binding(&raytracing_pipeline.pipeline, &pmfx.shader_heap, second_slot.index, srv_buffer);
-                }
+                let srv_buffer = t.instance_geometry_buffer.as_ref().unwrap().get_srv_index().unwrap();
+                cmd_buf.set_binding(&raytracing_pipeline.pipeline, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv_buffer);
 
                 // dispatch
                 cmd_buf.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {

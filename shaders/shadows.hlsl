@@ -116,7 +116,7 @@ float4 ps_single_directional_shadow(vs_output input) : SV_Target {
     float shadow_sample = textures[shadow_map_index].Sample(sampler_clamp_point, sp.xy).r;
     float shadow = sp.z >= shadow_sample ? 0.0 : 1.0;
 
-    shadow = sample_shadow_pcf_9(sp, shadow_map_index, float2(4096, 4096));
+    shadow = sample_shadow_pcf_9(sp, shadow_map_index, float2(4096.0, 4096.0));
 
     float3 l = light.dir.xyz;
     float diffuse = lambert(l, n);

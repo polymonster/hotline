@@ -54,14 +54,14 @@ git submodule update --init --recursive
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the hotline library and the client, fetch the hotline-data repository
+// build the hotline library
 cargo build
 
 // build the data
-hotline-data\pmbuild win32-data
+cargo build --features build_data
 
-// then build plugins
-cargo build --manifest-path plugins/Cargo.toml
+// build plugins
+cargo build -p ecs -p ecs_examples
 
 // run the client
 cargo run client
@@ -74,20 +74,11 @@ Any code changes made to the plugin libs will cause a rebuild and reload to happ
 To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled [pmbuild](https://github.com/polymonster/pmbuild) in the `hotline-data` repository and use the following commands which bundle together build steps:
 
 ```text
-// show aavailable build profiles
-hotline-data\pmbuild -help
+// build lib, plugins and data
+cargo build --workspace --features build_data
 
-// build release
-hotline-data\pmbuild win32-release
-
-// build debug
-hotline-data\pmbuild win32-debug
-
-// run the client 
-hotline-data\pmbuild win32-debug -run
-
-// build and run the client 
-hotline-data\pmbuild win32-release -all -run
+// run the client
+cargo run client
 ```
 
 ### Building from Visual Studio Code
@@ -107,7 +98,7 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["rlib", "dylib"]
+crate-type = ["cylib"]
 
 [dependencies]
 hotline-rs = { path = "../.." }
@@ -229,7 +220,6 @@ pub fn setup_cube(
 You can also supply your own `update` systems to animate and move your entities.
 
 ```rust
-#[no_mangle]
 #[export_update_fn]
 fn update_cameras(
     app: Res<AppRes>, 
@@ -248,30 +238,30 @@ fn update_cameras(
 You can specify render graphs in `pmfx` that set up `views`, which get dispatched into `render` functions. All render systems run concurrently on the CPU, the command buffers they generate are executed in an order determined by the `pmfx` render graph and it's dependencies.
 
 ```rust
-#[no_mangle]
 #[export_render_fn]
 pub fn render_meshes(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
         
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
-    view.cmd_buf.set_render_pipeline(&mesh_debug);
-    view.cmd_buf.push_render_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
+    cmd_buf.set_render_pipeline(&mesh_debug);
+    cmd_buf.push_render_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
     // make draw calls
     for (world_matrix, mesh) in &mesh_draw_query {
-        view.cmd_buf.push_render_constants(1, 16, 0, &world_matrix.0);
-        view.cmd_buf.set_index_buffer(&mesh.0.ib);
-        view.cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
-        view.cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
+        cmd_buf.push_render_constants(1, 16, 0, &world_matrix.0);
+        cmd_buf.set_index_buffer(&mesh.0.ib);
+        cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
+        cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
     }
 
     // end / transition / execute
-    view.cmd_buf.end_render_pass();
+    cmd_buf.end_render_pass();
     Ok(())
 }
 ```
@@ -285,17 +275,18 @@ Compute systems work similarly to `render` systems. They get passed a `pmfx::Com
 #[export_compute_fn]
 pub fn dispatch_compute(
     pmfx: &Res<PmfxRes>,
-    pass: &pmfx::ComputePass<gfx_platform::Device>
+    pass: &pmfx::ComputePass<gfx_platform::Device>,
+    cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
 ) -> Result<(), hotline_rs::Error> {
 
     let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
-    pass.cmd_buf.set_compute_pipeline(&pipeline);
+    cmd_buf.set_compute_pipeline(&pipeline);
 
     let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
     if let Some(slot) = using_slot {
         for i in 0..pass.use_indices.len() {
             let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-            pass.cmd_buf.push_compute_constants(
+            cmd_buf.push_compute_constants(
                 0, 
                 num_constants, 
                 i as u32 * num_constants, 
@@ -304,9 +295,9 @@ pub fn dispatch_compute(
         }
     }
 
-    pass.cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
+    cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
     
-    pass.cmd_buf.dispatch(
+    cmd_buf.dispatch(
         pass.group_count,
         pass.numthreads
     );

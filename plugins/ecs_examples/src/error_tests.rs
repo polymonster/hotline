@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use crate::prelude::*;
 
 /// Tests missing setup and updates are handled gracefully and notified to the user
@@ -94,7 +91,6 @@ pub fn test_missing_view_function(client: &mut Client<gfx_platform::Device, os_p
     }
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_camera(
     pmfx: &Res<PmfxRes>) -> Result<(), hotline_rs::Error> {
@@ -102,7 +98,6 @@ pub fn render_missing_camera(
     Ok(())
 }
 
-#[no_mangle]
 #[export_render_fn]
 pub fn render_missing_pipeline(
     pmfx: &Res<PmfxRes>,

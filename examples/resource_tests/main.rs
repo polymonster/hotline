@@ -205,25 +205,11 @@ fn main() -> Result<(), hotline_rs::Error> {
         let srv2 =  textures[3].get_srv_index().unwrap();
         let srv3 =  textures[4].get_srv_index().unwrap();
 
-        // this looks up register t0, space0
-        if let Some(t0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t0.index, srv0);
-        }
-
-        // this looks up register t1, space0
-        if let Some(t1) = pso_pmfx.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t1.index, srv1);
-        }
-
-        // this looks up register t2, space0
-        if let Some(t2) = pso_pmfx.get_pipeline_slot(2, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t2.index, srv2);
-        }
-
-        // this looks up register t3, space0
-        if let Some(t3) = pso_pmfx.get_pipeline_slot(3, 0, gfx::DescriptorType::ShaderResource) {
-            cmdbuffer.set_binding(pso_pmfx, &pmfx.shader_heap, t3.index, srv3);
-        }
+        // bind textures t0..t3, space0
+        cmdbuffer.set_binding(pso_pmfx, 0, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv0);
+        cmdbuffer.set_binding(pso_pmfx, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv1);
+        cmdbuffer.set_binding(pso_pmfx, 2, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv2);
+        cmdbuffer.set_binding(pso_pmfx, 3, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv3);
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);
@@ -243,7 +229,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         dev.execute(&cmdbuffer);
 
-        swap_chain.swap(&dev);
+        swap_chain.swap(&mut dev);
         ci = (ci + 1) % 4;
     }
 
