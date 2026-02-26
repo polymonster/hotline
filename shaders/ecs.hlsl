@@ -2,7 +2,7 @@
 // contains core descriptor layout to be used among different / shared ecs systems
 //
 
-// generic (fat) + non-skinned mesh vertex layout 
+// generic (fat) + non-skinned mesh vertex layout
 struct vs_input_mesh {
     float3 position: POSITION;
     float2 texcoord: TEXCOORD0;
@@ -130,33 +130,33 @@ struct extent_data {
 }
 
 // structures of arrays for indriect / bindless lookups
-StructuredBuffer<draw_data> draws[] : register(t0, space0);
-StructuredBuffer<extent_data> extents[] : register(t0, space1);
-StructuredBuffer<material_data> materials[] : register(t0, space2);
-StructuredBuffer<point_light_data> point_lights[] : register(t0, space3);
-StructuredBuffer<spot_light_data> spot_lights[] : register(t0, space4);
-StructuredBuffer<directional_light_data> directional_lights[] : register(t0, space5);
-StructuredBuffer<float4x4> shadow_matrices[] : register(t0, space6);
+StructuredBuffer<draw_data> draws[1024] : register(t0, space0);
+StructuredBuffer<extent_data> extents[1024] : register(t0, space1);
+StructuredBuffer<material_data> materials[1024] : register(t0, space2);
+StructuredBuffer<point_light_data> point_lights[1024] : register(t0, space3);
+StructuredBuffer<spot_light_data> spot_lights[1024] : register(t0, space4);
+StructuredBuffer<directional_light_data> directional_lights[1024] : register(t0, space5);
+StructuredBuffer<float4x4> shadow_matrices[1024] : register(t0, space6);
 
-// textures 
-Texture2D textures[] : register(t0, space7);
-Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);
-TextureCube cubemaps[] : register(t0, space9);
-Texture2DArray texture_arrays[] : register(t0, space10);
-Texture3D volume_textures[] : register(t0, space11);
+// textures
+Texture2D textures[1024] : register(t0, space7);
+Texture2DMS<float4, 8> msaa8x_textures[1024] : register(t0, space8);
+TextureCube cubemaps[1024] : register(t0, space9);
+Texture2DArray texture_arrays[1024] : register(t0, space10);
+Texture3D volume_textures[1024] : register(t0, space11);
 
 // tlas
-RaytracingAccelerationStructure scene_tlas[] : register(t0, space12);
+RaytracingAccelerationStructure scene_tlas[1024] : register(t0, space12);
 
 // uav textures
-RWTexture2D<float4> rw_textures[] : register(u0, space0);
-RWTexture3D<float4> rw_volume_textures[] : register(u0, space1);
+RWTexture2D<float4> rw_textures[1024] : register(u0, space0);
+RWTexture3D<float4> rw_volume_textures[1024] : register(u0, space1);
 
 // main constants to obtain the indices of the buffer types
 ConstantBuffer<world_buffer_info_data> world_buffer_info : register(b2);
 
 // camera data for bindless camera lookups
-ConstantBuffer<camera_data> cameras[] : register(b3);
+ConstantBuffer<camera_data> cameras[1024] : register(b3);
 
 // samplers
 SamplerState sampler0 : register(s0);
