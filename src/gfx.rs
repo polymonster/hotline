@@ -629,7 +629,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
-#[derive(Clone, Copy, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers.
     ShaderResource,

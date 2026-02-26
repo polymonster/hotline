@@ -171,14 +171,29 @@ impl super::SwapChain<Device> for SwapChain {
     }
 }
 
-#[derive(Clone)]
 pub struct CmdBuf {
     cmd_queue: metal::CommandQueue,
     cmd: Option<metal::CommandBuffer>,
     render_encoder: Option<metal::RenderCommandEncoder>,
     compute_encoder: Option<metal::ComputeCommandEncoder>,
     bound_index_buffer: Option<metal::Buffer>,
-    bound_index_stride: usize
+    bound_index_stride: usize,
+    /// Raw pointer to bound render pipeline (valid during render pass)
+    bound_render_pipeline: Option<*const RenderPipeline>,
+}
+
+impl Clone for CmdBuf {
+    fn clone(&self) -> Self {
+        CmdBuf {
+            cmd_queue: self.cmd_queue.clone(),
+            cmd: self.cmd.clone(),
+            render_encoder: self.render_encoder.clone(),
+            compute_encoder: self.compute_encoder.clone(),
+            bound_index_buffer: self.bound_index_buffer.clone(),
+            bound_index_stride: self.bound_index_stride,
+            bound_render_pipeline: self.bound_render_pipeline,
+        }
+    }
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
@@ -302,11 +317,17 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .set_render_pipeline_state(&pipeline.pipeline_state);
 
-            // bind static samplers
-            for sampler in &pipeline.static_samplers {
-                self.render_encoder.as_ref().unwrap().set_fragment_sampler_state(
-                    sampler.slot as u64, Some(&sampler.sampler))
+            // Bind sampler argument buffer at buffer(4) per htwv convention
+            if let Some(ref sampler_arg_buffer) = pipeline.sampler_argument_buffer {
+                self.render_encoder.as_ref().unwrap().set_fragment_buffer(
+                    4, // samplers_offset from htwv
+                    Some(sampler_arg_buffer),
+                    0
+                );
             }
+
+            // Store pipeline pointer for push_render_constants
+            self.bound_render_pipeline = Some(pipeline as *const RenderPipeline);
         });
     }
 
@@ -319,60 +340,42 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_heap<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap) {
-        self.render_encoder
+        let encoder = self.render_encoder
             .as_ref()
-            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-            .use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
 
-        let pipeline = (pipeline as *const T) as *const RenderPipeline;
-        let pipeline = unsafe { &*pipeline };
-
-        pipeline.fragment_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
-            if let Some(slot) = slot {
-                slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
-
-                // TODO: need to know data types (Texture, Buffer)
-                // assign textures to slots
-                heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
-                    if let Some(texture) = texture {
-                        slot.argument_encoder.set_texture(index as u64, texture);
-                    }
-                });
-
-                // TODO: need to know what stages to bind on
-                self.render_encoder.as_ref().unwrap().set_fragment_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
-            }
-        });
-
-        pipeline.vertex_descriptor_slots.iter().enumerate().for_each(|(slot_index, slot)| {
-            if let Some(slot) = slot {
-                slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
-
-                // TODO: need to know data types (Texture, Buffer)
-                // assign textures to slots
-                heap.texture_slots.iter().enumerate().for_each(|(index, texture)| {
-                    slot.argument_encoder.set_texture(index as u64, texture.as_ref().unwrap());
-                });
-
-                // TODO: need to know what stages to bind on
-                self.render_encoder.as_ref().unwrap().set_vertex_buffer(slot_index as u64, Some(&slot.argument_buffer), 0);
-            }
-        });
+        // Make the heap accessible to shaders - actual texture binding happens via set_binding
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
     }
 
-    // TODO: needs stage
     fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
-        let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
-        let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
-        if rp.fragment_descriptor_slots.len() > 0 {
-            if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
-                d.argument_encoder.set_argument_buffer(&d.argument_buffer, 0);
-                if let Some(texture) = heap.texture_slots[offset].as_ref() {
-                    d.argument_encoder.set_texture(slot.index as u64, &texture);
-                }
+        let encoder = self.render_encoder.as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+
+        let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
+
+        // Look up the slot by (register, space, descriptor_type)
+        if let Some(slot) = rp.slot_lookup.get(&(register, space, descriptor_type)) {
+            slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
+
+            // Set texture from heap at offset
+            if let Some(texture) = heap.texture_slots.get(offset).and_then(|t| t.as_ref()) {
+                slot.argument_encoder.set_texture(0, texture);
             }
+
+            // Bind to appropriate stage(s)
+            if let Some(vertex_idx) = slot.vertex_buffer_index {
+                encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
+            }
+            if let Some(fragment_idx) = slot.fragment_buffer_index {
+                encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+            }
+
+            Some(())
+        } else {
+            None
         }
-        Some(())
     }
 
     /*
@@ -386,13 +389,59 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
-        // TODO: need to know the stages and the buffer offset
-        self.render_encoder
-        .as_ref()
-        .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-        // .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
-        // .set_vertex_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
-        .set_vertex_bytes(1,  num_values as u64 * 4, data.as_ptr() as _);
+        let encoder = self.render_encoder
+            .as_ref()
+            .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+
+        // Find the pipeline slot by buffer index
+        if let Some(pipeline_ptr) = self.bound_render_pipeline {
+            let pipeline = unsafe { &*pipeline_ptr };
+
+            // Find slot with matching buffer index
+            for pipeline_slot in pipeline.slot_lookup.values() {
+                if pipeline_slot.info.index == slot && pipeline_slot.data_buffer.is_some() {
+                    // Copy data to the data buffer
+                    if let Some(ref data_buffer) = pipeline_slot.data_buffer {
+                        let data_bytes = unsafe {
+                            std::slice::from_raw_parts(
+                                data.as_ptr() as *const u8,
+                                std::mem::size_of_val(data)
+                            )
+                        };
+                        let dest_ptr = data_buffer.contents() as *mut u8;
+                        let dest_offset_bytes = dest_offset as usize * 4;
+                        unsafe {
+                            std::ptr::copy_nonoverlapping(
+                                data_bytes.as_ptr(),
+                                dest_ptr.add(dest_offset_bytes),
+                                data_bytes.len()
+                            );
+                        }
+
+                        // Re-encode the buffer pointer into the argument buffer
+                        pipeline_slot.argument_encoder.set_argument_buffer(&pipeline_slot.argument_buffer, 0);
+                        pipeline_slot.argument_encoder.set_buffer(0, data_buffer, 0);
+
+                        // Bind the argument buffer to the appropriate stage(s)
+                        if let Some(vertex_idx) = pipeline_slot.vertex_buffer_index {
+                            encoder.set_vertex_buffer(
+                                vertex_idx as u64,
+                                Some(&pipeline_slot.argument_buffer),
+                                0
+                            );
+                        }
+                        if let Some(fragment_idx) = pipeline_slot.fragment_buffer_index {
+                            encoder.set_fragment_buffer(
+                                fragment_idx as u64,
+                                Some(&pipeline_slot.argument_buffer),
+                                0
+                            );
+                        }
+                    }
+                    return;
+                }
+            }
+        }
     }
 
     fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
@@ -566,62 +615,43 @@ struct MetalSamplerBinding {
     sampler: metal::SamplerState
 }
 
-#[derive(Clone)]
-pub struct DescriptorMember {
-    offset: u32,
-    num: u32,
-    info: PipelineSlotInfo
+/// Unified pipeline slot for both descriptors and push constants
+/// Supports per-stage buffer indices for Metal argument buffers
+pub struct PipelineSlot {
+    /// Metal buffer index for vertex stage (None if not visible to vertex)
+    pub vertex_buffer_index: Option<u32>,
+    /// Metal buffer index for fragment stage (None if not visible to fragment)
+    pub fragment_buffer_index: Option<u32>,
+    /// Argument encoder for encoding resources into argument buffer
+    pub argument_encoder: metal::ArgumentEncoder,
+    /// Argument buffer containing encoded resource pointers
+    pub argument_buffer: metal::Buffer,
+    /// Data buffer for push constants (None for regular descriptors)
+    pub data_buffer: Option<metal::Buffer>,
+    /// Slot info for API compatibility
+    pub info: PipelineSlotInfo,
+    /// Visibility for this slot
+    pub visibility: ShaderVisibility,
 }
-type DescriptorMemberArray = Vec<Option<DescriptorMember>>;
 
-#[derive(Clone)]
-pub struct DescriptorSlot {
-    argument_buffer: metal::Buffer,
-    argument_encoder: metal::ArgumentEncoder,
-    members: Vec<Option<DescriptorMember>>,
-}
-type DescriptorSlotArray = Vec<Option<DescriptorSlot>>;
+/// Key for slot lookup: (register, space, descriptor_type)
+type SlotKey = (u32, u32, DescriptorType);
 
-pub struct PushConstantSlot {
-    buffer: metal::Buffer,
-    slot: u32,
-    visibility: ShaderVisibility
-}
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
     static_samplers: Vec<MetalSamplerBinding>,
     slots: Vec<u32>,
-    vertex_descriptor_slots: DescriptorSlotArray,
-    fragment_descriptor_slots: DescriptorSlotArray,
-    vertex_push_constant_slots: Vec<PushConstantSlot>,
-    fragment_push_constant_slots: Vec<PushConstantSlot>
+    /// Unified slot lookup by (register, space, descriptor_type)
+    slot_lookup: HashMap<SlotKey, PipelineSlot>,
+    /// Sampler argument buffer (at buffer(4) per htwv convention)
+    sampler_argument_buffer: Option<metal::Buffer>,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        if (space as usize) < self.fragment_descriptor_slots.len() {
-            if let Some(set) = self.fragment_descriptor_slots[space as usize].as_ref() {
-                if (register as usize) < set.members.len() {
-                    if let Some(member) = set.members[(register as usize)].as_ref() {
-                        Some(&member.info)
-                    }
-                    else {
-                        None
-                    }
-                }
-                else {
-                    None
-                }
-            }
-            else {
-                None
-            }
-        }
-        else {
-            None
-        }
+        self.slot_lookup.get(&(register, space, descriptor_type)).map(|slot| &slot.info)
     }
 
     fn get_pipeline_slots(&self) -> &Vec<u32> {
@@ -852,113 +882,128 @@ impl Device {
         }
     }
 
-    fn to_mtl_descriptor_slot(&self, visibility: super::ShaderVisibility, pipeline_bindings: &Option<Vec<DescriptorBinding>>) -> DescriptorSlotArray {
-        // argument buffer to descriptor slot style
-        let mut descriptor_slots : DescriptorSlotArray = Vec::new();
+    /// Build unified slot lookup following htwv convention:
+    /// - Slots 0-3: Reserved for vertex buffers
+    /// - Slot 4: Samplers
+    /// - Slot 5+: Push constants
+    /// - Slot N+: Regular bindings (after push constants)
+    fn build_slot_lookup(
+        &self,
+        pipeline_bindings: &Option<Vec<DescriptorBinding>>,
+        pipeline_push_constants: &Option<Vec<PushConstantInfo>>,
+    ) -> HashMap<SlotKey, PipelineSlot> {
+        let mut slot_lookup: HashMap<SlotKey, PipelineSlot> = HashMap::new();
 
-        // register spaces, and shader registers may not be ordered and may not be sequential or have gaps
-        if let Some(bindings) = pipeline_bindings.as_ref() {
-            // make space for enough shader register spaces
-            let mut space_count = 0;
-            for binding in bindings.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
-                space_count = binding.register_space.max(space_count);
-            }
-            descriptor_slots.resize((space_count + 1) as usize, None);
+        // htwv convention: samplers at 4, push constants start at 5
+        let samplers_offset: u32 = 4;
+        let mut binding_offset: u32 = samplers_offset + 1; // 5 for first push constant
 
-            // iterate over descriptor slots and find members
-            descriptor_slots.iter_mut().enumerate().for_each(|(space, descriptor_slot)| {
-                let mut members : DescriptorMemberArray = Vec::new();
-                for binding in bindings.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All) {
-                    if binding.register_space == space as u32 {
-                        if members.len() < (binding.shader_register + 1) as usize {
-                            members.resize((binding.shader_register + 1) as usize, None);
-                        }
-
-                        // get num
-                        let num = if let Some(num) = binding.num_descriptors {
-                            num
-                        }
-                        else {
-                            1
-                        };
-
-                        // assign member info
-                        members[binding.shader_register as usize] = Some(
-                            DescriptorMember {
-                                offset: 0,
-                                num: num,
-                                info: PipelineSlotInfo {
-                                    index: binding.shader_register,
-                                    count: binding.num_descriptors
-                                }
-                            }
-                        );
-                    }
-                }
-
-                // now work out the offsets of the members within the space
-                let mut offset = 0;
-                for member in &mut members {
-                    if let Some(member) = member {
-                        member.offset = offset;
-                        offset += member.num;
-                    }
-                }
-
-                // finally if we have members and not an empty space
-                // create an argument buffer
-                if members.len() > 0 {
-                    let mut member_descriptors = Vec::new();
-
-                    let mut total_num = 0;
-                    for member in &members {
-                        if let Some(member) = member {
-                            let descriptor = metal::ArgumentDescriptor::new();
-                            descriptor.set_index(member.offset as u64);
-                            descriptor.set_array_length(member.num as u64);
-
-                            // TODO: types / access
-                            descriptor.set_data_type(metal::MTLDataType::Texture);
-                            descriptor.set_access(metal::MTLArgumentAccess::ReadOnly);
-
-                            // push metal argument descriptor
-                            member_descriptors.push(descriptor.to_owned());
-
-                            total_num += member.num;
-                        }
-                    }
-
-                    // create encoder and argument buffer
-                    let argument_encoder = self.metal_device.new_argument_encoder(metal::Array::from_owned_slice(member_descriptors.as_slice()));
-                    let argument_buffer_size = argument_encoder.encoded_length() * total_num as u64;
-                    let argument_buffer = self.metal_device.new_buffer(argument_buffer_size, metal::MTLResourceOptions::empty());
-
-                    *descriptor_slot = Some(
-                        DescriptorSlot {
-                            argument_encoder,
-                            argument_buffer,
-                            members
-                        }
-                    )
-                }
-            });
-        }
-
-        descriptor_slots
-    }
-
-    fn to_mtl_push_constant_slot(&self, visibility: super::ShaderVisibility, pipeline_push_constants: &Option<Vec<PushConstantInfo>>, binding_offset: u32) -> Vec<PushConstantSlot> {
-        let mut push_constant_slots : Vec<PushConstantSlot> = Vec::new();
+        // Add push constant slots first (they come before regular bindings in htwv)
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
-            push_constants.iter().filter(|b| b.visibility == visibility || b.visibility == ShaderVisibility::All).enumerate().for_each(|(index, push_constant)| {
-                push_constant_slots.push(PushConstantSlot{
-                    buffer: self.metal_device.new_buffer(push_constant.num_values as u64 * 4, metal::MTLResourceOptions::StorageModeShared),
-                    slot: binding_offset + index as u32,
-                    visibility: ShaderVisibility::All
-                })
-            });
+            for push_constant in push_constants {
+                let buffer_index = binding_offset;
+
+                // Create argument descriptor for pointer type (push constants use pointers in argument buffers)
+                let arg_desc = metal::ArgumentDescriptor::new();
+                arg_desc.set_index(0);
+                arg_desc.set_data_type(metal::MTLDataType::Pointer);
+                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                let argument_encoder = self.metal_device.new_argument_encoder(
+                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                );
+                let argument_buffer = self.metal_device.new_buffer(
+                    argument_encoder.encoded_length(),
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                // Data buffer holds the actual push constant values
+                let data_buffer = self.metal_device.new_buffer(
+                    push_constant.num_values as u64 * 4,
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                // Encode the data buffer pointer into the argument buffer
+                argument_encoder.set_argument_buffer(&argument_buffer, 0);
+                argument_encoder.set_buffer(0, &data_buffer, 0);
+
+                // Determine stage indices based on visibility
+                let (vertex_idx, fragment_idx) = match push_constant.visibility {
+                    ShaderVisibility::Vertex => (Some(buffer_index), None),
+                    ShaderVisibility::Fragment => (None, Some(buffer_index)),
+                    ShaderVisibility::All => (Some(buffer_index), Some(buffer_index)),
+                    _ => (None, None),
+                };
+
+                slot_lookup.insert(
+                    (push_constant.shader_register, push_constant.register_space, DescriptorType::PushConstants),
+                    PipelineSlot {
+                        vertex_buffer_index: vertex_idx,
+                        fragment_buffer_index: fragment_idx,
+                        argument_encoder,
+                        argument_buffer,
+                        data_buffer: Some(data_buffer),
+                        info: PipelineSlotInfo {
+                            index: buffer_index,
+                            count: Some(push_constant.num_values),
+                        },
+                        visibility: push_constant.visibility,
+                    },
+                );
+
+                binding_offset += 1;
+            }
         }
-        push_constant_slots
+
+        // Add regular binding slots
+        if let Some(bindings) = pipeline_bindings.as_ref() {
+            for binding in bindings {
+                let buffer_index = binding_offset;
+
+                // Create argument descriptor for texture type
+                let arg_desc = metal::ArgumentDescriptor::new();
+                arg_desc.set_index(0);
+                arg_desc.set_array_length(binding.num_descriptors.unwrap_or(1) as u64);
+                arg_desc.set_data_type(metal::MTLDataType::Texture);
+                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                let argument_encoder = self.metal_device.new_argument_encoder(
+                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                );
+                let argument_buffer = self.metal_device.new_buffer(
+                    argument_encoder.encoded_length(),
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                // Determine stage indices based on visibility
+                let (vertex_idx, fragment_idx) = match binding.visibility {
+                    ShaderVisibility::Vertex => (Some(buffer_index), None),
+                    ShaderVisibility::Fragment => (None, Some(buffer_index)),
+                    ShaderVisibility::All => (Some(buffer_index), Some(buffer_index)),
+                    _ => (None, None),
+                };
+
+                slot_lookup.insert(
+                    (binding.shader_register, binding.register_space, binding.binding_type),
+                    PipelineSlot {
+                        vertex_buffer_index: vertex_idx,
+                        fragment_buffer_index: fragment_idx,
+                        argument_encoder,
+                        argument_buffer,
+                        data_buffer: None,
+                        info: PipelineSlotInfo {
+                            index: buffer_index,
+                            count: binding.num_descriptors,
+                        },
+                        visibility: binding.visibility,
+                    },
+                );
+
+                binding_offset += 1;
+            }
+        }
+
+        slot_lookup
     }
 }
 
@@ -1082,7 +1127,8 @@ impl super::Device for Device {
                 render_encoder: None,
                 compute_encoder: None,
                 bound_index_buffer: None,
-                bound_index_stride: 0
+                bound_index_stride: 0,
+                bound_render_pipeline: None,
             }
         })
     }
@@ -1160,8 +1206,10 @@ impl super::Device for Device {
 
             // TODO: raster
 
-            // TODO: samplers?
+            // Create static samplers and argument buffer (at buffer(4) per htwv convention)
             let mut pipeline_static_samplers = Vec::new();
+            let mut sampler_argument_buffer = None;
+
             if let Some(static_samplers) = &info.pipeline_layout.static_samplers {
                 for sampler in static_samplers {
                     let desc = metal::SamplerDescriptor::new();
@@ -1178,12 +1226,35 @@ impl super::Device for Device {
                         sampler: self.metal_device.new_sampler(&desc)
                     })
                 }
+
+                // Create argument buffer for samplers at buffer(4)
+                if !pipeline_static_samplers.is_empty() {
+                    let arg_desc = metal::ArgumentDescriptor::new();
+                    arg_desc.set_index(0);
+                    arg_desc.set_data_type(metal::MTLDataType::Sampler);
+                    arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                    let argument_encoder = self.metal_device.new_argument_encoder(
+                        metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                    );
+                    let arg_buffer = self.metal_device.new_buffer(
+                        argument_encoder.encoded_length(),
+                        metal::MTLResourceOptions::StorageModeShared
+                    );
+
+                    // Encode sampler into argument buffer
+                    argument_encoder.set_argument_buffer(&arg_buffer, 0);
+                    argument_encoder.set_sampler_state(0, &pipeline_static_samplers[0].sampler);
+
+                    sampler_argument_buffer = Some(arg_buffer);
+                }
             }
 
-            let vertex_descriptor_slots = self.to_mtl_descriptor_slot(ShaderVisibility::Vertex, &info.pipeline_layout.bindings);
-            let fragment_descriptor_slots = self.to_mtl_descriptor_slot(ShaderVisibility::Fragment, &info.pipeline_layout.bindings);
-            let vertex_push_constant_slots = self.to_mtl_push_constant_slot(ShaderVisibility::Vertex, &info.pipeline_layout.push_constants, vertex_descriptor_slots.len() as u32);
-            let fragment_push_constant_slots = self.to_mtl_push_constant_slot(ShaderVisibility::Fragment, &info.pipeline_layout.push_constants, fragment_descriptor_slots.len() as u32);
+            // Build unified slot lookup
+            let slot_lookup = self.build_slot_lookup(
+                &info.pipeline_layout.bindings,
+                &info.pipeline_layout.push_constants,
+            );
 
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
@@ -1191,10 +1262,8 @@ impl super::Device for Device {
                 pipeline_state,
                 slots: Vec::new(),
                 static_samplers: pipeline_static_samplers,
-                fragment_descriptor_slots,
-                vertex_descriptor_slots,
-                vertex_push_constant_slots,
-                fragment_push_constant_slots
+                slot_lookup,
+                sampler_argument_buffer,
             })
         })
     }

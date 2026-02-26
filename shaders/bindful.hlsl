@@ -54,7 +54,5 @@ float4 ps_main(ps_input input) : SV_Target {
         final = r3 * r3.a;
     }
 
-    // return final;
-
-    return float4(1.0, 0.0, 1.0, 1.0);
+    return final;
 }
