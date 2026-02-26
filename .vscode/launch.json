@@ -101,6 +101,30 @@
             // "preLaunchTask": "examples"
         },
         {
+            "name": "bindless (macOS|Debug)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/bindless",
+            "args": [],
+            "stopAtEntry": false,
+            // "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            // "preLaunchTask": "examples"
+        },
+        {
+            "name": "imgui_demo (macOS|Debug)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/examples/imgui_demo",
+            "args": [],
+            "stopAtEntry": false,
+            // "cwd": "${fileDirname}",
+            "environment": [],
+            "console": "externalTerminal",
+            // "preLaunchTask": "examples"
+        },
+        {
             "name": "imgui_demo (Win32|Debug)",
             "type": "cppvsdbg",
             "request": "launch",

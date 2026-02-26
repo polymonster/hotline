@@ -832,7 +832,7 @@ impl super::Heap<Device> for Heap {
     }
 
     fn get_heap_id(&self) -> u16 {
-        0
+        self.id
     }
 }
 
