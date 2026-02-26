@@ -40,7 +40,7 @@ fn main() {
         println!("cargo:warning=Compiling shaders...");
         match htwv::compile_dir("shaders", "target/data/shaders") {
             Ok(_) => println!("cargo:warning=Shader compilation succeeded"),
-            Err(e) => {} // panic!("Shader compilation failed: {e}"),
+            Err(e) => {} //panic!("Shader compilation failed: {e}"),
         }
     }
 }

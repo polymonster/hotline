@@ -317,10 +317,10 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .set_render_pipeline_state(&pipeline.pipeline_state);
 
-            // Bind sampler argument buffer at buffer(4) per htwv convention
+            // Bind sampler argument buffer at buffer(0) in fragment shader
             if let Some(ref sampler_arg_buffer) = pipeline.sampler_argument_buffer {
                 self.render_encoder.as_ref().unwrap().set_fragment_buffer(
-                    4, // samplers_offset from htwv
+                    0,
                     Some(sampler_arg_buffer),
                     0
                 );
@@ -894,13 +894,14 @@ impl Device {
     ) -> HashMap<SlotKey, PipelineSlot> {
         let mut slot_lookup: HashMap<SlotKey, PipelineSlot> = HashMap::new();
 
-        // htwv convention: samplers at 4, push constants start at 5
+        // htwv convention: samplers at 2 on vs
+        // samplers at 0 on ps
         // Track binding offsets separately per stage since different numbers of
         // bindings and push constants might be active on each stage
-        let samplers_offset: u32 = 4;
-        let start_offset: u32 = samplers_offset + 1; // 5 for first push constant
-        let mut vertex_binding_offset: u32 = start_offset;
-        let mut fragment_binding_offset: u32 = start_offset;
+        let vertex_samplers_offset: u32 = 2;
+        let fragment_samplers_offset: u32 = 0;
+        let mut vertex_binding_offset: u32 = vertex_samplers_offset + 1;
+        let mut fragment_binding_offset: u32 = fragment_samplers_offset + 1;
 
         // Add push constant slots first (they come before regular bindings in htwv)
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
