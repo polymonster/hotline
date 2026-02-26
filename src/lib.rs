@@ -245,13 +245,27 @@ pub mod prelude {
         pmfx,
         imgui,
 
+        // platform specific
+        gfx_platform,
+        os_platform,
+
         // traits
+        ecs_base::*,
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
+        pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData, WorldBufferReserveInfo, WorldBufferInfo},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,
         imdraw::ImDraw,
+        client::{Client, HotlineInfo, PluginInfo},
+        plugin::{Plugin},
         av::{VideoPlayer},
+
+        // macros
+        hotline_plugin,
+        system_func,
+        demos,
+        systems
     };
 }
 

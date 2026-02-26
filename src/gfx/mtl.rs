@@ -361,12 +361,8 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     // TODO: needs stage
-<<<<<<< HEAD
-    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
-=======
-    fn set_binding<T: SuperPipleline>(&self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
+    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
         let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
->>>>>>> master
         let rp : &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
         if rp.fragment_descriptor_slots.len() > 0 {
             if let Some(d) = rp.fragment_descriptor_slots[0].as_ref() {
@@ -379,10 +375,12 @@ impl super::CmdBuf<Device> for CmdBuf {
         Some(())
     }
 
+    /*
     #[cfg(target_os = "ignore")]
     fn set_texture(&mut self, texture: &Texture, slot: u32) {
         self.render_encoder.as_ref().unwrap().set_fragment_texture(slot as u64, Some(&texture.metal_texture));
     }
+    */
 
     fn set_marker(&mut self, colour: u32, name: &str) {
     }

@@ -3,7 +3,9 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(grep:*)",
-      "Bash(cargo build:*)"
+      "Bash(cargo build:*)",
+      "Bash(ls:*)",
+      "Bash(python3:*)"
     ]
   }
 }

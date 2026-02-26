@@ -1,7 +1,7 @@
 //#pragma argument(developmentfeatures)
 
 struct vs_input {
-    float3 position : POSITION; 
+    float3 position : POSITION;
     float4 uv : TEXCOORD0;
 };
 
@@ -54,5 +54,7 @@ float4 ps_main(ps_input input) : SV_Target {
         final = r3 * r3.a;
     }
 
-    return final;
+    // return final;
+
+    return float4(1.0, 0.0, 1.0, 1.0);
 }
