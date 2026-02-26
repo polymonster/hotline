@@ -344,9 +344,43 @@ impl super::CmdBuf<Device> for CmdBuf {
             .as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
 
-        // Make the heap accessible to shaders - actual texture binding happens via set_binding
+        // Make the heap accessible to shaders
         encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
         encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
+
+        // Cast pipeline to RenderPipeline to access slot_lookup
+        let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
+
+        // Bind texture arrays for all ShaderResource slots (default binding at offset 0)
+        for ((_register, _space, descriptor_type), slot) in &rp.slot_lookup {
+            // Only process ShaderResource bindings (textures)
+            if *descriptor_type != DescriptorType::ShaderResource {
+                continue;
+            }
+            // Skip push constants (they have data_buffer)
+            if slot.data_buffer.is_some() {
+                continue;
+            }
+
+            // Set up the argument buffer for encoding
+            slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
+
+            // Encode all available textures from the heap into the argument buffer
+            let num_textures = slot.info.count.unwrap_or(heap.texture_slots.len() as u32) as usize;
+            for i in 0..num_textures.min(heap.texture_slots.len()) {
+                if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
+                    slot.argument_encoder.set_texture(i as u64, texture);
+                }
+            }
+
+            // Bind the argument buffer to appropriate shader stages
+            if let Some(vertex_idx) = slot.vertex_buffer_index {
+                encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
+            }
+            if let Some(fragment_idx) = slot.fragment_buffer_index {
+                encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+            }
+        }
     }
 
     fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
@@ -973,12 +1007,15 @@ impl Device {
         }
 
         // Add regular binding slots
+        const MAX_BINDLESS_TEXTURES: u64 = 1024;
         if let Some(bindings) = pipeline_bindings.as_ref() {
             for binding in bindings {
                 // Create argument descriptor for texture type
                 let arg_desc = metal::ArgumentDescriptor::new();
                 arg_desc.set_index(0);
-                arg_desc.set_array_length(binding.num_descriptors.unwrap_or(1) as u64);
+                // Use MAX_BINDLESS_TEXTURES for unbounded arrays (None)
+                let array_len = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
+                arg_desc.set_array_length(array_len);
                 arg_desc.set_data_type(metal::MTLDataType::Texture);
                 arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
 
