@@ -49,7 +49,7 @@ const fn to_mtl_vertex_format(format: super::Format) -> MTLVertexFormat {
         super::Format::RGB32u => MTLVertexFormat::UInt3,
         super::Format::RGB32i => MTLVertexFormat::Int3,
         super::Format::RGB32f => MTLVertexFormat::Float3,
-        super::Format::RGBA8n => MTLVertexFormat::Char4Normalized,
+        super::Format::RGBA8n => MTLVertexFormat::UChar4Normalized,
         super::Format::RGBA8u => MTLVertexFormat::UChar4,
         super::Format::RGBA8i => MTLVertexFormat::Char4,
         super::Format::RGBA16u => MTLVertexFormat::UShort4,
@@ -60,6 +60,66 @@ const fn to_mtl_vertex_format(format: super::Format) -> MTLVertexFormat {
         super::Format::RGBA32f => MTLVertexFormat::Float4,
         _ => panic!("hotline_rs::gfx::mtl unsupported vertex format")
     }
+}
+
+fn to_mtl_primitive_type(topology: Topology) -> metal::MTLPrimitiveType {
+    match topology {
+        Topology::PointList => metal::MTLPrimitiveType::Point,
+        Topology::LineList => metal::MTLPrimitiveType::Line,
+        Topology::LineStrip => metal::MTLPrimitiveType::LineStrip,
+        Topology::TriangleList => metal::MTLPrimitiveType::Triangle,
+        Topology::TriangleStrip => metal::MTLPrimitiveType::TriangleStrip,
+        _ => metal::MTLPrimitiveType::Triangle,
+    }
+}
+
+fn to_mtl_blend_factor(factor: &super::BlendFactor) -> metal::MTLBlendFactor {
+    match factor {
+        super::BlendFactor::Zero => metal::MTLBlendFactor::Zero,
+        super::BlendFactor::One => metal::MTLBlendFactor::One,
+        super::BlendFactor::SrcColour => metal::MTLBlendFactor::SourceColor,
+        super::BlendFactor::InvSrcColour => metal::MTLBlendFactor::OneMinusSourceColor,
+        super::BlendFactor::SrcAlpha => metal::MTLBlendFactor::SourceAlpha,
+        super::BlendFactor::InvSrcAlpha => metal::MTLBlendFactor::OneMinusSourceAlpha,
+        super::BlendFactor::DstAlpha => metal::MTLBlendFactor::DestinationAlpha,
+        super::BlendFactor::InvDstAlpha => metal::MTLBlendFactor::OneMinusDestinationAlpha,
+        super::BlendFactor::DstColour => metal::MTLBlendFactor::DestinationColor,
+        super::BlendFactor::InvDstColour => metal::MTLBlendFactor::OneMinusDestinationColor,
+        super::BlendFactor::SrcAlphaSat => metal::MTLBlendFactor::SourceAlphaSaturated,
+        super::BlendFactor::BlendFactor => metal::MTLBlendFactor::BlendColor,
+        super::BlendFactor::InvBlendFactor => metal::MTLBlendFactor::OneMinusBlendColor,
+        super::BlendFactor::Src1Colour => metal::MTLBlendFactor::Source1Color,
+        super::BlendFactor::InvSrc1Colour => metal::MTLBlendFactor::OneMinusSource1Color,
+        super::BlendFactor::Src1Alpha => metal::MTLBlendFactor::Source1Alpha,
+        super::BlendFactor::InvSrc1Alpha => metal::MTLBlendFactor::OneMinusSource1Alpha,
+    }
+}
+
+fn to_mtl_blend_op(op: &super::BlendOp) -> metal::MTLBlendOperation {
+    match op {
+        super::BlendOp::Add => metal::MTLBlendOperation::Add,
+        super::BlendOp::Subtract => metal::MTLBlendOperation::Subtract,
+        super::BlendOp::RevSubtract => metal::MTLBlendOperation::ReverseSubtract,
+        super::BlendOp::Min => metal::MTLBlendOperation::Min,
+        super::BlendOp::Max => metal::MTLBlendOperation::Max,
+    }
+}
+
+fn to_mtl_write_mask(mask: &super::WriteMask) -> metal::MTLColorWriteMask {
+    let mut mtl_mask = metal::MTLColorWriteMask::empty();
+    if mask.contains(super::WriteMask::RED) {
+        mtl_mask |= metal::MTLColorWriteMask::Red;
+    }
+    if mask.contains(super::WriteMask::GREEN) {
+        mtl_mask |= metal::MTLColorWriteMask::Green;
+    }
+    if mask.contains(super::WriteMask::BLUE) {
+        mtl_mask |= metal::MTLColorWriteMask::Blue;
+    }
+    if mask.contains(super::WriteMask::ALPHA) {
+        mtl_mask |= metal::MTLColorWriteMask::Alpha;
+    }
+    mtl_mask
 }
 
 fn to_mtl_texture_usage(usage: TextureUsage) -> MTLTextureUsage {
@@ -387,6 +447,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         let encoder = self.render_encoder.as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
 
+        // Make the heap accessible to shaders
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
+
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
         // Look up the slot by (register, space, descriptor_type)
@@ -511,11 +575,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         start_instance: u32,
     ) {
         objc::rc::autoreleasepool(|| {
+            let primitive_type = self.bound_render_pipeline
+                .map(|p| unsafe { (*p).topology })
+                .map(to_mtl_primitive_type)
+                .unwrap_or(metal::MTLPrimitiveType::Triangle);
+
             self.render_encoder
                 .as_ref()
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .draw_indexed_primitives_instanced_base_instance(
-                    metal::MTLPrimitiveType::TriangleStrip,
+                    primitive_type,
                     index_count as u64,
                     metal::MTLIndexType::UInt16,
                     &self.bound_index_buffer.as_ref().unwrap(),
@@ -594,8 +663,10 @@ pub struct Buffer {
 impl super::Buffer<Device> for Buffer {
     fn update<T: Sized>(&mut self, offset: usize, data: &[T]) -> result::Result<(), super::Error> {
         unsafe {
-            let data_ptr = self.metal_buffer.contents();
-            std::ptr::copy_nonoverlapping(data.as_ptr() as *mut u8, data_ptr as *mut u8, data.len());
+            let data_ptr = self.metal_buffer.contents() as *mut u8;
+            let dest_ptr = data_ptr.add(offset);
+            let byte_len = data.len() * std::mem::size_of::<T>();
+            std::ptr::copy_nonoverlapping(data.as_ptr() as *const u8, dest_ptr, byte_len);
         }
         Ok(())
     }
@@ -679,6 +750,8 @@ pub struct RenderPipeline {
     slot_lookup: HashMap<SlotKey, PipelineSlot>,
     /// Sampler argument buffer (at buffer(4) per htwv convention)
     sampler_argument_buffer: Option<metal::Buffer>,
+    /// Primitive topology for draw calls
+    topology: Topology,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
@@ -766,7 +839,8 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 
 #[derive(Clone)]
 pub struct RenderPass {
-    desc: metal::RenderPassDescriptor
+    desc: metal::RenderPassDescriptor,
+    pixel_format: metal::MTLPixelFormat,
 }
 
 impl super::RenderPass<Device> for RenderPass {
@@ -1258,14 +1332,26 @@ impl super::Device for Device {
                 .color_attachments()
                 .object_at(0)
                 .unwrap();
-            attachment.set_pixel_format(metal::MTLPixelFormat::BGRA8Unorm);
-            attachment.set_blending_enabled(false);
-            attachment.set_rgb_blend_operation(metal::MTLBlendOperation::Add);
-            attachment.set_alpha_blend_operation(metal::MTLBlendOperation::Add);
-            attachment.set_source_rgb_blend_factor(metal::MTLBlendFactor::SourceAlpha);
-            attachment.set_source_alpha_blend_factor(metal::MTLBlendFactor::SourceAlpha);
-            attachment.set_destination_rgb_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
-            attachment.set_destination_alpha_blend_factor(metal::MTLBlendFactor::OneMinusSourceAlpha);
+
+            // Get pixel format from pass, or default to BGRA8Unorm
+            let pixel_format = info.pass
+                .map(|p| p.pixel_format)
+                .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
+            attachment.set_pixel_format(pixel_format);
+
+            // Apply blend state from pipeline info
+            if let Some(b) = info.blend_info.render_target.first() {
+                attachment.set_blending_enabled(b.blend_enabled);
+                attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
+                attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
+                attachment.set_source_rgb_blend_factor(to_mtl_blend_factor(&b.src_blend));
+                attachment.set_source_alpha_blend_factor(to_mtl_blend_factor(&b.src_blend_alpha));
+                attachment.set_destination_rgb_blend_factor(to_mtl_blend_factor(&b.dst_blend));
+                attachment.set_destination_alpha_blend_factor(to_mtl_blend_factor(&b.dst_blend_alpha));
+                attachment.set_write_mask(to_mtl_write_mask(&b.write_mask));
+            } else {
+                attachment.set_blending_enabled(false);
+            }
 
             // TODO: depth stencil
 
@@ -1329,6 +1415,7 @@ impl super::Device for Device {
                 static_samplers: pipeline_static_samplers,
                 slot_lookup,
                 sampler_argument_buffer,
+                topology: info.topology,
             })
         })
     }
@@ -1560,8 +1647,14 @@ impl super::Device for Device {
                 }
             }
 
+            // Get pixel format from first render target
+            let pixel_format = info.render_targets.first()
+                .map(|rt| rt.metal_texture.pixel_format())
+                .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
+
             Ok(RenderPass{
-                desc: descriptor.to_owned()
+                desc: descriptor.to_owned(),
+                pixel_format,
             })
         })
     }

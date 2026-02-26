@@ -121,7 +121,6 @@ impl super::App for App {
 
     /// Retuns the mouse in screen coordinates
     fn get_mouse_pos(&self) -> super::Point<i32> {
-        // TODO:
         super::Point {
             x: 0,
             y: 0
