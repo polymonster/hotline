@@ -895,13 +895,16 @@ impl Device {
         let mut slot_lookup: HashMap<SlotKey, PipelineSlot> = HashMap::new();
 
         // htwv convention: samplers at 4, push constants start at 5
+        // Track binding offsets separately per stage since different numbers of
+        // bindings and push constants might be active on each stage
         let samplers_offset: u32 = 4;
-        let mut binding_offset: u32 = samplers_offset + 1; // 5 for first push constant
+        let start_offset: u32 = samplers_offset + 1; // 5 for first push constant
+        let mut vertex_binding_offset: u32 = start_offset;
+        let mut fragment_binding_offset: u32 = start_offset;
 
         // Add push constant slots first (they come before regular bindings in htwv)
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
             for push_constant in push_constants {
-                let buffer_index = binding_offset;
 
                 // Create argument descriptor for pointer type (push constants use pointers in argument buffers)
                 let arg_desc = metal::ArgumentDescriptor::new();
@@ -927,12 +930,27 @@ impl Device {
                 argument_encoder.set_argument_buffer(&argument_buffer, 0);
                 argument_encoder.set_buffer(0, &data_buffer, 0);
 
-                // Determine stage indices based on visibility
-                let (vertex_idx, fragment_idx) = match push_constant.visibility {
-                    ShaderVisibility::Vertex => (Some(buffer_index), None),
-                    ShaderVisibility::Fragment => (None, Some(buffer_index)),
-                    ShaderVisibility::All => (Some(buffer_index), Some(buffer_index)),
-                    _ => (None, None),
+                // Determine stage indices based on visibility, using per-stage offsets
+                let (vertex_idx, fragment_idx, canonical_index) = match push_constant.visibility {
+                    ShaderVisibility::Vertex => {
+                        let idx = vertex_binding_offset;
+                        vertex_binding_offset += 1;
+                        (Some(idx), None, idx)
+                    },
+                    ShaderVisibility::Fragment => {
+                        let idx = fragment_binding_offset;
+                        fragment_binding_offset += 1;
+                        (None, Some(idx), idx)
+                    },
+                    ShaderVisibility::All => {
+                        let v_idx = vertex_binding_offset;
+                        let f_idx = fragment_binding_offset;
+                        vertex_binding_offset += 1;
+                        fragment_binding_offset += 1;
+                        // Use vertex index as canonical for lookup
+                        (Some(v_idx), Some(f_idx), v_idx)
+                    },
+                    _ => (None, None, 0),
                 };
 
                 slot_lookup.insert(
@@ -944,22 +962,18 @@ impl Device {
                         argument_buffer,
                         data_buffer: Some(data_buffer),
                         info: PipelineSlotInfo {
-                            index: buffer_index,
+                            index: canonical_index,
                             count: Some(push_constant.num_values),
                         },
                         visibility: push_constant.visibility,
                     },
                 );
-
-                binding_offset += 1;
             }
         }
 
         // Add regular binding slots
         if let Some(bindings) = pipeline_bindings.as_ref() {
             for binding in bindings {
-                let buffer_index = binding_offset;
-
                 // Create argument descriptor for texture type
                 let arg_desc = metal::ArgumentDescriptor::new();
                 arg_desc.set_index(0);
@@ -975,12 +989,27 @@ impl Device {
                     metal::MTLResourceOptions::StorageModeShared
                 );
 
-                // Determine stage indices based on visibility
-                let (vertex_idx, fragment_idx) = match binding.visibility {
-                    ShaderVisibility::Vertex => (Some(buffer_index), None),
-                    ShaderVisibility::Fragment => (None, Some(buffer_index)),
-                    ShaderVisibility::All => (Some(buffer_index), Some(buffer_index)),
-                    _ => (None, None),
+                // Determine stage indices based on visibility, using per-stage offsets
+                let (vertex_idx, fragment_idx, canonical_index) = match binding.visibility {
+                    ShaderVisibility::Vertex => {
+                        let idx = vertex_binding_offset;
+                        vertex_binding_offset += 1;
+                        (Some(idx), None, idx)
+                    },
+                    ShaderVisibility::Fragment => {
+                        let idx = fragment_binding_offset;
+                        fragment_binding_offset += 1;
+                        (None, Some(idx), idx)
+                    },
+                    ShaderVisibility::All => {
+                        let v_idx = vertex_binding_offset;
+                        let f_idx = fragment_binding_offset;
+                        vertex_binding_offset += 1;
+                        fragment_binding_offset += 1;
+                        // Use vertex index as canonical for lookup
+                        (Some(v_idx), Some(f_idx), v_idx)
+                    },
+                    _ => (None, None, 0),
                 };
 
                 slot_lookup.insert(
@@ -992,14 +1021,12 @@ impl Device {
                         argument_buffer,
                         data_buffer: None,
                         info: PipelineSlotInfo {
-                            index: buffer_index,
+                            index: canonical_index,
                             count: binding.num_descriptors,
                         },
                         visibility: binding.visibility,
                     },
                 );
-
-                binding_offset += 1;
             }
         }
 

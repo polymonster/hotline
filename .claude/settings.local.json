@@ -5,7 +5,8 @@
       "Bash(grep:*)",
       "Bash(cargo build:*)",
       "Bash(ls:*)",
-      "Bash(python3:*)"
+      "Bash(python3:*)",
+      "Bash(cargo check:*)"
     ]
   }
 }
