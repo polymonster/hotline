@@ -1,4 +1,5 @@
 [build]
-rustflags = ["-A unused"]
+rustflags = ["-A", "unused"]
 
-# "-C", "link-arg=-fuse-ld=lld",
+[build.env]
+MACOSX_DEPLOYMENT_TARGET = "15.0"
