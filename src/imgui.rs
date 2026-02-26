@@ -13,6 +13,7 @@ use crate::gfx::CmdBuf;
 use crate::gfx::Device;
 use crate::gfx::SwapChain;
 use crate::gfx::Texture;
+use crate::gfx::Pipeline;
 
 use maths_rs::Vec4f;
 
@@ -454,7 +455,10 @@ fn render_draw_data<D: Device>(
             cmd.set_vertex_buffer(&buffers.vb, 0);
             cmd.set_index_buffer(&buffers.ib);
             cmd.set_render_pipeline(pipeline);
-            cmd.push_render_constants(0, 16, 0, &mvp);
+
+            if let Some(c0) = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
+                cmd.push_render_constants(c0.index, 16, 0, &mvp);
+            }
 
             let clip_off = draw_data.DisplayPos;
             let mut global_vtx_offset = 0;
