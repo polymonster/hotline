@@ -411,7 +411,11 @@ impl super::CmdBuf<Device> for CmdBuf {
         // Cast pipeline to RenderPipeline to access slot_lookup
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
-        // Bind texture arrays for all ShaderResource slots (default binding at offset 0)
+        // Track which argument buffers we've already bound (they're shared across texture slots)
+        let mut bound_vertex_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
+        let mut bound_fragment_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
+
+        // Encode textures and bind shared argument buffer
         for ((_register, _space, descriptor_type), slot) in &rp.slot_lookup {
             // Only process ShaderResource bindings (textures)
             if *descriptor_type != DescriptorType::ShaderResource {
@@ -425,20 +429,32 @@ impl super::CmdBuf<Device> for CmdBuf {
             // Set up the argument buffer for encoding
             slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
-            // Encode all available textures from the heap into the argument buffer
-            let num_textures = slot.info.count.unwrap_or(heap.texture_slots.len() as u32) as usize;
-            for i in 0..num_textures.min(heap.texture_slots.len()) {
-                if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
-                    slot.argument_encoder.set_texture(i as u64, texture);
+            // Check if this is an array binding (bindless) or single texture (bindful)
+            let count = slot.info.count.unwrap_or(1) as usize;
+            if count > 1 {
+                // Array binding (bindless) - encode ALL textures from heap
+                for i in 0..count.min(heap.texture_slots.len()) {
+                    if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
+                        slot.argument_encoder.set_texture(i as u64, texture);
+                    }
+                }
+            } else {
+                // Single texture binding (bindful) - encode at binding_index
+                if let Some(texture) = heap.texture_slots.get(slot.binding_index as usize).and_then(|t| t.as_ref()) {
+                    slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
                 }
             }
 
-            // Bind the argument buffer to appropriate shader stages
+            // Bind the argument buffer only once per stage (it's shared across all texture slots)
             if let Some(vertex_idx) = slot.vertex_buffer_index {
-                encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
+                if bound_vertex_buffers.insert(vertex_idx as u64) {
+                    encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
+                }
             }
             if let Some(fragment_idx) = slot.fragment_buffer_index {
-                encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+                if bound_fragment_buffers.insert(fragment_idx as u64) {
+                    encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+                }
             }
         }
     }
@@ -457,9 +473,9 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(slot) = rp.slot_lookup.get(&(register, space, descriptor_type)) {
             slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
-            // Set texture from heap at offset
+            // Set texture from heap at offset, using binding_index for position in shared buffer
             if let Some(texture) = heap.texture_slots.get(offset).and_then(|t| t.as_ref()) {
-                slot.argument_encoder.set_texture(0, texture);
+                slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
             }
 
             // Bind to appropriate stage(s)
@@ -475,13 +491,6 @@ impl super::CmdBuf<Device> for CmdBuf {
             None
         }
     }
-
-    /*
-    #[cfg(target_os = "ignore")]
-    fn set_texture(&mut self, texture: &Texture, slot: u32) {
-        self.render_encoder.as_ref().unwrap().set_fragment_texture(slot as u64, Some(&texture.metal_texture));
-    }
-    */
 
     fn set_marker(&mut self, colour: u32, name: &str) {
     }
@@ -731,6 +740,8 @@ pub struct PipelineSlot {
     pub argument_encoder: metal::ArgumentEncoder,
     /// Argument buffer containing encoded resource pointers
     pub argument_buffer: metal::Buffer,
+    /// Index within the shared argument buffer (for texture bindings)
+    pub binding_index: u32,
     /// Data buffer for push constants (None for regular descriptors)
     pub data_buffer: Option<metal::Buffer>,
     /// Slot info for API compatibility
@@ -990,11 +1001,7 @@ impl Device {
         }
     }
 
-    /// Build unified slot lookup following htwv convention:
-    /// - Slots 0-3: Reserved for vertex buffers
-    /// - Slot 4: Samplers
-    /// - Slot 5+: Push constants
-    /// - Slot N+: Regular bindings (after push constants)
+    /// Build unified slot lookup
     fn build_slot_lookup(
         &self,
         pipeline_bindings: &Option<Vec<DescriptorBinding>>,
@@ -1069,6 +1076,7 @@ impl Device {
                         fragment_buffer_index: fragment_idx,
                         argument_encoder,
                         argument_buffer,
+                        binding_index: 0, // Not used for push constants
                         data_buffer: Some(data_buffer),
                         info: PipelineSlotInfo {
                             index: canonical_index,
@@ -1080,65 +1088,84 @@ impl Device {
             }
         }
 
-        // Add regular binding slots
+        // Add regular binding slots - ALL share ONE argument buffer
         const MAX_BINDLESS_TEXTURES: u64 = 1024;
         if let Some(bindings) = pipeline_bindings.as_ref() {
-            for binding in bindings {
-                // Create argument descriptor for texture type
-                let arg_desc = metal::ArgumentDescriptor::new();
-                arg_desc.set_index(0);
-                // Use MAX_BINDLESS_TEXTURES for unbounded arrays (None)
-                let array_len = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
-                arg_desc.set_array_length(array_len);
-                arg_desc.set_data_type(metal::MTLDataType::Texture);
-                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+            if !bindings.is_empty() {
+                // Build argument descriptors - one per binding with unique indices
+                let arg_descs: Vec<metal::ArgumentDescriptor> = bindings.iter().enumerate()
+                    .map(|(i, binding)| {
+                        let arg_desc = metal::ArgumentDescriptor::new();
+                        arg_desc.set_index(i as u64);  // Each binding gets unique index
+                        let array_len = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
+                        arg_desc.set_array_length(array_len);
+                        arg_desc.set_data_type(metal::MTLDataType::Texture);
+                        arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+                        arg_desc.to_owned()
+                    })
+                    .collect();
 
+                // Create SINGLE encoder/buffer for ALL bindings
                 let argument_encoder = self.metal_device.new_argument_encoder(
-                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                    metal::Array::from_owned_slice(&arg_descs)
                 );
                 let argument_buffer = self.metal_device.new_buffer(
                     argument_encoder.encoded_length(),
                     metal::MTLResourceOptions::StorageModeShared
                 );
 
-                // Determine stage indices based on visibility, using per-stage offsets
-                let (vertex_idx, fragment_idx, canonical_index) = match binding.visibility {
-                    ShaderVisibility::Vertex => {
-                        let idx = vertex_binding_offset;
-                        vertex_binding_offset += 1;
-                        (Some(idx), None, idx)
-                    },
-                    ShaderVisibility::Fragment => {
-                        let idx = fragment_binding_offset;
-                        fragment_binding_offset += 1;
-                        (None, Some(idx), idx)
-                    },
-                    ShaderVisibility::All => {
-                        let v_idx = vertex_binding_offset;
-                        let f_idx = fragment_binding_offset;
-                        vertex_binding_offset += 1;
-                        fragment_binding_offset += 1;
-                        // Use vertex index as canonical for lookup
-                        (Some(v_idx), Some(f_idx), v_idx)
-                    },
-                    _ => (None, None, 0),
-                };
+                // Determine if any binding needs vertex or fragment visibility
+                let needs_vertex = bindings.iter().any(|b|
+                    matches!(b.visibility, ShaderVisibility::Vertex | ShaderVisibility::All));
+                let needs_fragment = bindings.iter().any(|b|
+                    matches!(b.visibility, ShaderVisibility::Fragment | ShaderVisibility::All));
 
-                slot_lookup.insert(
-                    (binding.shader_register, binding.register_space, binding.binding_type),
-                    PipelineSlot {
-                        vertex_buffer_index: vertex_idx,
-                        fragment_buffer_index: fragment_idx,
-                        argument_encoder,
-                        argument_buffer,
-                        data_buffer: None,
-                        info: PipelineSlotInfo {
-                            index: canonical_index,
-                            count: binding.num_descriptors,
+                // Single buffer index per stage (only increment once, not per binding!)
+                let vertex_idx = if needs_vertex {
+                    let idx = vertex_binding_offset;
+                    vertex_binding_offset += 1;
+                    Some(idx)
+                } else {
+                    None
+                };
+                let fragment_idx = if needs_fragment {
+                    let idx = fragment_binding_offset;
+                    fragment_binding_offset += 1;
+                    Some(idx)
+                } else {
+                    None
+                };
+                let canonical_index = vertex_idx.or(fragment_idx).unwrap_or(0);
+
+                // Each binding shares buffer but has unique binding_index
+                for (i, binding) in bindings.iter().enumerate() {
+                    // Per-slot visibility based on the binding's visibility
+                    let slot_vertex_idx = match binding.visibility {
+                        ShaderVisibility::Vertex | ShaderVisibility::All => vertex_idx,
+                        _ => None,
+                    };
+                    let slot_fragment_idx = match binding.visibility {
+                        ShaderVisibility::Fragment | ShaderVisibility::All => fragment_idx,
+                        _ => None,
+                    };
+
+                    slot_lookup.insert(
+                        (binding.shader_register, binding.register_space, binding.binding_type),
+                        PipelineSlot {
+                            vertex_buffer_index: slot_vertex_idx,
+                            fragment_buffer_index: slot_fragment_idx,
+                            argument_encoder: argument_encoder.clone(),
+                            argument_buffer: argument_buffer.clone(),
+                            binding_index: i as u32,  // 0, 1, 2, 3 matching shader [[id()]]
+                            data_buffer: None,
+                            info: PipelineSlotInfo {
+                                index: canonical_index,
+                                count: binding.num_descriptors,
+                            },
+                            visibility: binding.visibility,
                         },
-                        visibility: binding.visibility,
-                    },
-                );
+                    );
+                }
             }
         }
 
