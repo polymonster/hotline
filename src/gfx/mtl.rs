@@ -302,6 +302,19 @@ pub struct CmdBuf {
     bound_index_stride: usize,
     /// Raw pointer to bound render pipeline (valid during render pass)
     bound_render_pipeline: Option<*const RenderPipeline>,
+    /// Device reference for allocating transient buffers
+    metal_device: metal::Device,
+    /// Transient argument buffers allocated per frame (for bindful/push constants)
+    /// These are allocated on-the-fly and kept alive until the command buffer completes
+    transient_buffers: Vec<metal::Buffer>,
+    /// Transient argument encoders (cached for reuse)
+    transient_texture_encoder: metal::ArgumentEncoder,
+    transient_buffer_encoder: metal::ArgumentEncoder,
+    transient_pointer_encoder: metal::ArgumentEncoder,
+    /// Argument buffers for bindful, keyed by (buffer_index, heap_id)
+    /// Accumulates multiple textures into one buffer per (slot, heap) pair
+    current_fragment_arg_buffers: HashMap<(u32, u16), (metal::Buffer, metal::ArgumentEncoder)>,
+    current_vertex_arg_buffers: HashMap<(u32, u16), (metal::Buffer, metal::ArgumentEncoder)>,
 }
 
 impl Clone for CmdBuf {
@@ -314,6 +327,13 @@ impl Clone for CmdBuf {
             bound_index_buffer: self.bound_index_buffer.clone(),
             bound_index_stride: self.bound_index_stride,
             bound_render_pipeline: self.bound_render_pipeline,
+            metal_device: self.metal_device.clone(),
+            transient_buffers: self.transient_buffers.clone(),
+            transient_texture_encoder: self.transient_texture_encoder.clone(),
+            transient_buffer_encoder: self.transient_buffer_encoder.clone(),
+            transient_pointer_encoder: self.transient_pointer_encoder.clone(),
+            current_fragment_arg_buffers: self.current_fragment_arg_buffers.clone(),
+            current_vertex_arg_buffers: self.current_vertex_arg_buffers.clone(),
         }
     }
 }
@@ -322,6 +342,11 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
         objc::rc::autoreleasepool(|| {
             self.cmd = Some(self.cmd_queue.new_command_buffer().to_owned());
+            // Clear transient buffers from previous frame
+            self.transient_buffers.clear();
+            // Clear argument buffer caches
+            self.current_fragment_arg_buffers.clear();
+            self.current_vertex_arg_buffers.clear();
         });
     }
 
@@ -473,67 +498,35 @@ impl super::CmdBuf<Device> for CmdBuf {
         // Cast pipeline to RenderPipeline to access slot_lookup
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
-        // Track which argument buffers we've already bound (they're shared across texture slots)
+        // Track which buffer indices we've already bound
         let mut bound_vertex_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut bound_fragment_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
-        // Encode resources and bind shared argument buffer
-        for ((_register, _space, _descriptor_type), slot) in &rp.slot_lookup {
-            // Skip push constants (they have data_buffer)
+        // Bind heap's pre-encoded argument buffers to the slots specified by the pipeline
+        for slot in rp.slot_lookup.values() {
+            // Skip push constants
             if slot.data_buffer.is_some() {
                 continue;
             }
 
-            // Set up the argument buffer for encoding
-            slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
+            // Get the appropriate heap argument buffer based on data type
+            let arg_buffer = match slot.data_type {
+                Some(metal::MTLDataType::Texture) => heap.get_texture_argument_buffer(),
+                Some(metal::MTLDataType::Pointer) => heap.get_buffer_argument_buffer(),
+                _ => continue,
+            };
 
-            // Check if this is an array binding (bindless) or single resource (bindful)
-            let count = slot.info.count.unwrap_or(1) as usize;
-
-            match slot.data_type {
-                Some(metal::MTLDataType::Pointer) => {
-                    // Buffer binding
-                    if count > 1 {
-                        for i in 0..count.min(heap.buffer_slots.len()) {
-                            if let Some(buffer) = heap.buffer_slots.get(i).and_then(|b| b.as_ref()) {
-                                slot.argument_encoder.set_buffer(i as u64, buffer, 0);
-                            }
-                        }
-                    }
-                    else {
-                        if let Some(buffer) = heap.buffer_slots.get(slot.binding_index as usize).and_then(|b| b.as_ref()) {
-                            slot.argument_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
-                        }
-                    }
-                },
-                Some(metal::MTLDataType::Texture) => {
-                    // Texture binding
-                    if count > 1 {
-                        for i in 0..count.min(heap.texture_slots.len()) {
-                            if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
-                                slot.argument_encoder.set_texture(i as u64, texture);
-                            }
-                        }
-                    } else {
-                        if let Some(texture) = heap.texture_slots.get(slot.binding_index as usize).and_then(|t| t.as_ref()) {
-                            slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
-                        }
-                    }
-                },
-                _ => {
-                    unimplemented!();
-                }
-            }
-
-            // Bind the argument buffer only once per stage (it's shared across all slots)
+            // Bind to vertex stage if needed (once per buffer index)
             if let Some(vertex_idx) = slot.vertex_buffer_index {
                 if bound_vertex_buffers.insert(vertex_idx as u64) {
-                    encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
+                    encoder.set_vertex_buffer(vertex_idx as u64, Some(arg_buffer), 0);
                 }
             }
+
+            // Bind to fragment stage if needed (once per buffer index)
             if let Some(fragment_idx) = slot.fragment_buffer_index {
                 if bound_fragment_buffers.insert(fragment_idx as u64) {
-                    encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+                    encoder.set_fragment_buffer(fragment_idx as u64, Some(arg_buffer), 0);
                 }
             }
         }
@@ -550,26 +543,101 @@ impl super::CmdBuf<Device> for CmdBuf {
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
         // Look up the slot by (register, space, descriptor_type)
-        if let Some(slot) = rp.slot_lookup.get(&(register, space, descriptor_type)) {
-            slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
+        let slot = rp.slot_lookup.get(&(register, space, descriptor_type))?;
+        let data_type = slot.data_type?;
 
-            // Set texture from heap at offset, using binding_index for position in shared buffer
-            if let Some(texture) = heap.texture_slots.get(offset).and_then(|t| t.as_ref()) {
-                slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
+        // Handle fragment stage binding
+        if let Some(frag_idx) = slot.fragment_buffer_index {
+            // Key by (buffer_index, heap_id) to support multi-heap while accumulating textures
+            let frag_key = (frag_idx, heap.id);
+
+            // Get or create argument buffer for this (buffer_index, heap_id)
+            if !self.current_fragment_arg_buffers.contains_key(&frag_key) {
+                let space_info = rp.fragment_space_buffers.get(&frag_idx)?;
+
+                let arg_desc = metal::ArgumentDescriptor::new();
+                arg_desc.set_index(0);
+                arg_desc.set_data_type(space_info.data_type);
+                arg_desc.set_array_length(space_info.array_length);
+                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                let arg_encoder = self.metal_device.new_argument_encoder(
+                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                );
+                let arg_buffer = self.metal_device.new_buffer(
+                    arg_encoder.encoded_length(),
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                // Keep buffer alive until command buffer completes
+                self.transient_buffers.push(arg_buffer.clone());
+                self.current_fragment_arg_buffers.insert(frag_key, (arg_buffer, arg_encoder));
             }
 
-            // Bind to appropriate stage(s)
-            if let Some(vertex_idx) = slot.vertex_buffer_index {
-                encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
-            }
-            if let Some(fragment_idx) = slot.fragment_buffer_index {
-                encoder.set_fragment_buffer(fragment_idx as u64, Some(&slot.argument_buffer), 0);
+            let (arg_buffer, arg_encoder) = self.current_fragment_arg_buffers.get(&frag_key)?;
+
+            // Encode the resource at the correct id_offset (binding_index)
+            arg_encoder.set_argument_buffer(arg_buffer, 0);
+            match data_type {
+                metal::MTLDataType::Texture => {
+                    let texture = heap.texture_slots.get(offset).and_then(|t| t.as_ref())?;
+                    arg_encoder.set_texture(slot.binding_index as u64, texture);
+                },
+                metal::MTLDataType::Pointer => {
+                    let buffer = heap.buffer_slots.get(offset).and_then(|b| b.as_ref())?;
+                    arg_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
+                },
+                _ => return None,
             }
 
-            Some(())
-        } else {
-            None
+            // Bind the argument buffer
+            encoder.set_fragment_buffer(frag_idx as u64, Some(arg_buffer), 0);
         }
+
+        // Handle vertex stage binding (similar logic)
+        if let Some(vert_idx) = slot.vertex_buffer_index {
+            let vert_key = (vert_idx, heap.id);
+
+            if !self.current_vertex_arg_buffers.contains_key(&vert_key) {
+                let space_info = rp.vertex_space_buffers.get(&vert_idx)?;
+
+                let arg_desc = metal::ArgumentDescriptor::new();
+                arg_desc.set_index(0);
+                arg_desc.set_data_type(space_info.data_type);
+                arg_desc.set_array_length(space_info.array_length);
+                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                let arg_encoder = self.metal_device.new_argument_encoder(
+                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+                );
+                let arg_buffer = self.metal_device.new_buffer(
+                    arg_encoder.encoded_length(),
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                self.transient_buffers.push(arg_buffer.clone());
+                self.current_vertex_arg_buffers.insert(vert_key, (arg_buffer, arg_encoder));
+            }
+
+            let (arg_buffer, arg_encoder) = self.current_vertex_arg_buffers.get(&vert_key)?;
+
+            arg_encoder.set_argument_buffer(arg_buffer, 0);
+            match data_type {
+                metal::MTLDataType::Texture => {
+                    let texture = heap.texture_slots.get(offset).and_then(|t| t.as_ref())?;
+                    arg_encoder.set_texture(slot.binding_index as u64, texture);
+                },
+                metal::MTLDataType::Pointer => {
+                    let buffer = heap.buffer_slots.get(offset).and_then(|b| b.as_ref())?;
+                    arg_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
+                },
+                _ => return None,
+            }
+
+            encoder.set_vertex_buffer(vert_idx as u64, Some(arg_buffer), 0);
+        }
+
+        Some(())
     }
 
     fn set_marker(&mut self, colour: u32, name: &str) {
@@ -836,6 +904,16 @@ pub struct PipelineSlot {
 /// Key for slot lookup: (register, space, descriptor_type)
 type SlotKey = (u32, u32, DescriptorType);
 
+/// Info about argument buffer requirements for a specific buffer index
+/// Used for on-the-fly allocation in set_binding
+#[derive(Clone)]
+pub struct SpaceBufferInfo {
+    /// Number of elements in the argument buffer (max binding_index + 1)
+    pub array_length: u64,
+    /// Data type (Texture or Pointer)
+    pub data_type: metal::MTLDataType,
+}
+
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
     static_samplers: Vec<MetalSamplerBinding>,
@@ -846,6 +924,11 @@ pub struct RenderPipeline {
     sampler_argument_buffer: Option<metal::Buffer>,
     /// Primitive topology for draw calls
     topology: Topology,
+    /// Info about argument buffer requirements per fragment buffer index
+    /// Used for on-the-fly allocation in set_binding
+    fragment_space_buffers: HashMap<u32, SpaceBufferInfo>,
+    /// Info about argument buffer requirements per vertex buffer index
+    vertex_space_buffers: HashMap<u32, SpaceBufferInfo>,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
@@ -977,7 +1060,15 @@ pub struct Heap {
     buffer_slots: Vec<Option<metal::Buffer>>,
     resource_type: Vec<HeapResourceType>,
     offset: usize,
-    id: u16
+    id: u16,
+    /// Argument encoder for bindless texture access (pre-encodes all textures)
+    texture_argument_encoder: metal::ArgumentEncoder,
+    /// Pre-encoded argument buffer containing all texture references
+    texture_argument_buffer: metal::Buffer,
+    /// Argument encoder for bindless buffer access
+    buffer_argument_encoder: metal::ArgumentEncoder,
+    /// Pre-encoded argument buffer containing all buffer references
+    buffer_argument_buffer: metal::Buffer,
 }
 
 impl Heap {
@@ -990,6 +1081,28 @@ impl Heap {
         }
         self.resource_type.resize(self.offset, HeapResourceType::None);
         srv
+    }
+
+    /// Encode a texture into the heap's argument buffer at the given index (for bindless)
+    fn encode_texture(&self, index: usize, texture: &metal::Texture) {
+        self.texture_argument_encoder.set_argument_buffer(&self.texture_argument_buffer, 0);
+        self.texture_argument_encoder.set_texture(index as u64, texture);
+    }
+
+    /// Encode a buffer into the heap's argument buffer at the given index (for bindless)
+    fn encode_buffer(&self, index: usize, buffer: &metal::Buffer) {
+        self.buffer_argument_encoder.set_argument_buffer(&self.buffer_argument_buffer, 0);
+        self.buffer_argument_encoder.set_buffer(index as u64, buffer, 0);
+    }
+
+    /// Get the pre-encoded texture argument buffer for binding
+    pub fn get_texture_argument_buffer(&self) -> &metal::Buffer {
+        &self.texture_argument_buffer
+    }
+
+    /// Get the pre-encoded buffer argument buffer for binding
+    pub fn get_buffer_argument_buffer(&self) -> &metal::Buffer {
+        &self.buffer_argument_buffer
     }
 }
 
@@ -1076,13 +1189,48 @@ impl Device {
 
             let heap = mtl_device.new_heap(&heap_descriptor);
 
+            // Create texture argument encoder for bindless access
+            let max_resources = info.num_descriptors.max(1) as u64;
+            let tex_arg_desc = metal::ArgumentDescriptor::new();
+            tex_arg_desc.set_index(0);
+            tex_arg_desc.set_data_type(metal::MTLDataType::Texture);
+            tex_arg_desc.set_array_length(max_resources);
+            tex_arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+            let texture_argument_encoder = mtl_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[tex_arg_desc.to_owned()])
+            );
+            let texture_argument_buffer = mtl_device.new_buffer(
+                texture_argument_encoder.encoded_length(),
+                metal::MTLResourceOptions::StorageModeShared
+            );
+
+            // Create buffer argument encoder for bindless access
+            let buf_arg_desc = metal::ArgumentDescriptor::new();
+            buf_arg_desc.set_index(0);
+            buf_arg_desc.set_data_type(metal::MTLDataType::Pointer);
+            buf_arg_desc.set_array_length(max_resources);
+            buf_arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+            let buffer_argument_encoder = mtl_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[buf_arg_desc.to_owned()])
+            );
+            let buffer_argument_buffer = mtl_device.new_buffer(
+                buffer_argument_encoder.encoded_length(),
+                metal::MTLResourceOptions::StorageModeShared
+            );
+
         Heap {
             mtl_heap: heap,
             texture_slots: Vec::new(),
             buffer_slots: Vec::new(),
             resource_type: Vec::new(),
             offset: 0,
-            id
+            id,
+            texture_argument_encoder,
+            texture_argument_buffer,
+            buffer_argument_encoder,
+            buffer_argument_buffer,
         }
     }
 
@@ -1391,6 +1539,37 @@ impl super::Device for Device {
         objc::rc::autoreleasepool(|| {
             let cmd_queue = self.command_queue.clone();
             let cmd = cmd_queue.new_command_buffer().to_owned();
+
+            // Create transient encoders for on-the-fly argument buffer encoding
+            // Texture encoder (single texture at [[id(0)]])
+            let tex_desc = metal::ArgumentDescriptor::new();
+            tex_desc.set_index(0);
+            tex_desc.set_data_type(metal::MTLDataType::Texture);
+            tex_desc.set_array_length(1);
+            tex_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+            let transient_texture_encoder = self.metal_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[tex_desc.to_owned()])
+            );
+
+            // Buffer encoder (single buffer at [[id(0)]])
+            let buf_desc = metal::ArgumentDescriptor::new();
+            buf_desc.set_index(0);
+            buf_desc.set_data_type(metal::MTLDataType::Pointer);
+            buf_desc.set_array_length(1);
+            buf_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+            let transient_buffer_encoder = self.metal_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[buf_desc.to_owned()])
+            );
+
+            // Pointer encoder for push constants
+            let ptr_desc = metal::ArgumentDescriptor::new();
+            ptr_desc.set_index(0);
+            ptr_desc.set_data_type(metal::MTLDataType::Pointer);
+            ptr_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+            let transient_pointer_encoder = self.metal_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[ptr_desc.to_owned()])
+            );
+
             CmdBuf {
                 cmd_queue,
                 cmd: Some(cmd),
@@ -1399,6 +1578,13 @@ impl super::Device for Device {
                 bound_index_buffer: None,
                 bound_index_stride: 0,
                 bound_render_pipeline: None,
+                metal_device: self.metal_device.clone(),
+                transient_buffers: Vec::new(),
+                transient_texture_encoder,
+                transient_buffer_encoder,
+                transient_pointer_encoder,
+                current_fragment_arg_buffers: HashMap::new(),
+                current_vertex_arg_buffers: HashMap::new(),
             }
         })
     }
@@ -1540,6 +1726,35 @@ impl super::Device for Device {
                 &info.pipeline_layout.push_constants,
             );
 
+            // Compute space buffer info from slot_lookup
+            let mut fragment_space_buffers: HashMap<u32, SpaceBufferInfo> = HashMap::new();
+            let mut vertex_space_buffers: HashMap<u32, SpaceBufferInfo> = HashMap::new();
+
+            for slot in slot_lookup.values() {
+                // Skip push constants (they have data_buffer)
+                if slot.data_buffer.is_some() {
+                    continue;
+                }
+
+                if let Some(data_type) = slot.data_type {
+                    // Track max binding_index for each buffer index
+                    if let Some(frag_idx) = slot.fragment_buffer_index {
+                        let entry = fragment_space_buffers.entry(frag_idx).or_insert(SpaceBufferInfo {
+                            array_length: 0,
+                            data_type,
+                        });
+                        entry.array_length = entry.array_length.max(slot.binding_index as u64 + 1);
+                    }
+                    if let Some(vert_idx) = slot.vertex_buffer_index {
+                        let entry = vertex_space_buffers.entry(vert_idx).or_insert(SpaceBufferInfo {
+                            array_length: 0,
+                            data_type,
+                        });
+                        entry.array_length = entry.array_length.max(slot.binding_index as u64 + 1);
+                    }
+                }
+            }
+
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
             Ok(RenderPipeline {
@@ -1549,6 +1764,8 @@ impl super::Device for Device {
                 slot_lookup,
                 sampler_argument_buffer,
                 topology: info.topology,
+                fragment_space_buffers,
+                vertex_space_buffers,
             })
         })
     }
@@ -1753,6 +1970,9 @@ impl super::Device for Device {
             // allocate on the heap
             let alloc_index = shader_heap.allocate();
             shader_heap.texture_slots[alloc_index] = Some(tex.to_owned());
+
+            // Encode texture into heap's argument buffer for bindless access
+            shader_heap.encode_texture(alloc_index, &tex);
 
             // assign srv or uav
             let srv_index = if info.usage.contains(TextureUsage::SHADER_RESOURCE) {
