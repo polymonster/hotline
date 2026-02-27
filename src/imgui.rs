@@ -595,7 +595,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let io = &mut *igGetIO();
 
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
             // construct path for ini to be along side the exe
             let exe_path = std::env::current_exe().ok().unwrap();
@@ -1572,10 +1572,23 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {
     fn drop(&mut self) {
         unsafe {
-            igDestroyPlatformWindows();
+            // Clean up main viewport's user data (set during create)
+            let main_vp = &mut *igGetMainViewport();
+            if !main_vp.PlatformUserData.is_null() {
+                std::ptr::drop_in_place(main_vp.PlatformUserData as *mut ViewportData<D, A>);
+                main_vp.PlatformUserData = std::ptr::null_mut();
+            }
+            if !main_vp.PlatformHandle.is_null() {
+                std::ptr::drop_in_place(main_vp.PlatformHandle as *mut A::NativeHandle);
+                main_vp.PlatformHandle = std::ptr::null_mut();
+            }
+
             let platform_io = &mut *igGetPlatformIO();
             std::ptr::drop_in_place(platform_io.Monitors.Data as *mut ImGuiPlatformMonitor);
             platform_io.Monitors.Data = std::ptr::null_mut();
+
+            // Destroy non-main viewport windows
+            igDestroyPlatformWindows();
         }
     }
 }
