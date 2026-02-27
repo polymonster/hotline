@@ -242,8 +242,11 @@ pub mod prelude {
         // modules
         gfx,
         os,
+        client,
+        plugin,
         pmfx,
         imgui,
+        image,
 
         // platform specific
         gfx_platform,

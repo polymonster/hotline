@@ -39,7 +39,6 @@ fn main() {
                 .unwrap_or(true);
 
         let pmbuild = "pmbuild";
-
         let status = Command::new(pmbuild)
             .args(["mac-data"])
             .status()

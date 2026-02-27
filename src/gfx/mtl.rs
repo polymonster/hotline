@@ -694,6 +694,7 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 }
 
+#[derive(Clone)]
 pub struct Buffer {
     metal_buffer: metal::Buffer,
     element_stride: usize
@@ -1332,9 +1333,11 @@ impl super::Device for Device {
 
     fn create_cmd_buf(&self, num_buffers: u32) -> CmdBuf {
         objc::rc::autoreleasepool(|| {
+            let cmd_queue = self.command_queue.clone();
+            let cmd = cmd_queue.new_command_buffer().to_owned();
             CmdBuf {
-                cmd_queue: self.command_queue.clone(),
-                cmd: None,
+                cmd_queue,
+                cmd: Some(cmd),
                 render_encoder: None,
                 compute_encoder: None,
                 bound_index_buffer: None,
@@ -1354,14 +1357,16 @@ impl super::Device for Device {
             if let Some(vs) = info.vs {
                 unsafe {
                     let lib = self.metal_device.new_library_with_data(std::slice::from_raw_parts(vs.data, vs.data_size))?;
-                    let vvs = lib.get_function("vs_main", None).unwrap();
+                    let name = &lib.function_names()[0];
+                    let vvs = lib.get_function(name, None).unwrap();
                     pipeline_state_descriptor.set_vertex_function(Some(&vvs));
                 }
             };
             if let Some(fs) = info.fs {
                 unsafe {
                     let lib = self.metal_device.new_library_with_data(std::slice::from_raw_parts(fs.data, fs.data_size))?;
-                    let pps = lib.get_function("ps_main", None).unwrap();
+                    let name = &lib.function_names()[0];
+                    let pps = lib.get_function(name, None).unwrap();
                     pipeline_state_descriptor.set_fragment_function(Some(&pps));
                 }
             };

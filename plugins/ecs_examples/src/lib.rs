@@ -1,6 +1,3 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 /// Contains basic examples and unit tests of rendering and ecs functionality
 mod error_tests;
 mod draw;
@@ -57,8 +54,8 @@ pub fn load_material(
         if !map_path.is_empty() {
             textures.push(
                 image::load_texture_from_file(
-                    device, 
-                    &format!("{}/{}", dir, map_path[0]), 
+                    device,
+                    &format!("{}/{}", dir, map_path[0]),
                     Some(&mut pmfx.shader_heap)
                 ).unwrap()
             );
@@ -68,7 +65,7 @@ pub fn load_material(
     if textures.len() != 3 {
         return Err(hotline_rs::Error {
             msg: format!(
-                "hotline_rs::ecs:: error: material '{}' does not contain enough maps ({}/3)", 
+                "hotline_rs::ecs:: error: material '{}' does not contain enough maps ({}/3)",
                 dir,
                 textures.len()
             )
@@ -207,8 +204,8 @@ const fn unit_aabb_corners() -> [Vec3f; 8] {
 pub fn batch_bindless_draw_data(
     mut pmfx: ResMut<PmfxRes>,
     draw_query: Query<(&WorldMatrix, &Extents)>) -> Result<(), hotline_rs::Error> {
-    
-    let world_buffers = pmfx.get_world_buffers_mut();    
+
+    let world_buffers = pmfx.get_world_buffers_mut();
     world_buffers.draw.clear();
     world_buffers.extent.clear();
 
@@ -222,7 +219,7 @@ pub fn batch_bindless_draw_data(
 
         let emin = extents.aabb_min;
         let emax = extents.aabb_max;
-        
+
         let transform_min = corners.iter().fold( Vec3f::max_value(), |acc, x| min(acc, world_matrix.0 * (emin + (emax - emin) * *x)));
         let transform_max = corners.iter().fold(-Vec3f::max_value(), |acc, x| max(acc, world_matrix.0 * (emin + (emax - emin) * *x)));
 
@@ -249,7 +246,7 @@ pub fn render_meshes_bindless(
         Query<(&MeshComponent, &WorldMatrix), Without<InstanceBuffer>>
     )
 ) -> Result<(), hotline_rs::Error> {
-    
+
     let (instance_draw_query, single_draw_query) = queries;
 
     let pmfx = &pmfx;
@@ -280,9 +277,9 @@ pub fn render_meshes_bindless(
         for i in 0..view.use_indices.len() {
             let num_constants = gfx::num_32bit_constants(&view.use_indices[i]);
             cmd_buf.push_compute_constants(
-                0, 
-                num_constants, 
-                i as u32 * num_constants, 
+                0,
+                num_constants,
+                i as u32 * num_constants,
                 gfx::as_u8_slice(&view.use_indices[i])
             );
         }
@@ -325,7 +322,7 @@ pub fn render_meshes(
         Query<(&WorldMatrix, &MeshComponent), (With<Billboard>, Without<CylindricalBillboard>)>,
         Query<(&WorldMatrix, &MeshComponent), With<CylindricalBillboard>>,
     )) -> Result<(), hotline_rs::Error> {
-        
+
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
@@ -399,7 +396,7 @@ pub fn render_debug(
     if session_info.debug_draw_flags.is_empty() {
         return Ok(());
     }
-    
+
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_3d", fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
@@ -421,7 +418,7 @@ pub fn render_debug(
             if i % 20 == 0 {
                 tint *= 0.125;
             }
-    
+
             imdraw.add_line_3d(Vec3f::new(offset, 0.0, -scale), Vec3f::new(offset, 0.0, scale), Vec4f::from(tint));
             imdraw.add_line_3d(Vec3f::new(-scale, 0.0, offset), Vec3f::new(scale, 0.0, offset), Vec4f::from(tint));
         }
@@ -456,7 +453,7 @@ pub fn render_debug(
             imdraw.add_frustum(constants.view_projection_matrix, Vec4f::white());
         }
     }
-    
+
     // submit the buffers
     imdraw.submit(&mut device.0, bb as usize).unwrap();
 
@@ -475,7 +472,7 @@ pub fn blit(
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf
 ) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format("imdraw_blit", fmt)?;
@@ -510,7 +507,7 @@ pub fn cubemap_clear(
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf
 ) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format("cubemap_clear", fmt)?;
@@ -557,16 +554,16 @@ pub fn dispatch_compute(
         for i in 0..pass.use_indices.len() {
             let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
             cmd_buf.push_compute_constants(
-                slot.index, 
-                num_constants, 
-                i as u32 * num_constants, 
+                slot.index,
+                num_constants,
+                i as u32 * num_constants,
                 gfx::as_u8_slice(&pass.use_indices[i])
             );
         }
     }
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
-    
+
     cmd_buf.dispatch(
         pass.group_count,
         pass.numthreads
@@ -648,7 +645,7 @@ pub fn update_tlas(
                 }
             );
         }
-        
+
         if let Some(tlas) = t.tlas.as_ref() {
             let instance_buffer = device.create_raytracing_instance_buffer(&instances)?;
             cmd_buf.update_raytracing_tlas(tlas, &instance_buffer, instances.len(), gfx::AccelerationStructureRebuildMode::Refit);

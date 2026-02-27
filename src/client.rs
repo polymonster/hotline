@@ -547,8 +547,15 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             ],
         };
 
-        if !std::path::Path::new(&lib_path).join(name.to_string() + ".dll").exists() {
-            println!("hotline_rs::client:: plugin not found: {}/{}", lib_path, name);
+        #[cfg(target_os = "windows")]
+        let lib_file = format!("{}.dll", name);
+        #[cfg(target_os = "macos")]
+        let lib_file = format!("lib{}.dylib", name);
+        #[cfg(target_os = "linux")]
+        let lib_file = format!("lib{}.so", name);
+
+        if !std::path::Path::new(&lib_path).join(&lib_file).exists() {
+            println!("hotline_rs::client:: plugin not found: {}/{}", lib_path, lib_file);
             return;
         }
 

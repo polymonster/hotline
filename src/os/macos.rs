@@ -493,7 +493,7 @@ impl super::App for App {
 
     /// Sets the console window rect that belongs to this app
     fn set_console_window_rect(&self, rect: super::Rect<i32>) {
-        panic!();
+        // stub
     }
 }
 

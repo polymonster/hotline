@@ -6,7 +6,10 @@
       "Bash(cargo build:*)",
       "Bash(ls:*)",
       "Bash(python3:*)",
-      "Bash(cargo check:*)"
+      "Bash(cargo check:*)",
+      "Bash(cargo tree:*)",
+      "Bash(xargs:*)",
+      "Bash(cargo doc:*)"
     ]
   }
 }

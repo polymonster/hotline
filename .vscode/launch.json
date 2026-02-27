@@ -119,10 +119,18 @@
             "program": "${workspaceFolder}/target/debug/examples/imgui_demo",
             "args": [],
             "stopAtEntry": false,
-            // "cwd": "${fileDirname}",
             "environment": [],
             "console": "externalTerminal",
-            // "preLaunchTask": "examples"
+        },
+        {
+            "name": "client (macOS|Debug)",
+            "type": "lldb",
+            "request": "launch",
+            "program": "${workspaceFolder}/target/debug/client",
+            "args": [],
+            "stopAtEntry": false,
+            "environment": [],
+            "console": "externalTerminal",
         },
         {
             "name": "imgui_demo (Win32|Debug)",
