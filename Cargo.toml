@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     ".",
+    "crates/htwv",
     "plugins/empty",
     "plugins/ecs",
     "plugins/ecs_examples",
@@ -45,7 +46,7 @@ bevy_ecs.workspace = true
 ddsfile = "0.5.1"
 
 [build-dependencies]
-htwv = { path = "../htwv" }
+htwv = { path = "crates/htwv" }
 
 [dependencies.imgui-sys]
 version = "0.9.0"
