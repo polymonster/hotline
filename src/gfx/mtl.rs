@@ -140,6 +140,54 @@ fn to_mtl_texture_usage(usage: TextureUsage) -> MTLTextureUsage {
     mtl_usage
 }
 
+fn to_mtl_pixel_format(format: super::Format) -> metal::MTLPixelFormat {
+    match format {
+        super::Format::Unknown => metal::MTLPixelFormat::Invalid,
+        super::Format::R16n => metal::MTLPixelFormat::R16Unorm,
+        super::Format::R16u => metal::MTLPixelFormat::R16Uint,
+        super::Format::R16i => metal::MTLPixelFormat::R16Sint,
+        super::Format::R16f => metal::MTLPixelFormat::R16Float,
+        super::Format::R32u => metal::MTLPixelFormat::R32Uint,
+        super::Format::R32i => metal::MTLPixelFormat::R32Sint,
+        super::Format::R32f => metal::MTLPixelFormat::R32Float,
+        super::Format::RG16f => metal::MTLPixelFormat::RG16Float,
+        super::Format::RG16u => metal::MTLPixelFormat::RG16Uint,
+        super::Format::RG16i => metal::MTLPixelFormat::RG16Sint,
+        super::Format::RG32u => metal::MTLPixelFormat::RG32Uint,
+        super::Format::RG32i => metal::MTLPixelFormat::RG32Sint,
+        super::Format::RG32f => metal::MTLPixelFormat::RG32Float,
+        super::Format::RGB32u |
+        super::Format::RGB32i |
+        super::Format::RGB32f => panic!("hotline_rs::gfx::mtl RGB32 formats not supported in Metal"),
+        super::Format::RGBA8nSRGB => metal::MTLPixelFormat::RGBA8Unorm_sRGB,
+        super::Format::RGBA8n => metal::MTLPixelFormat::RGBA8Unorm,
+        super::Format::RGBA8u => metal::MTLPixelFormat::RGBA8Uint,
+        super::Format::RGBA8i => metal::MTLPixelFormat::RGBA8Sint,
+        super::Format::BGRA8n => metal::MTLPixelFormat::BGRA8Unorm,
+        super::Format::BGRX8n => metal::MTLPixelFormat::BGRA8Unorm,
+        super::Format::BGRA8nSRGB => metal::MTLPixelFormat::BGRA8Unorm_sRGB,
+        super::Format::BGRX8nSRGB => metal::MTLPixelFormat::BGRA8Unorm_sRGB,
+        super::Format::RGBA16u => metal::MTLPixelFormat::RGBA16Uint,
+        super::Format::RGBA16i => metal::MTLPixelFormat::RGBA16Sint,
+        super::Format::RGBA16f => metal::MTLPixelFormat::RGBA16Float,
+        super::Format::RGBA32u => metal::MTLPixelFormat::RGBA32Uint,
+        super::Format::RGBA32i => metal::MTLPixelFormat::RGBA32Sint,
+        super::Format::RGBA32f => metal::MTLPixelFormat::RGBA32Float,
+        super::Format::D32fS8X24u => metal::MTLPixelFormat::Depth32Float_Stencil8,
+        super::Format::D32f => metal::MTLPixelFormat::Depth32Float,
+        super::Format::D24nS8u => metal::MTLPixelFormat::Depth32Float_Stencil8, // D24S8 not supported on Apple Silicon
+        super::Format::D16n => metal::MTLPixelFormat::Depth16Unorm,
+        super::Format::BC1n => metal::MTLPixelFormat::BC1_RGBA,
+        super::Format::BC1nSRGB => metal::MTLPixelFormat::BC1_RGBA_sRGB,
+        super::Format::BC2n => metal::MTLPixelFormat::BC2_RGBA,
+        super::Format::BC2nSRGB => metal::MTLPixelFormat::BC2_RGBA_sRGB,
+        super::Format::BC3n => metal::MTLPixelFormat::BC3_RGBA,
+        super::Format::BC3nSRGB => metal::MTLPixelFormat::BC3_RGBA_sRGB,
+        super::Format::BC4n => metal::MTLPixelFormat::BC4_RUnorm,
+        super::Format::BC5n => metal::MTLPixelFormat::BC5_RGUnorm,
+    }
+}
+
 fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
     match resource_type {
         super::ResourceType::StructuredBuffer |
@@ -199,6 +247,7 @@ impl super::SwapChain<Device> for SwapChain {
             self.backbuffer_texture = Texture {
                 metal_texture: drawable.texture().to_owned(),
                 srv_index: None,
+                uav_index: None,
                 heap_id: None
             };
 
@@ -818,6 +867,7 @@ impl super::Pipeline for RenderPipeline {
 pub struct Texture {
     metal_texture: metal::Texture,
     srv_index: Option<usize>,
+    uav_index: Option<usize>,
     heap_id: Option<u16>
 }
 
@@ -842,6 +892,7 @@ impl super::Texture<Device> for Texture {
         Texture {
             metal_texture: self.metal_texture.clone(),
             srv_index: self.srv_index,
+            uav_index: self.uav_index,
             heap_id: self.heap_id
         }
     }
@@ -1255,7 +1306,7 @@ impl super::Device for Device {
 
             // feature info
             let tier = device.argument_buffers_support();
-            assert_eq!(metal::MTLArgumentBuffersTier::Tier2, tier); //TODO: message
+            assert_eq!(metal::MTLArgumentBuffersTier::Tier2, tier);
 
             Device {
                 command_queue: command_queue,
@@ -1312,6 +1363,7 @@ impl super::Device for Device {
                 let backbuffer_texture = Texture {
                     metal_texture: drawable.texture().to_owned(),
                     srv_index: None,
+                    uav_index: None,
                     heap_id: None
                 };
                 let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
@@ -1614,7 +1666,8 @@ impl super::Device for Device {
             let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
                 metal::MTLResourceOptions::StorageModeManaged;
 
-            let byte_len = size as NSUInteger;
+            // Metal doesn't allow zero-size buffers
+            let byte_len = size.max(1) as NSUInteger;
             let buf = self.metal_device.new_buffer(byte_len, opt);
 
             Ok(Buffer{
@@ -1629,26 +1682,40 @@ impl super::Device for Device {
         info: &super::TextureInfo,
         data: Option<&[T]>,
     ) -> result::Result<Texture, super::Error> {
+        self.create_texture_with_heaps(
+            info,
+            TextureHeapInfo::default(),
+            data,
+        )
+    }
+
+    fn create_texture_with_heaps<T: Sized>(
+        &mut self,
+        info: &TextureInfo,
+        heaps: TextureHeapInfo<Self>,
+        data: Option<&[T]>,
+    ) -> result::Result<Self::Texture, super::Error> {
         objc::rc::autoreleasepool(|| {
             let desc = TextureDescriptor::new();
 
             // TODO:
             // tex_type
-            // format
             // initial_state
 
             // desc
-            desc.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm); // TODO: format
-
+            desc.set_pixel_format(to_mtl_pixel_format(info.format));
             desc.set_width(info.width as NSUInteger);
             desc.set_height(info.height as NSUInteger);
             desc.set_depth(info.depth as NSUInteger);
             desc.set_array_length(info.array_layers as NSUInteger);
             desc.set_mipmap_level_count(info.mip_levels as NSUInteger);
-            desc.set_sample_count(info.samples as NSUInteger);
             desc.set_usage(to_mtl_texture_usage(info.usage));
             desc.set_storage_mode(metal::MTLStorageMode::Shared);
             desc.set_texture_type(metal::MTLTextureType::D2);
+
+            // TODO: multi sample
+            // desc.set_sample_count(info.samples as NSUInteger);
+            desc.set_sample_count(1);
 
             // heap bindless
             let tex = self.shader_heap.mtl_heap.new_texture(&desc)
@@ -1671,31 +1738,37 @@ impl super::Device for Device {
                 );
             }
 
-            // srv
-            let srv_index = self.shader_heap.allocate();
-            self.shader_heap.texture_slots[srv_index] = Some(tex.to_owned());
+            let shader_heap = if let Some(shader_heap) = heaps.shader {
+                shader_heap
+            }
+            else {
+                &mut self.shader_heap
+            };
+
+            // allocate on the heap
+            let alloc_index = shader_heap.allocate();
+            shader_heap.texture_slots[alloc_index] = Some(tex.to_owned());
+
+            // assign srv or uav
+            let srv_index = if info.usage.contains(TextureUsage::SHADER_RESOURCE) {
+                Some(alloc_index)
+            }
+            else {
+                None
+            };
+
+            let uav_index = if info.usage.contains(TextureUsage::UNORDERED_ACCESS) {
+                Some(alloc_index)
+            }
+            else {
+                None
+            };
 
             Ok(Texture{
                 metal_texture: tex,
-                srv_index: Some(srv_index),
-                heap_id: Some(self.shader_heap.id)
-            })
-        })
-    }
-
-    fn create_texture_with_heaps<T: Sized>(
-        &mut self,
-        info: &TextureInfo,
-        heaps: TextureHeapInfo<Self>,
-        data: Option<&[T]>,
-    ) -> result::Result<Self::Texture, super::Error> {
-        objc::rc::autoreleasepool(|| {
-            let desc = TextureDescriptor::new();
-            let tex = self.metal_device.new_texture(&desc);
-            Ok(Texture{
-                metal_texture: tex,
-                srv_index: None,
-                heap_id: Some(self.shader_heap.id)
+                srv_index,
+                uav_index,
+                heap_id: Some(shader_heap.id)
             })
         })
     }

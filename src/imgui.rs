@@ -496,7 +496,7 @@ fn render_draw_data<D: Device>(
                             cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv);
                         }
                         else {
-                            // bund srv in another heap
+                            // bound srv in another heap
                             for heap in image_heaps {
                                 if heap.get_heap_id() == heap_id {
                                     cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
