@@ -587,7 +587,6 @@ pub enum ResourceType {
     /// Cubemap texture (TextureCube)
     TextureCube,
     /// Multi-sampled 2D texture (Texture2DMS)
-    #[serde(rename = "Texture2DMS")]
     Texture2DMS,
     /// Read-write 2D texture (RWTexture2D)
     RWTexture2D,

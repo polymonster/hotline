@@ -140,6 +140,18 @@ fn to_mtl_texture_usage(usage: TextureUsage) -> MTLTextureUsage {
     mtl_usage
 }
 
+fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
+    match resource_type {
+        super::ResourceType::StructuredBuffer |
+        super::ResourceType::RWStructuredBuffer |
+        super::ResourceType::ConstantBuffer |
+        super::ResourceType::ByteAddressBuffer |
+        super::ResourceType::RWByteAddressBuffer |
+        super::ResourceType::Buffer => metal::MTLDataType::Pointer,
+        _ => metal::MTLDataType::Texture, // Texture2D, RWTexture2D, etc.
+    }
+}
+
 #[derive(Clone)]
 pub struct Device {
     metal_device: metal::Device,
@@ -415,12 +427,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         let mut bound_vertex_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
         let mut bound_fragment_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
 
-        // Encode textures and bind shared argument buffer
-        for ((_register, _space, descriptor_type), slot) in &rp.slot_lookup {
-            // Only process ShaderResource bindings (textures)
-            if *descriptor_type != DescriptorType::ShaderResource {
-                continue;
-            }
+        // Encode resources and bind shared argument buffer
+        for ((_register, _space, _descriptor_type), slot) in &rp.slot_lookup {
             // Skip push constants (they have data_buffer)
             if slot.data_buffer.is_some() {
                 continue;
@@ -429,23 +437,45 @@ impl super::CmdBuf<Device> for CmdBuf {
             // Set up the argument buffer for encoding
             slot.argument_encoder.set_argument_buffer(&slot.argument_buffer, 0);
 
-            // Check if this is an array binding (bindless) or single texture (bindful)
+            // Check if this is an array binding (bindless) or single resource (bindful)
             let count = slot.info.count.unwrap_or(1) as usize;
-            if count > 1 {
-                // Array binding (bindless) - encode ALL textures from heap
-                for i in 0..count.min(heap.texture_slots.len()) {
-                    if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
-                        slot.argument_encoder.set_texture(i as u64, texture);
+
+            match slot.data_type {
+                Some(metal::MTLDataType::Pointer) => {
+                    // Buffer binding
+                    if count > 1 {
+                        for i in 0..count.min(heap.buffer_slots.len()) {
+                            if let Some(buffer) = heap.buffer_slots.get(i).and_then(|b| b.as_ref()) {
+                                slot.argument_encoder.set_buffer(i as u64, buffer, 0);
+                            }
+                        }
                     }
-                }
-            } else {
-                // Single texture binding (bindful) - encode at binding_index
-                if let Some(texture) = heap.texture_slots.get(slot.binding_index as usize).and_then(|t| t.as_ref()) {
-                    slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
+                    else {
+                        if let Some(buffer) = heap.buffer_slots.get(slot.binding_index as usize).and_then(|b| b.as_ref()) {
+                            slot.argument_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
+                        }
+                    }
+                },
+                Some(metal::MTLDataType::Texture) => {
+                    // Texture binding
+                    if count > 1 {
+                        for i in 0..count.min(heap.texture_slots.len()) {
+                            if let Some(texture) = heap.texture_slots.get(i).and_then(|t| t.as_ref()) {
+                                slot.argument_encoder.set_texture(i as u64, texture);
+                            }
+                        }
+                    } else {
+                        if let Some(texture) = heap.texture_slots.get(slot.binding_index as usize).and_then(|t| t.as_ref()) {
+                            slot.argument_encoder.set_texture(slot.binding_index as u64, texture);
+                        }
+                    }
+                },
+                _ => {
+                    unimplemented!();
                 }
             }
 
-            // Bind the argument buffer only once per stage (it's shared across all texture slots)
+            // Bind the argument buffer only once per stage (it's shared across all slots)
             if let Some(vertex_idx) = slot.vertex_buffer_index {
                 if bound_vertex_buffers.insert(vertex_idx as u64) {
                     encoder.set_vertex_buffer(vertex_idx as u64, Some(&slot.argument_buffer), 0);
@@ -742,6 +772,8 @@ pub struct PipelineSlot {
     pub argument_buffer: metal::Buffer,
     /// Index within the shared argument buffer (for texture bindings)
     pub binding_index: u32,
+    /// Metal Data type, for bindings this is Texture or Pointer (Buffer)
+    pub data_type: Option<metal::MTLDataType>,
     /// Data buffer for push constants (None for regular descriptors)
     pub data_buffer: Option<metal::Buffer>,
     /// Slot info for API compatibility
@@ -1077,6 +1109,7 @@ impl Device {
                         argument_encoder,
                         argument_buffer,
                         binding_index: 0, // Not used for push constants
+                        data_type: None, // Not used for push constants
                         data_buffer: Some(data_buffer),
                         info: PipelineSlotInfo {
                             index: canonical_index,
@@ -1099,8 +1132,18 @@ impl Device {
                         arg_desc.set_index(i as u64);  // Each binding gets unique index
                         let array_len = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
                         arg_desc.set_array_length(array_len);
-                        arg_desc.set_data_type(metal::MTLDataType::Texture);
-                        arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+                        // Determine data type from resource_type (texture vs buffer/pointer)
+                        let data_type = to_mtl_data_type(binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"));
+
+                        // Determine access from binding_type (read vs read-write)
+                        let access = match binding.binding_type {
+                            DescriptorType::UnorderedAccess => metal::MTLArgumentAccess::ReadWrite,
+                            _ => metal::MTLArgumentAccess::ReadOnly,
+                        };
+
+                        arg_desc.set_data_type(data_type);
+                        arg_desc.set_access(access);
                         arg_desc.to_owned()
                     })
                     .collect();
@@ -1157,6 +1200,7 @@ impl Device {
                             argument_encoder: argument_encoder.clone(),
                             argument_buffer: argument_buffer.clone(),
                             binding_index: i as u32,  // 0, 1, 2, 3 matching shader [[id()]]
+                            data_type: Some(to_mtl_data_type(binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"))),
                             data_buffer: None,
                             info: PipelineSlotInfo {
                                 index: canonical_index,
