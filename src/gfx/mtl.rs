@@ -1200,7 +1200,8 @@ impl Device {
                             argument_encoder: argument_encoder.clone(),
                             argument_buffer: argument_buffer.clone(),
                             binding_index: i as u32,  // 0, 1, 2, 3 matching shader [[id()]]
-                            data_type: Some(to_mtl_data_type(binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"))),
+                            data_type: Some(to_mtl_data_type(
+                                binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"))),
                             data_buffer: None,
                             info: PipelineSlotInfo {
                                 index: canonical_index,
