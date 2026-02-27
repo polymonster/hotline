@@ -249,14 +249,12 @@ impl super::App for App {
 
                                 // Mouse cursor position (window-relative from winit)
                                 WindowEvent::CursorMoved { position, .. } => {
-                                    if state.mouse_enabled {
-                                        // winit gives us logical coordinates relative to window content area
-                                        state.mouse_client_pos = super::Point {
-                                            x: position.x as i32,
-                                            y: position.y as i32,
-                                        };
-                                        state.hovered_window_id = Some(window_id);
-                                    }
+                                    // winit gives us logical coordinates relative to window content area
+                                    state.mouse_client_pos = super::Point {
+                                        x: position.x as i32,
+                                        y: position.y as i32,
+                                    };
+                                    state.hovered_window_id = Some(window_id);
                                 }
 
                                 // Mouse enter/leave for hover tracking
@@ -271,59 +269,53 @@ impl super::App for App {
 
                                 // Mouse buttons
                                 WindowEvent::MouseInput { state: element_state, button, .. } => {
-                                    if state.mouse_enabled {
-                                        let pressed = element_state == ElementState::Pressed;
-                                        // Map to MouseButton enum order: Left=0, Middle=1, Right=2, X1=3, X2=4
-                                        let index = match button {
-                                            winit::event::MouseButton::Left => Some(super::MouseButton::Left as usize),
-                                            winit::event::MouseButton::Middle => Some(super::MouseButton::Middle as usize),
-                                            winit::event::MouseButton::Right => Some(super::MouseButton::Right as usize),
-                                            winit::event::MouseButton::Back => Some(super::MouseButton::X1 as usize),
-                                            winit::event::MouseButton::Forward => Some(super::MouseButton::X2 as usize),
-                                            winit::event::MouseButton::Other(_) => None,
-                                        };
-                                        if let Some(idx) = index {
-                                            state.mouse_down[idx] = pressed;
-                                        }
+                                    let pressed = element_state == ElementState::Pressed;
+                                    // Map to MouseButton enum order: Left=0, Middle=1, Right=2, X1=3, X2=4
+                                    let index = match button {
+                                        winit::event::MouseButton::Left => Some(super::MouseButton::Left as usize),
+                                        winit::event::MouseButton::Middle => Some(super::MouseButton::Middle as usize),
+                                        winit::event::MouseButton::Right => Some(super::MouseButton::Right as usize),
+                                        winit::event::MouseButton::Back => Some(super::MouseButton::X1 as usize),
+                                        winit::event::MouseButton::Forward => Some(super::MouseButton::X2 as usize),
+                                        winit::event::MouseButton::Other(_) => None,
+                                    };
+                                    if let Some(idx) = index {
+                                        state.mouse_down[idx] = pressed;
                                     }
                                 }
 
                                 // Mouse wheel
                                 WindowEvent::MouseWheel { delta, .. } => {
-                                    if state.mouse_enabled {
-                                        match delta {
-                                            winit::event::MouseScrollDelta::LineDelta(h, v) => {
-                                                state.mouse_wheel += v;
-                                                state.mouse_hwheel += h;
-                                            }
-                                            winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                                                // Convert pixel delta to line delta (approximate)
-                                                state.mouse_wheel += (pos.y / 20.0) as f32;
-                                                state.mouse_hwheel += (pos.x / 20.0) as f32;
-                                            }
+                                    match delta {
+                                        winit::event::MouseScrollDelta::LineDelta(h, v) => {
+                                            state.mouse_wheel += v;
+                                            state.mouse_hwheel += h;
+                                        }
+                                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                                            // Convert pixel delta to line delta (approximate)
+                                            state.mouse_wheel += (pos.y / 20.0) as f32;
+                                            state.mouse_hwheel += (pos.x / 20.0) as f32;
                                         }
                                     }
                                 }
 
                                 // Keyboard input
                                 WindowEvent::KeyboardInput { event, .. } => {
-                                    if state.keyboard_enabled {
-                                        let pressed = event.state == ElementState::Pressed;
+                                    let pressed = event.state == ElementState::Pressed;
 
-                                        // Get physical key code for key_down array
-                                        if let PhysicalKey::Code(key_code) = event.physical_key {
-                                            let code = key_code as usize;
-                                            if code < 256 {
-                                                state.key_down[code] = pressed;
-                                            }
+                                    // Get physical key code for key_down array
+                                    if let PhysicalKey::Code(key_code) = event.physical_key {
+                                        let code = key_code as usize;
+                                        if code < 256 {
+                                            state.key_down[code] = pressed;
                                         }
+                                    }
 
-                                        // Handle text input from logical key
-                                        if pressed {
-                                            if let Key::Character(ref c) = event.logical_key {
-                                                for ch in c.encode_utf16() {
-                                                    state.utf16_inputs.push(ch);
-                                                }
+                                    // Handle text input from logical key
+                                    if pressed {
+                                        if let Key::Character(ref c) = event.logical_key {
+                                            for ch in c.encode_utf16() {
+                                                state.utf16_inputs.push(ch);
                                             }
                                         }
                                     }
@@ -331,12 +323,10 @@ impl super::App for App {
 
                                 // Modifier keys
                                 WindowEvent::ModifiersChanged(modifiers) => {
-                                    if state.keyboard_enabled {
-                                        let mods = modifiers.state();
-                                        state.sys_key_down[super::SysKey::Ctrl as usize] = mods.control_key();
-                                        state.sys_key_down[super::SysKey::Shift as usize] = mods.shift_key();
-                                        state.sys_key_down[super::SysKey::Alt as usize] = mods.alt_key();
-                                    }
+                                    let mods = modifiers.state();
+                                    state.sys_key_down[super::SysKey::Ctrl as usize] = mods.control_key();
+                                    state.sys_key_down[super::SysKey::Shift as usize] = mods.shift_key();
+                                    state.sys_key_down[super::SysKey::Alt as usize] = mods.alt_key();
                                 }
 
                                 _ => {}
@@ -494,6 +484,7 @@ impl super::App for App {
     /// Sets the console window rect that belongs to this app
     fn set_console_window_rect(&self, rect: super::Rect<i32>) {
         // stub
+
     }
 }
 

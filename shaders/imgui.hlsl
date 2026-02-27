@@ -1,6 +1,6 @@
 cbuffer proj_matrix : register(b0, space0)
 {
-    float4x4 ProjectionMatrix;
+    row_major float4x4 ProjectionMatrix;
 };
 
 struct VS_INPUT
@@ -21,7 +21,7 @@ struct PS_INPUT
 PS_INPUT vs_main(VS_INPUT input)
 {
     PS_INPUT output;
-    output.pos = mul(ProjectionMatrix, float4(input.pos.xy, 0.0, 1.0));
+    output.pos = mul(float4(input.pos.xy, 0.0, 1.0), ProjectionMatrix);
     output.col = input.col;
     output.uv  = input.uv;
     return output;
