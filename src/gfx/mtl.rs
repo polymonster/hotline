@@ -205,7 +205,8 @@ pub struct Device {
     metal_device: metal::Device,
     command_queue: metal::CommandQueue,
     shader_heap: Heap,
-    adapter_info: AdapterInfo
+    adapter_info: AdapterInfo,
+    heap_alloc_id: u16,
 }
 
 #[derive(Clone)]
@@ -1316,7 +1317,8 @@ impl super::Device for Device {
                     debug_name: Some("mtl device: shader heap".to_string())
                 }, 1),
                 adapter_info: adapter_info,
-                metal_device: device
+                metal_device: device,
+                heap_alloc_id: 2
             }
        })
     }
@@ -1326,7 +1328,9 @@ impl super::Device for Device {
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
-        Self::create_heap_mtl(&self.metal_device, &info, 2)
+        let id = self.heap_alloc_id;
+        self.heap_alloc_id += 1;
+        Self::create_heap_mtl(&self.metal_device, &info, id)
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
@@ -1717,8 +1721,16 @@ impl super::Device for Device {
             // desc.set_sample_count(info.samples as NSUInteger);
             desc.set_sample_count(1);
 
+            // use supplied heap or fallback to the device default
+            let shader_heap = if let Some(shader_heap) = heaps.shader {
+                shader_heap
+            }
+            else {
+                &mut self.shader_heap
+            };
+
             // heap bindless
-            let tex = self.shader_heap.mtl_heap.new_texture(&desc)
+            let tex = shader_heap.mtl_heap.new_texture(&desc)
                 .expect("hotline_rs::gfx::mtl failed to allocate texture in heap!");
 
             // data
@@ -1737,13 +1749,6 @@ impl super::Device for Device {
                     info.width * 4, // TODO size from format
                 );
             }
-
-            let shader_heap = if let Some(shader_heap) = heaps.shader {
-                shader_heap
-            }
-            else {
-                &mut self.shader_heap
-            };
 
             // allocate on the heap
             let alloc_index = shader_heap.allocate();
