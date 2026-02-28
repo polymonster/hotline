@@ -436,7 +436,7 @@ pub struct ShaderCompileInfo {
 }
 
 /// The stage to which a shader will bind itself.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ShaderType {
     Vertex,
     Fragment,

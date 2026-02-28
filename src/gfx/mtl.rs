@@ -28,6 +28,8 @@ use core_graphics_types::geometry::CGSize;
 
 use std::path::Path;
 
+type BindingEncoderKey = (super::ShaderType, u32, u16);
+
 const MEGA_BYTE : usize = 1024 * 1024 * 1024;
 
 const fn to_mtl_vertex_format(format: super::Format) -> MTLVertexFormat {
@@ -300,21 +302,10 @@ pub struct CmdBuf {
     compute_encoder: Option<metal::ComputeCommandEncoder>,
     bound_index_buffer: Option<metal::Buffer>,
     bound_index_stride: usize,
-    /// Raw pointer to bound render pipeline (valid during render pass)
     bound_render_pipeline: Option<*const RenderPipeline>,
-    /// Device reference for allocating transient buffers
     metal_device: metal::Device,
-    /// Transient argument buffers allocated per frame (for bindful/push constants)
-    /// These are allocated on-the-fly and kept alive until the command buffer completes
     transient_buffers: Vec<metal::Buffer>,
-    /// Transient argument encoders (cached for reuse)
-    transient_texture_encoder: metal::ArgumentEncoder,
-    transient_buffer_encoder: metal::ArgumentEncoder,
-    transient_pointer_encoder: metal::ArgumentEncoder,
-    /// Argument buffers for bindful, keyed by (buffer_index, heap_id)
-    /// Accumulates multiple textures into one buffer per (slot, heap) pair
-    current_fragment_arg_buffers: HashMap<(u32, u16), (metal::Buffer, metal::ArgumentEncoder)>,
-    current_vertex_arg_buffers: HashMap<(u32, u16), (metal::Buffer, metal::ArgumentEncoder)>,
+    binding_encoders: HashMap<BindingEncoderKey, (metal::Buffer, metal::ArgumentEncoder)>,
 }
 
 impl Clone for CmdBuf {
@@ -329,12 +320,67 @@ impl Clone for CmdBuf {
             bound_render_pipeline: self.bound_render_pipeline,
             metal_device: self.metal_device.clone(),
             transient_buffers: self.transient_buffers.clone(),
-            transient_texture_encoder: self.transient_texture_encoder.clone(),
-            transient_buffer_encoder: self.transient_buffer_encoder.clone(),
-            transient_pointer_encoder: self.transient_pointer_encoder.clone(),
-            current_fragment_arg_buffers: self.current_fragment_arg_buffers.clone(),
-            current_vertex_arg_buffers: self.current_vertex_arg_buffers.clone(),
+            binding_encoders: self.binding_encoders.clone()
         }
+    }
+}
+
+impl CmdBuf {
+    fn encode_binding(&mut self, stage: super::ShaderType, binding_index: u32, space_info: &SpaceBufferInfo, slot: &PipelineSlot, heap: &Heap, offset: usize) -> Option<()> {
+        let key = (stage, binding_index, heap.id);
+        if !self.binding_encoders.contains_key(&key) {
+            let arg_desc = metal::ArgumentDescriptor::new();
+            arg_desc.set_index(0);
+            arg_desc.set_data_type(space_info.data_type);
+            arg_desc.set_array_length(space_info.array_length);
+            arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
+
+            let arg_encoder = self.metal_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&[arg_desc.to_owned()])
+            );
+            let arg_buffer = self.metal_device.new_buffer(
+                arg_encoder.encoded_length(),
+                metal::MTLResourceOptions::StorageModeShared
+            );
+
+            // Keep buffer alive until command buffer completes
+            self.transient_buffers.push(arg_buffer.clone());
+            self.binding_encoders.insert(key, (arg_buffer, arg_encoder));
+        }
+
+        let (arg_buffer, arg_encoder) = self.binding_encoders.get(&key)?;
+
+        // Encode the resource at the correct id_offset (binding_index)
+        arg_encoder.set_argument_buffer(arg_buffer, 0);
+        match slot.data_type.unwrap() {
+            metal::MTLDataType::Texture => {
+                let texture = heap.texture_slots.get(offset).and_then(|t| t.as_ref())?;
+                arg_encoder.set_texture(slot.binding_index as u64, texture);
+            },
+            metal::MTLDataType::Pointer => {
+                let buffer = heap.buffer_slots.get(offset).and_then(|b| b.as_ref())?;
+                arg_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
+            },
+            _ => {}
+        }
+
+        match stage {
+            super::ShaderType::Vertex => {
+                let encoder = self.render_encoder.as_ref()
+                    .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+                encoder.set_vertex_buffer(binding_index as u64, Some(&arg_buffer), 0);
+            }
+            super::ShaderType::Fragment => {
+                let encoder = self.render_encoder.as_ref()
+                    .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+                encoder.set_fragment_buffer(binding_index as u64, Some(&arg_buffer), 0);
+            }
+            _ => {
+                unimplemented!()
+            }
+        }
+
+        Some(())
     }
 }
 
@@ -345,8 +391,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             // Clear transient buffers from previous frame
             self.transient_buffers.clear();
             // Clear argument buffer caches
-            self.current_fragment_arg_buffers.clear();
-            self.current_vertex_arg_buffers.clear();
+            self.binding_encoders.clear();
         });
     }
 
@@ -473,7 +518,14 @@ impl super::CmdBuf<Device> for CmdBuf {
                 );
             }
 
-            // Store pipeline pointer for push_render_constants
+            // clear the arg buffers
+            if let Some(current) = self.bound_render_pipeline {
+                if pipeline as *const RenderPipeline != current {
+                    self.binding_encoders.clear();
+                }
+            }
+
+            // store pipeline pointer for push_render_constants
             self.bound_render_pipeline = Some(pipeline as *const RenderPipeline);
         });
     }
@@ -546,95 +598,17 @@ impl super::CmdBuf<Device> for CmdBuf {
         let slot = rp.slot_lookup.get(&(register, space, descriptor_type))?;
         let data_type = slot.data_type?;
 
-        // Handle fragment stage binding
+        // fragment stage binding
         if let Some(frag_idx) = slot.fragment_buffer_index {
-            // Key by (buffer_index, heap_id) to support multi-heap while accumulating textures
-            let frag_key = (frag_idx, heap.id);
-
-            // Get or create argument buffer for this (buffer_index, heap_id)
-            if !self.current_fragment_arg_buffers.contains_key(&frag_key) {
-                let space_info = rp.fragment_space_buffers.get(&frag_idx)?;
-
-                let arg_desc = metal::ArgumentDescriptor::new();
-                arg_desc.set_index(0);
-                arg_desc.set_data_type(space_info.data_type);
-                arg_desc.set_array_length(space_info.array_length);
-                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-
-                let arg_encoder = self.metal_device.new_argument_encoder(
-                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                );
-                let arg_buffer = self.metal_device.new_buffer(
-                    arg_encoder.encoded_length(),
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-
-                // Keep buffer alive until command buffer completes
-                self.transient_buffers.push(arg_buffer.clone());
-                self.current_fragment_arg_buffers.insert(frag_key, (arg_buffer, arg_encoder));
-            }
-
-            let (arg_buffer, arg_encoder) = self.current_fragment_arg_buffers.get(&frag_key)?;
-
-            // Encode the resource at the correct id_offset (binding_index)
-            arg_encoder.set_argument_buffer(arg_buffer, 0);
-            match data_type {
-                metal::MTLDataType::Texture => {
-                    let texture = heap.texture_slots.get(offset).and_then(|t| t.as_ref())?;
-                    arg_encoder.set_texture(slot.binding_index as u64, texture);
-                },
-                metal::MTLDataType::Pointer => {
-                    let buffer = heap.buffer_slots.get(offset).and_then(|b| b.as_ref())?;
-                    arg_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
-                },
-                _ => return None,
-            }
-
-            // Bind the argument buffer
-            encoder.set_fragment_buffer(frag_idx as u64, Some(arg_buffer), 0);
+            let space_info = rp.fragment_space_buffers.get(&frag_idx)?;
+            self.encode_binding(super::ShaderType::Fragment, frag_idx, space_info, slot, heap, offset);
         }
 
-        // Handle vertex stage binding (similar logic)
+        // vertex stage binding
         if let Some(vert_idx) = slot.vertex_buffer_index {
-            let vert_key = (vert_idx, heap.id);
-
-            if !self.current_vertex_arg_buffers.contains_key(&vert_key) {
-                let space_info = rp.vertex_space_buffers.get(&vert_idx)?;
-
-                let arg_desc = metal::ArgumentDescriptor::new();
-                arg_desc.set_index(0);
-                arg_desc.set_data_type(space_info.data_type);
-                arg_desc.set_array_length(space_info.array_length);
-                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-
-                let arg_encoder = self.metal_device.new_argument_encoder(
-                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                );
-                let arg_buffer = self.metal_device.new_buffer(
-                    arg_encoder.encoded_length(),
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-
-                self.transient_buffers.push(arg_buffer.clone());
-                self.current_vertex_arg_buffers.insert(vert_key, (arg_buffer, arg_encoder));
-            }
-
-            let (arg_buffer, arg_encoder) = self.current_vertex_arg_buffers.get(&vert_key)?;
-
-            arg_encoder.set_argument_buffer(arg_buffer, 0);
-            match data_type {
-                metal::MTLDataType::Texture => {
-                    let texture = heap.texture_slots.get(offset).and_then(|t| t.as_ref())?;
-                    arg_encoder.set_texture(slot.binding_index as u64, texture);
-                },
-                metal::MTLDataType::Pointer => {
-                    let buffer = heap.buffer_slots.get(offset).and_then(|b| b.as_ref())?;
-                    arg_encoder.set_buffer(slot.binding_index as u64, buffer, 0);
-                },
-                _ => return None,
-            }
-
-            encoder.set_vertex_buffer(vert_idx as u64, Some(arg_buffer), 0);
+            let space_info = rp.fragment_space_buffers.get(&vert_idx)?;
+            let vert_key = (super::ShaderType::Vertex, vert_idx, heap.id);
+            self.encode_binding(super::ShaderType::Vertex, vert_idx, space_info, slot, heap, offset);
         }
 
         Some(())
@@ -927,12 +901,11 @@ pub struct RenderPipeline {
     slots: Vec<u32>,
     /// Unified slot lookup by (register, space, descriptor_type)
     slot_lookup: HashMap<SlotKey, PipelineSlot>,
-    /// Sampler argument buffer (at buffer(4) per htwv convention)
+    /// Sampler argument buffer
     sampler_argument_buffer: Option<metal::Buffer>,
     /// Primitive topology for draw calls
     topology: Topology,
     /// Info about argument buffer requirements per fragment buffer index
-    /// Used for on-the-fly allocation in set_binding
     fragment_space_buffers: HashMap<u32, SpaceBufferInfo>,
     /// Info about argument buffer requirements per vertex buffer index
     vertex_space_buffers: HashMap<u32, SpaceBufferInfo>,
@@ -1547,36 +1520,6 @@ impl super::Device for Device {
             let cmd_queue = self.command_queue.clone();
             let cmd = cmd_queue.new_command_buffer().to_owned();
 
-            // Create transient encoders for on-the-fly argument buffer encoding
-            // Texture encoder (single texture at [[id(0)]])
-            let tex_desc = metal::ArgumentDescriptor::new();
-            tex_desc.set_index(0);
-            tex_desc.set_data_type(metal::MTLDataType::Texture);
-            tex_desc.set_array_length(1);
-            tex_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-            let transient_texture_encoder = self.metal_device.new_argument_encoder(
-                metal::Array::from_owned_slice(&[tex_desc.to_owned()])
-            );
-
-            // Buffer encoder (single buffer at [[id(0)]])
-            let buf_desc = metal::ArgumentDescriptor::new();
-            buf_desc.set_index(0);
-            buf_desc.set_data_type(metal::MTLDataType::Pointer);
-            buf_desc.set_array_length(1);
-            buf_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-            let transient_buffer_encoder = self.metal_device.new_argument_encoder(
-                metal::Array::from_owned_slice(&[buf_desc.to_owned()])
-            );
-
-            // Pointer encoder for push constants
-            let ptr_desc = metal::ArgumentDescriptor::new();
-            ptr_desc.set_index(0);
-            ptr_desc.set_data_type(metal::MTLDataType::Pointer);
-            ptr_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-            let transient_pointer_encoder = self.metal_device.new_argument_encoder(
-                metal::Array::from_owned_slice(&[ptr_desc.to_owned()])
-            );
-
             CmdBuf {
                 cmd_queue,
                 cmd: Some(cmd),
@@ -1587,11 +1530,7 @@ impl super::Device for Device {
                 bound_render_pipeline: None,
                 metal_device: self.metal_device.clone(),
                 transient_buffers: Vec::new(),
-                transient_texture_encoder,
-                transient_buffer_encoder,
-                transient_pointer_encoder,
-                current_fragment_arg_buffers: HashMap::new(),
-                current_vertex_arg_buffers: HashMap::new(),
+                binding_encoders: HashMap::new()
             }
         })
     }
