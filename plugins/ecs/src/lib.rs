@@ -17,6 +17,7 @@ macro_rules! log_error {
 
 struct BevyPlugin {
     world: World,
+    main_camera: Option<Entity>,
     setup_schedule: Schedule,
     schedule: Schedule,
     schedule_info: ScheduleInfo,
@@ -430,7 +431,10 @@ impl BevyPlugin {
         client.swap_chain.wait_for_last_frame();
         self.unload(client);
         client.pmfx.unload_views();
-        self.setup(client)
+        self.setup(client);
+        // spawn MainCamera immediately so ui() can find it before update() runs
+        // (update_plugins calls ui() before update() each frame)
+        self.spawn_main_camera();
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
@@ -530,6 +534,24 @@ impl BevyPlugin {
         }
     }
 
+    fn spawn_main_camera(&mut self) {
+        // despawn any existing so this is safe to call multiple times
+        let mut q = self.world.query::<(Entity, &MainCamera)>();
+        let existing: Vec<Entity> = q.iter(&self.world).map(|(e, _)| e).collect();
+        for e in existing {
+            self.world.despawn(e);
+        }
+        let (cam, vp, pos) = self.setup_camera();
+        let entity = self.world.spawn((
+            ViewProjectionMatrix(vp),
+            pos,
+            cam,
+            MainCamera,
+            Name(String::from("main_camera"))
+        ));
+        self.main_camera = Some(entity.id());
+    }
+
     fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
         // use a default demo camera, if we have no main camera (mainly for test runners)
         if let Some(default_cameras) = &self.session_info.default_cameras {
@@ -566,6 +588,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn create() -> Self {
         BevyPlugin {
             world: World::new(),
+            main_camera: None,
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
             schedule_info: ScheduleInfo::default(),
@@ -694,15 +717,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            let (cam, vp, pos) = self.setup_camera();
-            self.world.spawn((
-                ViewProjectionMatrix(vp),
-                pos,
-                cam,
-                MainCamera,
-                Name(String::from("main_camera"))
-            ));
-
+            self.spawn_main_camera();
             self.setup_schedule.run(&mut self.world);
             self.run_setup = false;
         }
@@ -782,22 +797,24 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
             client.imgui.same_line();
 
-            let mut main_camera_query = self.world.query::<(&mut Camera, &MainCamera)>();
-            for (mut camera, _) in &mut main_camera_query.iter_mut(&mut self.world) {
-                let camera_types = vec![
-                    "Fly".to_string(),
-                    "Orbit".to_string(),
-                    "Editor".to_string(),
-                ];
-                let selected = format!("{:?}", camera.camera_type);
-                let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
-                camera.camera_type = match selected.as_str() {
-                    "Fly" => CameraType::Fly,
-                    "Orbit" => CameraType::Orbit,
-                    "Editor" => CameraType::Editor,
-                    _ => CameraType::Fly
-                };
+            if let Some(id) = self.main_camera {
+                if let Some(mut cam) = self.world.get_mut::<Camera>(id) {
+                    let camera_types = vec![
+                        "Fly".to_string(),
+                        "Orbit".to_string(),
+                        "Editor".to_string(),
+                    ];
+                    let selected = format!("{:?}", cam.camera_type);
+                    let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
+                    cam.camera_type = match selected.as_str() {
+                        "Fly" => CameraType::Fly,
+                        "Orbit" => CameraType::Orbit,
+                        "Editor" => CameraType::Editor,
+                        _ => CameraType::Fly
+                    };
+                }
             }
+
 
             // -/+ to toggle through demos, ignore test missing and test failing demos
             let wrap_len = demo_list.len();

@@ -111,12 +111,10 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut dev, 0);
 
     pmfx.load(&hotline_rs::get_data_path("shaders/bindless"))?;
-    pmfx.create_compute_pipeline(&dev, "compute_rw")?;
     pmfx.create_render_pipeline(&dev, "bindless", swap_chain.get_backbuffer_pass())?;
 
     let fmt = swap_chain.get_backbuffer_pass().get_format_hash();
     let pso_pmfx = pmfx.get_render_pipeline_for_format("bindless", fmt)?;
-    let pso_compute = pmfx.get_compute_pipeline("compute_rw")?;
 
     let mut textures: Vec<gfx_platform::Texture> = Vec::new();
     let files = vec![
@@ -139,105 +137,12 @@ fn main() -> Result<(), hotline_rs::Error> {
         textures[3].get_srv_index().unwrap() as u32,
     ];
 
-    // render target
-    let rt_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::RENDER_TARGET,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    let render_target = dev.create_texture(&rt_info, data![]).unwrap();
-
-    // pass for render target with depth stencil
-    let render_target_pass = dev
-        .create_render_pass(&gfx::RenderPassInfo {
-            render_targets: vec![&render_target],
-            rt_clear: Some(gfx::ClearColour {
-                r: 1.0,
-                g: 0.0,
-                b: 1.0,
-                a: 1.0,
-            }),
-            depth_stencil: None, //Some(&depth_stencil),
-            ds_clear: Some(gfx::ClearDepthStencil {
-                depth: Some(1.0),
-                stencil: None,
-            }),
-            resolve: false,
-            discard: false,
-            array_slice: 0
-        })
-        .unwrap();
-
-    // unordered access rw texture
-    let rw_info = gfx::TextureInfo {
-        format: gfx::Format::RGBA8n,
-        tex_type: gfx::TextureType::Texture2D,
-        width: 512,
-        height: 512,
-        depth: 1,
-        array_layers: 1,
-        mip_levels: 1,
-        samples: 1,
-        usage: gfx::TextureUsage::SHADER_RESOURCE | gfx::TextureUsage::UNORDERED_ACCESS,
-        initial_state: gfx::ResourceState::ShaderResource,
-    };
-    let _rw_tex = dev.create_texture::<u8>(&rw_info, None).unwrap();
-
     // ..
     let mut ci = 0;
     while app.run() {
         win.update(&mut app);
         swap_chain.update::<os_platform::App>(&mut dev, &win, &mut cmdbuffer);
         cmdbuffer.reset(&swap_chain);
-
-        /*
-        // compute pass
-        cmdbuffer.set_marker(0xff00ffff, "Frame Start");
-
-        cmdbuffer.begin_event(0xff0000ff, "Compute Pass");
-        cmdbuffer.set_compute_pipeline(pso_compute);
-        cmdbuffer.set_heap(pso_compute, dev.get_shader_heap());
-        cmdbuffer.dispatch(
-            gfx::Size3 {
-                x: 512 / 16,
-                y: 512 / 16,
-                z: 1,
-            },
-            gfx::Size3 {
-                x: 512,
-                y: 512,
-                z: 1,
-            },
-        );
-        cmdbuffer.end_event();
-
-        // render target pass
-        cmdbuffer.begin_event(0xff0000ff, "Render Target Pass");
-        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::ShaderResource,
-            state_after: gfx::ResourceState::RenderTarget,
-        });
-
-        cmdbuffer.begin_render_pass(&render_target_pass);
-        cmdbuffer.end_render_pass();
-
-        cmdbuffer.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&render_target),
-            buffer: None,
-            state_before: gfx::ResourceState::RenderTarget,
-            state_after: gfx::ResourceState::ShaderResource,
-        });
-        cmdbuffer.end_event();
-        */
 
         // main pass
         cmdbuffer.begin_event(0xff0000ff, "Main Pass");

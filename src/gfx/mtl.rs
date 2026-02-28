@@ -712,11 +712,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         start_instance: u32,
     ) {
         objc::rc::autoreleasepool(|| {
+            let primitive_type = self.bound_render_pipeline
+                .map(|p| unsafe { (*p).topology })
+                .map(to_mtl_primitive_type)
+                .unwrap_or(metal::MTLPrimitiveType::Triangle);
+
             self.render_encoder
                 .as_ref()
                 .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
                 .draw_primitives_instanced_base_instance(
-                    metal::MTLPrimitiveType::TriangleStrip,
+                    primitive_type,
                     start_vertex as u64,
                     vertex_count as u64,
                     instance_count as u64,

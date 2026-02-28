@@ -78,7 +78,7 @@ pub fn setup_raytracing_pipeline_scene(
 
     let mut instance_geometry_lookup = Vec::new();
 
-    let _dodeca_blas = commands.spawn((
+    let _ = commands.spawn((
         Position(vec3f(shape_bounds * -0.75, shape_bounds * 0.7, -shape_bounds * 0.1)),
         Scale(splat3f(shape_size * 2.0)),
         Rotation(Quatf::identity()),
@@ -107,17 +107,6 @@ pub fn setup_raytracing_pipeline_scene(
         blas_from_mesh(&mut device, &teapot_mesh)?
     ));
     instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &teapot_mesh, 2)?);
-
-    // glass sphere — moved forward towards camera so you can look through it
-    commands.spawn((
-        Position(vec3f(shape_bounds * 0.5, shape_bounds * -0.5, shape_bounds * 0.9)),
-        Scale(splat3f(shape_size * 3.0)),
-        Rotation(Quatf::identity()),
-        MeshComponent(sphere_mesh.clone()),
-        WorldMatrix(Mat34f::identity()),
-        blas_from_mesh(&mut device, &sphere_mesh)?
-    ));
-    instance_geometry_lookup.push(geometry_lookup_from_mesh(&mut device, &mut pmfx.shader_heap, &sphere_mesh, 2)?);
 
     // chrome helix
     commands.spawn((

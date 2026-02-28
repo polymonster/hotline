@@ -159,6 +159,57 @@ ps_output ps_mesh_material(vs_output_material input) {
     return output;
 }
 
+float4 ps_mesh_material_instanced_ibl(vs_output_material input) : SV_TARGET {
+    float2 tc = input.texcoord.xy;
+
+    // albedo
+    float4 albedo = textures[input.ids.x].Sample(sampler_wrap_linear, tc);
+
+    // normal map - tangent space to world space
+    float3 ts_normal = textures[input.ids.y].Sample(sampler_wrap_linear, tc).xyz;
+    ts_normal = ts_normal * 2.0 - 1.0;
+    float3x3 tbn;
+    tbn[0] = input.tangent.xyz;
+    tbn[1] = input.bitangent.xyz;
+    tbn[2] = input.normal.xyz;
+    float3 n = normalize(mul(ts_normal, tbn));
+
+    // roughness (R) and metalness (G) packed into a single texture
+    float2 rm = textures[input.ids.z].Sample(sampler_wrap_linear, tc).rg;
+    float roughness = rm.r;
+    float metalness = rm.g;
+
+    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
+    float3 albedo_rgb = albedo.rgb;
+
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo_rgb, metalness);
+    float3 f = fresnel_schlick_roughness(max(dot(n, -v), 0.0), f0, roughness);
+
+    float3 rd = normalize(input.world_pos.xyz - view_position.xyz) * float3(1.0, 1.0, -1.0);
+    float3 nd = normalize(n * float3(1.0, 1.0, -1.0));
+    float3 r = reflect(rd, nd);
+    r.z *= -1.0;
+
+    // IBL indices from world_buffer_info user_data
+    uint cubemap_idx = world_buffer_info.user_data.x;
+    uint lut_idx = world_buffer_info.user_data.y;
+
+    // irradiance / diffuse
+    float irradiance_lod = 8.0;
+    float3 irradiance = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, n.xyz, irradiance_lod).rgb;
+    float3 diffuse = irradiance * albedo_rgb;
+
+    // specular / reflection
+    float spec_lod = 16.0;
+    float3 ks = f;
+    float3 kd = (1.0 - ks) * (1.0 - metalness);
+    float3 prefilter = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, r.xyz, roughness * spec_lod).rgb;
+    float2 brdf = textures[lut_idx].Sample(sampler_wrap_linear, float2(saturate(dot(n, v)), roughness)).rg;
+    float3 specular = prefilter * (f * brdf.x + brdf.y);
+
+    return float4(kd * max(diffuse, 0.0) + max(specular, 0.0), 1.0);
+}
+
 ps_output ps_mesh_lit(vs_output input) {
     ps_output output;
     output.colour = input.colour;

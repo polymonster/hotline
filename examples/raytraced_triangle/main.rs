@@ -5,7 +5,6 @@ use gfx::RaytracingInstanceInfo;
 use gfx::RaytracingTLASInfo;
 use hotline_rs::gfx::RaytracingTLAS;
 use hotline_rs::gfx::Texture;
-use hotline_rs::gfx::Pipeline;
 use hotline_rs::*;
 
 use gfx::CmdBuf;

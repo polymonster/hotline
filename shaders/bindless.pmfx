@@ -23,8 +23,5 @@
             }
             topology: "TriangleList"
         }
-        compute_rw: {
-            cs: "cs_main"
-        }
     }
 }
