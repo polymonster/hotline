@@ -430,7 +430,10 @@ impl BevyPlugin {
         client.swap_chain.wait_for_last_frame();
         self.unload(client);
         client.pmfx.unload_views();
-        self.setup(client)
+        self.setup(client);
+        // spawn MainCamera immediately so ui() can find it before update() runs
+        // (update_plugins calls ui() before update() each frame)
+        self.spawn_main_camera();
     }
 
     /// Custom function to handle custome data change events which can trigger resetup
@@ -528,6 +531,17 @@ impl BevyPlugin {
                 }
             }
         }
+    }
+
+    fn spawn_main_camera(&mut self) {
+        let (cam, vp, pos) = self.setup_camera();
+        self.world.spawn((
+            ViewProjectionMatrix(vp),
+            pos,
+            cam,
+            MainCamera,
+            Name(String::from("main_camera"))
+        ));
     }
 
     fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
@@ -694,14 +708,10 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            let (cam, vp, pos) = self.setup_camera();
-            self.world.spawn((
-                ViewProjectionMatrix(vp),
-                pos,
-                cam,
-                MainCamera,
-                Name(String::from("main_camera"))
-            ));
+            // only spawn if resetup() hasn't already spawned it (ui() runs before update())
+            if self.world.query_filtered::<Entity, With<MainCamera>>().iter(&self.world).next().is_none() {
+                self.spawn_main_camera();
+            }
 
             self.setup_schedule.run(&mut self.world);
             self.run_setup = false;

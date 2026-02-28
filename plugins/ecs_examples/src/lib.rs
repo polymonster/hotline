@@ -28,7 +28,7 @@ mod generate_mip_maps;
 mod shadow_map;
 mod omni_shadow_map;
 mod dynamic_cubemap;
-mod pbr;
+mod bindless_material_ibl;
 mod raytracing_pipeline;
 mod raytraced_shadows;
 mod claude;
@@ -43,7 +43,7 @@ pub fn load_material(
     let maps = vec![
         "_albedo.dds",
         "_normal.dds",
-        "_roughness.dds"
+        "_roughness_metallic.dds"
     ];
 
     let mut textures = Vec::new();
@@ -688,7 +688,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "shadow_map",
         "dynamic_cubemap",
         "omni_shadow_map",
-        "pbr",
+        "bindless_material_ibl",
         "raytracing_pipeline",
         "raytraced_shadows",
         "claude"

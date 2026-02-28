@@ -27,9 +27,9 @@ There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing
 - [Standalone Library](##using-as-a-library) - Use as a standalone library and integrate into your own applications.
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
-## Prerequisites
+## Supported Platforms
 
-Currently Windows with Direct3D12 is the only supported platform, there are plans for macOS, Metal, Linux, Vulkan, WASM and WebGPU in future.
+Windows with Direct3D12 is the first fully supported platform, macOS with metal is available in a branch and should be complete soon.
 
 ## Using the Client
 
@@ -54,11 +54,8 @@ git submodule update --init --recursive
 You can run the binary `client` which allows code to be reloaded through `plugins`. There are some [plugins](https://github.com/polymonster/hotline/tree/master/plugins) already provided with the repository:
 
 ```text
-// build the hotline library
+// build the hotline library and data
 cargo build
-
-// build the data
-cargo build --features build_data
 
 // build plugins
 cargo build -p ecs -p ecs_examples
@@ -75,7 +72,7 @@ To make things more convenient during development and keep the `plugins`, `clien
 
 ```text
 // build lib, plugins and data
-cargo build --workspace --features build_data
+cargo build --workspace
 
 // run the client
 cargo run client
@@ -962,11 +959,23 @@ Demonstrates how multiple cubemap faces can be rendered using cubemap cameras an
 
 Demonstrates how multiple cubemap faces can be rendered using cubemap cameras and comparison sampled with PCF to create a point light shadow. A single `pmfx` depth only view is created with the `cubemap` flag set to true, this will automatically create 6 child views for each face of the cubemap.
 
-### PBR
+### Bindless Material Image Based Lighting
 
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/pbr.png" width="100%"/>
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/bindless_material_ibl.png" width="100%"/>
 
-An implementation of physically based rendering with image based lighting. Note that currently the cubemap pre-filtering is just using the mip levels, in time there will be an improved pipeline to properly pre-filter.
+Physically based rednering with image based lighting and bindless material.
+
+### Rayracing Pipeline
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/raytracing_pipeline.png" width="100%"/>
+
+Raytracing pipeline with reflection and refraction.
+
+### Raytraced Shadows
+
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/raytraced_shadows.png" width="100%"/>
+
+Inline raytracing shadows with mixed raster and raytracing workload. Raster pipeline for direct illumination and inline raytraced shadow from the pixel shader.
 
 ## Tests
 
