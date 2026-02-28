@@ -17,6 +17,7 @@ macro_rules! log_error {
 
 struct BevyPlugin {
     world: World,
+    main_camera: Option<Entity>,
     setup_schedule: Schedule,
     schedule: Schedule,
     schedule_info: ScheduleInfo,
@@ -541,13 +542,14 @@ impl BevyPlugin {
             self.world.despawn(e);
         }
         let (cam, vp, pos) = self.setup_camera();
-        self.world.spawn((
+        let entity = self.world.spawn((
             ViewProjectionMatrix(vp),
             pos,
             cam,
             MainCamera,
             Name(String::from("main_camera"))
         ));
+        self.main_camera = Some(entity.id());
     }
 
     fn setup_camera(&mut self) -> (Camera, Mat4f, Position) {
@@ -586,6 +588,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn create() -> Self {
         BevyPlugin {
             world: World::new(),
+            main_camera: None,
             setup_schedule: Schedule::default(),
             schedule: Schedule::default(),
             schedule_info: ScheduleInfo::default(),
@@ -794,22 +797,24 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
             }
             client.imgui.same_line();
 
-            let mut main_camera_query = self.world.query::<(&mut Camera, &MainCamera)>();
-            for (mut camera, _) in &mut main_camera_query.iter_mut(&mut self.world) {
-                let camera_types = vec![
-                    "Fly".to_string(),
-                    "Orbit".to_string(),
-                    "Editor".to_string(),
-                ];
-                let selected = format!("{:?}", camera.camera_type);
-                let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
-                camera.camera_type = match selected.as_str() {
-                    "Fly" => CameraType::Fly,
-                    "Orbit" => CameraType::Orbit,
-                    "Editor" => CameraType::Editor,
-                    _ => CameraType::Fly
-                };
+            if let Some(id) = self.main_camera {
+                if let Some(mut cam) = self.world.get_mut::<Camera>(id) {
+                    let camera_types = vec![
+                        "Fly".to_string(),
+                        "Orbit".to_string(),
+                        "Editor".to_string(),
+                    ];
+                    let selected = format!("{:?}", cam.camera_type);
+                    let (_, selected) = client.imgui.combo_list("Camera", &camera_types, &selected);
+                    cam.camera_type = match selected.as_str() {
+                        "Fly" => CameraType::Fly,
+                        "Orbit" => CameraType::Orbit,
+                        "Editor" => CameraType::Editor,
+                        _ => CameraType::Fly
+                    };
+                }
             }
+
 
             // -/+ to toggle through demos, ignore test missing and test failing demos
             let wrap_len = demo_list.len();
