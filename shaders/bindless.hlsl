@@ -61,11 +61,3 @@ ps_output ps_main(ps_input input) {
     output.colour = final;
     return output;
 }
-
-RWTexture2D<float4> rwtex[10] : register(u0);
-
-[numthreads(16, 16, 1)]
-void cs_main(uint3 did : SV_DispatchThreadID)
-{
-    rwtex[7][did.xy] = float4(0.0, 0.0, 0.0, 1.0);
-}

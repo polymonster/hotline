@@ -1,5 +1,4 @@
 use hotline_rs::*;
-use hotline_rs::prelude::*;
 use hotline_rs::gfx::CmdBuf;
 use hotline_rs::gfx::RenderPassInfo;
 use hotline_rs::gfx::SwapChain;
@@ -9,7 +8,6 @@ use os::Window;
 
 use gfx::Device;
 
-use maths_rs::Vec3f;
 use maths_rs::vec::vec3f;
 use maths_rs::cos;
 

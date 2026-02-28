@@ -534,6 +534,12 @@ impl BevyPlugin {
     }
 
     fn spawn_main_camera(&mut self) {
+        // despawn any existing so this is safe to call multiple times
+        let mut q = self.world.query::<(Entity, &MainCamera)>();
+        let existing: Vec<Entity> = q.iter(&self.world).map(|(e, _)| e).collect();
+        for e in existing {
+            self.world.despawn(e);
+        }
         let (cam, vp, pos) = self.setup_camera();
         self.world.spawn((
             ViewProjectionMatrix(vp),
@@ -708,11 +714,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
 
         // run setup if requested, we did it here so hotline resources are inserted into World
         if self.run_setup {
-            // only spawn if resetup() hasn't already spawned it (ui() runs before update())
-            if self.world.query_filtered::<Entity, With<MainCamera>>().iter(&self.world).next().is_none() {
-                self.spawn_main_camera();
-            }
-
+            self.spawn_main_camera();
             self.setup_schedule.run(&mut self.world);
             self.run_setup = false;
         }

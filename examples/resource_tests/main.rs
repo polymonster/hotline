@@ -1,4 +1,4 @@
-use hotline_rs::{*, prelude::{Pipeline, Texture}};
+use hotline_rs::{*, prelude::{Texture}};
 
 use os::{App, Window};
 use gfx::{CmdBuf, Device, SwapChain, RenderPass};
