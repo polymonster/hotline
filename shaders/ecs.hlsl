@@ -18,13 +18,13 @@ struct ps_output {
 
 // per view constants with basic camera transforms
 cbuffer view_push_constants : register(b0) {
-    float4x4 view_projection_matrix;
+    row_major float4x4 view_projection_matrix;
     float4   view_position;
 }
 
 // per entity draw constants used in CPU draw calls
 cbuffer draw_push_constants : register(b1) {
-    float3x4 world_matrix;
+    row_major float3x4 world_matrix;
     float4   material_colour;
     uint4    draw_indices;
 }
@@ -61,7 +61,7 @@ ConstantBuffer<resource_uses> resources: register(b0, space1);
 
 // bindless draw data for entites to look up by ID
 struct draw_data {
-    float3x4 world_matrix;
+    row_major float3x4 world_matrix;
 }
 
 // bindless material ID's which can be looked up into textures array
@@ -118,7 +118,7 @@ struct directional_light_data {
 
 // camera data
 struct camera_data {
-    float4x4 view_projection_matrix;
+    row_major float4x4 view_projection_matrix;
     float4   view_position;
     float4   planes[6];
 }

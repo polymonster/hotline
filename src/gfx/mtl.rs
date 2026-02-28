@@ -652,6 +652,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(pipeline_ptr) = self.bound_render_pipeline {
             let pipeline = unsafe { &*pipeline_ptr };
 
+            let data_size_bytes = (num_values * 4) as usize;
+
             // Find slot with matching buffer index
             for pipeline_slot in pipeline.slot_lookup.values() {
                 if pipeline_slot.info.index == slot && pipeline_slot.data_buffer.is_some() {
@@ -660,7 +662,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                         let data_bytes = unsafe {
                             std::slice::from_raw_parts(
                                 data.as_ptr() as *const u8,
-                                std::mem::size_of_val(data)
+                                data_size_bytes
                             )
                         };
                         let dest_ptr = data_buffer.contents() as *mut u8;
@@ -669,7 +671,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                             std::ptr::copy_nonoverlapping(
                                 data_bytes.as_ptr(),
                                 dest_ptr.add(dest_offset_bytes),
-                                data_bytes.len()
+                                data_size_bytes
                             );
                         }
 

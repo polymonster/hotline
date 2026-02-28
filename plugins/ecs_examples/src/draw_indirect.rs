@@ -22,13 +22,13 @@ pub fn draw_indirect(client: &mut Client<gfx_platform::Device, os_platform::App>
 pub fn setup_draw_indirect(
     mut device: ResMut<DeviceRes>,
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
-    
+
     let scalar_scale = 10.0;
     let scale = Mat34f::from_scale(splat3f(scalar_scale));
 
     // draw indirect
     let tri = hotline_rs::primitives::create_triangle_mesh(&mut device.0);
-    let pos = Mat34f::from_translation(vec3f(-scalar_scale, scalar_scale, 0.0)); 
+    let pos = Mat34f::from_translation(vec3f(-scalar_scale, scalar_scale, 0.0));
 
     let args = gfx::DrawArguments {
         vertex_count_per_instance: 3,
@@ -50,7 +50,7 @@ pub fn setup_draw_indirect(
         vec![gfx::IndirectArgument{
             argument_type: gfx::IndirectArgumentType::Draw,
             arguments: None
-        }], 
+        }],
         None
     ).unwrap();
 
@@ -65,7 +65,7 @@ pub fn setup_draw_indirect(
 
     // draw indexed indirect
     let teapot = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 8);
-    let pos = Mat34f::from_translation(vec3f(scalar_scale, scalar_scale, 0.0)); 
+    let pos = Mat34f::from_translation(vec3f(scalar_scale, scalar_scale, 0.0));
 
     let args = gfx::DrawIndexedArguments {
         index_count_per_instance: teapot.num_indices,
@@ -88,7 +88,7 @@ pub fn setup_draw_indirect(
         vec![gfx::IndirectArgument{
             argument_type: gfx::IndirectArgumentType::DrawIndexed,
             arguments: None
-        }], 
+        }],
         None
     ).unwrap();
 
@@ -110,9 +110,9 @@ pub fn draw_meshes_indirect(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
-    mesh_draw_indirect_query: Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>) 
+    mesh_draw_indirect_query: Query<(&WorldMatrix, &MeshComponent, &CommandSignatureComponent, &BufferComponent)>)
     -> Result<(), hotline_rs::Error> {
-        
+
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
@@ -126,11 +126,11 @@ pub fn draw_meshes_indirect(
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
 
         cmd_buf.execute_indirect(
-            &command.0, 
-            1, 
-            &args.0, 
-            0, 
-            None, 
+            &command.0,
+            1,
+            &args.0,
+            0,
+            None,
             0
         );
     }

@@ -19,7 +19,7 @@ vs_output vs_mesh_identity(vs_input_mesh input) {
     output.texcoord = float4(input.texcoord, 0.0, 0.0);
     output.colour = float4(1.0, 1.0, 1.0, 1.0);
     output.normal = input.normal.xyz;
-    
+
     return output;
 }
 
@@ -39,13 +39,13 @@ vs_output vs_mesh(vs_input_mesh input) {
     output.texcoord = float4(input.texcoord, 0.0, 0.0);
     output.colour = material_colour;
     output.normal = normalize(mul(rot, input.normal.xyz));
-    
+
     return output;
 }
 
 //
 // textureles checkboard shader
-// 
+//
 
 float4 ps_checkerboard(vs_output input) : SV_Target {
     float4 output = float4(input.normal.xyz * 0.5 + 0.5, 1.0);
@@ -73,7 +73,7 @@ float4 ps_checkerboard(vs_output input) : SV_Target {
     // debug switches
     // u gradient
     //colour.rgb = uv_gradient(u % 1.0);
-    
+
     // v gradient
     //colour.rgb = uv_gradient(v % 1.0);
 

@@ -2,7 +2,7 @@
 /// Draw Indexed
 ///
 
-use crate::prelude::*; 
+use crate::prelude::*;
 
 /// Sets up a single cube mesh to test draw indexed call with a single enity
 #[no_mangle]
@@ -17,7 +17,7 @@ pub fn draw_indexed(client: &mut Client<gfx_platform::Device, os_platform::App>)
     }
 }
 
-/// Set's up a single cube mesh. The draw all is made with `draw_meshes` in `draw.rs` 
+/// Set's up a single cube mesh. The draw all is made with `draw_meshes` in `draw.rs`
 #[export_update_fn]
 pub fn setup_draw_indexed(
     mut device: ResMut<DeviceRes>,
@@ -44,13 +44,16 @@ pub fn draw_meshes_indexed(
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
+
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(pipeline);
-    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+
+    if let Some(c0) = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
+        cmd_buf.push_render_constants(c0.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    }
 
     for (_, mesh) in &mesh_draw_query {
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
