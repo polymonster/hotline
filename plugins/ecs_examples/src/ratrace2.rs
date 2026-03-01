@@ -9,6 +9,7 @@ use std::collections::HashMap;
 const CHUNK_SIZE: usize = 8; // must be power-of-2 for morton encoding to produce dense indices
 const TILE_SIZE: f32 = 10.0;
 const GRID_SIZE: i32 = 2000;
+const ARRAY_SIZE: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
 #[derive(Clone, Copy, PartialEq)]
 enum TileType {
@@ -21,13 +22,23 @@ enum TileType {
 }
 
 struct MapChunk {
-    tiles: [TileType; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+    /// enum of tile type, currently were just thinking about walls and no walls
+    tiles: [TileType; ARRAY_SIZE],
+    /// 2D diffusion to flow downhill away from pressure
+    flow: [Vec2f; ARRAY_SIZE],
+    /// number agents per grid square
+    density: [f32; ARRAY_SIZE],
+    /// pressure curve based on density, which controls flow
+    pressure: [f32; ARRAY_SIZE]
 }
 
 impl MapChunk {
     fn new() -> Self {
         Self {
-            tiles: [TileType::Empty; CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE],
+            tiles: [TileType::Empty; ARRAY_SIZE],
+            flow: [Vec2f::new(1.0, 0.0); ARRAY_SIZE],
+            density: [0.0; ARRAY_SIZE],
+            pressure: [0.0; ARRAY_SIZE]
         }
     }
 }
@@ -79,6 +90,14 @@ fn tile_to_chunk(tx: i32, ty: i32, tz: i32) -> (i32, i32, i32, usize, usize, usi
 }
 
 const TILE_NAMES: &[&str] = &["Wall", "Barrier", "Escalator", "Platform", "TrainTrack"];
+const AGENT_SPEED: f32 = 0.1;   // world units per frame
+const AGENT_RADIUS: f32 = 3.0;  // debug circle radius
+const AGENT_SEGMENTS: usize = 8;
+
+#[derive(Component)]
+pub(crate) struct HumanAgent {
+    pos: Vec3f,
+}
 const TILE_TYPES: &[TileType] = &[TileType::Wall, TileType::Barrier, TileType::Escalator, TileType::Platform, TileType::TrainTrack];
 
 #[derive(Resource)]
@@ -103,6 +122,15 @@ impl Map {
         chunk.tiles[morton_encode(lx, ly, lz)] = tile;
     }
 
+    fn get_flow(&self, tx: i32, ty: i32, tz: i32) -> Vec2f {
+        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+        let key = chunk_key(cx, cz);
+        match self.chunks.get(&key) {
+            Some(chunk) => chunk.flow[morton_encode(lx, ly, lz)],
+            None => Vec2f::zero(),
+        }
+    }
+
     fn get_tile(&self, tx: i32, ty: i32, tz: i32) -> TileType {
         let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
         let key = chunk_key(cx, cz);
@@ -111,6 +139,50 @@ impl Map {
             None => TileType::Empty,
         }
     }
+}
+
+/// Moves agents along the flow field and draws them as debug circles
+#[export_update_fn]
+pub fn update_agents(
+    mut query: Query<&mut HumanAgent>,
+    map: Res<Map>,
+    mut imdraw: ResMut<ImDrawRes>,
+) -> Result<(), hotline_rs::Error> {
+    const Y_OFFSET: f32 = 1.0;
+    let agent_col = Vec4f::new(1.0, 0.5, 0.0, 1.0); // orange
+
+    for mut agent in query.iter_mut() {
+        // derive tile coords from 3D position
+        let tile_x = (agent.pos.x / TILE_SIZE).floor() as i32;
+        let tile_z = (agent.pos.z / TILE_SIZE).floor() as i32;
+
+        // read flow at current tile (Vec2f: x -> world X, y -> world Z)
+        let flow = map.get_flow(tile_x, 0, tile_z);
+
+        if flow.x != 0.0 || flow.y != 0.0 {
+            let new_x = agent.pos.x + flow.x * AGENT_SPEED;
+            let new_z = agent.pos.z + flow.y * AGENT_SPEED;
+            let new_tile_x = (new_x / TILE_SIZE).floor() as i32;
+            let new_tile_z = (new_z / TILE_SIZE).floor() as i32;
+            // only move if destination tile is not a wall
+            if map.get_tile(new_tile_x, 0, new_tile_z) == TileType::Empty {
+                agent.pos.x = new_x;
+                agent.pos.z = new_z;
+            }
+        }
+
+        // draw agent as an octagon
+        let pos = agent.pos;
+        for i in 0..AGENT_SEGMENTS {
+            let a0 = (i as f32 / AGENT_SEGMENTS as f32) * std::f32::consts::TAU;
+            let a1 = ((i + 1) as f32 / AGENT_SEGMENTS as f32) * std::f32::consts::TAU;
+            let p0 = Vec3f::new(pos.x + a0.cos() * AGENT_RADIUS, Y_OFFSET, pos.z + a0.sin() * AGENT_RADIUS);
+            let p1 = Vec3f::new(pos.x + a1.cos() * AGENT_RADIUS, Y_OFFSET, pos.z + a1.sin() * AGENT_RADIUS);
+            imdraw.add_line_3d(p0, p1, agent_col);
+        }
+    }
+
+    Ok(())
 }
 
 /// Init function for ratrace demo
@@ -122,7 +194,8 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
             "setup_ratrace2"
         ],
         update: systems![
-            "update_tile_editor"
+            "update_tile_editor",
+            "update_agents"
         ],
         render_graph: "mesh_wireframe_overlay"
     }
@@ -154,6 +227,7 @@ pub fn update_tile_editor(
     mut imdraw: ResMut<ImDrawRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
+    mut commands: Commands,
 ) -> Result<(), hotline_rs::Error> {
 
     // tile editor UI window
@@ -169,6 +243,8 @@ pub fn update_tile_editor(
     imgui.text(&format!("Chunks: {}", map.chunks.len()));
     imgui.end();
     */
+
+    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
 
     // get camera for unprojection
     let camera = pmfx.get_camera_constants("main_camera")?;
@@ -192,70 +268,95 @@ pub fn update_tile_editor(
     let near_pos = near_world.xyz() / near_world.w;
     let far_pos = far_world.xyz() / far_world.w;
 
-    // intersect ray with y=0 ground plane
-    let ray_dir = far_pos - near_pos;
-    if ray_dir.y.abs() > 0.0001 {
-        let t = -near_pos.y / ray_dir.y;
-        if t >= 0.0 {
-            let hit = near_pos + ray_dir * t;
+    const Y_OFFSET: f32 = 1.0;
 
-            // snap to grid tile
-            let tile_x = (hit.x / TILE_SIZE).floor() as i32;
-            let tile_z = (hit.z / TILE_SIZE).floor() as i32;
+    if enable_mouse {
+        // intersect ray with y=0 ground plane
+        let ray_dir = far_pos - near_pos;
+        if ray_dir.y.abs() > 0.0001 {
+            let t = -near_pos.y / ray_dir.y;
+            if t >= 0.0 {
+                let hit = near_pos + ray_dir * t;
 
-            // clamp to grid bounds
-            let tile_x = tile_x.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
-            let tile_z = tile_z.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
+                // snap to grid tile
+                let tile_x = (hit.x / TILE_SIZE).floor() as i32;
+                let tile_z = (hit.z / TILE_SIZE).floor() as i32;
 
-            let min_x = tile_x as f32 * TILE_SIZE;
-            let min_z = tile_z as f32 * TILE_SIZE;
-            let max_x = min_x + TILE_SIZE;
-            let max_z = min_z + TILE_SIZE;
+                // clamp to grid bounds
+                let tile_x = tile_x.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
+                let tile_z = tile_z.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
 
-            // draw highlighted tile cursor on ground plane
-            let y = 0.01;
-            let col = Vec4f::new(0.0, 1.0, 1.0, 1.0);
-            imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), col);
-            imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
-            imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), col);
-            imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), col);
+                let min_x = tile_x as f32 * TILE_SIZE;
+                let min_z = tile_z as f32 * TILE_SIZE;
+                let max_x = min_x + TILE_SIZE;
+                let max_z = min_z + TILE_SIZE;
 
-            // place / erase tiles
-            if !app.is_sys_key_down(os::SysKey::Alt) {
-                let buttons = app.get_mouse_buttons();
-                if buttons[os::MouseButton::Left as usize] {
-                    map.set_tile(tile_x, 0, tile_z, TILE_TYPES[editor.selected_tile]);
-                }
-                if buttons[os::MouseButton::Right as usize] {
-                    map.set_tile(tile_x, 0, tile_z, TileType::Empty);
+                // draw highlighted tile cursor on ground plane
+                let y = Y_OFFSET;
+                let col = Vec4f::new(0.0, 1.0, 1.0, 1.0);
+                imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), col);
+                imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
+                imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), col);
+                imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), col);
+
+                // place / erase tiles
+                if !app.is_sys_key_down(os::SysKey::Alt) {
+                    let buttons = app.get_mouse_buttons();
+
+                    if !app.is_sys_key_down(os::SysKey::Ctrl) {
+                        if buttons[os::MouseButton::Left as usize] {
+                            map.set_tile(tile_x, 0, tile_z, TILE_TYPES[editor.selected_tile]);
+                        }
+                        if buttons[os::MouseButton::Right as usize] {
+                            // spawn an agent at the mouse hit position
+                            if map.get_tile(tile_x, 0, tile_z) == TileType::Empty {
+                                commands.spawn(HumanAgent { pos: Vec3f::new(hit.x, 0.0, hit.z) });
+                            }
+                        }
+                    }
+                    else {
+                        if buttons[os::MouseButton::Left as usize] {
+                            map.set_tile(tile_x, 0, tile_z, TileType::Empty);
+                        }
+                    }
                 }
             }
         }
     }
 
     // draw all placed tiles
-    let wall_col = Vec4f::new(0.2, 0.6, 1.0, 1.0);
-    let y = 0.02;
+    let wall_col = Vec4f::new(1.0, 1.0, 1.0, 1.0);
+    let y = Y_OFFSET;
     for (key, chunk) in &map.chunks {
         let (cx, cz) = chunk_key_unpack(*key);
         for lz in 0..CHUNK_SIZE {
             for lx in 0..CHUNK_SIZE {
                 let idx = morton_encode(lx, 0, lz);
+                
+                let tx = cx * CHUNK_SIZE as i32 + lx as i32;
+                let tz = cz * CHUNK_SIZE as i32 + lz as i32;
+
+                let min_x = tx as f32 * TILE_SIZE;
+                let min_z = tz as f32 * TILE_SIZE;
+                let max_x = min_x + TILE_SIZE;
+                let max_z = min_z + TILE_SIZE;
+
+                let mid_x = min_x + (max_x - min_x) * 0.5;
+                let mid_z = min_z + (max_z - min_z) * 0.5;
+
                 if chunk.tiles[idx] != TileType::Empty {
-                    let tx = cx * CHUNK_SIZE as i32 + lx as i32;
-                    let tz = cz * CHUNK_SIZE as i32 + lz as i32;
-
-                    let min_x = tx as f32 * TILE_SIZE;
-                    let min_z = tz as f32 * TILE_SIZE;
-                    let max_x = min_x + TILE_SIZE;
-                    let max_z = min_z + TILE_SIZE;
-
                     imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), wall_col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), wall_col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), wall_col);
                     imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), wall_col);
                     imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, max_z), wall_col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), wall_col);
+                }
+                else {
+                    let flow_dir = map.get_flow(tx, 0, tz);
+                    let flow_dir = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
+                    let flow_start = Vec3f::new(mid_x, y, mid_z);
+                    imdraw.add_line_3d(flow_start, flow_start + flow_dir, Vec4f::green());
                 }
             }
         }

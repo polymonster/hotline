@@ -1,0 +1,12 @@
+// TODO
+- [ ] serialize tilemap
+- a way to hook in custom UI (for editor)
+-- place goals / destinations
+
+- path finding Dijkstra-based flood fill
+
+- ignore input events beneath imgui
+
+// DONE
+x basic initial flow
+x place agents
