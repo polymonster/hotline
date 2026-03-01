@@ -1,13 +1,13 @@
 // TODO
-- a way to hook in custom UI (for editor)
--- place goals / destinations
+
 -- a way to clear the map
 
 - path finding Dijkstra-based flood fill
 
 
-
 // DONE
+x place goals / destinations
+x a way to hook in custom UI (for editor)
 x [C] serialize tilemap
 x basic initial flow
 x place agents

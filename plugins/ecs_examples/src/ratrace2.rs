@@ -21,6 +21,7 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
         ],
         update: systems![
             "update_tile_editor_ui",
+            "update_flow_field",
             "update_tile_editor",
             "update_agents"
         ],
@@ -30,7 +31,7 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
 
 #[derive(Clone, Copy, PartialEq)]
 #[repr(u8)]
-enum TileType {
+pub enum TileType {
     Empty,
     Wall,
     Barrier,
@@ -39,7 +40,7 @@ enum TileType {
     TrainTrack,
 }
 
-struct MapChunk {
+pub struct MapChunk {
     /// enum of tile type, currently were just thinking about walls and no walls
     tiles: [TileType; ARRAY_SIZE],
     /// 2D diffusion to flow downhill away from pressure
@@ -54,7 +55,7 @@ impl MapChunk {
     fn new() -> Self {
         Self {
             tiles: [TileType::Empty; ARRAY_SIZE],
-            flow: [Vec2f::new(1.0, 0.0); ARRAY_SIZE],
+            flow: [Vec2f::new(0.0, 1.0); ARRAY_SIZE],
             density: [0.0; ARRAY_SIZE],
             pressure: [0.0; ARRAY_SIZE]
         }
@@ -107,12 +108,27 @@ fn tile_to_chunk(tx: i32, ty: i32, tz: i32) -> (i32, i32, i32, usize, usize, usi
     (cx, cy, cz, lx, ly, lz)
 }
 
-const TILE_NAMES: &[&str] = &["Wall", "Barrier", "Escalator", "Platform", "TrainTrack"];
-const PLACE_NAMES: &[&str] = &["Wall", "Barrier", "Escalator", "Platform", "TrainTrack", "Agent"];
+const TILE_NAMES: &[&str] = &[
+    "Wall", 
+    "Barrier", 
+    "Escalator", 
+    "Platform", 
+    "TrainTrack"
+];
+
+const PLACE_NAMES: &[&str] = &[
+    "Wall", 
+    "Barrier", 
+    "Escalator", 
+    "Platform", 
+    "TrainTrack", 
+    "Agent"
+];
+
 const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
 
 #[derive(PartialEq)]
-enum PlaceMode {
+pub enum PlaceMode {
     Tile(usize),
     Agent,
 }
@@ -120,25 +136,34 @@ const AGENT_SPEED: f32 = 0.1;   // world units per frame
 const AGENT_RADIUS: f32 = 3.0;  // debug circle radius
 const AGENT_SEGMENTS: usize = 8;
 
+const TILE_TYPES: &[TileType] = &[
+    TileType::Wall, 
+    TileType::Barrier, 
+    TileType::Escalator, 
+    TileType::Platform, 
+    TileType::TrainTrack
+];
+
 #[derive(Component)]
 pub(crate) struct HumanAgent {
     pos: Vec3f,
 }
-const TILE_TYPES: &[TileType] = &[TileType::Wall, TileType::Barrier, TileType::Escalator, TileType::Platform, TileType::TrainTrack];
 
 #[derive(Resource)]
-struct EditorState {
+pub struct EditorState {
     selected: PlaceMode,
+    left_was_down: bool,
 }
 
 #[derive(Resource)]
-struct Map {
+pub struct Map {
     chunks: HashMap<u64, MapChunk>,
+    dirty: bool,
 }
 
 impl Map {
     fn new() -> Self {
-        Self { chunks: HashMap::new() }
+        Self { chunks: HashMap::new(), dirty: true }
     }
 
     fn set_tile(&mut self, tx: i32, ty: i32, tz: i32, tile: TileType) {
@@ -146,6 +171,7 @@ impl Map {
         let key = chunk_key(cx, cz);
         let chunk = self.chunks.entry(key).or_insert_with(MapChunk::new);
         chunk.tiles[morton_encode(lx, ly, lz)] = tile;
+        self.dirty = true;
     }
 
     fn get_flow(&self, tx: i32, ty: i32, tz: i32) -> Vec2f {
@@ -209,6 +235,86 @@ impl Map {
     }
 }
 
+/// Dijkstra flood fill from all Platform tiles, writes flow + pressure into chunks
+#[export_update_fn]
+pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> {
+    use std::collections::BinaryHeap;
+    use std::cmp::Reverse;
+
+    if !map.dirty { return Ok(()); }
+    map.dirty = false;
+
+    // --- pass 1: reset flow/pressure and seed the heap with Platform tiles ---
+    let mut cost: HashMap<(i32, i32), u32> = HashMap::new();
+    let mut heap: BinaryHeap<(Reverse<u32>, i32, i32)> = BinaryHeap::new();
+
+    for (key, chunk) in &mut map.chunks {
+        let (cx, cz) = chunk_key_unpack(*key);
+        for lz in 0..CHUNK_SIZE {
+            for lx in 0..CHUNK_SIZE {
+                let idx = morton_encode(lx, 0, lz);
+                chunk.flow[idx] = Vec2f::zero();
+                chunk.pressure[idx] = f32::MAX;
+                if chunk.tiles[idx] == TileType::Platform {
+                    let tx = cx * CHUNK_SIZE as i32 + lx as i32;
+                    let tz = cz * CHUNK_SIZE as i32 + lz as i32;
+                    cost.insert((tx, tz), 0);
+                    heap.push((Reverse(0), tx, tz));
+                }
+            }
+        }
+    }
+
+    // --- pass 2: Dijkstra flood fill ---
+    const NEIGHBORS: [(i32, i32); 4] = [(1,0),(-1,0),(0,1),(0,-1)];
+    while let Some((Reverse(c), tx, tz)) = heap.pop() {
+        if cost.get(&(tx, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
+        for (dx, dz) in NEIGHBORS {
+            let (nx, nz) = (tx + dx, tz + dz);
+            // only traverse tiles in existing chunks — prevents infinite expansion into void
+            let (cx, _cy, cz, _, _, _) = tile_to_chunk(nx, 0, nz);
+            if !map.chunks.contains_key(&chunk_key(cx, cz)) { continue; }
+            let tile = map.get_tile(nx, 0, nz);
+            if tile == TileType::Wall || tile == TileType::Barrier { continue; }
+            let new_cost = c + 1;
+            if new_cost < cost.get(&(nx, nz)).copied().unwrap_or(u32::MAX) {
+                cost.insert((nx, nz), new_cost);
+                heap.push((Reverse(new_cost), nx, nz));
+            }
+        }
+    }
+
+    // --- pass 3: compute flow direction (gradient toward lowest-cost neighbour) ---
+    // collect results first to avoid simultaneous borrow of map
+    let flow_updates: Vec<(i32, i32, Vec2f, f32)> = cost.iter()
+        .filter(|(&(tx, tz), _)| map.get_tile(tx, 0, tz) != TileType::Platform)
+        .map(|(&(tx, tz), &c)| {
+            let mut best_dir = Vec2f::zero();
+            let mut best_cost = c;
+            for (dx, dz) in NEIGHBORS {
+                let nc = cost.get(&(tx+dx, tz+dz)).copied().unwrap_or(u32::MAX);
+                if nc < best_cost {
+                    best_cost = nc;
+                    best_dir = Vec2f::new(dx as f32, dz as f32);
+                }
+            }
+            (tx, tz, best_dir, c as f32)
+        })
+        .collect();
+
+    for (tx, tz, flow_dir, pressure) in flow_updates {
+        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, 0, tz);
+        let key = chunk_key(cx, cz);
+        if let Some(chunk) = map.chunks.get_mut(&key) {
+            let idx = morton_encode(lx, ly, lz);
+            chunk.flow[idx] = flow_dir;
+            chunk.pressure[idx] = pressure;
+        }
+    }
+
+    Ok(())
+}
+
 /// Moves agents along the flow field and draws them as debug circles
 #[export_update_fn]
 pub fn update_agents(
@@ -265,7 +371,7 @@ pub fn setup_ratrace2(
     // create resources — load map from disk if it exists, otherwise start empty
     let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
     commands.insert_resource(map);
-    commands.insert_resource(EditorState { selected: PlaceMode::Tile(0) });
+    commands.insert_resource(EditorState { selected: PlaceMode::Tile(0), left_was_down: false });
 
     Ok(())
 }
@@ -273,11 +379,15 @@ pub fn setup_ratrace2(
 #[export_update_fn]
 pub fn update_tile_editor_ui(
     mut imgui: ResMut<ImGuiRes>,
+    mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
 ) -> Result<(), hotline_rs::Error> {
     imgui.set_global_context();
     
     if imgui.begin_main_menu_bar() {
+        if imgui.button("clear") {
+            *map = Map::new();
+        }
         let selected_name = match editor.selected {
             PlaceMode::Tile(i) => PLACE_NAMES[i].to_string(),
             PlaceMode::Agent => "Agent".to_string(),
@@ -308,7 +418,7 @@ pub fn update_tile_editor(
     mut commands: Commands,
 ) -> Result<(), hotline_rs::Error> {
 
-    let (enable_keyboard, enable_mouse) = app.get_input_enabled();
+    let (_, enable_mouse) = app.get_input_enabled();
 
     // get camera for unprojection
     let camera = pmfx.get_camera_constants("main_camera")?;
@@ -333,6 +443,15 @@ pub fn update_tile_editor(
     let far_pos = far_world.xyz() / far_world.w;
 
     const Y_OFFSET: f32 = 1.0;
+
+    let tile_cols : &[Vec4f] = &[
+        Vec4f::black(),
+        Vec4f::white(),
+        Vec4f::red(),  
+        Vec4f::blue(), 
+        Vec4f::yellow(), 
+        Vec4f::green(), 
+    ];
 
     if enable_mouse {
         // intersect ray with y=0 ground plane
@@ -366,15 +485,17 @@ pub fn update_tile_editor(
                 // place / erase tiles
                 if !app.is_sys_key_down(os::SysKey::Alt) {
                     let buttons = app.get_mouse_buttons();
+                    let left_down = buttons[os::MouseButton::Left as usize];
+                    let left_pressed = left_down && !editor.left_was_down;
 
                     if !app.is_sys_key_down(os::SysKey::Ctrl) {
-                        if buttons[os::MouseButton::Left as usize] {
+                        if left_down {
                             match editor.selected {
                                 PlaceMode::Tile(i) => {
                                     map.set_tile(tile_x, 0, tile_z, TILE_TYPES[i]);
                                 }
                                 PlaceMode::Agent => {
-                                    if map.get_tile(tile_x, 0, tile_z) == TileType::Empty {
+                                    if left_pressed && map.get_tile(tile_x, 0, tile_z) == TileType::Empty {
                                         commands.spawn(HumanAgent { pos: Vec3f::new(hit.x, 0.0, hit.z) });
                                     }
                                 }
@@ -382,10 +503,11 @@ pub fn update_tile_editor(
                         }
                     }
                     else {
-                        if buttons[os::MouseButton::Left as usize] {
+                        if left_down {
                             map.set_tile(tile_x, 0, tile_z, TileType::Empty);
                         }
                     }
+                    editor.left_was_down = left_down;
                 }
             }
         }
@@ -398,14 +520,14 @@ pub fn update_tile_editor(
             let _ = map.save();
         }
         if keys['L' as usize] {
-            if let Ok(loaded) = Map::load(MAP_SAVE_PATH) {
+            if let Ok(mut loaded) = Map::load(MAP_SAVE_PATH) {
+                loaded.dirty = true;
                 *map = loaded;
             }
         }
     }
 
     // draw all placed tiles
-    let wall_col = Vec4f::new(1.0, 1.0, 1.0, 1.0);
     let y = Y_OFFSET;
     for (key, chunk) in &map.chunks {
         let (cx, cz) = chunk_key_unpack(*key);
@@ -424,19 +546,22 @@ pub fn update_tile_editor(
                 let mid_x = min_x + (max_x - min_x) * 0.5;
                 let mid_z = min_z + (max_z - min_z) * 0.5;
 
+                let col = tile_cols[chunk.tiles[idx] as usize];
+
                 if chunk.tiles[idx] != TileType::Empty {
-                    imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), wall_col);
-                    imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), wall_col);
-                    imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), wall_col);
-                    imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), wall_col);
-                    imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, max_z), wall_col);
-                    imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), wall_col);
+                    imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), col);
+                    imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
+                    imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), col);
+                    imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), col);
+                    imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
+                    imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), col);
                 }
                 else {
                     let flow_dir = map.get_flow(tx, 0, tz);
                     let flow_dir = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
                     let flow_start = Vec3f::new(mid_x, y, mid_z);
-                    imdraw.add_line_3d(flow_start, flow_start + flow_dir, Vec4f::green());
+                    let flow_col = Vec4f::from((flow_dir.xy(), 0.0, 1.0));
+                    imdraw.add_line_3d(flow_start, flow_start + flow_dir, flow_col);
                 }
             }
         }
