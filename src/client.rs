@@ -479,7 +479,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
 
-            self.cmd_buf.set_binding(pipeline, heap, 1, srv);
+            self.cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
 
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
@@ -523,7 +523,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
-    pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
+    pub fn add_plugin_lib(&mut self, name: &str, _path: &str) {
         let abs_path = super::get_data_path("../..");
 
         let lib_path = PathBuf::from(abs_path.to_string())

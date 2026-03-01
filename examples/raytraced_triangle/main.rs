@@ -5,7 +5,6 @@ use gfx::RaytracingInstanceInfo;
 use gfx::RaytracingTLASInfo;
 use hotline_rs::gfx::RaytracingTLAS;
 use hotline_rs::gfx::Texture;
-use hotline_rs::gfx::Pipeline;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -162,9 +161,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // bind rw tex on u0
         let uav0 =  raytracing_output.get_uav_index().expect("expect raytracing_output to have a uav");
-        if let Some(u0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::UnorderedAccess) {
-            cmd.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), u0.index, uav0);
-        }
+        cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::UnorderedAccess, device.get_shader_heap(), uav0);
 
         // set push constants on b0
         let border = 0.1;
@@ -184,9 +181,7 @@ fn main() -> Result<(), hotline_rs::Error> {
 
         // bind tlas on t0
         let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
-        if let Some(t0) = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource) {
-            cmd.set_binding(&raytracing_pipeline.pipeline, device.get_shader_heap(), t0.index, srv0);
-        }
+        cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv0);
 
         cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
             x: window_rect.width as u32,

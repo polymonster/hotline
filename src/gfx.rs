@@ -1266,7 +1266,7 @@ pub trait Pipeline {
     /// Returns the `PipelineSlotInfo` of which slot to bind a heap to based on the reequested `register` and `descriptor_type`
     /// if `None` is returned the pipeline does not contain bindings for the requested information
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&PipelineSlotInfo>;
-    /// Returns a vec of all pipeline slot indices 
+    #[doc(hidden)]
     fn get_pipeline_slots(&self) -> &Vec<u32>;
     /// Returns the pipeline type
     fn get_pipeline_type() -> PipelineType;
@@ -1646,9 +1646,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_raytracing_pipeline(&mut self, pipeline: &D::RaytracingPipeline);
     /// Set's the active shader heap for the pipeline (srv, uav and cbv) and sets all descriptor tables to the root of the heap
     fn set_heap<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap);
-    /// Binds the heap with offset (texture srv, uav) on to the `slot` of a pipeline.
-    /// this is like a traditional bindful render architecture `cmd.set_binding(pipeline, heap, 0, texture1_id)`
-    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &D::Heap, slot: u32, offset: usize);
+    /// Binds a descriptor from `heap` at `offset` to the pipeline slot identified by `register`, `space`, and `descriptor_type`.
+    /// Returns `Some(())` if the slot was found and the binding was set, or `None` if the slot does not exist in this pipeline's layout (silent no-op).
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: DescriptorType, heap: &D::Heap, offset: usize) -> Option<()>;
     /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
     fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
     /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values

@@ -777,7 +777,7 @@ fn to_d3d12_raytracing_acceleration_structure_build_flags
 
 fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStructureRebuildMode) -> D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAGS {
     match mode {
-        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE,
+        AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
         AccelerationStructureRebuildMode::Full => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE
     }
 }
@@ -3145,8 +3145,8 @@ impl super::Device for Device {
 
         // root signature, for now we use a global one per pipeline
         let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
-        let global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
-            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone())) // TODO: cleanup
+        let mut global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
+            pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone()))
         };
         let global_root_signature_subobject = D3D12_STATE_SUBOBJECT {
             Type: D3D12_STATE_SUBOBJECT_TYPE_GLOBAL_ROOT_SIGNATURE,
@@ -3209,9 +3209,12 @@ impl super::Device for Device {
                 &state_object_desc,
             )?;
 
+            // Release the temporary clone — D3D12 holds its own internal ref via state_object
+            std::mem::ManuallyDrop::drop(&mut global_root_signature.pGlobalRootSignature);
+
             Ok(RaytracingPipeline {
                 state_object,
-                root_signature: root_signature.root_signature.clone(), // TODO:
+                root_signature: root_signature.root_signature.clone(),
                 lookup: root_signature
             })
         }
@@ -4352,7 +4355,8 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn set_binding<T: SuperPipleline>(&mut self, _: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: SuperPipleline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: super::DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, descriptor_type)?;
         unsafe {
             self.cmd().SetDescriptorHeaps(&[Some(heap.heap.clone())]);
             let mut base = heap.heap.GetGPUDescriptorHandleForHeapStart();
@@ -4360,13 +4364,14 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             match T::get_pipeline_type() {
                 super::PipelineType::Render => {
-                    self.cmd().SetGraphicsRootDescriptorTable(slot, base);
+                    self.cmd().SetGraphicsRootDescriptorTable(slot.index, base);
                 },
                 super::PipelineType::Compute => {
-                    self.cmd().SetComputeRootDescriptorTable(slot, base);
+                    self.cmd().SetComputeRootDescriptorTable(slot.index, base);
                 }
             }
         }
+        Some(())
     }
 
     fn set_marker(&mut self, colour: u32, name: &str) {

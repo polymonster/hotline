@@ -1,5 +1,4 @@
 use hotline_rs::prelude::*;
-use hotline_rs::*;
 
 fn main() -> Result<(), hotline_rs::Error> {
     // app

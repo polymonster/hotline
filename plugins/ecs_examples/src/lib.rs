@@ -28,7 +28,7 @@ mod generate_mip_maps;
 mod shadow_map;
 mod omni_shadow_map;
 mod dynamic_cubemap;
-mod pbr;
+mod bindless_material_ibl;
 mod raytracing_pipeline;
 mod raytraced_shadows;
 mod claude;
@@ -45,7 +45,7 @@ pub fn load_material(
     let maps = vec![
         "_albedo.dds",
         "_normal.dds",
-        "_roughness.dds"
+        "_roughness_metallic.dds"
     ];
 
     let mut textures = Vec::new();
@@ -496,10 +496,7 @@ pub fn blit(
         cmd_buf.push_render_constants(slot.index, 2, 0, &view.blit_dimension);
     }
 
-    let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 1, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
@@ -536,10 +533,7 @@ pub fn cubemap_clear(
         cmd_buf.push_render_constants(slot.index, 16, 0, &inv);
     }
 
-    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::ShaderResource);
-    if let Some(slot) = slot {
-        cmd_buf.set_binding(pipeline, &pmfx.shader_heap, slot.index, srv as usize);
-    }
+    cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, &pmfx.shader_heap, srv as usize);
 
     cmd_buf.set_index_buffer(&pmfx.0.unit_quad_mesh.ib);
     cmd_buf.set_vertex_buffer(&pmfx.0.unit_quad_mesh.vb, 0);
@@ -696,7 +690,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "shadow_map",
         "dynamic_cubemap",
         "omni_shadow_map",
-        "pbr",
+        "bindless_material_ibl",
         "raytracing_pipeline",
         "raytraced_shadows",
         "claude",

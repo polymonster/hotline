@@ -89,6 +89,15 @@
             ]
         }
 
+        // pack roughness (R) + metallic (G) into a single *_roughness_metallic.png in src dir
+        pack_textures: {
+            explicit: true
+            type: shell
+            commands: [
+                "py -3 hotline-data/scripts/pack_pbr_textures.py ${src_data_dir}/textures ${src_data_dir}/textures"
+            ]
+        }
+
         // convert png, jpg, tga, gif to dds and pack cubemaps / arrays
         texturec: {
             args: [

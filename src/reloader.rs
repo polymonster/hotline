@@ -3,7 +3,9 @@ use std::time::SystemTime;
 use std::time::Duration;
 use std::sync::Arc;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
+use std::thread::JoinHandle;
 
 /// Basic Reloader which can check timestamps on files and then callback functions supplied by the reload responder
 pub struct Reloader {
@@ -12,11 +14,15 @@ pub struct Reloader {
     /// You can implement your own `ReloadResponder` trait to get callback functions to trigger a build
     responder: Arc<Mutex<Box<dyn ReloadResponder>>>,
     /// indicates reloading is available / happening
-    hot: bool
+    hot: bool,
+    /// set to true to signal the file watcher thread to exit
+    shutdown: Arc<AtomicBool>,
+    /// handle to the file watcher thread, joined on drop
+    thread: Option<JoinHandle<()>>,
 }
 
 /// Query reload status with a responder:
-/// if 
+/// if
 #[derive(PartialEq, Clone, Copy)]
 pub enum ReloadState {
     /// No action needs taking
@@ -45,7 +51,9 @@ impl Reloader {
         Self {
             lock: Arc::new(Mutex::new(ReloadState::None)),
             responder: Arc::new(Mutex::new(responder)),
-            hot: false
+            hot: false,
+            shutdown: Arc::new(AtomicBool::new(false)),
+            thread: None,
         }.start()
     }
 
@@ -61,8 +69,9 @@ impl Reloader {
     }
 
     /// Start watching for and invoking reload changes, this will spawn threads to watch files
-    pub fn start(self) -> Self {
-        self.file_watcher_thread();
+    pub fn start(mut self) -> Self {
+        let handle = self.file_watcher_thread();
+        self.thread = Some(handle);
         self
     }
 
@@ -75,7 +84,7 @@ impl Reloader {
         *lock
     }
 
-    /// Once data is cleaned up and it is safe to proceed this functions must be called 
+    /// Once data is cleaned up and it is safe to proceed this functions must be called
     pub fn complete_reload(&mut self) {
         let mut lock = self.lock.lock().unwrap();
         // signal it is safe to proceed and reload the new code
@@ -91,28 +100,29 @@ impl Reloader {
         let files = responder.get_files();
         for file in &files {
             let filepath = super::get_data_path(file);
-            let meta = std::fs::metadata(&filepath);
-            if meta.is_ok() {
-                let mtime = std::fs::metadata(&filepath).unwrap().modified().unwrap();
-                if mtime > cur_mtime {
-                    return mtime;
+            if let Ok(meta) = std::fs::metadata(&filepath) {
+                if let Ok(mtime) = meta.modified() {
+                    if mtime > cur_mtime {
+                        return mtime;
+                    }
                 }
             }
             else {
-                print!("hotline_rs::reloader: {filepath} not found!")
+                println!("hotline_rs::reloader: {filepath} not found!")
             }
         };
         cur_mtime
     }
 
     /// Background thread will watch for changed filestamps among the registered files from the responder
-    fn file_watcher_thread(&self) {
+    fn file_watcher_thread(&self) -> JoinHandle<()> {
         let lock = self.lock.clone();
+        let shutdown = self.shutdown.clone();
         let mut cur_mtime = SystemTime::now();
         let mut first_time_check = true;
         let responder = self.responder.clone();
         thread::Builder::new().name("hotline_rs::reloader::file_watcher_thread".to_string()).spawn(move || {
-            loop {
+            while !shutdown.load(Ordering::Relaxed) {
                 // check base mtime of the output lib, it might be old / stale when we run with a fresh client
                 if first_time_check {
                     cur_mtime = responder.lock().unwrap().get_last_mtime();
@@ -139,8 +149,17 @@ impl Reloader {
                     }
                     cur_mtime = mtime;
                 }
-                std::thread::sleep(Duration::from_millis(16));
+                thread::sleep(Duration::from_millis(16));
             }
-        }).unwrap();
+        }).expect("hotline_rs::reloader: failed to spawn file watcher thread")
+    }
+}
+
+impl Drop for Reloader {
+    fn drop(&mut self) {
+        self.shutdown.store(true, Ordering::Relaxed);
+        if let Some(thread) = self.thread.take() {
+            let _ = thread.join();
+        }
     }
 }

@@ -209,7 +209,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, heap: &Heap, slot: u32, offset: usize) {
+    fn set_binding<T: Pipeline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: DescriptorType, heap: &Heap, offset: usize) -> Option<()> {
         unimplemented!()
     }
 
