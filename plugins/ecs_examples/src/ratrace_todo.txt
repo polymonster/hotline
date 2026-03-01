@@ -1,12 +1,14 @@
 // TODO
-- [ ] serialize tilemap
 - a way to hook in custom UI (for editor)
 -- place goals / destinations
+-- a way to clear the map
 
 - path finding Dijkstra-based flood fill
 
-- ignore input events beneath imgui
+
 
 // DONE
+x [C] serialize tilemap
 x basic initial flow
 x place agents
+x ignore input events beneath imgui

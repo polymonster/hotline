@@ -11,7 +11,25 @@ const TILE_SIZE: f32 = 10.0;
 const GRID_SIZE: i32 = 2000;
 const ARRAY_SIZE: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
+/// Init function for ratrace demo
+#[no_mangle]
+pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
+    ScheduleInfo {
+        setup: systems![
+            "setup_ratrace2"
+        ],
+        update: systems![
+            "update_tile_editor_ui",
+            "update_tile_editor",
+            "update_agents"
+        ],
+        render_graph: "mesh_wireframe_overlay"
+    }
+}
+
 #[derive(Clone, Copy, PartialEq)]
+#[repr(u8)]
 enum TileType {
     Empty,
     Wall,
@@ -90,6 +108,14 @@ fn tile_to_chunk(tx: i32, ty: i32, tz: i32) -> (i32, i32, i32, usize, usize, usi
 }
 
 const TILE_NAMES: &[&str] = &["Wall", "Barrier", "Escalator", "Platform", "TrainTrack"];
+const PLACE_NAMES: &[&str] = &["Wall", "Barrier", "Escalator", "Platform", "TrainTrack", "Agent"];
+const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
+
+#[derive(PartialEq)]
+enum PlaceMode {
+    Tile(usize),
+    Agent,
+}
 const AGENT_SPEED: f32 = 0.1;   // world units per frame
 const AGENT_RADIUS: f32 = 3.0;  // debug circle radius
 const AGENT_SEGMENTS: usize = 8;
@@ -102,7 +128,7 @@ const TILE_TYPES: &[TileType] = &[TileType::Wall, TileType::Barrier, TileType::E
 
 #[derive(Resource)]
 struct EditorState {
-    selected_tile: usize,
+    selected: PlaceMode,
 }
 
 #[derive(Resource)]
@@ -138,6 +164,48 @@ impl Map {
             Some(chunk) => chunk.tiles[morton_encode(lx, ly, lz)],
             None => TileType::Empty,
         }
+    }
+
+    fn save(&self) -> Result<(), hotline_rs::Error> {
+        let mut buf: Vec<u8> = Vec::new();
+        buf.extend_from_slice(b"RR2M");
+        buf.extend_from_slice(&1u32.to_le_bytes());
+        buf.extend_from_slice(&(self.chunks.len() as u32).to_le_bytes());
+        for (key, chunk) in &self.chunks {
+            let (cx, cz) = chunk_key_unpack(*key);
+            buf.extend_from_slice(&cx.to_le_bytes());
+            buf.extend_from_slice(&cz.to_le_bytes());
+            let tile_bytes: &[u8; ARRAY_SIZE] = unsafe { std::mem::transmute(&chunk.tiles) };
+            buf.extend_from_slice(tile_bytes);
+        }
+        std::fs::write(MAP_SAVE_PATH, buf)?;
+        Ok(())
+    }
+
+    fn load(path: &str) -> Result<Self, hotline_rs::Error> {
+        let data = std::fs::read(path)?;
+        let mut pos = 0usize;
+        if data.get(pos..pos+4) != Some(b"RR2M") {
+            return Err("invalid map file".into());
+        }
+        pos += 4;
+        let _version = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+        pos += 4;
+        let num_chunks = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
+        pos += 4;
+        let mut map = Map::new();
+        for _ in 0..num_chunks {
+            let cx = i32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+            pos += 4;
+            let cz = i32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+            pos += 4;
+            let key = chunk_key(cx, cz);
+            let chunk = map.chunks.entry(key).or_insert_with(MapChunk::new);
+            let tile_bytes: [u8; ARRAY_SIZE] = data[pos..pos+ARRAY_SIZE].try_into().unwrap();
+            chunk.tiles = unsafe { std::mem::transmute(tile_bytes) };
+            pos += ARRAY_SIZE;
+        }
+        Ok(map)
     }
 }
 
@@ -185,22 +253,6 @@ pub fn update_agents(
     Ok(())
 }
 
-/// Init function for ratrace demo
-#[no_mangle]
-pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
-    client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
-    ScheduleInfo {
-        setup: systems![
-            "setup_ratrace2"
-        ],
-        update: systems![
-            "update_tile_editor",
-            "update_agents"
-        ],
-        render_graph: "mesh_wireframe_overlay"
-    }
-}
-
 /// Sets up the ratrace game world
 #[export_update_fn]
 pub fn setup_ratrace2(
@@ -210,10 +262,37 @@ pub fn setup_ratrace2(
     // enable the grid
     session_info.debug_draw_flags |= DebugDrawFlags::GRID;
 
-    // create resources
-    commands.insert_resource(Map::new());
-    commands.insert_resource(EditorState { selected_tile: 0 });
+    // create resources — load map from disk if it exists, otherwise start empty
+    let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
+    commands.insert_resource(map);
+    commands.insert_resource(EditorState { selected: PlaceMode::Tile(0) });
 
+    Ok(())
+}
+
+#[export_update_fn]
+pub fn update_tile_editor_ui(
+    mut imgui: ResMut<ImGuiRes>,
+    mut editor: ResMut<EditorState>,
+) -> Result<(), hotline_rs::Error> {
+    imgui.set_global_context();
+    
+    if imgui.begin_main_menu_bar() {
+        let selected_name = match editor.selected {
+            PlaceMode::Tile(i) => PLACE_NAMES[i].to_string(),
+            PlaceMode::Agent => "Agent".to_string(),
+        };
+        let place_names: Vec<String> = PLACE_NAMES.iter().map(|s| s.to_string()).collect();
+        imgui.set_next_item_width(150.0);
+        let (_, new_selected) = imgui.combo_list("Place", &place_names, &selected_name);
+        editor.selected = if new_selected == "Agent" {
+            PlaceMode::Agent
+        } else {
+            let idx = TILE_NAMES.iter().position(|&n| n == new_selected.as_str()).unwrap_or(0);
+            PlaceMode::Tile(idx)
+        };
+        imgui.end_main_menu_bar();
+    }
     Ok(())
 }
 
@@ -223,26 +302,11 @@ pub fn update_tile_editor(
     app: Res<AppRes>,
     viewport: Res<ViewportInfo>,
     pmfx: Res<PmfxRes>,
-    mut imgui: ResMut<ImGuiRes>,
     mut imdraw: ResMut<ImDrawRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
     mut commands: Commands,
 ) -> Result<(), hotline_rs::Error> {
-
-    // tile editor UI window
-    let tile_names: Vec<String> = TILE_NAMES.iter().map(|s| s.to_string()).collect();
-    let selected_name = TILE_NAMES[editor.selected_tile].to_string();
-
-    /*
-    imgui.begin_window("Tile Editor");
-    let (_open, new_selected) = imgui.combo_list("Tile Type", &tile_names, &selected_name);
-    if let Some(idx) = TILE_NAMES.iter().position(|&n| n == new_selected) {
-        editor.selected_tile = idx;
-    }
-    imgui.text(&format!("Chunks: {}", map.chunks.len()));
-    imgui.end();
-    */
 
     let (enable_keyboard, enable_mouse) = app.get_input_enabled();
 
@@ -305,12 +369,15 @@ pub fn update_tile_editor(
 
                     if !app.is_sys_key_down(os::SysKey::Ctrl) {
                         if buttons[os::MouseButton::Left as usize] {
-                            map.set_tile(tile_x, 0, tile_z, TILE_TYPES[editor.selected_tile]);
-                        }
-                        if buttons[os::MouseButton::Right as usize] {
-                            // spawn an agent at the mouse hit position
-                            if map.get_tile(tile_x, 0, tile_z) == TileType::Empty {
-                                commands.spawn(HumanAgent { pos: Vec3f::new(hit.x, 0.0, hit.z) });
+                            match editor.selected {
+                                PlaceMode::Tile(i) => {
+                                    map.set_tile(tile_x, 0, tile_z, TILE_TYPES[i]);
+                                }
+                                PlaceMode::Agent => {
+                                    if map.get_tile(tile_x, 0, tile_z) == TileType::Empty {
+                                        commands.spawn(HumanAgent { pos: Vec3f::new(hit.x, 0.0, hit.z) });
+                                    }
+                                }
                             }
                         }
                     }
@@ -320,6 +387,19 @@ pub fn update_tile_editor(
                         }
                     }
                 }
+            }
+        }
+    }
+
+    // save / load with Ctrl+S / Ctrl+L
+    if app.is_sys_key_down(os::SysKey::Ctrl) {
+        let keys = app.get_keys_pressed();
+        if keys['S' as usize] {
+            let _ = map.save();
+        }
+        if keys['L' as usize] {
+            if let Ok(loaded) = Map::load(MAP_SAVE_PATH) {
+                *map = loaded;
             }
         }
     }

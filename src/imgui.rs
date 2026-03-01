@@ -70,7 +70,8 @@ pub struct ImGui<D: Device, A: App> {
     _font_texture: D::Texture,
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
-    last_cursor: os::Cursor
+    last_cursor: os::Cursor,
+    global_context: u64
 }
 
 #[derive(Clone)]
@@ -772,7 +773,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 _font_texture: font_tex,
                 pipeline,
                 buffers,
-                last_cursor: os::Cursor::None
+                last_cursor: os::Cursor::None,
+                global_context: igGetCurrentContext() as u64
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -1161,6 +1163,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
                 igEnd();
             }
+        }
+    }
+
+    /// This function will make the global `ImGuiContext` current, required when calling imgui from inside in a plugin dll or lib
+    pub fn set_global_context(&mut self) {
+        unsafe {
+            igSetCurrentContext(self.global_context as *mut ImGuiContext);
         }
     }
 
