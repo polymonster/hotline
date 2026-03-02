@@ -898,18 +898,10 @@ pub struct PipelineSlot {
     pub vertex_buffer_index: Option<u32>,
     /// Metal buffer index for fragment stage (None if not visible to fragment)
     pub fragment_buffer_index: Option<u32>,
-    /// Argument encoder for encoding resources into argument buffer
-    pub argument_encoder: metal::ArgumentEncoder,
-    /// Argument buffer containing encoded resource pointers
-    pub argument_buffer: metal::Buffer,
-    /// Index within the shared argument buffer (for texture bindings)
-    pub binding_index: u32,
     /// Metal Data type, for bindings this is Texture or Pointer (Buffer)
     pub data_type: Option<metal::MTLDataType>,
     /// Slot info for API compatibility
     pub info: PipelineSlotInfo,
-    /// Visibility for this slot
-    pub visibility: ShaderVisibility,
 }
 #[derive(Clone)]
 struct PushConstantsBinder {
@@ -943,37 +935,24 @@ enum PipelineStageBinder {
 /// Key for slot lookup: (register, space, descriptor_type)
 type SlotKey = (u32, u32, DescriptorType);
 
-/// Info about argument buffer requirements for a specific buffer index
-/// Used for on-the-fly allocation in set_binding
-#[derive(Clone)]
-pub struct SpaceBufferInfo {
-    /// Number of elements in the argument buffer (max binding_index + 1)
-    pub array_length: u64,
-    /// Data type (Texture or Pointer)
-    pub data_type: metal::MTLDataType,
-}
-
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
-    static_samplers: Vec<MetalSamplerBinding>,
     slots: Vec<u32>,
+
+    /// Primitive topology for draw calls
+    topology: Topology,
 
     /// Unified slot lookup by (register, space, descriptor_type)
     slot_lookup: HashMap<SlotKey, PipelineSlot>,
 
+    /// Static samplers
+    static_samplers: Vec<MetalSamplerBinding>,
+    /// Sampler argument buffer
+    sampler_argument_buffer: Option<metal::Buffer>,
     /// Vertex stage binders for push constants, keyed by (register, space, descriptor_type)
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     /// Fragment stage binders for push constants, keyed by (register, space, descriptor_type)
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
-
-    /// Sampler argument buffer
-    sampler_argument_buffer: Option<metal::Buffer>,
-    /// Primitive topology for draw calls
-    topology: Topology,
-    /// Info about argument buffer requirements per fragment buffer index
-    fragment_space_buffers: HashMap<u32, SpaceBufferInfo>,
-    /// Info about argument buffer requirements per vertex buffer index
-    vertex_space_buffers: HashMap<u32, SpaceBufferInfo>,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
@@ -1299,21 +1278,6 @@ impl Device {
         // Add push constant slots first (they come before regular bindings in htwv)
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
             for push_constant in push_constants {
-
-                // Create argument descriptor for pointer type (push constants use pointers in argument buffers)
-                let arg_desc = metal::ArgumentDescriptor::new();
-                arg_desc.set_index(0);
-                arg_desc.set_data_type(metal::MTLDataType::Pointer);
-                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-
-                let argument_encoder = self.metal_device.new_argument_encoder(
-                    metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                );
-                let argument_buffer = self.metal_device.new_buffer(
-                    argument_encoder.encoded_length(),
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-
                 // Determine stage indices based on visibility, using per-stage offsets
                 let (vertex_idx, fragment_idx, canonical_index) = match push_constant.visibility {
                     ShaderVisibility::Vertex => {
@@ -1342,56 +1306,19 @@ impl Device {
                     PipelineSlot {
                         vertex_buffer_index: vertex_idx,
                         fragment_buffer_index: fragment_idx,
-                        argument_encoder,
-                        argument_buffer,
-                        binding_index: 0, // Not used for push constants
                         data_type: None, // Not used for push constants
                         info: PipelineSlotInfo {
                             index: canonical_index,
                             count: Some(push_constant.num_values),
                         },
-                        visibility: push_constant.visibility,
                     },
                 );
             }
         }
 
-        // Add regular binding slots - ALL share ONE argument buffer
-        const MAX_BINDLESS_TEXTURES: u64 = 1024;
+        // Add regular binding slots
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                // Build argument descriptors - one per binding with unique indices
-                let arg_descs: Vec<metal::ArgumentDescriptor> = bindings.iter().enumerate()
-                    .map(|(i, binding)| {
-                        let arg_desc = metal::ArgumentDescriptor::new();
-                        arg_desc.set_index(i as u64);  // Each binding gets unique index
-                        let array_len = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
-                        arg_desc.set_array_length(array_len);
-
-                        // Determine data type from resource_type (texture vs buffer/pointer)
-                        let data_type = to_mtl_data_type(binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"));
-
-                        // Determine access from binding_type (read vs read-write)
-                        let access = match binding.binding_type {
-                            DescriptorType::UnorderedAccess => metal::MTLArgumentAccess::ReadWrite,
-                            _ => metal::MTLArgumentAccess::ReadOnly,
-                        };
-
-                        arg_desc.set_data_type(data_type);
-                        arg_desc.set_access(access);
-                        arg_desc.to_owned()
-                    })
-                    .collect();
-
-                // Create SINGLE encoder/buffer for ALL bindings
-                let argument_encoder = self.metal_device.new_argument_encoder(
-                    metal::Array::from_owned_slice(&arg_descs)
-                );
-                let argument_buffer = self.metal_device.new_buffer(
-                    argument_encoder.encoded_length(),
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-
                 // Determine if any binding needs vertex or fragment visibility
                 let needs_vertex = bindings.iter().any(|b|
                     matches!(b.visibility, ShaderVisibility::Vertex | ShaderVisibility::All));
@@ -1415,8 +1342,8 @@ impl Device {
                 };
                 let canonical_index = vertex_idx.or(fragment_idx).unwrap_or(0);
 
-                // Each binding shares buffer but has unique binding_index
-                for (i, binding) in bindings.iter().enumerate() {
+                // Each binding gets a slot entry
+                for binding in bindings.iter() {
                     // Per-slot visibility based on the binding's visibility
                     let slot_vertex_idx = match binding.visibility {
                         ShaderVisibility::Vertex | ShaderVisibility::All => vertex_idx,
@@ -1432,16 +1359,12 @@ impl Device {
                         PipelineSlot {
                             vertex_buffer_index: slot_vertex_idx,
                             fragment_buffer_index: slot_fragment_idx,
-                            argument_encoder: argument_encoder.clone(),
-                            argument_buffer: argument_buffer.clone(),
-                            binding_index: i as u32,  // 0, 1, 2, 3 matching shader [[id()]]
                             data_type: Some(to_mtl_data_type(
                                 binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"))),
                             info: PipelineSlotInfo {
                                 index: canonical_index,
                                 count: binding.num_descriptors,
                             },
-                            visibility: binding.visibility,
                         },
                     );
                 }
@@ -1889,31 +1812,6 @@ impl super::Device for Device {
                 &info.pipeline_layout.push_constants,
             );
 
-            // Compute space buffer info from slot_lookup
-            let mut fragment_space_buffers: HashMap<u32, SpaceBufferInfo> = HashMap::new();
-            let mut vertex_space_buffers: HashMap<u32, SpaceBufferInfo> = HashMap::new();
-
-            for slot in slot_lookup.values() {
-                // Skip push constants (they have data_type: None)
-                if let Some(data_type) = slot.data_type {
-                    // Track max binding_index for each buffer index
-                    if let Some(frag_idx) = slot.fragment_buffer_index {
-                        let entry = fragment_space_buffers.entry(frag_idx).or_insert(SpaceBufferInfo {
-                            array_length: 0,
-                            data_type,
-                        });
-                        entry.array_length = entry.array_length.max(slot.binding_index as u64 + 1);
-                    }
-                    if let Some(vert_idx) = slot.vertex_buffer_index {
-                        let entry = vertex_space_buffers.entry(vert_idx).or_insert(SpaceBufferInfo {
-                            array_length: 0,
-                            data_type,
-                        });
-                        entry.array_length = entry.array_length.max(slot.binding_index as u64 + 1);
-                    }
-                }
-            }
-
             let pipeline_state = self.metal_device.new_render_pipeline_state(&pipeline_state_descriptor)?;
 
             Ok(RenderPipeline {
@@ -1925,8 +1823,6 @@ impl super::Device for Device {
                 fragment_binder,
                 sampler_argument_buffer,
                 topology: info.topology,
-                fragment_space_buffers,
-                vertex_space_buffers,
             })
         })
     }
