@@ -210,7 +210,11 @@ fn compile_shader_spirv(
             })
             .collect();
 
-        let samplers_offset = if filepath.ends_with(".vsc") { 2 } else { 0 };
+        let samplers_offset = match stage
+        {
+            ShaderStage::Vertex => 2,
+            _ => 0
+        };
 
         // put samplers first all in single argument buffer
         for resource in &resources {
@@ -227,18 +231,49 @@ fn compile_shader_spirv(
             }
         }
 
-        // put push constants next
+        // put push constants next - use discrete descriptor sets (no argument buffers)
+        // This enables using setVertexBytes/setFragmentBytes at runtime
         let mut binding_offset = samplers_offset + 1;
+        let exec_model = match stage {
+            ShaderStage::Vertex => SpvExecutionModel__SpvExecutionModelVertex,
+            ShaderStage::Fragment => SpvExecutionModel__SpvExecutionModelFragment,
+            ShaderStage::Compute => SpvExecutionModel__SpvExecutionModelGLCompute,
+            _ => SpvExecutionModel__SpvExecutionModelVertex,
+        };
+
         for resource in &resources {
             for push_constant in &pipeline.pipeline_layout.push_constants {
+                // Only process push constants visible to this shader stage
+                if push_constant.visibility != stage && push_constant.visibility != ShaderStage::All {
+                    continue;
+                }
                 let name = cstr_to_string(resource.name)?;
                 if push_constant.name == name.strip_prefix("type.").unwrap_or(&name) {
+                    let desc_set = binding_offset as u32;
                     spvc_compiler_set_decoration(
                         compiler,
                         resource.id,
                         SpvDecoration__SpvDecorationDescriptorSet,
-                        binding_offset as u32,
+                        desc_set,
                     );
+                    // Mark as discrete so it uses direct buffer binding, not argument buffer
+                    spvc_compiler_msl_add_discrete_descriptor_set(compiler, desc_set);
+
+                    // Explicitly map to Metal buffer index (without this, SPIRV-Cross uses buffer(0))
+                    // Get the original SPIR-V binding number from the resource
+                    let spirv_binding = spvc_compiler_get_decoration(
+                        compiler,
+                        resource.id,
+                        SpvDecoration__SpvDecorationBinding,
+                    );
+                    let mut res_binding: spvc_msl_resource_binding = std::mem::zeroed();
+                    spvc_msl_resource_binding_init(&mut res_binding);
+                    res_binding.stage = exec_model;
+                    res_binding.desc_set = desc_set;
+                    res_binding.binding = spirv_binding;
+                    res_binding.msl_buffer = desc_set;
+                    spvc_compiler_msl_add_resource_binding(compiler, &res_binding);
+
                     binding_offset += 1
                 }
             }

@@ -336,39 +336,21 @@ impl CmdBuf {
             None => return,
         };
 
-        // Allocate push constants for this stage
+        // Bind push constants using setVertexBytes/setFragmentBytes (zero allocations)
         for b in binder.values() {
             if let PipelineStageBinder::PushConstants(pc) = b {
                 let data_size = (pc.num_32_bit_constants * 4) as u64;
-                let data_buffer = self.metal_device.new_buffer(
-                    data_size,
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-
-                let dest_ptr = data_buffer.contents() as *mut u32;
-                unsafe {
-                    std::ptr::copy_nonoverlapping(
-                        pc.data.as_ptr(),
-                        dest_ptr,
-                        pc.num_32_bit_constants as usize
-                    );
-                }
-
-                let arg_buffer = self.metal_device.new_buffer(
-                    pc.argument_encoder.encoded_length(),
-                    metal::MTLResourceOptions::StorageModeShared
-                );
-                pc.argument_encoder.set_argument_buffer(&arg_buffer, 0);
-                pc.argument_encoder.set_buffer(0, &data_buffer, 0);
+                let data_ptr = pc.data.as_ptr() as *const std::ffi::c_void;
 
                 match stage {
-                    super::ShaderType::Vertex => encoder.set_vertex_buffer(pc.buffer_index as u64, Some(&arg_buffer), 0),
-                    super::ShaderType::Fragment => encoder.set_fragment_buffer(pc.buffer_index as u64, Some(&arg_buffer), 0),
+                    super::ShaderType::Vertex => {
+                        encoder.set_vertex_bytes(pc.buffer_index as u64, data_size, data_ptr);
+                    }
+                    super::ShaderType::Fragment => {
+                        encoder.set_fragment_bytes(pc.buffer_index as u64, data_size, data_ptr);
+                    }
                     _ => unimplemented!(),
                 }
-
-                self.transient_buffers.push(data_buffer);
-                self.transient_buffers.push(arg_buffer);
             }
         }
 
@@ -903,11 +885,11 @@ pub struct PipelineSlot {
     /// Slot info for API compatibility
     pub info: PipelineSlotInfo,
 }
+/// Push constants binder - uses setVertexBytes/setFragmentBytes for zero-allocation binding
 #[derive(Clone)]
 struct PushConstantsBinder {
     pub data: Vec<u32>,
     pub num_32_bit_constants: u32,
-    pub argument_encoder: metal::ArgumentEncoder,
     pub buffer_index: u32,
 }
 
@@ -1389,7 +1371,7 @@ impl Device {
         let mut vertex_binding_offset: u32 = vertex_samplers_offset + 1;
         let mut fragment_binding_offset: u32 = fragment_samplers_offset + 1;
 
-        // Add push constant binders
+        // Add push constant binders (no ArgumentEncoder needed - uses setVertexBytes/setFragmentBytes)
         if let Some(push_constants) = pipeline_push_constants.as_ref() {
             for push_constant in push_constants {
                 let key: SlotKey = (
@@ -1398,24 +1380,14 @@ impl Device {
                     DescriptorType::PushConstants
                 );
 
-                let arg_desc = metal::ArgumentDescriptor::new();
-                arg_desc.set_index(0);
-                arg_desc.set_data_type(metal::MTLDataType::Pointer);
-                arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
-
                 match push_constant.visibility {
                     ShaderVisibility::Vertex => {
                         let buffer_index = vertex_binding_offset;
                         vertex_binding_offset += 1;
 
-                        let argument_encoder = self.metal_device.new_argument_encoder(
-                            metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                        );
-
                         vertex_binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
-                            argument_encoder,
                             buffer_index,
                         }));
                     },
@@ -1423,14 +1395,9 @@ impl Device {
                         let buffer_index = fragment_binding_offset;
                         fragment_binding_offset += 1;
 
-                        let argument_encoder = self.metal_device.new_argument_encoder(
-                            metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                        );
-
                         fragment_binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
-                            argument_encoder,
                             buffer_index,
                         }));
                     },
@@ -1440,24 +1407,15 @@ impl Device {
                         vertex_binding_offset += 1;
                         fragment_binding_offset += 1;
 
-                        let v_argument_encoder = self.metal_device.new_argument_encoder(
-                            metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                        );
-                        let f_argument_encoder = self.metal_device.new_argument_encoder(
-                            metal::Array::from_owned_slice(&[arg_desc.to_owned()])
-                        );
-
                         vertex_binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
-                            argument_encoder: v_argument_encoder,
                             buffer_index: v_buffer_index,
                         }));
 
                         fragment_binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
-                            argument_encoder: f_argument_encoder,
                             buffer_index: f_buffer_index,
                         }));
                     },
