@@ -140,6 +140,38 @@ fn to_mtl_texture_usage(usage: TextureUsage) -> MTLTextureUsage {
     mtl_usage
 }
 
+fn to_mtl_compare_func(func: super::ComparisonFunc) -> metal::MTLCompareFunction {
+    match func {
+        super::ComparisonFunc::Never => metal::MTLCompareFunction::Never,
+        super::ComparisonFunc::Less => metal::MTLCompareFunction::Less,
+        super::ComparisonFunc::Equal => metal::MTLCompareFunction::Equal,
+        super::ComparisonFunc::LessEqual => metal::MTLCompareFunction::LessEqual,
+        super::ComparisonFunc::Greater => metal::MTLCompareFunction::Greater,
+        super::ComparisonFunc::NotEqual => metal::MTLCompareFunction::NotEqual,
+        super::ComparisonFunc::GreaterEqual => metal::MTLCompareFunction::GreaterEqual,
+        super::ComparisonFunc::Always => metal::MTLCompareFunction::Always,
+    }
+}
+
+fn to_mtl_stencil_op(op: super::StencilOp) -> metal::MTLStencilOperation {
+    match op {
+        super::StencilOp::Keep => metal::MTLStencilOperation::Keep,
+        super::StencilOp::Zero => metal::MTLStencilOperation::Zero,
+        super::StencilOp::Replace => metal::MTLStencilOperation::Replace,
+        super::StencilOp::IncrSat => metal::MTLStencilOperation::IncrementClamp,
+        super::StencilOp::DecrSat => metal::MTLStencilOperation::DecrementClamp,
+        super::StencilOp::Invert => metal::MTLStencilOperation::Invert,
+        super::StencilOp::Incr => metal::MTLStencilOperation::IncrementWrap,
+        super::StencilOp::Decr => metal::MTLStencilOperation::DecrementWrap,
+    }
+}
+
+fn has_stencil_component(format: metal::MTLPixelFormat) -> bool {
+    matches!(format,
+        metal::MTLPixelFormat::Depth32Float_Stencil8
+    )
+}
+
 fn to_mtl_pixel_format(format: super::Format) -> metal::MTLPixelFormat {
     match format {
         super::Format::Unknown => metal::MTLPixelFormat::Invalid,
@@ -550,14 +582,18 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn set_render_pipeline(&mut self, pipeline: &RenderPipeline) {
         objc::rc::autoreleasepool(|| {
-            self.render_encoder
+            let encoder = self.render_encoder
                 .as_ref()
-                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-                .set_render_pipeline_state(&pipeline.pipeline_state);
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+
+            encoder.set_render_pipeline_state(&pipeline.pipeline_state);
+
+            // Set depth stencil state
+            encoder.set_depth_stencil_state(&pipeline.depth_stencil_state);
 
             // Bind sampler argument buffer at buffer(0) in fragment shader
             if let Some(ref sampler_arg_buffer) = pipeline.sampler_argument_buffer {
-                self.render_encoder.as_ref().unwrap().set_fragment_buffer(
+                encoder.set_fragment_buffer(
                     0,
                     Some(sampler_arg_buffer),
                     0
@@ -586,39 +622,38 @@ impl super::CmdBuf<Device> for CmdBuf {
             .as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
 
-        // Make the heap accessible to shaders
-        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
-        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
-
         // Cast pipeline to RenderPipeline to access slot_lookup
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
 
-        // Track which buffer indices we've already bound
-        let mut bound_vertex_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
-        let mut bound_fragment_buffers: std::collections::HashSet<u64> = std::collections::HashSet::new();
-
-        // Bind heap's pre-encoded argument buffers to the slots specified by the pipeline
-        for slot in rp.slot_lookup.values() {
-            // Get the appropriate heap argument buffer based on data type
-            // Push constants have data_type: None and will hit the _ => continue branch
-            let arg_buffer = match slot.data_type {
-                Some(metal::MTLDataType::Texture) => heap.get_texture_argument_buffer(),
-                Some(metal::MTLDataType::Pointer) => heap.get_buffer_argument_buffer(),
-                _ => continue,
-            };
-
-            // Bind to vertex stage if needed (once per buffer index)
-            if let Some(vertex_idx) = slot.vertex_buffer_index {
-                if bound_vertex_buffers.insert(vertex_idx as u64) {
-                    encoder.set_vertex_buffer(vertex_idx as u64, Some(arg_buffer), 0);
+        // vertex bindings
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
+        for (key, slot) in &rp.vertex_binder {
+            match slot {
+                PipelineStageBinder::Resource(res) => {
+                    let arg_buffer = match res.data_type {
+                        metal::MTLDataType::Texture => heap.get_texture_argument_buffer(),
+                        metal::MTLDataType::Pointer => heap.get_buffer_argument_buffer(),
+                        _ => continue,
+                    };
+                    encoder.set_vertex_buffer(res.buffer_index as u64, Some(arg_buffer), 0);
                 }
+                _ => {}
             }
+        }
 
-            // Bind to fragment stage if needed (once per buffer index)
-            if let Some(fragment_idx) = slot.fragment_buffer_index {
-                if bound_fragment_buffers.insert(fragment_idx as u64) {
-                    encoder.set_fragment_buffer(fragment_idx as u64, Some(arg_buffer), 0);
+        // fragment bindings
+        encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Fragment);
+        for (key, slot) in &rp.fragment_binder {
+            match slot {
+                PipelineStageBinder::Resource(res) => {
+                    let arg_buffer = match res.data_type {
+                        metal::MTLDataType::Texture => heap.get_texture_argument_buffer(),
+                        metal::MTLDataType::Pointer => heap.get_buffer_argument_buffer(),
+                        _ => continue,
+                    };
+                    encoder.set_fragment_buffer(res.buffer_index as u64, Some(arg_buffer), 0);
                 }
+                _ => {}
             }
         }
     }
@@ -873,18 +908,6 @@ struct MetalSamplerBinding {
     sampler: metal::SamplerState
 }
 
-/// Unified pipeline slot for both descriptors and push constants
-/// Supports per-stage buffer indices for Metal argument buffers
-pub struct PipelineSlot {
-    /// Metal buffer index for vertex stage (None if not visible to vertex)
-    pub vertex_buffer_index: Option<u32>,
-    /// Metal buffer index for fragment stage (None if not visible to fragment)
-    pub fragment_buffer_index: Option<u32>,
-    /// Metal Data type, for bindings this is Texture or Pointer (Buffer)
-    pub data_type: Option<metal::MTLDataType>,
-    /// Slot info for API compatibility
-    pub info: PipelineSlotInfo,
-}
 /// Push constants binder - uses setVertexBytes/setFragmentBytes for zero-allocation binding
 #[derive(Clone)]
 struct PushConstantsBinder {
@@ -920,13 +943,10 @@ type SlotKey = (u32, u32, DescriptorType);
 pub struct RenderPipeline {
     pipeline_state: metal::RenderPipelineState,
     slots: Vec<u32>,
-
     /// Primitive topology for draw calls
     topology: Topology,
-
     /// Unified slot lookup by (register, space, descriptor_type)
-    slot_lookup: HashMap<SlotKey, PipelineSlot>,
-
+    slot_lookup: HashMap<SlotKey, PipelineSlotInfo>,
     /// Static samplers
     static_samplers: Vec<MetalSamplerBinding>,
     /// Sampler argument buffer
@@ -935,13 +955,15 @@ pub struct RenderPipeline {
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     /// Fragment stage binders for push constants, keyed by (register, space, descriptor_type)
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
+    /// Depth stencil state
+    depth_stencil_state: metal::DepthStencilState,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        self.slot_lookup.get(&(register, space, descriptor_type)).map(|slot| &slot.info)
+        self.slot_lookup.get(&(register, space, descriptor_type))
     }
 
     fn get_pipeline_slots(&self) -> &Vec<u32> {
@@ -1026,6 +1048,7 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 pub struct RenderPass {
     desc: metal::RenderPassDescriptor,
     pixel_format: metal::MTLPixelFormat,
+    depth_format: Option<metal::MTLPixelFormat>,
 }
 
 impl super::RenderPass<Device> for RenderPass {
@@ -1245,13 +1268,10 @@ impl Device {
         &self,
         pipeline_bindings: &Option<Vec<DescriptorBinding>>,
         pipeline_push_constants: &Option<Vec<PushConstantInfo>>,
-    ) -> HashMap<SlotKey, PipelineSlot> {
-        let mut slot_lookup: HashMap<SlotKey, PipelineSlot> = HashMap::new();
+    ) -> HashMap<SlotKey, PipelineSlotInfo> {
+        let mut slot_lookup: HashMap<SlotKey, PipelineSlotInfo> = HashMap::new();
 
-        // htwv convention: samplers at 2 on vs
-        // samplers at 0 on ps
-        // Track binding offsets separately per stage since different numbers of
-        // bindings and push constants might be active on each stage
+        // hardcoded sampler offsets
         let vertex_samplers_offset: u32 = 2;
         let fragment_samplers_offset: u32 = 0;
         let mut vertex_binding_offset: u32 = vertex_samplers_offset + 1;
@@ -1285,14 +1305,9 @@ impl Device {
 
                 slot_lookup.insert(
                     (push_constant.shader_register, push_constant.register_space, DescriptorType::PushConstants),
-                    PipelineSlot {
-                        vertex_buffer_index: vertex_idx,
-                        fragment_buffer_index: fragment_idx,
-                        data_type: None, // Not used for push constants
-                        info: PipelineSlotInfo {
-                            index: canonical_index,
-                            count: Some(push_constant.num_values),
-                        },
+                    PipelineSlotInfo {
+                        index: canonical_index,
+                        count: Some(push_constant.num_values),
                     },
                 );
             }
@@ -1326,28 +1341,12 @@ impl Device {
 
                 // Each binding gets a slot entry
                 for binding in bindings.iter() {
-                    // Per-slot visibility based on the binding's visibility
-                    let slot_vertex_idx = match binding.visibility {
-                        ShaderVisibility::Vertex | ShaderVisibility::All => vertex_idx,
-                        _ => None,
-                    };
-                    let slot_fragment_idx = match binding.visibility {
-                        ShaderVisibility::Fragment | ShaderVisibility::All => fragment_idx,
-                        _ => None,
-                    };
-
                     slot_lookup.insert(
                         (binding.shader_register, binding.register_space, binding.binding_type),
-                        PipelineSlot {
-                            vertex_buffer_index: slot_vertex_idx,
-                            fragment_buffer_index: slot_fragment_idx,
-                            data_type: Some(to_mtl_data_type(
-                                binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type to be set for descriptor binding"))),
-                            info: PipelineSlotInfo {
-                                index: canonical_index,
-                                count: binding.num_descriptors,
-                            },
-                        },
+                        PipelineSlotInfo {
+                            index: canonical_index,
+                            count: binding.num_descriptors,
+                        }
                     );
                 }
             }
@@ -1710,7 +1709,48 @@ impl super::Device for Device {
                 attachment.set_blending_enabled(false);
             }
 
-            // TODO: depth stencil
+            // Set depth format on pipeline descriptor if pass has depth
+            if let Some(pass) = &info.pass {
+                if let Some(depth_format) = pass.depth_format {
+                    pipeline_state_descriptor.set_depth_attachment_pixel_format(depth_format);
+                    if has_stencil_component(depth_format) {
+                        pipeline_state_descriptor.set_stencil_attachment_pixel_format(depth_format);
+                    }
+                }
+            }
+
+            // Create depth stencil state
+            let depth_stencil_state = {
+                let ds_info = &info.depth_stencil_info;
+                let ds_desc = metal::DepthStencilDescriptor::new();
+
+                ds_desc.set_depth_compare_function(to_mtl_compare_func(ds_info.depth_func));
+                ds_desc.set_depth_write_enabled(ds_info.depth_write_mask == super::DepthWriteMask::All);
+
+                if ds_info.stencil_enabled {
+                    // Front face
+                    let front = metal::StencilDescriptor::new();
+                    front.set_stencil_compare_function(to_mtl_compare_func(ds_info.front_face.func));
+                    front.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.front_face.fail));
+                    front.set_depth_failure_operation(to_mtl_stencil_op(ds_info.front_face.depth_fail));
+                    front.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.front_face.pass));
+                    front.set_read_mask(ds_info.stencil_read_mask as u32);
+                    front.set_write_mask(ds_info.stencil_write_mask as u32);
+                    ds_desc.set_front_face_stencil(Some(&front));
+
+                    // Back face
+                    let back = metal::StencilDescriptor::new();
+                    back.set_stencil_compare_function(to_mtl_compare_func(ds_info.back_face.func));
+                    back.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.back_face.fail));
+                    back.set_depth_failure_operation(to_mtl_stencil_op(ds_info.back_face.depth_fail));
+                    back.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.back_face.pass));
+                    back.set_read_mask(ds_info.stencil_read_mask as u32);
+                    back.set_write_mask(ds_info.stencil_write_mask as u32);
+                    ds_desc.set_back_face_stencil(Some(&back));
+                }
+
+                self.metal_device.new_depth_stencil_state(&ds_desc)
+            };
 
             // TODO: raster
 
@@ -1781,6 +1821,7 @@ impl super::Device for Device {
                 fragment_binder,
                 sampler_argument_buffer,
                 topology: info.topology,
+                depth_stencil_state,
             })
         })
     }
@@ -2042,9 +2083,52 @@ impl super::Device for Device {
                 .map(|rt| rt.metal_texture.pixel_format())
                 .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
 
+            // Handle depth stencil attachment
+            let depth_format = if let Some(ds_texture) = &info.depth_stencil {
+                let depth_attachment = descriptor.depth_attachment().unwrap();
+                depth_attachment.set_texture(Some(&ds_texture.metal_texture));
+
+                if let Some(ds_clear) = &info.ds_clear {
+                    if let Some(depth_val) = ds_clear.depth {
+                        depth_attachment.set_load_action(metal::MTLLoadAction::Clear);
+                        depth_attachment.set_clear_depth(depth_val as f64);
+                    } else {
+                        depth_attachment.set_load_action(metal::MTLLoadAction::Load);
+                    }
+                } else {
+                    depth_attachment.set_load_action(metal::MTLLoadAction::Load);
+                }
+                depth_attachment.set_store_action(metal::MTLStoreAction::Store);
+
+                let format = ds_texture.metal_texture.pixel_format();
+
+                // Handle stencil if format has stencil component
+                if has_stencil_component(format) {
+                    let stencil_attachment = descriptor.stencil_attachment().unwrap();
+                    stencil_attachment.set_texture(Some(&ds_texture.metal_texture));
+
+                    if let Some(ds_clear) = &info.ds_clear {
+                        if let Some(stencil_val) = ds_clear.stencil {
+                            stencil_attachment.set_load_action(metal::MTLLoadAction::Clear);
+                            stencil_attachment.set_clear_stencil(stencil_val as u32);
+                        } else {
+                            stencil_attachment.set_load_action(metal::MTLLoadAction::Load);
+                        }
+                    } else {
+                        stencil_attachment.set_load_action(metal::MTLLoadAction::Load);
+                    }
+                    stencil_attachment.set_store_action(metal::MTLStoreAction::Store);
+                }
+
+                Some(format)
+            } else {
+                None
+            };
+
             Ok(RenderPass{
                 desc: descriptor.to_owned(),
                 pixel_format,
+                depth_format,
             })
         })
     }

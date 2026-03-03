@@ -396,8 +396,7 @@ pub fn compile_dir(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn Erro
 
     // Use CARGO_MANIFEST_DIR to locate pmfx.py relative to this crate
     let pmfx_path = format!(
-        "{}/third_party/pmfx-shader/pmfx.py",
-        env!("CARGO_MANIFEST_DIR")
+        "hotline-data/pmfx-shader/pmfx.py"
     );
 
     let status = Command::new("python3")

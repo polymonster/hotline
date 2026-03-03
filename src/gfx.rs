@@ -871,7 +871,7 @@ pub struct DepthStencilInfo {
 }
 
 /// Write to the depth buffer, or omit writes and just perform depth testing
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DepthWriteMask {
     Zero,
     All,

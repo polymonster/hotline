@@ -4,6 +4,3 @@
 [submodule "crates/htwv/third_party/SPIRV-Cross"]
 	path = crates/htwv/third_party/SPIRV-Cross
 	url = https://github.com/KhronosGroup/SPIRV-Cross.git
-[submodule "crates/htwv/third_party/pmfx-shader"]
-	path = crates/htwv/third_party/pmfx-shader
-	url = https://github.com/polymonster/pmfx-shader.git
