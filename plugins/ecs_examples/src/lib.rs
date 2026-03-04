@@ -265,19 +265,6 @@ pub fn render_meshes_bindless(
     cmd_buf.push_render_constants(pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
     // bind resource uses
-<<<<<<< HEAD
-    let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-    if let Some(_) = using_slot {
-        for i in 0..view.use_indices.len() {
-            let num_constants = gfx::num_32bit_constants(&view.use_indices[i]);
-            cmd_buf.push_compute_constants(
-                0,
-                num_constants,
-                i as u32 * num_constants,
-                gfx::as_u8_slice(&view.use_indices[i])
-            );
-        }
-=======
     for i in 0..view.use_indices.len() {
         let num_constants = gfx::num_32bit_constants(&view.use_indices[i]);
         cmd_buf.push_compute_constants(
@@ -288,7 +275,6 @@ pub fn render_meshes_bindless(
             i as u32 * num_constants,
             gfx::as_u8_slice(&view.use_indices[i])
         );
->>>>>>> master
     }
 
     // bind the shader resource heap
@@ -331,14 +317,7 @@ pub fn render_meshes(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(&pipeline);
-<<<<<<< HEAD
-
-    if let Some(c0) = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
-        cmd_buf.push_render_constants(c0.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    }
-=======
     cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
->>>>>>> master
 
     let (mesh_draw_query, billboard_draw_query, cylindrical_draw_query) = queries;
 
@@ -545,19 +524,6 @@ pub fn dispatch_compute(
     let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
     cmd_buf.set_compute_pipeline(&pipeline);
 
-<<<<<<< HEAD
-    let using_slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = using_slot {
-        for i in 0..pass.use_indices.len() {
-            let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-            cmd_buf.push_compute_constants(
-                slot.index,
-                num_constants,
-                i as u32 * num_constants,
-                gfx::as_u8_slice(&pass.use_indices[i])
-            );
-        }
-=======
     for i in 0..pass.use_indices.len() {
         let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
         cmd_buf.push_compute_constants(
@@ -568,7 +534,6 @@ pub fn dispatch_compute(
             i as u32 * num_constants,
             gfx::as_u8_slice(&pass.use_indices[i])
         );
->>>>>>> master
     }
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
