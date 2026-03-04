@@ -17,7 +17,6 @@ fn macos_build() {
 
     // Ensure third-party dependencies exist (download if missing for crates.io)
     ensure_spirv_cross(&spirv_cross_src);
-    ensure_pmfx_shader(&pmfx_shader_src);
 
     // Rerun if SPIRV-Cross source changes
     println!("cargo:rerun-if-changed={}/spirv_cross_c.h", spirv_cross_src);
@@ -151,63 +150,4 @@ fn ensure_spirv_cross(spirv_cross_dir: &str) {
         .expect("Failed to rename extracted SPIRV-Cross directory");
 
     println!("cargo:warning=SPIRV-Cross downloaded successfully");
-}
-
-#[cfg(target_os = "macos")]
-fn ensure_pmfx_shader(pmfx_shader_dir: &str) {
-    use std::path::Path;
-    use std::process::{Command, Stdio};
-
-    let marker = Path::new(pmfx_shader_dir).join("pmfx.py");
-    if marker.exists() {
-        return; // Already populated
-    }
-
-    println!("cargo:warning=pmfx-shader not found, downloading...");
-
-    // Pin to a specific commit/tag for reproducibility
-    const PMFX_SHADER_REF: &str = "master"; // TODO: pin to specific tag/commit
-    let url = format!(
-        "https://github.com/polymonster/pmfx-shader/archive/refs/heads/{}.tar.gz",
-        PMFX_SHADER_REF
-    );
-
-    let parent = Path::new(pmfx_shader_dir)
-        .parent()
-        .expect("Invalid pmfx_shader_dir");
-    std::fs::create_dir_all(parent).expect("Failed to create third_party dir");
-
-    // Download and extract
-    let status = Command::new("curl")
-        .args(["-L", "-o", "/tmp/pmfx-shader.tar.gz", &url])
-        .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
-        .status()
-        .expect("Failed to download pmfx-shader");
-
-    if !status.success() {
-        panic!("Failed to download pmfx-shader from {}", url);
-    }
-
-    let status = Command::new("tar")
-        .args([
-            "-xzf",
-            "/tmp/pmfx-shader.tar.gz",
-            "-C",
-            parent.to_str().unwrap(),
-        ])
-        .status()
-        .expect("Failed to extract pmfx-shader");
-
-    if !status.success() {
-        panic!("Failed to extract pmfx-shader");
-    }
-
-    // Rename extracted directory
-    let extracted_name = format!("pmfx-shader-{}", PMFX_SHADER_REF);
-    let extracted_path = parent.join(&extracted_name);
-    std::fs::rename(&extracted_path, pmfx_shader_dir)
-        .expect("Failed to rename extracted pmfx-shader directory");
-
-    println!("cargo:warning=pmfx-shader downloaded successfully");
 }
