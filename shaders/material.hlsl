@@ -18,22 +18,22 @@ vs_output_material vs_mesh_material(vs_input_mesh input, vs_input_entity_ids ent
 
     // get draw call info and transform world matrix
     draw_data draw = get_draw_data(entity_input.ids[0]);
-    float4 pos = float4(input.position.xyz, 1.0);    
+    float4 pos = float4(input.position.xyz, 1.0);
     pos.xyz = mul(draw.world_matrix, pos);
 
     output.position = mul(view_projection_matrix, pos);
     output.world_pos = pos;
     output.texcoord = float4(input.texcoord, 0.0, 0.0);
-    
+
     float3x3 rot = (float3x3)draw.world_matrix;
     output.normal = normalize(mul(rot, input.normal));
     output.tangent = normalize(mul(rot, input.tangent));
     output.bitangent = normalize(mul(rot, input.bitangent));
-    
+
     // mat
     material_data mat = get_material_data(entity_input.ids[1]);
     output.ids = uint4(mat.albedo_id, mat.normal_id, mat.roughness_id, mat.padding);
-    
+
     return output;
 }
 
@@ -42,7 +42,7 @@ vs_output_material vs_mesh_material_indirect(vs_input_mesh input) {
 
     // get draw call info and transform world matrix
     draw_data draw = get_draw_data(indirect_ids.x);
-    float4 pos = float4(input.position.xyz, 1.0);    
+    float4 pos = float4(input.position.xyz, 1.0);
     pos.xyz = mul(draw.world_matrix, pos);
 
     // get camera data and transform projection matrix
@@ -60,14 +60,14 @@ vs_output_material vs_mesh_material_indirect(vs_input_mesh input) {
 
     material_data mat = get_material_data(indirect_ids.y);
     output.ids = uint4(mat.albedo_id, mat.normal_id, mat.roughness_id, mat.padding);
-    
+
     return output;
 }
 
 vs_output_material vs_mesh_lit(vs_input_mesh input) {
     vs_output_material output;
 
-    float3x4 wm = world_matrix;
+    row_major float3x4 wm = world_matrix;
     float4 pos = float4(input.position.xyz, 1.0);
     pos.xyz = mul(wm, pos);
 
@@ -109,7 +109,7 @@ ps_output ps_mesh_material(vs_output_material input) {
     output.colour = float4(0.0, 0.0, 0.0, 0.0);
 
     float2 tc = input.texcoord.xy;
-    
+
     // sample maps
 
     // albedo
@@ -150,7 +150,7 @@ ps_output ps_mesh_material(vs_output_material input) {
                 light.radius,
                 input.world_pos.xyz
             );
-            
+
             output.colour += atteniuation * light.colour * diffuse * albedo;
             output.colour += atteniuation * light.colour * specular;
         }
@@ -240,7 +240,7 @@ ps_output ps_mesh_lit(vs_output input) {
             light.radius,
             input.world_pos.xyz
         );
-        
+
         output.colour += atteniuation * light.colour * diffuse;
         output.colour += atteniuation * light.colour * specular;
     }
@@ -262,7 +262,7 @@ ps_output ps_mesh_lit(vs_output input) {
             light.cutoff,
             light.falloff
         );
-        
+
         output.colour += atteniuation * light.colour * diffuse;
         output.colour += atteniuation * light.colour * specular;
     }
@@ -291,7 +291,7 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
 
     float3 v = normalize(input.world_pos.xyz - view_position.xyz);
     float3 n = input.normal;
-    
+
     float3 albedo = float3(1.0, 0.5, 0.0);
 
     float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metalness);
@@ -299,7 +299,7 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
 
     float3 rd = normalize(input.world_pos.xyz - view_position.xyz) * float3(1.0, 1.0, -1.0);
     float3 nd = normalize(input.normal.xyz * float3(1.0, 1.0, -1.0));
-    float3 r = reflect(rd, nd); 
+    float3 r = reflect(rd, nd);
     r.z *= -1.0;
 
     // irradiance / diffuse
@@ -383,10 +383,10 @@ void scene_raygen_shader()
     // unproject ray
     float4 near = float4(ndc.x, ndc.y, 0.0, 1.0);
     float4 far = float4(ndc.x, ndc.y, 1.0, 1.0);
-    
+
     float4 wnear = mul(inverse_wvp, near);
     wnear /= wnear.w;
-    
+
     float4 wfar = mul(inverse_wvp, far);
     wfar /= wfar.w;
 
@@ -399,13 +399,13 @@ void scene_raygen_shader()
 
     RayPayload payload = default_payload();
     TraceRay(
-        scene_tlas[resource_indices.y], 
-        RAY_FLAG_NONE, 
-        0xff, 
+        scene_tlas[resource_indices.y],
+        RAY_FLAG_NONE,
+        0xff,
         0,
         2,
-        0, 
-        ray, 
+        0,
+        ray,
         payload
     );
 
@@ -419,13 +419,13 @@ void scene_raygen_shader()
             payload = default_payload();
             payload.bounce_count = bounce_count;
             TraceRay(
-                scene_tlas[resource_indices.y], 
-                RAY_FLAG_NONE, 
-                0xff, 
+                scene_tlas[resource_indices.y],
+                RAY_FLAG_NONE,
+                0xff,
                 0,
                 2,
-                0, 
-                bounce_ray, 
+                0,
+                bounce_ray,
                 payload
             );
 
@@ -543,7 +543,7 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
         float3 ray_dir = refract(rd, geo_normal, refidx);
         float3 ray_start = ip + rd * 0.001;
 
-        
+
         if(length(ray_dir) == 0.0)
         {
             ray_dir = reflect(rd, geo_normal);
@@ -569,7 +569,7 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
 
         return;
     }
-    
+
     float2 tx = v0.texcoord * u + v1.texcoord * w + v2.texcoord * v;
 
     // checkerboard uv
@@ -591,7 +591,7 @@ void scene_closest_hit_shader(inout RayPayload payload, in BuiltInTriangleInters
     float rxy = rx + ry > 1.0 ? 0.0 : rx + ry;
 
     float3 checkerboard = rxy < 0.001 ? 0.66 : 1.0;
-    
+
     payload.col = float4(geo_normal, 1.0);
 
     payload.col.xyz = payload.col.xyz * 0.5 + 0.5 * checkerboard;
@@ -667,7 +667,7 @@ ps_output ps_mesh_lit_rt_shadow(vs_output input) {
         light_colour += atteniuation * light.colour * specular;
 
         bool occluded = is_occluded(input.world_pos.xyz + input.normal * 0.1, -l, 0.1, rl + 0.1);
-        
+
         if(!occluded) {
             output.colour += light_colour;
         }

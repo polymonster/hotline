@@ -172,6 +172,37 @@ fn has_stencil_component(format: metal::MTLPixelFormat) -> bool {
     )
 }
 
+fn to_mtl_cull_mode(cull_mode: super::CullMode) -> metal::MTLCullMode {
+    match cull_mode {
+        super::CullMode::None => metal::MTLCullMode::None,
+        super::CullMode::Front => metal::MTLCullMode::Front,
+        super::CullMode::Back => metal::MTLCullMode::Back,
+    }
+}
+
+fn to_mtl_winding(front_ccw: bool) -> metal::MTLWinding {
+    if front_ccw {
+        metal::MTLWinding::CounterClockwise
+    } else {
+        metal::MTLWinding::Clockwise
+    }
+}
+
+fn to_mtl_triangle_fill_mode(fill_mode: super::FillMode) -> metal::MTLTriangleFillMode {
+    match fill_mode {
+        super::FillMode::Solid => metal::MTLTriangleFillMode::Fill,
+        super::FillMode::Wireframe => metal::MTLTriangleFillMode::Lines,
+    }
+}
+
+fn to_mtl_index_type(stride: usize) -> metal::MTLIndexType {
+    match stride {
+        2 => metal::MTLIndexType::UInt16,
+        4 => metal::MTLIndexType::UInt32,
+        _ => panic!("Invalid index stride: {}, expected 2 or 4", stride),
+    }
+}
+
 fn to_mtl_pixel_format(format: super::Format) -> metal::MTLPixelFormat {
     match format {
         super::Format::Unknown => metal::MTLPixelFormat::Invalid,
@@ -591,6 +622,13 @@ impl super::CmdBuf<Device> for CmdBuf {
             // Set depth stencil state
             encoder.set_depth_stencil_state(&pipeline.depth_stencil_state);
 
+            // Set rasterizer state
+            let raster = &pipeline.raster_info;
+            encoder.set_cull_mode(to_mtl_cull_mode(raster.cull_mode));
+            encoder.set_front_facing_winding(to_mtl_winding(raster.front_ccw));
+            encoder.set_triangle_fill_mode(to_mtl_triangle_fill_mode(raster.fill_mode));
+            encoder.set_depth_bias(raster.depth_bias as f32, raster.slope_scaled_depth_bias, raster.depth_bias_clamp);
+
             // Bind sampler argument buffer at buffer(0) in fragment shader
             if let Some(ref sampler_arg_buffer) = pipeline.sampler_argument_buffer {
                 encoder.set_fragment_buffer(
@@ -782,7 +820,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .draw_indexed_primitives_instanced_base_instance(
                     primitive_type,
                     index_count as u64,
-                    metal::MTLIndexType::UInt16,
+                    to_mtl_index_type(self.bound_index_stride),
                     &self.bound_index_buffer.as_ref().unwrap(),
                     start_index as u64 * self.bound_index_stride as u64,
                     instance_count as u64,
@@ -966,6 +1004,8 @@ pub struct RenderPipeline {
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
     /// Depth stencil state
     depth_stencil_state: metal::DepthStencilState,
+    /// Rasterizer state (applied dynamically on encoder in Metal)
+    raster_info: super::RasterInfo,
 }
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
@@ -1663,15 +1703,21 @@ impl super::Device for Device {
             let vertex_desc = metal::VertexDescriptor::new();
             let mut attrib_index = 0;
 
-            // make spaces for slots to calculate the stride from offsets + size
-            let mut slot_strides = Vec::new();
+            // track stride, step function, and step rate per slot
+            struct SlotLayout {
+                stride: u32,
+                input_slot_class: super::InputSlotClass,
+                step_rate: u32,
+            }
+            let mut slot_layouts: Vec<Option<SlotLayout>> = Vec::new();
             for element in &info.input_layout {
-                if slot_strides.len() < (element.input_slot + 1) as usize {
-                    slot_strides.resize((element.input_slot + 1) as usize, 0);
+                let slot = element.input_slot as usize;
+                if slot_layouts.len() <= slot {
+                    slot_layouts.resize_with(slot + 1, || None);
                 }
             }
 
-            // make the idividual attributes and track the stride of each slot
+            // make the individual attributes and track the stride/stepping of each slot
             for element in &info.input_layout {
                 let attribute = metal::VertexAttributeDescriptor::new();
                 attribute.set_format(to_mtl_vertex_format(element.format));
@@ -1681,14 +1727,36 @@ impl super::Device for Device {
                 attrib_index += 1;
 
                 let stride = element.aligned_byte_offset + block_size_for_format(element.format);
-                slot_strides[element.input_slot as usize] = max(slot_strides[element.input_slot as usize], stride);
+                let slot = element.input_slot as usize;
+                if let Some(ref mut layout) = slot_layouts[slot] {
+                    layout.stride = max(layout.stride, stride);
+                } else {
+                    slot_layouts[slot] = Some(SlotLayout {
+                        stride,
+                        input_slot_class: element.input_slot_class,
+                        step_rate: element.step_rate,
+                    });
+                }
             }
 
-            // vertex layouts; TODO: work out MTLVertexStepFunction
-            let layout_desc = metal::VertexBufferLayoutDescriptor::new();
-            layout_desc.set_step_function(metal::MTLVertexStepFunction::PerVertex);
-            layout_desc.set_stride(slot_strides[0] as NSUInteger);
-            vertex_desc.layouts().set_object_at(0, Some(&layout_desc));
+            // create vertex buffer layouts for each slot
+            for (slot, layout_opt) in slot_layouts.iter().enumerate() {
+                if let Some(layout) = layout_opt {
+                    let layout_desc = metal::VertexBufferLayoutDescriptor::new();
+                    layout_desc.set_stride(layout.stride as NSUInteger);
+                    match layout.input_slot_class {
+                        super::InputSlotClass::PerVertex => {
+                            layout_desc.set_step_function(metal::MTLVertexStepFunction::PerVertex);
+                            layout_desc.set_step_rate(1);
+                        }
+                        super::InputSlotClass::PerInstance => {
+                            layout_desc.set_step_function(metal::MTLVertexStepFunction::PerInstance);
+                            layout_desc.set_step_rate(layout.step_rate as NSUInteger);
+                        }
+                    }
+                    vertex_desc.layouts().set_object_at(slot as NSUInteger, Some(&layout_desc));
+                }
+            }
 
             pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
 
@@ -1761,8 +1829,6 @@ impl super::Device for Device {
                 self.metal_device.new_depth_stencil_state(&ds_desc)
             };
 
-            // TODO: raster
-
             // Create static samplers and argument buffer (at buffer(4) per htwv convention)
             let mut pipeline_static_samplers = Vec::new();
             let mut sampler_argument_buffer = None;
@@ -1831,6 +1897,7 @@ impl super::Device for Device {
                 sampler_argument_buffer,
                 topology: info.topology,
                 depth_stencil_state,
+                raster_info: info.raster_info,
             })
         })
     }

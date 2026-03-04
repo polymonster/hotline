@@ -25,7 +25,7 @@ vs_output vs_mesh_vertex_buffer_instanced(vs_input_mesh input, vs_input_instance
     output.texcoord = float4(input.texcoord, 0.0, 0.0);
     output.colour = float4(input.normal.xyz * 0.5 + 0.5, 1.0);
     output.normal = input.normal.xyz;
-    
+
     return output;
 }
 
@@ -34,7 +34,7 @@ vs_output vs_mesh_vertex_buffer_instanced(vs_input_mesh input, vs_input_instance
 //
 
 struct cbuffer_instance_data {
-    float3x4 cbuffer_world_matrix[1024];
+    row_major float3x4 cbuffer_world_matrix[1024];
 };
 
 ConstantBuffer<cbuffer_instance_data> cbuffer_instance : register(b1);

@@ -12,7 +12,7 @@ float4 ps_texture2d(vs_output input) : SV_Target {
 
 //
 // cubemap with bindless lookup
-// 
+//
 
 float4 ps_cubemap(vs_output input) : SV_Target {
     float4 col = cubemaps[draw_indices.x]
@@ -46,8 +46,8 @@ float4 ps_texture2d_array(vs_output input) : SV_Target {
 vs_output vs_texture3d(vs_input_mesh input) {
     vs_output output;
 
-    float3x4 wm = world_matrix;
-    
+    row_major float3x4 wm = world_matrix;
+
     float4 pos = float4(input.position.xyz, 1.0);
     pos.xyz = mul(wm, pos);
 
@@ -56,7 +56,7 @@ vs_output vs_texture3d(vs_input_mesh input) {
     output.texcoord = float4(input.position, 0.0);
     output.colour = float4(input.normal.xyz, 1.0);
     output.normal = input.normal.xyz;
-    
+
     return output;
 }
 
@@ -67,7 +67,7 @@ ps_output ps_volume_texture_ray_march_sdf(vs_output input) {
     float3 v = input.texcoord.xyz;
     float3 chebyshev_norm = chebyshev_normalize(v);
     float3 uvw = chebyshev_norm * 0.5 + 0.5;
-    
+
     float max_samples = 64.0;
 
     float3x3 inv_rot;
@@ -77,45 +77,45 @@ ps_output ps_volume_texture_ray_march_sdf(vs_output input) {
     inv_rot = transpose(inv_rot);
 
     float3 ray_dir = normalize(input.world_pos.xyz - view_position.xyz);
-                    
+
     ray_dir = mul(inv_rot, ray_dir);
     ray_dir = normalize(ray_dir);
-                    
+
     float3 vddx = ddx( uvw );
     float3 vddy = ddy( uvw );
-    
+
     float3 scale = float3(
-        length(world_matrix[0].xyz), 
-        length(world_matrix[1].xyz), 
+        length(world_matrix[0].xyz),
+        length(world_matrix[1].xyz),
         length(world_matrix[2].xyz)
     ) * 2.0;
-        
+
     float d = volume_textures[draw_indices.x].SampleGrad(sampler_wrap_linear, uvw, vddx, vddy).r;
-    
+
     float3 col = float3( 0.0, 0.0, 0.0 );
     float3 ray_pos = input.world_pos.xyz;
     float taken = 0.0;
-    float3 min_step = (scale / max_samples); 
-    
+    float3 min_step = (scale / max_samples);
+
     for( int s = 0; s < int(max_samples); ++s )
-    {        
+    {
         taken += 1.0 / max_samples;
-                
+
         d = volume_textures[draw_indices.x].SampleGrad(sampler_wrap_linear, uvw, vddx, vddy).r;
-            
+
         float3 step = ray_dir.xyz * float3(d / scale) * 0.5;
-        
+
         uvw += step;
- 
+
         if(uvw.x >= 1.0 || uvw.x <= 0.0)
             discard;
-        
+
         if(uvw.y >= 1.0 || uvw.y <= 0.0)
             discard;
-        
+
         if(uvw.z >= 1.0 || uvw.z <= 0.0)
             discard;
-            
+
         if( d <= 0.3 )
             break;
     }
@@ -129,56 +129,56 @@ ps_output ps_volume_texture_ray_march_sdf(vs_output input) {
 
 ps_output ps_volume_texture_ray_march(vs_output input) {
     ps_output output;
-    
+
     float depth = 1.0;
     float max_samples = 256.0;
-        
+
     float3 v = input.texcoord.xyz;
     float3 chebyshev_norm = chebyshev_normalize(v);
     float3 uvw = chebyshev_norm * 0.5 + 0.5;
-    
+
     float3x3 inv_rot;
     inv_rot[0] = world_matrix[0].xyz;
     inv_rot[1] = world_matrix[1].xyz;
     inv_rot[2] = world_matrix[2].xyz;
     inv_rot = transpose(inv_rot);
-        
-    float3 ray_dir = normalize(input.world_pos.xyz - view_position.xyz);    
+
+    float3 ray_dir = normalize(input.world_pos.xyz - view_position.xyz);
     ray_dir = mul( inv_rot, ray_dir );
-    
+
     float3 ray_step = chebyshev_normalize(ray_dir.xyz) / max_samples;
-                
+
     float depth_step = 1.0 / max_samples;
-    
+
     float3 vddx = ddx( uvw );
     float3 vddy = ddy( uvw );
-    
+
     for(int s = 0; s < int(max_samples); ++s )
     {
-        output.colour = 
+        output.colour =
             volume_textures[draw_indices.x].SampleGrad(sampler_wrap_linear, uvw, vddx, vddy);
-        
+
         if(output.colour.a != 0.0)
             break;
-        
+
         depth -= depth_step;
         uvw += ray_step;
-        
+
         if(uvw.x > 1.0 || uvw.x < 0.0)
             discard;
-            
+
         if(uvw.y > 1.0 || uvw.y < 0.0)
             discard;
-            
+
         if(uvw.z > 1.0 || uvw.z < 0.0)
             discard;
-        
+
         if(s == int(max_samples)-1)
             discard;
     }
-    
+
     output.colour.rgb *= lerp( 0.5, 1.0, depth );
-            
+
     return output;
 }
 
@@ -200,8 +200,8 @@ void cs_write_texture3d(uint3 did : SV_DispatchThreadID) {
 
     float3 n = normalize(grid_pos);
 
-    float nn = 
-        abs(dot(n, float3(0.0, 1.0, 0.0))) * nxz 
+    float nn =
+        abs(dot(n, float3(0.0, 1.0, 0.0))) * nxz
         + abs(dot(n, float3(0.0, 0.0, 1.0))) * nxy
         + abs(dot(n, float3(1.0, 0.0, 0.0))) * nyz;
 
