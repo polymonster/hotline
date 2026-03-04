@@ -166,7 +166,7 @@ fn main() -> Result<(), hotline_rs::Error> {
         // set push constants on b0
         let border = 0.1;
         let aspect = window_rect.width as f32 / window_rect.height as f32;
-        cmd.push_compute_constants(0, 8, 0, gfx::as_u8_slice(&[
+        cmd.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 8, 0, gfx::as_u8_slice(&[
             // viewport
             -1.0 + border,
             -1.0 + border * aspect,

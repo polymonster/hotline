@@ -80,10 +80,7 @@ pub fn draw_meshes(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(pipeline);
-
-    if let Some(c0) = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
-        cmd_buf.push_render_constants(c0.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    }
+    cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     for (_, mesh) in &mesh_draw_query {
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);

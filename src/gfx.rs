@@ -1650,10 +1650,14 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Binds a descriptor from `heap` at `offset` to the pipeline slot identified by `register`, `space`, and `descriptor_type`.
     /// Returns `Some(())` if the slot was found and the binding was set, or `None` if the slot does not exist in this pipeline's layout (silent no-op).
     fn set_binding<T: Pipeline>(&mut self, pipeline: &T, register: u32, space: u32, descriptor_type: DescriptorType, heap: &D::Heap, offset: usize) -> Option<()>;
-    /// Push a small amount of data into the command buffer for a render pipeline, num values and dest offset are the number of 32bit values
-    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
-    /// Push a small amount of data into the command buffer for a compute pipeline, num values and dest offset are the number of 32bit values
-    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]);
+    /// Push a small amount of data into the command buffer for a render pipeline. `register` and `space` identify
+    /// the push constants slot in the pipeline layout. `num_values` and `dest_offset` are counts of 32-bit values.
+    /// Returns `Some(())` if the slot was found, `None` if it does not exist (silent no-op).
+    fn push_render_constants<P: Pipeline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()>;
+    /// Push a small amount of data into the command buffer for a compute pipeline. `register` and `space` identify
+    /// the push constants slot in the pipeline layout. `num_values` and `dest_offset` are counts of 32-bit values.
+    /// Returns `Some(())` if the slot was found, `None` if it does not exist (silent no-op).
+    fn push_compute_constants<P: Pipeline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()>;
     /// Make a non-indexed draw call supplying vertex and instance counts
     fn draw_instanced(
         &mut self,

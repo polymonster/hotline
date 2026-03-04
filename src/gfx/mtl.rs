@@ -682,7 +682,9 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_marker(&mut self, colour: u32, name: &str) {
     }
 
-    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<P: SuperPipleline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, super::DescriptorType::PushConstants)?.index;
+
         let data_size_dwords = num_values as usize;
         let data_u32 = unsafe {
             std::slice::from_raw_parts(
@@ -690,6 +692,8 @@ impl super::CmdBuf<Device> for CmdBuf {
                 data_size_dwords
             )
         };
+
+        let mut result = None;
 
         // Write to vertex binder if matching slot found
         for binder in self.vertex_binder.values_mut() {
@@ -700,6 +704,7 @@ impl super::CmdBuf<Device> for CmdBuf {
                     if dest_end <= pc.data.len() {
                         pc.data[dest_start..dest_end].copy_from_slice(data_u32);
                     }
+                    result = Some(());
                     break;
                 }
             }
@@ -714,13 +719,17 @@ impl super::CmdBuf<Device> for CmdBuf {
                     if dest_end <= pc.data.len() {
                         pc.data[dest_start..dest_end].copy_from_slice(data_u32);
                     }
+                    result = Some(());
                     break;
                 }
             }
         }
+
+        result
     }
 
-    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<P: SuperPipleline, T: Sized>(&mut self, _pipeline: &P, _register: u32, _space: u32, _num_values: u32, _dest_offset: u32, _data: &[T]) -> Option<()> {
+        None
     }
 
     fn draw_instanced(

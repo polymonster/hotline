@@ -232,23 +232,20 @@ pub fn render_meshes_raytraced(
                 let raytracing_pipeline = pmfx.get_raytracing_pipeline(&pass.pass_pipline)?;
                 cmd_buf.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
 
-                let slot = raytracing_pipeline.pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
-                if let Some(slot) = slot {
-                    // camera constants
-                    let inv = camera.view_projection_matrix.inverse();
-                    cmd_buf.push_compute_constants(slot.index, 16, 0, &inv);
+                // camera constants
+                let inv = camera.view_projection_matrix.inverse();
+                cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 16, 0, &inv);
 
-                    // output uav
-                    cmd_buf.push_compute_constants(slot.index, 1, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
+                // output uav
+                cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 1, 16, gfx::as_u8_slice(&pass.use_indices[0].index));
 
-                    // scene tlas
-                    let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
-                    cmd_buf.push_compute_constants(slot.index, 1, 17, gfx::as_u8_slice(&srv0));
+                // scene tlas
+                let srv0 = tlas.get_srv_index().expect("expect tlas to have an srv");
+                cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 1, 17, gfx::as_u8_slice(&srv0));
 
-                    // point light info
-                    let world_buffer_info = pmfx.get_world_buffer_info();
-                    cmd_buf.push_compute_constants(slot.index, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
-                }
+                // point light info
+                let world_buffer_info = pmfx.get_world_buffer_info();
+                cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
 
                 cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);
                 

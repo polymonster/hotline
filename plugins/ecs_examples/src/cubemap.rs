@@ -73,14 +73,14 @@ pub fn render_meshes_cubemap(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(pipeline);
-    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     let mut mip = 0;
     for (world_matrix, mesh, cubemap) in &mesh_draw_query {
-        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
+        cmd_buf.push_render_constants(pipeline, 1, 0, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(pipeline, 1, 0, 2, 16, gfx::as_u8_slice(&[cubemap.0, mip, 0, 0]));
 
         cmd_buf.set_index_buffer(&mesh.0.ib);
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);

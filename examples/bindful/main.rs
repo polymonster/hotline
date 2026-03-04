@@ -164,22 +164,20 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_binding(pso_pmfx, 2, 0, gfx::DescriptorType::ShaderResource, dev.get_shader_heap(), srv2);
         cmdbuffer.set_binding(pso_pmfx, 3, 0, gfx::DescriptorType::ShaderResource, dev.get_shader_heap(), srv3);
 
-        // lookup push constants for letterboxing the quad
-        if let Some(c0) = pso_pmfx.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
-            let pc = if vp_rect.width >= vp_rect.height {
-                LetterboxPushConstants {
-                    x: vp_rect.height as f32 / vp_rect.width as f32,
-                    y: 1.0
-                }
+        // push constants for letterboxing the quad
+        let pc = if vp_rect.width >= vp_rect.height {
+            LetterboxPushConstants {
+                x: vp_rect.height as f32 / vp_rect.width as f32,
+                y: 1.0
             }
-            else {
-                LetterboxPushConstants {
-                    x: 1.0,
-                    y: vp_rect.width as f32 / vp_rect.height as f32
-                }
-            };
-            cmdbuffer.push_render_constants(c0.index, 2, 0, gfx::as_u8_slice(&pc));
         }
+        else {
+            LetterboxPushConstants {
+                x: 1.0,
+                y: vp_rect.width as f32 / vp_rect.height as f32
+            }
+        };
+        cmdbuffer.push_render_constants(pso_pmfx, 0, 0, 2, 0, gfx::as_u8_slice(&pc));
 
         cmdbuffer.set_index_buffer(&index_buffer);
         cmdbuffer.set_vertex_buffer(&vertex_buffer, 0);

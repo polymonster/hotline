@@ -104,7 +104,7 @@ pub fn draw_meshes_cbuffer_instanced(
         // set pipeline per batch
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         cmd_buf.set_render_pipeline(pipeline);
-        cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+        cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
         // bind the constant buffer (cbv) on the slot for b1, space0 specified in the shader
         cmd_buf.set_binding(

@@ -456,9 +456,7 @@ fn render_draw_data<D: Device>(
             cmd.set_index_buffer(&buffers.ib);
             cmd.set_render_pipeline(pipeline);
 
-            if let Some(c0) = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants) {
-                cmd.push_render_constants(c0.index, 16, 0, &mvp);
-            }
+            cmd.push_render_constants(pipeline, 0, 0, 16, 0, &mvp);
 
             let clip_off = draw_data.DisplayPos;
             let mut global_vtx_offset = 0;

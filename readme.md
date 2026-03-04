@@ -4,13 +4,12 @@
 [![publish](https://github.com/polymonster/hotline/actions/workflows/publish.yml/badge.svg)](https://github.com/polymonster/hotline/actions/workflows/publish.yml)
 [![docs](https://img.shields.io/docsrs/hotline-rs/latest)](https://docs.rs/hotline_rs/latest/hotline_rs/index.html)
 [![crates](https://img.shields.io/crates/v/hotline-rs)](https://crates.io/crates/hotline-rs)
-[![Discord](https://img.shields.io/discord/807665639845789796.svg?label=&logo=discord&logoColor=ffffff&color=7389D8&labelColor=6A7EC2)](https://discord.gg/3yjXwJ8wJC)
 
-Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, and render configs without restarting the application. It provides a client application which remains running for the duration of a session. Code can be reloaded that is inside the dynamic plugins and render configs can be edited and hot reloaded through pmfx files.
+Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, and render state without restating the application.
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom3.gif" width="100%"/>  
 
-There is a demo [video](https://www.youtube.com/watch?v=jkD78gXfIe0&) showcasing the features in their early stages and an example workflow demonstration of how the geometry primitives were created. Some development has been live streamed on [Twitch](https://www.twitch.tv/polymonstr) and archived on [YouTube](https://www.youtube.com/channel/UCQRmui5w4Urz-h4P9CL7rmA).
+Checkout a live [demo](https://www.youtube.com/watch?v=8a_qcqmpZlg)!.
 
 ## Features
 
@@ -60,23 +59,14 @@ cargo build
 // build plugins
 cargo build -p ecs -p ecs_examples
 
-// run the client
-cargo run client
-```
-
-Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to specify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
-
-### Building One-Liners
-
-To make things more convenient during development and keep the `plugins`, `client` and `lib` all in sync and make switching configurations easily, you can use the bundled [pmbuild](https://github.com/polymonster/pmbuild) in the `hotline-data` repository and use the following commands which bundle together build steps:
-
-```text
-// build lib, plugins and data
+// or the whole workspace
 cargo build --workspace
 
 // run the client
 cargo run client
 ```
+
+Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to specify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
 
 ### Building from Visual Studio Code
 
@@ -247,11 +237,11 @@ pub fn render_meshes(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(&mesh_debug);
-    cmd_buf.push_render_constants(0, 16 * 3, 0, gfx::as_u8_slice(camera));
+    cmd_buf.push_render_constants(mesh_debug, 0, 0, 16 * 3, 0, gfx::as_u8_slice(camera));
 
     // make draw calls
     for (world_matrix, mesh) in &mesh_draw_query {
-        cmd_buf.push_render_constants(1, 16, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(mesh_debug, 1, 0, 16, 0, &world_matrix.0);
         cmd_buf.set_index_buffer(&mesh.0.ib);
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);
@@ -279,17 +269,16 @@ pub fn dispatch_compute(
     let pipeline = pmfx.get_compute_pipeline(&pass.pass_pipline)?;
     cmd_buf.set_compute_pipeline(&pipeline);
 
-    let using_slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = using_slot {
-        for i in 0..pass.use_indices.len() {
-            let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
-            cmd_buf.push_compute_constants(
-                0, 
-                num_constants, 
-                i as u32 * num_constants, 
-                gfx::as_u8_slice(&pass.use_indices[i])
-            );
-        }
+    for i in 0..pass.use_indices.len() {
+        let num_constants = gfx::num_32bit_constants(&pass.use_indices[i]);
+        cmd_buf.push_compute_constants(
+            &pipeline,
+            0,
+            1,
+            num_constants,
+            i as u32 * num_constants,
+            gfx::as_u8_slice(&pass.use_indices[i])
+        );
     }
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);

@@ -213,12 +213,12 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
-        unimplemented!()
+    fn push_render_constants<P: Pipeline, T: Sized>(&mut self, _pipeline: &P, _register: u32, _space: u32, _num_values: u32, _dest_offset: u32, _data: &[T]) -> Option<()> {
+        None
     }
 
-    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
-        unimplemented!()
+    fn push_compute_constants<P: Pipeline, T: Sized>(&mut self, _pipeline: &P, _register: u32, _space: u32, _num_values: u32, _dest_offset: u32, _data: &[T]) -> Option<()> {
+        None
     }
 
     fn draw_instanced(
