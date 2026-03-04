@@ -386,17 +386,20 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_marker(&mut self, colour: u32, name: &str) {
     }
 
-    fn push_render_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<P: SuperPipleline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let _slot = pipeline.get_pipeline_slot(register, space, super::DescriptorType::PushConstants)?;
         // TODO: need to know the stages and the buffer offset
         self.render_encoder
         .as_ref()
         .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
-        // .set_fragment_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
-        // .set_vertex_bytes(slot as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
-        .set_vertex_bytes(1,  num_values as u64 * 4, data.as_ptr() as _);
+        // .set_fragment_bytes(slot.index as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
+        // .set_vertex_bytes(slot.index as u64 + 2, num_values as u64 * 4, data.as_ptr() as _);
+        .set_vertex_bytes(1, num_values as u64 * 4, data.as_ptr() as _);
+        Some(())
     }
 
-    fn push_compute_constants<T: Sized>(&self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<P: SuperPipleline, T: Sized>(&mut self, _pipeline: &P, _register: u32, _space: u32, _num_values: u32, _dest_offset: u32, _data: &[T]) -> Option<()> {
+        None
     }
 
     fn draw_instanced(

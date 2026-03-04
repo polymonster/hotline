@@ -62,7 +62,7 @@ pub fn render_meshes_debug_tangent_space(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(pipeline);
-    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
@@ -71,11 +71,11 @@ pub fn render_meshes_debug_tangent_space(
     // bind first texture
     if let Some(texture) = (&texture_query).into_iter().next() {
         let usrv = texture.get_srv_index().unwrap() as u32;
-        cmd_buf.push_render_constants(1, 1, 16, gfx::as_u8_slice(&usrv));
+        cmd_buf.push_render_constants(pipeline, 1, 0, 1, 16, gfx::as_u8_slice(&usrv));
     }
 
     for (world_matrix, mesh) in &mesh_draw_query {
-        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(pipeline, 1, 0, 12, 0, &world_matrix.0);
         cmd_buf.set_index_buffer(&mesh.0.ib);
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);

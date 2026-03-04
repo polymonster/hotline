@@ -477,7 +477,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let heap = self.device.get_shader_heap();
 
             self.cmd_buf.set_render_pipeline(pipeline);
-            self.cmd_buf.push_render_constants(0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
+            self.cmd_buf.push_render_constants(pipeline, 0, 0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
 
             self.cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
 
