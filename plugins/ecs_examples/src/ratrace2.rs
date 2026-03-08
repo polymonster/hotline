@@ -266,7 +266,10 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
     }
 
     // --- pass 2: Dijkstra flood fill ---
-    const NEIGHBORS: [(i32, i32); 4] = [(1,0),(-1,0),(0,1),(0,-1)];
+    const NEIGHBORS: [(i32, i32); 8] = [
+        (1,0),(-1,0),(0,1),(0,-1),
+        (1,1),(-1,1),(-1,-1),(1,-1)
+    ];
     while let Some((Reverse(c), tx, tz)) = heap.pop() {
         if cost.get(&(tx, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
         for (dx, dz) in NEIGHBORS {
@@ -560,8 +563,19 @@ pub fn update_tile_editor(
                     let flow_dir = map.get_flow(tx, 0, tz);
                     let flow_dir = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
                     let flow_start = Vec3f::new(mid_x, y, mid_z);
-                    let flow_col = Vec4f::from((flow_dir.xy(), 0.0, 1.0));
-                    imdraw.add_line_3d(flow_start, flow_start + flow_dir, flow_col);
+                    let flow_col = Vec4f::from((flow_dir.xy() * 0.5 + 0.8, 0.0, 1.0));
+
+                    let flow_end = flow_start + flow_dir;
+
+                    imdraw.add_line_3d(flow_start, flow_end, flow_col);
+
+                    let arrow_size = 0.2;
+                    let perp = maths_rs::perp(flow_dir.xz()) * arrow_size;
+                    let perp = Vec3f::new(perp.x, 0.0, perp.y);
+                    let tip =  flow_end - flow_dir * arrow_size;
+
+                    imdraw.add_line_3d(flow_end, tip + perp, flow_col);
+                    imdraw.add_line_3d(flow_end, tip - perp, flow_col);
                 }
             }
         }
