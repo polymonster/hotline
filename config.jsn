@@ -8,6 +8,7 @@
 
     tools<mac>: {
         pmfx_dev: "python3 ../pmfx-shader/pmfx.py"
+        texturec: "hotline-data/bin/macos/texturec"
     }
 
     tools_help: {

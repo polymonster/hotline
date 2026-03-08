@@ -720,8 +720,8 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn set_marker(&mut self, colour: u32, name: &str) {
     }
 
-    fn push_render_constants<P: SuperPipleline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
-        let slot = pipeline.get_pipeline_slot(register, space, super::DescriptorType::PushConstants)?.index;
+    fn push_render_constants<P: SuperPipleline, T: Sized>(&mut self, _pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let key = (register, space, super::DescriptorType::PushConstants);
 
         let data_size_dwords = num_values as usize;
         let data_u32 = unsafe {
@@ -733,34 +733,24 @@ impl super::CmdBuf<Device> for CmdBuf {
 
         let mut result = None;
 
-        // Write to vertex binder if matching slot found
-        for binder in self.vertex_binder.values_mut() {
-            if let PipelineStageBinder::PushConstants(ref mut pc) = binder {
-                if pc.buffer_index == slot {
-                    let dest_start = dest_offset as usize;
-                    let dest_end = dest_start + data_size_dwords;
-                    if dest_end <= pc.data.len() {
-                        pc.data[dest_start..dest_end].copy_from_slice(data_u32);
-                    }
-                    result = Some(());
-                    break;
-                }
+        // Write to vertex binder if matching key found
+        if let Some(PipelineStageBinder::PushConstants(ref mut pc)) = self.vertex_binder.get_mut(&key) {
+            let dest_start = dest_offset as usize;
+            let dest_end = dest_start + data_size_dwords;
+            if dest_end <= pc.data.len() {
+                pc.data[dest_start..dest_end].copy_from_slice(data_u32);
             }
+            result = Some(());
         }
 
-        // Write to fragment binder if matching slot found
-        for binder in self.fragment_binder.values_mut() {
-            if let PipelineStageBinder::PushConstants(ref mut pc) = binder {
-                if pc.buffer_index == slot {
-                    let dest_start = dest_offset as usize;
-                    let dest_end = dest_start + data_size_dwords;
-                    if dest_end <= pc.data.len() {
-                        pc.data[dest_start..dest_end].copy_from_slice(data_u32);
-                    }
-                    result = Some(());
-                    break;
-                }
+        // Write to fragment binder if matching key found
+        if let Some(PipelineStageBinder::PushConstants(ref mut pc)) = self.fragment_binder.get_mut(&key) {
+            let dest_start = dest_offset as usize;
+            let dest_end = dest_start + data_size_dwords;
+            if dest_end <= pc.data.len() {
+                pc.data[dest_start..dest_end].copy_from_slice(data_u32);
             }
+            result = Some(());
         }
 
         result
@@ -1974,6 +1964,8 @@ impl super::Device for Device {
 
             let byte_len = (info.stride * info.num_elements) as NSUInteger;
 
+            // TODO: allocating with metal_device works since StorageModeManaged
+            // we should migrate to actually sing the heap.
             let buf = if let Some(data) = data {
                 let bytes = data.as_ptr() as *const std::ffi::c_void;
                 self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
@@ -2130,21 +2122,49 @@ impl super::Device for Device {
             let tex = shader_heap.mtl_heap.new_texture(&desc)
                 .expect("hotline_rs::gfx::mtl failed to allocate texture in heap!");
 
-            // data
+            // upload texture data with support for mips, cubemaps, and array slices
             if let Some(data) = data {
-                tex.replace_region(
-                    metal::MTLRegion {
-                        origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                        size: metal::MTLSize {
-                            width: info.width,
-                            height: info.height,
-                            depth: info.depth as u64,
-                        },
-                    },
-                    0,
-                    data.as_ptr() as _,
-                    info.width * 4, // TODO size from format
-                );
+                let block_size = super::block_size_for_format(info.format) as u64;
+                let tpb = super::texels_per_block_for_format(info.format);
+                let mut data_offset: usize = 0;
+
+                for a in 0..info.array_layers {
+                    let mut mip_w = info.width;
+                    let mut mip_h = info.height;
+                    let mut mip_d = info.depth as u64;
+
+                    for mip in 0..info.mip_levels {
+                        let pitch = block_size * (mip_w / tpb).max(1);
+                        let depth_pitch = pitch * (mip_h / tpb).max(1);
+
+                        let region = metal::MTLRegion {
+                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            size: metal::MTLSize {
+                                width: mip_w,
+                                height: mip_h,
+                                depth: mip_d,
+                            },
+                        };
+
+                        let mip_data_ptr = unsafe { (data.as_ptr() as *const u8).add(data_offset) };
+
+                        tex.replace_region_in_slice(
+                            region,
+                            mip as NSUInteger,
+                            a as NSUInteger,
+                            mip_data_ptr as _,
+                            pitch as NSUInteger,
+                            depth_pitch as NSUInteger,
+                        );
+
+                        data_offset += (depth_pitch * mip_d.max(1)) as usize;
+
+                        // halve dimensions for next mip (non-pot safe)
+                        mip_w = (mip_w / 2).max(1);
+                        mip_h = (mip_h / 2).max(1);
+                        mip_d = (mip_d / 2).max(1);
+                    }
+                }
             }
 
             // allocate on the heap
