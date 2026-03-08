@@ -122,6 +122,18 @@ fn to_mtl_write_mask(mask: &super::WriteMask) -> metal::MTLColorWriteMask {
     mtl_mask
 }
 
+fn to_mtl_texture_type(tex_type: super::TextureType) -> metal::MTLTextureType {
+    match tex_type {
+        super::TextureType::Texture1D => metal::MTLTextureType::D1,
+        super::TextureType::Texture1DArray => metal::MTLTextureType::D1Array,
+        super::TextureType::Texture2D => metal::MTLTextureType::D2,
+        super::TextureType::Texture2DArray => metal::MTLTextureType::D2Array,
+        super::TextureType::Texture3D => metal::MTLTextureType::D3,
+        super::TextureType::TextureCube => metal::MTLTextureType::Cube,
+        super::TextureType::TextureCubeArray => metal::MTLTextureType::CubeArray,
+    }
+}
+
 fn to_mtl_texture_usage(usage: TextureUsage) -> MTLTextureUsage {
     let mut mtl_usage : MTLTextureUsage = MTLTextureUsage::Unknown;
     if usage.contains(super::TextureUsage::SHADER_RESOURCE) {
@@ -2092,7 +2104,6 @@ impl super::Device for Device {
             let desc = TextureDescriptor::new();
 
             // TODO:
-            // tex_type
             // initial_state
 
             // desc
@@ -2100,11 +2111,19 @@ impl super::Device for Device {
             desc.set_width(info.width as NSUInteger);
             desc.set_height(info.height as NSUInteger);
             desc.set_depth(info.depth as NSUInteger);
-            desc.set_array_length(info.array_layers as NSUInteger);
             desc.set_mipmap_level_count(info.mip_levels as NSUInteger);
             desc.set_usage(to_mtl_texture_usage(info.usage));
             desc.set_storage_mode(metal::MTLStorageMode::Shared);
-            desc.set_texture_type(metal::MTLTextureType::D2);
+            desc.set_texture_type(to_mtl_texture_type(info.tex_type));
+
+            // For cubemaps, arrayLength must be 1 (6 faces are implicit)
+            // For cube arrays, arrayLength is the number of cubemaps (not faces)
+            let array_length = match info.tex_type {
+                super::TextureType::TextureCube => 1,
+                super::TextureType::TextureCubeArray => info.array_layers / 6,
+                _ => info.array_layers,
+            };
+            desc.set_array_length(array_length as NSUInteger);
 
             // TODO: multi sample
             // desc.set_sample_count(info.samples as NSUInteger);
