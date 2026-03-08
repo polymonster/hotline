@@ -1,11 +1,8 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 use crate::prelude::*;
 
 ///
 /// Point Lights
-/// 
+///
 
 /// Init function for primitives demo
 #[no_mangle]
@@ -65,7 +62,7 @@ pub fn setup_point_lights(
     let irc = rc as i32;
 
     let size = 10.0;
-    let half_size = size * 0.5;    
+    let half_size = size * 0.5;
     let step = size * half_size;
     let half_extent = (rc-1.0) * step * 0.5;
     let start_pos = vec3f(-half_extent, size, -half_extent);
@@ -97,9 +94,9 @@ pub fn setup_point_lights(
 
 #[export_update_fn]
 pub fn animate_point_lights(
-    time: Res<TimeRes>, 
+    time: Res<TimeRes>,
     mut light_query: Query<&mut Position, With<LightComponent>>) -> Result<(), hotline_rs::Error> {
-    
+
     let t = time.accumulated;
     let r = sin(t);
 
@@ -107,7 +104,7 @@ pub fn animate_point_lights(
     let rot1 = sin(-t);
     let rot2 = sin(t * 0.5);
     let rot3 = sin(-t * 0.5);
-    
+
     let step = 1.0 / 16.0;
     let mut f = 0.0;
     let mut i = 0;

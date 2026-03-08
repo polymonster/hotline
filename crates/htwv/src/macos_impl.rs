@@ -248,7 +248,10 @@ fn compile_shader_spirv(
                     continue;
                 }
                 let name = cstr_to_string(resource.name)?;
-                if push_constant.name == name.strip_prefix("type.").unwrap_or(&name) {
+                // Match if the resource name contains the push constant name
+                // Handles various naming conventions: "type.view_push_constants",
+                // "type.ConstantBuffer.world_buffer_info_data", etc.
+                if name.contains(&push_constant.name) {
                     let desc_set = binding_offset as u32;
                     spvc_compiler_set_decoration(
                         compiler,

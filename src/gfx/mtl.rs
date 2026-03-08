@@ -892,7 +892,10 @@ impl super::CmdBuf<Device> for CmdBuf {
 #[derive(Clone)]
 pub struct Buffer {
     metal_buffer: metal::Buffer,
-    element_stride: usize
+    element_stride: usize,
+    srv_index: Option<usize>,
+    uav_index: Option<usize>,
+    cbv_index: Option<usize>,
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -907,19 +910,19 @@ impl super::Buffer<Device> for Buffer {
     }
 
     fn write<T: Sized>(&mut self, offset: usize, data: &[T]) -> result::Result<(), super::Error> {
-        Ok(())
+        self.update(offset, data)
     }
 
     fn get_cbv_index(&self) -> Option<usize> {
-        None
+        self.cbv_index
     }
 
     fn get_srv_index(&self) -> Option<usize> {
-        None
+        self.srv_index
     }
 
     fn get_uav_index(&self) -> Option<usize> {
-        None
+        self.uav_index
     }
 
     fn get_vbv(&self) -> Option<VertexBufferView> {
@@ -1416,6 +1419,7 @@ impl Device {
 
         let vertex_samplers_offset: u32 = 2;
         let fragment_samplers_offset: u32 = 0;
+
         let mut vertex_binding_offset: u32 = vertex_samplers_offset + 1;
         let mut fragment_binding_offset: u32 = fragment_samplers_offset + 1;
 
@@ -1978,9 +1982,39 @@ impl super::Device for Device {
                 self.metal_device.new_buffer(byte_len, opt)
             };
 
+            // allocate on the heap
+            let alloc_index = heap.allocate();
+            heap.buffer_slots[alloc_index] = Some(buf.to_owned());
+            heap.encode_buffer(alloc_index, &buf);
+
+            // assign srv or uav
+            let srv_index = if info.usage.contains(BufferUsage::SHADER_RESOURCE) {
+                Some(alloc_index)
+            }
+            else {
+                None
+            };
+
+            let uav_index = if info.usage.contains(BufferUsage::UNORDERED_ACCESS) {
+                Some(alloc_index)
+            }
+            else {
+                None
+            };
+
+            let cbv_index = if info.usage.contains(BufferUsage::CONSTANT_BUFFER) {
+                Some(alloc_index)
+            }
+            else {
+                None
+            };
+
             Ok(Buffer{
                 metal_buffer: buf,
-                element_stride: info.stride
+                element_stride: info.stride,
+                srv_index,
+                uav_index,
+                cbv_index
             })
         })
     }
@@ -1990,6 +2024,7 @@ impl super::Device for Device {
         info: &super::BufferInfo,
         data: Option<&[T]>,
     ) -> result::Result<Buffer, super::Error> {
+        /*
         objc::rc::autoreleasepool(|| {
             let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
                 metal::MTLResourceOptions::StorageModeManaged;
@@ -2006,9 +2041,19 @@ impl super::Device for Device {
 
             Ok(Buffer{
                 metal_buffer: buf,
-                element_stride: info.stride
+                element_stride: info.stride,
+                srv_index: None,
+                uav_index: None,
+                cbv_index: None
             })
         })
+        */
+
+        self.create_buffer_with_heap(
+            info,
+            data,
+            &mut self.shader_heap.clone()
+        )
     }
 
     fn create_read_back_buffer(
@@ -2025,7 +2070,10 @@ impl super::Device for Device {
 
             Ok(Buffer{
                 metal_buffer: buf,
-                element_stride: size
+                element_stride: size,
+                srv_index: None,
+                uav_index: None,
+                cbv_index: None
             })
         })
     }

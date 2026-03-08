@@ -26,11 +26,11 @@ void cs_mip_chain_texture2d(uint2 did: SV_DispatchThreadID) {
     pmfx_touch(group_accumulated[0]);
 
     float4 level_up = float4(0.0, 0.0, 0.0, 0.0);
-    
+
     for(int i = 0; i < 9; ++i) {
         level_up += rw_texture[read][did.xy * 2];
     }
-    
+
     rw_texture[write][did.xy] = level_up / 9.0;
 }
 
@@ -56,21 +56,21 @@ vs_output_ndc vs_ndc(vs_input_2d_texcoord input) {
 }
 
 cbuffer cubemap_clear_constants : register(b0) {
-    float4x4 inverse_wvp;
+    row_major float4x4 inverse_wvp;
 };
 
 TextureCube cubemap : register(t0);
-SamplerState sampler_wrap_linear : register(s0); 
+SamplerState sampler_wrap_linear : register(s0);
 
 float4 ps_cubemap_clear(vs_output_ndc input) : SV_Target {
     // unproject ray
     float2 ndc = input.ndc;
     float4 near = float4(ndc.x, ndc.y, 0.0, 1.0);
     float4 far = float4(ndc.x, ndc.y, 1.0, 1.0);
-    
+
     float4 wnear = mul(inverse_wvp, near);
     wnear /= wnear.w;
-    
+
     float4 wfar = mul(inverse_wvp, far);
     wfar /= wfar.w;
 
