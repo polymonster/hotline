@@ -179,21 +179,15 @@ pub fn render_meshes_bindless_ibl(
     cmd_buf.set_render_pipeline(&pipeline);
 
     // bind view push constants
-    let slot = pipeline.get_pipeline_slot(0, 0, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = slot {
-        cmd_buf.push_render_constants(slot.index, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-        cmd_buf.push_render_constants(slot.index, 4, 16, gfx::as_u8_slice(&camera.view_position));
-    }
+    cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(pipeline, 0, 0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind world buffer info with IBL indices in user_data
     let mut world_buffer_info = pmfx.get_world_buffer_info();
     world_buffer_info.user_data[0] = ibl_data.cubemap_srv;
     world_buffer_info.user_data[1] = ibl_data.lut_srv;
-    let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = slot {
-        cmd_buf.push_render_constants(
-            slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
-    }
+    cmd_buf.push_render_constants(
+        pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
     // bind the shader resource heap
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
@@ -208,10 +202,7 @@ pub fn render_meshes_bindless_ibl(
 
     // single draw calls
     for (mesh, world_matrix) in &single_draw_query {
-        let slot = pipeline.get_pipeline_slot(1, 0, gfx::DescriptorType::PushConstants);
-        if let Some(slot) = slot {
-            cmd_buf.push_render_constants(slot.index, 12, 0, &world_matrix.0);
-        }
+        cmd_buf.push_render_constants(pipeline, 1, 0, 12, 0, &world_matrix.0);
         cmd_buf.set_index_buffer(&mesh.0.ib);
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);

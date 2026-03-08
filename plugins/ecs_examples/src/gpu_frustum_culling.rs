@@ -355,24 +355,18 @@ pub fn dispatch_compute_frustum_cull(
         cmd_buf.set_compute_pipeline(pipeline);
 
         // resource index info for looking up input (draw all info) / output (culled draw call info)
-        let slot = pipeline.get_pipeline_slot(0, 1, gfx::DescriptorType::PushConstants);
-        if let Some(slot) = slot {
-            // output uav
-            cmd_buf.push_compute_constants(slot.index, 1, 0, 
-                gfx::as_u8_slice(&indirect_draw.dynamic_buffer.get_uav_index().unwrap()));
+        // output uav
+        cmd_buf.push_compute_constants(pipeline, 0, 1, 1, 0,
+            gfx::as_u8_slice(&indirect_draw.dynamic_buffer.get_uav_index().unwrap()));
 
-            // input srv
-            cmd_buf.push_compute_constants(slot.index, 1, 4, 
-                gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
-        }
-        
+        // input srv
+        cmd_buf.push_compute_constants(pipeline, 0, 1, 1, 4,
+            gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
+
         // world buffer info to lookup matrices and aabb info
         let world_buffer_info = pmfx.get_world_buffer_info();
-        let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
-        if let Some(slot) = slot {
-            cmd_buf.push_compute_constants(
-                slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
-        }
+        cmd_buf.push_compute_constants(
+            pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
         cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
@@ -412,11 +406,8 @@ pub fn draw_meshes_indirect_culling(
 
     // bind the world buffer info
     let world_buffer_info = pmfx.get_world_buffer_info();
-    let slot = pipeline.get_pipeline_slot(2, 0, gfx::DescriptorType::PushConstants);
-    if let Some(slot) = slot {
-        cmd_buf.push_render_constants(
-            slot.index, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
-    }
+    cmd_buf.push_render_constants(
+        pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 

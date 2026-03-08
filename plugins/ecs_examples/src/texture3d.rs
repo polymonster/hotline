@@ -67,14 +67,14 @@ pub fn render_meshes_texture3d(
     let camera = pmfx.get_camera_constants(&view.camera)?;
 
     cmd_buf.set_render_pipeline(pipeline);
-    cmd_buf.push_render_constants(0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
-    cmd_buf.push_render_constants(0, 4, 16, gfx::as_u8_slice(&camera.view_position));
+    cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
+    cmd_buf.push_render_constants(pipeline, 0, 0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     for (world_matrix, mesh, tex) in &mesh_draw_query {
-        cmd_buf.push_render_constants(1, 12, 0, &world_matrix.0);
-        cmd_buf.push_render_constants(1, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
+        cmd_buf.push_render_constants(pipeline, 1, 0, 12, 0, &world_matrix.0);
+        cmd_buf.push_render_constants(pipeline, 1, 0, 2, 16, gfx::as_u8_slice(&[tex.0, 0, 0, 0]));
         cmd_buf.set_index_buffer(&mesh.0.ib);
         cmd_buf.set_vertex_buffer(&mesh.0.vb, 0);
         cmd_buf.draw_indexed_instanced(mesh.0.num_indices, 1, 0, 0, 0);

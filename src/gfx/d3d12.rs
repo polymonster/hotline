@@ -4381,28 +4381,32 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn push_render_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_render_constants<P: SuperPipleline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, super::DescriptorType::PushConstants)?;
         let cmd = self.cmd();
         unsafe {
             cmd.SetGraphicsRoot32BitConstants(
-                slot,
+                slot.index,
                 num_values,
                 data.as_ptr() as *const ::core::ffi::c_void,
                 dest_offset,
             )
         }
+        Some(())
     }
 
-    fn push_compute_constants<T: Sized>(&mut self, slot: u32, num_values: u32, dest_offset: u32, data: &[T]) {
+    fn push_compute_constants<P: SuperPipleline, T: Sized>(&mut self, pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let slot = pipeline.get_pipeline_slot(register, space, super::DescriptorType::PushConstants)?;
         let cmd = self.cmd();
         unsafe {
             cmd.SetComputeRoot32BitConstants(
-                slot,
+                slot.index,
                 num_values,
                 data.as_ptr() as *const ::core::ffi::c_void,
                 dest_offset,
             )
         }
+        Some(())
     }
 
     fn draw_instanced(
@@ -4701,11 +4705,8 @@ impl super::CmdBuf<Device> for CmdBuf {
                     self.command_list[bb].ResourceBarrier(&[bw.clone()]);
                     self.in_flight_barriers[bb].push(bw);
 
-                    let using_slot = pipeline.get_pipeline_slot(0, 0, super::DescriptorType::PushConstants);
-                    if let Some(slot) = using_slot {
-                        self.push_compute_constants(slot.index, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i-1]));
-                        self.push_compute_constants(slot.index, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i]));
-                    }
+                    self.push_compute_constants(pipeline, 0, 0, 1, 0, super::as_u8_slice(&texture.subresource_uav_index[i-1]));
+                    self.push_compute_constants(pipeline, 0, 0, 1, 1, super::as_u8_slice(&texture.subresource_uav_index[i]));
                     
                     self.dispatch(
                         Size3 {
