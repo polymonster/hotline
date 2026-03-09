@@ -218,9 +218,9 @@ fn compile_shader_spirv(
 
         // put samplers first all in single argument buffer
         for resource in &resources {
-            for push_constant in &pipeline.pipeline_layout.static_samplers {
+            for sampler in &pipeline.pipeline_layout.static_samplers {
                 let name = cstr_to_string(resource.name)?;
-                if push_constant.name == name.strip_prefix("type.").unwrap_or(&name) {
+                if sampler.name == name.strip_prefix("type.").unwrap_or(&name) {
                     spvc_compiler_set_decoration(
                         compiler,
                         resource.id,
@@ -248,10 +248,17 @@ fn compile_shader_spirv(
                     continue;
                 }
                 let name = cstr_to_string(resource.name)?;
-                // Match if the resource name contains the push constant name
-                // Handles various naming conventions: "type.view_push_constants",
-                // "type.ConstantBuffer.world_buffer_info_data", etc.
-                if name.contains(&push_constant.name) {
+
+                // stip .type.ConstantBuffer.NAME_data prefix and suffix
+                // or .type prefix
+                let name = if let Some(name) = name.strip_prefix("type.ConstantBuffer.") {
+                    name.strip_suffix("_data").unwrap_or(name)
+                }
+                else {
+                    name.strip_prefix("type.").unwrap_or(&name)
+                };
+
+                if push_constant.name == name {
                     let desc_set = binding_offset as u32;
                     spvc_compiler_set_decoration(
                         compiler,
@@ -288,7 +295,17 @@ fn compile_shader_spirv(
             for (_, binding) in pipeline.pipeline_layout.bindings.iter().enumerate() {
                 if binding.visibility == stage || binding.visibility == ShaderStage::All {
                     let name = cstr_to_string(resource.name)?;
-                    if &binding.name == name.strip_prefix("type.").unwrap_or(&name) {
+
+                    // stip .type.ConstantBuffer.NAME_data prefix and suffix
+                    // or .type prefix
+                    let name = if let Some(name) = name.strip_prefix("type.ConstantBuffer.") {
+                        name.strip_suffix("_data").unwrap_or(name)
+                    }
+                    else {
+                        name.strip_prefix("type.").unwrap_or(&name)
+                    };
+
+                    if &binding.name == name {
                         spvc_compiler_set_decoration(
                             compiler,
                             resource.id,
