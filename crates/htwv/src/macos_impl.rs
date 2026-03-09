@@ -69,6 +69,10 @@ enum ShaderStage {
 struct Resource {
     name: String,
     visibility: ShaderStage,
+    #[serde(default)]
+    resource_type: Option<String>,
+    #[serde(default)]
+    num_descriptors: Option<u32>,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -161,11 +165,11 @@ fn compile_shader_spirv(
             1,
         );
 
-        // Set argument buffer tier (0 or 1)
+        // Set argument buffer tier 2 (required for runtime-sized arrays in device space)
         spvc_compiler_options_set_uint(
             compiler_options,
             spvc_compiler_option_SPVC_COMPILER_OPTION_MSL_ARGUMENT_BUFFERS_TIER,
-            1,
+            2,
         );
 
         let result = spvc_compiler_install_compiler_options(compiler, compiler_options);
@@ -296,7 +300,7 @@ fn compile_shader_spirv(
                 if binding.visibility == stage || binding.visibility == ShaderStage::All {
                     let name = cstr_to_string(resource.name)?;
 
-                    // stip .type.ConstantBuffer.NAME_data prefix and suffix
+                    // strip .type.ConstantBuffer.NAME_data prefix and suffix
                     // or .type prefix
                     let name = if let Some(name) = name.strip_prefix("type.ConstantBuffer.") {
                         name.strip_suffix("_data").unwrap_or(name)
@@ -306,23 +310,60 @@ fn compile_shader_spirv(
                     };
 
                     if &binding.name == name {
+                        // Set descriptor set
                         spvc_compiler_set_decoration(
                             compiler,
                             resource.id,
                             SpvDecoration__SpvDecorationDescriptorSet,
                             binding_offset as u32,
                         );
+
+                        // Set binding index within the descriptor set
                         spvc_compiler_set_decoration(
                             compiler,
                             resource.id,
                             SpvDecoration__SpvDecorationBinding,
                             binding_sub_offset as u32,
                         );
+
+                        // Use resource_binding_2 to explicitly set argument buffer member binding
+                        let mut res_binding: spvc_msl_resource_binding_2 = std::mem::zeroed();
+                        spvc_msl_resource_binding_init_2(&mut res_binding);
+                        res_binding.stage = exec_model;
+                        res_binding.desc_set = binding_offset as u32;
+                        res_binding.binding = binding_sub_offset as u32;
+                        // For unbounded/runtime arrays (null or large num_descriptors), don't set count
+                        // to let SPIRV-Cross use the unsized array hack
+                        if let Some(num_desc) = binding.num_descriptors {
+                            if num_desc <= 16 {
+                                res_binding.count = num_desc;
+                            }
+                        }
+
+                        // Set appropriate MSL binding based on resource type
+                        let is_texture = binding.resource_type.as_ref().map_or(false, |t| {
+                            t.starts_with("Texture") || t.starts_with("RWTexture")
+                        });
+                        if is_texture {
+                            res_binding.msl_texture = binding_sub_offset as u32;
+                        } else {
+                            res_binding.msl_buffer = binding_sub_offset as u32;
+                        }
+                        spvc_compiler_msl_add_resource_binding_2(compiler, &res_binding);
+
                         binding_sub_offset += 1;
                     }
                 }
             }
         }
+
+        // Enable device address space for the bindings argument buffer
+        // This allows runtime-sized arrays in the argument buffer
+        spvc_compiler_msl_set_argument_buffer_device_address_space(
+            compiler,
+            binding_offset as u32,
+            1, // true - use device address space
+        );
 
         let mut msl_src = std::ptr::null();
         let result = spvc_compiler_compile(compiler, &mut msl_src);
