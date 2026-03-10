@@ -162,6 +162,7 @@ pub enum PlaceMode {
 
 const AGENT_SPEED: f32 = 0.1;
 const AGENT_RADIUS: f32 = 3.0;
+const AGENT_RADIUS2: f32 = AGENT_RADIUS * AGENT_RADIUS;
 const AGENT_SEGMENTS: usize = 8;
 
 /// Separation radius at low density (shrinks as crowd grows)
@@ -443,8 +444,8 @@ pub fn update_agents(
                 let idx = morton_encode(lx, 0, lz);
                 if chunk.agents[idx].is_empty() { return None; }
                 Some(OccupiedCell {
-                    tile:        Vec2i::new(cx * cs + lx as i32, cz * cs + lz as i32),
-                    chunk_key:   key,
+                    tile: Vec2i::new(cx * cs + lx as i32, cz * cs + lz as i32),
+                    chunk_key: key,
                     idx,
                     cell_agents: chunk.agents[idx].clone(),
                 })
@@ -455,6 +456,7 @@ pub fn update_agents(
     for cell in &occupied {
         // density fetched directly via precomputed idx — no repeated chunk_key/morton math
         let cell_density = map.chunks[&cell.chunk_key].density[cell.idx];
+
 
         for &entity_a in &cell.cell_agents {
             // Read entity_a's position — Vec3f is Copy, borrow ends immediately
@@ -554,13 +556,17 @@ pub fn update_agents(
                 ((pz + AGENT_RADIUS) / TILE_SIZE).floor() as i32,
             )
         };
+        let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
 
+        let total_vel = flow_vel + sep_vel + wander_vel;
+        
+        //let target_speed = (total_vel.x * total_vel.x + total_vel.z * total_vel.z).sqrt();
+        //let mut slide_x = total_vel.x;
+        //let mut slide_z = total_vel.z;
+
+        /*
         // Project velocity to remove components pointing into nearby walls.
         // Accumulate the combined away-from-wall normal for corner escape.
-        let total_vel = flow_vel + sep_vel + wander_vel;
-        let target_speed = (total_vel.x * total_vel.x + total_vel.z * total_vel.z).sqrt();
-        let mut slide_x = total_vel.x;
-        let mut slide_z = total_vel.z;
         let mut wall_away_x = 0.0f32;
         let mut wall_away_z = 0.0f32;
         let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
@@ -625,6 +631,9 @@ pub fn update_agents(
             slide_x = best_sx;
             slide_z = best_sz;
         }
+        */
+
+        /*
         // Renormalise to target_speed — no energy gain or loss from wall contact
         let final_len = (slide_x * slide_x + slide_z * slide_z).sqrt();
         if final_len > 0.001 && target_speed > 0.001 {
@@ -633,12 +642,15 @@ pub fn update_agents(
         }
 
         // Move; axis-split as safety against tunnelling
+
+        */
+
         let can_move = |p: Vec3f| {
             let t = world_to_tile(p);
             let d = map.get_tile(t);
             d == TileType::Empty || d == TileType::Platform
         };
-        let new_pos = pos.0 + Vec3f::new(slide_x, 0.0, slide_z);
+        let new_pos = pos.0 + total_vel;
         pos.0 = if can_move(new_pos) {
             new_pos
         } else if can_move(Vec3f::new(new_pos.x, pos.0.y, pos.0.z)) {
@@ -649,6 +661,46 @@ pub fn update_agents(
             pos.0
         };
 
+        let v_look_nbrs = [
+            vec3f(-1.0, 0.0,  0.0),
+            vec3f( 0.0, 0.0,  1.0),
+            vec3f( 1.0, 0.0,  0.0),
+            vec3f( 0.0, 0.0, -1.0),
+        ];
+
+        let wall = [
+            (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-0.5, 0.0, 0.5) * TILE_SIZE),
+            (vec3f(-0.5, 0.0,  0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
+            (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
+            (vec3f(-0.5, 0.0,  0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
+        ];
+
+        let tile_mid = (floor(pos.0 / TILE_SIZE) * TILE_SIZE) + vec3f(0.5, 0.1, 0.5) * TILE_SIZE;
+        imdraw.add_point_3d(tile_mid, 1.0, Vec4f::white());
+
+        for i in 0..v_look_nbrs.len() {
+            let look_nbr = tile_mid + v_look_nbrs[i] * TILE_SIZE;
+            let nbr = floor(look_nbr / TILE_SIZE);
+            let t = map.get_tile(Vec2i::from(nbr.xz()));
+            if t == TileType::Wall {
+                let wall_line = (tile_mid + wall[i].0, tile_mid + wall[i].1);
+
+                let cp = closest_point_on_line_segment(pos.0, wall_line.0, wall_line.1);
+
+                imdraw.add_line_3d(wall_line.0, wall_line.1, Vec4f::red());
+                imdraw.add_point_3d(cp, 1.0, Vec4f::magenta());
+
+                let d = dist(cp, pos.0);
+                if d <= AGENT_RADIUS {
+                    let offset = normalize(pos.0 - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
+                    pos.0 += offset;
+                }
+            }
+        }
+
+
+        /*
         // Circle-vs-AABB push-out — same bounding-circle tile range, position-continuous
         let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
         for tz in tz0..=tz1 {
@@ -671,6 +723,7 @@ pub fn update_agents(
                 }
             }
         }
+        */
 
         // Draw agent as an octagon
         let p = pos.0;
@@ -763,7 +816,12 @@ pub fn update_tile_editor(
     let (_, enable_mouse) = app.get_input_enabled();
 
     // get camera for unprojection
-    let camera = pmfx.get_camera_constants("main_camera")?;
+    let camera = pmfx.get_camera_constants("main_camera");
+    if !camera.is_ok() {
+        return Ok(()); // we might need to skip frames
+    }
+    let camera = camera?;
+
     let inv_vp = camera.view_projection_matrix.inverse();
 
     // mouse screen pos relative to the dock viewport (both in screen coords)
