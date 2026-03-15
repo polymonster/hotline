@@ -23,7 +23,8 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
             "update_tile_editor_ui",
             "update_flow_field",
             "update_tile_editor",
-            "update_agents"
+            "update_agents",
+            "update_agent_transforms"
         ],
         render_graph: "mesh_wireframe_overlay"
     }
@@ -164,6 +165,10 @@ const AGENT_SPEED: f32 = 0.1;
 const AGENT_RADIUS: f32 = 3.0;
 const AGENT_RADIUS2: f32 = AGENT_RADIUS * AGENT_RADIUS;
 const AGENT_SEGMENTS: usize = 8;
+const AGENT_BODY_HALF_WIDTH: f32 = 1.5;  // half-extent x/z (body 3 units wide)
+const AGENT_BODY_HALF_HEIGHT: f32 = 4.5; // half-extent y (body 9 units tall, ~1:3 ratio)
+const CORRECTION_ITERATIONS: usize = 4;
+const TURN_RATE: f32 = 0.1; // fraction of angular gap closed per frame (exponential smoothing)
 
 /// Separation radius at low density (shrinks as crowd grows)
 const BASE_SEP_RADIUS: f32     = 24.0;
@@ -180,6 +185,10 @@ const TILE_TYPES: &[TileType] = &[
     TileType::Platform,
     TileType::TrainTrack
 ];
+
+/// Shared cube mesh resource for agent body rendering
+#[derive(Resource)]
+struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
 
 /// Marker — identifies human agents in the ECS
 #[derive(Component)]
@@ -204,6 +213,10 @@ pub(crate) struct SepForce(Vec2f);
 /// Accumulated local density from all registered grid cells — cleared each frame
 #[derive(Component)]
 pub(crate) struct LocalDensity(f32);
+
+/// Current facing rotation — smoothly nlerp'd toward velocity direction each frame
+#[derive(Component)]
+pub(crate) struct FacingRot(Quatf);
 
 #[derive(Resource)]
 pub struct EditorState {
@@ -398,7 +411,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
 /// Moves agents along the flow field with per-cell peer-repulsion spreading
 #[export_update_fn]
 pub fn update_agents(
-    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity), With<HumanAgent>>,
+    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut imdraw: ResMut<ImDrawRes>,
     app:      Res<AppRes>,
@@ -406,11 +419,11 @@ pub fn update_agents(
     pmfx:     Res<PmfxRes>,
 ) -> Result<(), hotline_rs::Error> {
     const Y_OFFSET: f32 = 1.0;
-    let agent_col = Vec4f::new(1.0, 0.5, 0.0, 1.0);
+    let agent_col = Vec4f::new(1.0, 0.0, 0.0, 1.0);
 
     // --- Pass 0: clear spatial grid and reset per-frame agent state ---
     map.clear_all_agents();
-    for (_, _, _, _, mut sf, mut ld) in agents.iter_mut() {
+    for (_, _, _, _, mut sf, mut ld, _) in agents.iter_mut() {
         sf.0 = Vec2f::zero();
         ld.0 = 0.0;
     }
@@ -421,7 +434,7 @@ pub fn update_agents(
 
     // --- Pass 1: register each agent in the spatial grid (read-only) ---
     // Primary tile only — loose-grid registration removed to prevent double-counted separation forces
-    for (entity, pos, _, _, _, _) in agents.iter() {
+    for (entity, pos, _, _, _, _, _) in agents.iter() {
         let tile = world_to_tile(pos.0);
         map.register_agent(tile, entity);
     }
@@ -429,12 +442,8 @@ pub fn update_agents(
     // --- Pass 2: per-cell separation + density accumulation ---
     // Snapshot occupied cells with precomputed (chunk_key, morton idx) to avoid
     // re-computing chunk_key/morton in the hot inner loop and to prevent borrow conflicts.
-    struct OccupiedCell {
-        tile:       Vec2i,
-        chunk_key:  u64,
-        idx:        usize,
-        cell_agents: Vec<Entity>,
-    }
+    // `occupied` is also reused by the post-movement correction pass.
+    struct OccupiedCell { tile: Vec2i, chunk_key: u64, idx: usize, cell_agents: Vec<Entity> }
     let occupied: Vec<OccupiedCell> = map.chunks.iter()
         .flat_map(|(&key, chunk)| {
             let (cx, cz) = chunk_key_unpack(key);
@@ -461,7 +470,7 @@ pub fn update_agents(
         for &entity_a in &cell.cell_agents {
             // Read entity_a's position — Vec3f is Copy, borrow ends immediately
             let pos_a: Vec3f = unsafe { agents.get_unchecked(entity_a) }
-                .map(|(_, p, _, _, _, _)| p.0)
+                .map(|(_, p, _, _, _, _, _)| p.0)
                 .unwrap_or(Vec3f::zero());
 
             // Accumulate separation from 3×3 neighbourhood
@@ -476,7 +485,7 @@ pub fn update_agents(
                         if entity_b == entity_a { continue; }
                         // SAFETY: entity_b != entity_a — no aliased mutable access
                         let pos_b: Vec3f = unsafe { agents.get_unchecked(entity_b) }
-                            .map(|(_, p, _, _, _, _)| p.0)
+                            .map(|(_, p, _, _, _, _, _)| p.0)
                             .unwrap_or(pos_a);
                         let diff_x = pos_a.x - pos_b.x;
                         let diff_z = pos_a.z - pos_b.z;
@@ -494,7 +503,7 @@ pub fn update_agents(
 
             // Write accumulated force + density back to entity_a — all reads are complete
             // SAFETY: entity_a is uniquely targeted here, no aliased mutable borrow
-            if let Ok((_, _, _, _, mut sf, mut ld)) = unsafe { agents.get_unchecked(entity_a) } {
+            if let Ok((_, _, _, _, mut sf, mut ld, _)) = unsafe { agents.get_unchecked(entity_a) } {
                 sf.0 = Vec2f::new(sf.0.x + sep_x, sf.0.y + sep_z);
                 ld.0 += cell_density;
             }
@@ -522,7 +531,7 @@ pub fn update_agents(
         });
 
     // --- Pass 3: apply forces, move, and draw ---
-    for (entity, mut pos, speed, mut wander, sf, ld) in agents.iter_mut() {
+    for (entity, mut pos, speed, mut wander, sf, ld, mut facing) in agents.iter_mut() {
         let tile = world_to_tile(pos.0);
 
         // Separation — density already accumulated above, no extra map lookup needed
@@ -559,107 +568,24 @@ pub fn update_agents(
         let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
 
         let total_vel = flow_vel + sep_vel + wander_vel;
+
+        // Smooth turn toward velocity direction
+        let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
+        if vel_len > 0.001 {
+            let yaw = f32::atan2(total_vel.x, total_vel.z);
+            let desired = Quatf::from_euler_angles(0.0, yaw, 0.0);
+            facing.0 = slerp(facing.0, desired, TURN_RATE);
+        }
         
-        //let target_speed = (total_vel.x * total_vel.x + total_vel.z * total_vel.z).sqrt();
-        //let mut slide_x = total_vel.x;
-        //let mut slide_z = total_vel.z;
+        //
+        // collision and wall avoidance
+        //
 
-        /*
-        // Project velocity to remove components pointing into nearby walls.
-        // Accumulate the combined away-from-wall normal for corner escape.
-        let mut wall_away_x = 0.0f32;
-        let mut wall_away_z = 0.0f32;
-        let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
-        for tz in tz0..=tz1 {
-            for tx in tx0..=tx1 {
-                let nbr = Vec2i::new(tx, tz);
-                let t = map.get_tile(nbr);
-                if t != TileType::Wall && t != TileType::Barrier { continue; }
-                let min_x = nbr.x as f32 * TILE_SIZE;
-                let min_z = nbr.y as f32 * TILE_SIZE;
-                let cx = pos.0.x.clamp(min_x, min_x + TILE_SIZE);
-                let cz = pos.0.z.clamp(min_z, min_z + TILE_SIZE);
-                let nx = pos.0.x - cx;
-                let nz = pos.0.z - cz;
-                let dist_sq = nx * nx + nz * nz;
-                if dist_sq > 0.0001 && dist_sq < AGENT_RADIUS * AGENT_RADIUS {
-                    let dist = dist_sq.sqrt();
-                    let nnx = nx / dist;
-                    let nnz = nz / dist;
-                    wall_away_x += nnx;
-                    wall_away_z += nnz;
-                    let dot = slide_x * nnx + slide_z * nnz;
-                    if dot < 0.0 {
-                        slide_x -= dot * nnx;
-                        slide_z -= dot * nnz;
-                    }
-                }
-            }
-        }
-        // Speed preservation: when projection significantly reduces speed (flow from current
-        // tile conflicts with a wall), look at cardinal neighbour tiles' flows and use
-        // whichever one projects to the most usable speed. This prevents the oscillation
-        // where the current tile's flow is fully blocked (e.g. (-1,0) against a -X wall)
-        // while an adjacent tile has a valid direction (e.g. (0,-1)). Wall-away is only
-        // used as a last resort when all neighbours are also stuck.
-        let away_len = (wall_away_x * wall_away_x + wall_away_z * wall_away_z).sqrt();
-        if target_speed > 0.001 && slide_x * slide_x + slide_z * slide_z < (target_speed * 0.5).powi(2) && away_len > 0.001 {
-            let wax = wall_away_x / away_len;
-            let waz = wall_away_z / away_len;
-            let mut best_sq = slide_x * slide_x + slide_z * slide_z;
-            let mut best_sx = slide_x;
-            let mut best_sz = slide_z;
-            for (ddx, ddz) in [(0i32, -1i32), (0, 1), (-1, 0), (1, 0)] {
-                let nt = Vec2i::new(tile.x + ddx, tile.y + ddz);
-                if map.get_tile(nt) == TileType::Wall || map.get_tile(nt) == TileType::Barrier { continue; }
-                let af = map.get_flow(nt);
-                let al = (af.x * af.x + af.y * af.y).sqrt();
-                if al < 0.001 { continue; }
-                let mut avx = af.x / al * target_speed;
-                let mut avz = af.y / al * target_speed;
-                // project against combined wall normal
-                let dot = avx * wax + avz * waz;
-                if dot < 0.0 { avx -= dot * wax; avz -= dot * waz; }
-                let asq = avx * avx + avz * avz;
-                if asq > best_sq { best_sq = asq; best_sx = avx; best_sz = avz; }
-            }
-            // Last resort: wall-away if all flows are blocked
-            if best_sq < (target_speed * 0.1).powi(2) {
-                best_sx = wax * target_speed * 0.5;
-                best_sz = waz * target_speed * 0.5;
-            }
-            slide_x = best_sx;
-            slide_z = best_sz;
-        }
-        */
-
-        /*
-        // Renormalise to target_speed — no energy gain or loss from wall contact
-        let final_len = (slide_x * slide_x + slide_z * slide_z).sqrt();
-        if final_len > 0.001 && target_speed > 0.001 {
-            slide_x = slide_x / final_len * target_speed;
-            slide_z = slide_z / final_len * target_speed;
-        }
-
-        // Move; axis-split as safety against tunnelling
-
-        */
-
-        let can_move = |p: Vec3f| {
-            let t = world_to_tile(p);
-            let d = map.get_tile(t);
-            d == TileType::Empty || d == TileType::Platform
-        };
-        let new_pos = pos.0 + total_vel;
-        pos.0 = if can_move(new_pos) {
-            new_pos
-        } else if can_move(Vec3f::new(new_pos.x, pos.0.y, pos.0.z)) {
-            Vec3f::new(new_pos.x, pos.0.y, pos.0.z)
-        } else if can_move(Vec3f::new(pos.0.x, pos.0.y, new_pos.z)) {
-            Vec3f::new(pos.0.x, pos.0.y, new_pos.z)
-        } else {
-            pos.0
-        };
+        let mut new_pos = pos.0 + total_vel;
+    
+        // single axis
+        let tile_mid = (floor(new_pos / TILE_SIZE) * TILE_SIZE) + vec3f(0.5, 0.1, 0.5) * TILE_SIZE;
+        imdraw.add_point_3d(tile_mid, 1.0, Vec4f::white());
 
         let v_look_nbrs = [
             vec3f(-1.0, 0.0,  0.0),
@@ -672,11 +598,8 @@ pub fn update_agents(
             (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-0.5, 0.0, 0.5) * TILE_SIZE),
             (vec3f(-0.5, 0.0,  0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
             (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
-            (vec3f(-0.5, 0.0,  0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
+            (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0,-0.5) * TILE_SIZE),
         ];
-
-        let tile_mid = (floor(pos.0 / TILE_SIZE) * TILE_SIZE) + vec3f(0.5, 0.1, 0.5) * TILE_SIZE;
-        imdraw.add_point_3d(tile_mid, 1.0, Vec4f::white());
 
         for i in 0..v_look_nbrs.len() {
             let look_nbr = tile_mid + v_look_nbrs[i] * TILE_SIZE;
@@ -685,46 +608,103 @@ pub fn update_agents(
             if t == TileType::Wall {
                 let wall_line = (tile_mid + wall[i].0, tile_mid + wall[i].1);
 
-                let cp = closest_point_on_line_segment(pos.0, wall_line.0, wall_line.1);
+                let cp = closest_point_on_line_segment(new_pos, wall_line.0, wall_line.1);
 
                 imdraw.add_line_3d(wall_line.0, wall_line.1, Vec4f::red());
                 imdraw.add_point_3d(cp, 1.0, Vec4f::magenta());
 
-                let d = dist(cp, pos.0);
+                let d = dist(cp, new_pos);
                 if d <= AGENT_RADIUS {
-                    let offset = normalize(pos.0 - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
                     imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
-                    pos.0 += offset;
+                    new_pos += offset;
                 }
             }
         }
 
+        // corners
+        let v_look_nbrs = [
+            vec3f(-1.0, 0.0, -1.0),
+            vec3f(-1.0, 0.0,  1.0),
 
-        /*
-        // Circle-vs-AABB push-out — same bounding-circle tile range, position-continuous
-        let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
-        for tz in tz0..=tz1 {
-            for tx in tx0..=tx1 {
-                let nbr = Vec2i::new(tx, tz);
-                let t = map.get_tile(nbr);
-                if t != TileType::Wall && t != TileType::Barrier { continue; }
-                let min_x = nbr.x as f32 * TILE_SIZE;
-                let min_z = nbr.y as f32 * TILE_SIZE;
-                let cx = pos.0.x.clamp(min_x, min_x + TILE_SIZE);
-                let cz = pos.0.z.clamp(min_z, min_z + TILE_SIZE);
-                let diff_x = pos.0.x - cx;
-                let diff_z = pos.0.z - cz;
-                let dist_sq = diff_x * diff_x + diff_z * diff_z;
-                if dist_sq > 0.0001 && dist_sq < AGENT_RADIUS * AGENT_RADIUS {
-                    let dist = dist_sq.sqrt();
-                    let push = (AGENT_RADIUS - dist) / dist;
-                    pos.0.x += diff_x * push;
-                    pos.0.z += diff_z * push;
+            vec3f( 1.0, 0.0,  1.0),
+            vec3f( 1.0, 0.0, -1.0),
+        ];
+
+        let corner = [
+            (
+                (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-0.5, 0.0, -1.5) * TILE_SIZE), 
+                (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-1.5, 0.0, -0.5) * TILE_SIZE)
+            ),
+
+            (
+                (vec3f(-0.5, 0.0, 0.5) * TILE_SIZE, vec3f(-0.5, 0.0, 1.5) * TILE_SIZE), 
+                (vec3f(-0.5, 0.0, 0.5) * TILE_SIZE, vec3f(-1.5, 0.0, 0.5) * TILE_SIZE)
+            ),
+
+            (
+                (vec3f( 0.5, 0.0, 0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 1.5) * TILE_SIZE), 
+                (vec3f( 0.5, 0.0, 0.5) * TILE_SIZE, vec3f( 1.5, 0.0, 0.5) * TILE_SIZE)
+            ),
+
+            (
+                (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0, -1.5) * TILE_SIZE), 
+                (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 1.5, 0.0, -0.5) * TILE_SIZE)
+            )
+        ];
+
+        let tile_flow = normalize(Vec3f::new(flow_norm.x, 0.0, flow_norm.y));
+        imdraw.add_line_3d(new_pos, new_pos + tile_flow, Vec4f::green());
+
+        let mut wall_avoid = Vec3f::zero();
+        for i in 0..v_look_nbrs.len() {
+            let look_nbr = tile_mid + v_look_nbrs[i] * TILE_SIZE;
+            let nbr = floor(look_nbr / TILE_SIZE);
+            let t = map.get_tile(Vec2i::from(nbr.xz()));
+            if t == TileType::Wall {
+                
+                let wall_line0 = (tile_mid + corner[i].0.0, tile_mid + corner[i].0.1);
+                let wall_line1 = (tile_mid + corner[i].1.0, tile_mid + corner[i].1.1);
+
+                imdraw.add_line_3d(wall_line0.0, wall_line0.1, Vec4f::red());
+                imdraw.add_line_3d(wall_line1.0, wall_line1.1, Vec4f::red());
+                
+                let wallv0 = normalize(wall_line0.0 - wall_line0.1);
+                let wallv1 = normalize(wall_line1.0 - wall_line1.1);
+                
+                let cp = closest_point_on_line_segment(new_pos, wall_line0.0, wall_line0.1);
+                let d = dist(cp, new_pos);
+                if d <= AGENT_RADIUS {
+                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
+                    new_pos += offset;
+
+                    let dp = abs(dot(wallv0, tile_flow));
+                    if dp > 0.75 {
+                        wall_avoid = wallv1;
+                    }
                 }
+                
+                let cp = closest_point_on_line_segment(new_pos, wall_line1.0, wall_line1.1);
+                let d = dist(cp, new_pos);
+                if d <= AGENT_RADIUS {
+                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
+                    new_pos += offset;
+
+                    let dp = abs(dot(wallv1, tile_flow));
+                    if dp > 0.75 {
+                        wall_avoid = wallv0;
+                    }
+                }
+
             }
         }
-        */
 
+        imdraw.add_line_3d(new_pos, new_pos + wall_avoid, Vec4f::cyan());
+        new_pos += wall_avoid * AGENT_SPEED;
+        pos.0 = new_pos;
+        
         // Draw agent as an octagon
         let p = pos.0;
         for i in 0..AGENT_SEGMENTS {
@@ -743,14 +723,77 @@ pub fn update_agents(
                 let base = Vec3f::new(pos.0.x, Y_OFFSET + 1.0, pos.0.z);
                 // separation force — yellow
                 let sep_end = base + Vec3f::new(sf.0.x, 0.0, sf.0.y) * 2.0;
-                imdraw.add_line_3d(base, sep_end, Vec4f::new(1.0, 1.0, 0.0, 1.0));
+                //imdraw.add_line_3d(base, sep_end, Vec4f::new(1.0, 1.0, 0.0, 1.0));
                 // flow direction — cyan
                 let flow_end = base + Vec3f::new(flow_norm.x, 0.0, flow_norm.y) * 5.0;
-                imdraw.add_line_3d(base, flow_end, Vec4f::new(0.0, 1.0, 1.0, 1.0));
+                //imdraw.add_line_3d(base, flow_end, Vec4f::new(0.0, 1.0, 1.0, 1.0));
             }
         }
     }
 
+    // --- Correction pass: resolve agent-agent overlaps (PBD Jacobi, per occupied tile) ---
+    // Reuses `occupied` from Pass 2. Snapshot post-movement positions for borrow-safe access.
+    let mut positions: HashMap<Entity, Vec3f> = agents.iter()
+        .map(|(e, p, _, _, _, _, _)| (e, p.0))
+        .collect();
+
+    let min_dist    = AGENT_RADIUS * 2.0;
+    let min_dist_sq = min_dist * min_dist;
+
+    for _ in 0..CORRECTION_ITERATIONS {
+        let mut corrections: HashMap<Entity, Vec3f> = HashMap::new();
+
+        for cell in &occupied {
+            // Build 3×3 neighbourhood positions once per tile
+            let mut nbr_pos: Vec<(Entity, Vec3f)> = Vec::new();
+            for dz in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    for &e in map.get_agents_at(Vec2i::new(cell.tile.x + dx, cell.tile.y + dz)) {
+                        if let Some(&p) = positions.get(&e) { nbr_pos.push((e, p)); }
+                    }
+                }
+            }
+
+            for &entity_a in &cell.cell_agents {
+                let Some(&pos_a) = positions.get(&entity_a) else { continue };
+                let mut correction = Vec3f::zero();
+                for &(entity_b, pos_b) in &nbr_pos {
+                    if entity_b == entity_a { continue; }
+                    let diff = (pos_a - pos_b) * vec3f(1.0, 0.0, 1.0);
+                    let dist_sq = dot(diff, diff);
+                    if dist_sq < min_dist_sq && dist_sq > 0.0001 {
+                        let d = sqrt(dist_sq);
+                        correction += (diff / d) * (min_dist - d) * 0.5;
+                    }
+                }
+                if length(correction) > 0.0001 {
+                    *corrections.entry(entity_a).or_insert(Vec3f::zero()) += correction;
+                }
+            }
+        }
+
+        for (e, corr) in corrections {
+            if let Some(pos) = positions.get_mut(&e) { *pos += corr; }
+        }
+    }
+
+    // Write corrected positions back to ECS
+    for (entity, mut pos, _, _, _, _, _) in agents.iter_mut() {
+        if let Some(&p) = positions.get(&entity) { pos.0 = p; }
+    }
+
+    Ok(())
+}
+
+/// Syncs AgentPos and FacingRot to Position and Rotation for mesh rendering
+#[export_update_fn]
+pub fn update_agent_transforms(
+    mut agents: Query<(&AgentPos, &FacingRot, &mut Position, &mut Rotation), With<HumanAgent>>,
+) -> Result<(), hotline_rs::Error> {
+    for (agent_pos, facing, mut position, mut rotation) in agents.iter_mut() {
+        position.0 = vec3f(agent_pos.0.x, AGENT_BODY_HALF_HEIGHT, agent_pos.0.z);
+        rotation.0 = facing.0;
+    }
     Ok(())
 }
 
@@ -758,6 +801,7 @@ pub fn update_agents(
 #[export_update_fn]
 pub fn setup_ratrace2(
     mut session_info: ResMut<SessionInfo>,
+    mut device: ResMut<DeviceRes>,
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
 
     // enable the grid
@@ -767,6 +811,10 @@ pub fn setup_ratrace2(
     let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
     commands.insert_resource(map);
     commands.insert_resource(EditorState { selected: PlaceMode::Tile(0), left_was_down: false });
+
+    // create shared cube mesh for agent bodies
+    let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
+    commands.insert_resource(AgentMesh(cube));
 
     Ok(())
 }
@@ -810,6 +858,7 @@ pub fn update_tile_editor(
     mut imdraw: ResMut<ImDrawRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
+    cube_mesh: Res<AgentMesh>,
     mut commands: Commands,
 ) -> Result<(), hotline_rs::Error> {
 
@@ -903,6 +952,12 @@ pub fn update_tile_editor(
                                             WanderAngle(pos_hash(hit.z, hit.x) * std::f32::consts::TAU),
                                             SepForce(Vec2f::zero()),
                                             LocalDensity(0.0),
+                                            FacingRot(Quatf::identity()),
+                                            MeshComponent(cube_mesh.0.clone()),
+                                            Position(vec3f(hit.x, AGENT_BODY_HALF_HEIGHT, hit.z)),
+                                            Rotation(Quatf::identity()),
+                                            Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
+                                            WorldMatrix(Mat34f::identity()),
                                         ));
                                     }
                                 }
@@ -964,19 +1019,6 @@ pub fn update_tile_editor(
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), col);
                 }
                 else {
-                    // Density heat-map overlay: green → red as crowd grows
-                    let density = chunk.density[idx];
-                    if density > 0.0 {
-                        let heat = (density / 8.0).min(1.0);
-                        let dcol = Vec4f::new(heat, 1.0 - heat, 0.0, 1.0);
-                        let dy = y + 0.5;
-                        for i in 1..=3 {
-                            let frac = i as f32 / 4.0;
-                            let z = min_z + (max_z - min_z) * frac;
-                            imdraw.add_line_3d(Vec3f::new(min_x, dy, z), Vec3f::new(max_x, dy, z), dcol);
-                        }
-                    }
-
                     let flow_dir = chunk.flow[idx]; // read directly via precomputed idx
                     let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
                     let flow_start = Vec3f::new(mid_x, y, mid_z);

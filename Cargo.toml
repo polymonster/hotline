@@ -10,7 +10,7 @@ members = [
 
 [workspace.dependencies]
 hotline-rs = { path = "." }
-maths-rs = "0.2.3"
+maths-rs = "1.0.0"
 bitflags = "1.3.2"
 bevy_ecs = "0.15.0"
 serde = { version = "1.0", features = ["derive"] }
