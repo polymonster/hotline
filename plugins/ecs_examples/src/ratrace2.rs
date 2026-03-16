@@ -42,6 +42,13 @@ pub enum TileType {
     TrainTrack,
 }
 
+/// Baked wall line segment with inward-facing normal, in absolute world space (y=0)
+struct WallLine {
+    p0:   Vec3f,
+    p1:   Vec3f,
+    perp: Vec3f, // inward normal pointing from wall surface toward free tile
+}
+
 pub struct MapChunk {
     /// enum of tile type
     tiles: [TileType; ARRAY_SIZE],
@@ -53,6 +60,8 @@ pub struct MapChunk {
     pressure: [f32; ARRAY_SIZE],
     /// per-cell agent entity IDs (SoA); cleared and rebuilt each frame
     agents: [Vec<Entity>; ARRAY_SIZE],
+    /// baked wall lines for collision, updated when map.dirty
+    walls: [Vec<WallLine>; ARRAY_SIZE],
 }
 
 impl MapChunk {
@@ -63,6 +72,7 @@ impl MapChunk {
             density:  [0.0; ARRAY_SIZE],
             pressure: [0.0; ARRAY_SIZE],
             agents:   std::array::from_fn(|_| Vec::new()),
+            walls:    std::array::from_fn(|_| Vec::new()),
         }
     }
 
@@ -251,6 +261,15 @@ impl Map {
         }
     }
 
+    fn get_walls(&self, tile: Vec2i) -> &[WallLine] {
+        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
+        let key = chunk_key(cx, cz);
+        match self.chunks.get(&key) {
+            Some(chunk) => &chunk.walls[morton_encode(lx, ly, lz)],
+            None => &[],
+        }
+    }
+
     fn get_tile(&self, tile: Vec2i) -> TileType {
         let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
         let key = chunk_key(cx, cz);
@@ -404,6 +423,78 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         }
     }
 
+    // pass 4: bake wall lines per tile
+    // collect all tile coords first to avoid borrow conflict
+    let all_tiles: Vec<(i32, i32)> = map.chunks.iter()
+        .flat_map(|(key, chunk)| {
+            let (cx, cz) = chunk_key_unpack(*key);
+            (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| {
+                let tx = cx * CHUNK_SIZE as i32 + lx as i32;
+                let tz = cz * CHUNK_SIZE as i32 + lz as i32;
+                (tx, tz)
+            }))
+            .filter(|&(tx, tz)| {
+                let idx = morton_encode((tx - cx * CHUNK_SIZE as i32) as usize, 0, (tz - cz * CHUNK_SIZE as i32) as usize);
+                chunk.tiles[idx] != TileType::Wall
+            })
+            .collect::<Vec<_>>()
+        })
+        .collect();
+
+    for (tx, tz) in all_tiles {
+        let cx_f = tx as f32 * TILE_SIZE + TILE_SIZE * 0.5;
+        let cz_f = tz as f32 * TILE_SIZE + TILE_SIZE * 0.5;
+
+        let mut lines: Vec<WallLine> = Vec::new();
+
+        // cardinal neighbors
+        for (dx, dz) in [(-1i32,0i32),(1,0),(0,-1),(0,1)] {
+            if map.get_tile(Vec2i::new(tx + dx, tz + dz)) != TileType::Wall { continue; }
+            let (p0x, p0z, p1x, p1z) = match (dx, dz) {
+                (-1, 0) => (-0.5, -0.5, -0.5,  0.5),
+                ( 1, 0) => ( 0.5, -0.5,  0.5,  0.5),
+                ( 0,-1) => (-0.5, -0.5,  0.5, -0.5),
+                ( 0, 1) => (-0.5,  0.5,  0.5,  0.5),
+                _ => unreachable!(),
+            };
+            let perp = vec3f(-dx as f32, 0.0, -dz as f32);
+            lines.push(WallLine {
+                p0: vec3f(cx_f + p0x * TILE_SIZE, 0.0, cz_f + p0z * TILE_SIZE),
+                p1: vec3f(cx_f + p1x * TILE_SIZE, 0.0, cz_f + p1z * TILE_SIZE),
+                perp,
+            });
+        }
+
+        // diagonal neighbors — two lines each, skip if blocked by adjacent cardinal wall
+        for (dx, dz) in [(-1i32,-1i32),(-1,1),(1,1),(1,-1)] {
+            if map.get_tile(Vec2i::new(tx + dx, tz + dz)) != TileType::Wall { continue; }
+            // Line A: x-facing (vertical in xz), extends in z-direction
+            if map.get_tile(Vec2i::new(tx, tz + dz)) != TileType::Wall {
+                let (ax, az0, az1) = (dx as f32 * 0.5, dz as f32 * 0.5, dz as f32 * 1.5);
+                lines.push(WallLine {
+                    p0: vec3f(cx_f + ax * TILE_SIZE, 0.0, cz_f + az0 * TILE_SIZE),
+                    p1: vec3f(cx_f + ax * TILE_SIZE, 0.0, cz_f + az1 * TILE_SIZE),
+                    perp: vec3f(-dx as f32, 0.0, 0.0),
+                });
+            }
+            // Line B: z-facing (horizontal in xz), extends in x-direction
+            if map.get_tile(Vec2i::new(tx + dx, tz)) != TileType::Wall {
+                let (bz, bx0, bx1) = (dz as f32 * 0.5, dx as f32 * 0.5, dx as f32 * 1.5);
+                lines.push(WallLine {
+                    p0: vec3f(cx_f + bx0 * TILE_SIZE, 0.0, cz_f + bz * TILE_SIZE),
+                    p1: vec3f(cx_f + bx1 * TILE_SIZE, 0.0, cz_f + bz * TILE_SIZE),
+                    perp: vec3f(0.0, 0.0, -dz as f32),
+                });
+            }
+        }
+
+        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, 0, tz);
+        let key = chunk_key(cx, cz);
+        if let Some(chunk) = map.chunks.get_mut(&key) {
+            chunk.walls[morton_encode(lx, ly, lz)] = lines;
+        }
+    }
+
     Ok(())
 }
 
@@ -548,126 +639,28 @@ pub fn update_agents(
         //
 
         let mut new_pos = pos.0 + total_vel;
-    
-        // single axis
-        let tile_mid = (floor(new_pos / TILE_SIZE) * TILE_SIZE) + vec3f(0.5, 0.1, 0.5) * TILE_SIZE;
-        imdraw.add_point_3d(tile_mid, 1.0, Vec4f::white());
-
-        let v_look_nbrs = [
-            vec3f(-1.0, 0.0,  0.0),
-            vec3f( 0.0, 0.0,  1.0),
-            vec3f( 1.0, 0.0,  0.0),
-            vec3f( 0.0, 0.0, -1.0),
-        ];
-
-        let wall = [
-            (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-0.5, 0.0, 0.5) * TILE_SIZE),
-            (vec3f(-0.5, 0.0,  0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
-            (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 0.5) * TILE_SIZE),
-            (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0,-0.5) * TILE_SIZE),
-        ];
-
-        for i in 0..v_look_nbrs.len() {
-            let look_nbr = tile_mid + v_look_nbrs[i] * TILE_SIZE;
-            let nbr = floor(look_nbr / TILE_SIZE);
-            let t = map.get_tile(Vec2i::from(nbr.xz()));
-            if t == TileType::Wall {
-                let wall_line = (tile_mid + wall[i].0, tile_mid + wall[i].1);
-
-                let cp = closest_point_on_line_segment(new_pos, wall_line.0, wall_line.1);
-
-                imdraw.add_line_3d(wall_line.0, wall_line.1, Vec4f::red());
-                imdraw.add_point_3d(cp, 1.0, Vec4f::magenta());
-
-                let d = dist(cp, new_pos);
-                if d <= AGENT_RADIUS {
-                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
-                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
-                    new_pos += offset;
-                }
-            }
-        }
-
-        // corners
-        let v_look_nbrs = [
-            vec3f(-1.0, 0.0, -1.0),
-            vec3f(-1.0, 0.0,  1.0),
-
-            vec3f( 1.0, 0.0,  1.0),
-            vec3f( 1.0, 0.0, -1.0),
-        ];
-
-        let corner = [
-            (
-                (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-0.5, 0.0, -1.5) * TILE_SIZE), 
-                (vec3f(-0.5, 0.0, -0.5) * TILE_SIZE, vec3f(-1.5, 0.0, -0.5) * TILE_SIZE)
-            ),
-
-            (
-                (vec3f(-0.5, 0.0, 0.5) * TILE_SIZE, vec3f(-0.5, 0.0, 1.5) * TILE_SIZE), 
-                (vec3f(-0.5, 0.0, 0.5) * TILE_SIZE, vec3f(-1.5, 0.0, 0.5) * TILE_SIZE)
-            ),
-
-            (
-                (vec3f( 0.5, 0.0, 0.5) * TILE_SIZE, vec3f( 0.5, 0.0, 1.5) * TILE_SIZE), 
-                (vec3f( 0.5, 0.0, 0.5) * TILE_SIZE, vec3f( 1.5, 0.0, 0.5) * TILE_SIZE)
-            ),
-
-            (
-                (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 0.5, 0.0, -1.5) * TILE_SIZE), 
-                (vec3f( 0.5, 0.0, -0.5) * TILE_SIZE, vec3f( 1.5, 0.0, -0.5) * TILE_SIZE)
-            )
-        ];
-
+        let wall_tile = world_to_tile(new_pos);
         let tile_flow = normalize(Vec3f::new(flow_norm.x, 0.0, flow_norm.y));
         imdraw.add_line_3d(new_pos, new_pos + tile_flow, Vec4f::green());
 
         let mut wall_avoid = Vec3f::zero();
-        for i in 0..v_look_nbrs.len() {
-            let look_nbr = tile_mid + v_look_nbrs[i] * TILE_SIZE;
-            let nbr = floor(look_nbr / TILE_SIZE);
-            let t = map.get_tile(Vec2i::from(nbr.xz()));
-            if t == TileType::Wall {
-                
-                let wall_line0 = (tile_mid + corner[i].0.0, tile_mid + corner[i].0.1);
-                let wall_line1 = (tile_mid + corner[i].1.0, tile_mid + corner[i].1.1);
+        for wl in map.get_walls(wall_tile) {
+            imdraw.add_line_3d(wl.p0, wl.p1, Vec4f::red());
+            let mid = (wl.p0 + wl.p1) * 0.5;
+            imdraw.add_line_3d(mid, mid + wl.perp * 2.0, Vec4f::cyan());
 
-                imdraw.add_line_3d(wall_line0.0, wall_line0.1, Vec4f::red());
-                imdraw.add_line_3d(wall_line1.0, wall_line1.1, Vec4f::red());
-                
-                let wallv0 = normalize(wall_line0.0 - wall_line0.1);
-                let wallv1 = normalize(wall_line1.0 - wall_line1.1);
-                
-                let cp = closest_point_on_line_segment(new_pos, wall_line0.0, wall_line0.1);
-                let d = dist(cp, new_pos);
-                if d <= AGENT_RADIUS {
-                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
-                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
-                    new_pos += offset;
-
-                    let dp = abs(dot(wallv0, tile_flow));
-                    if dp > 0.75 {
-                        wall_avoid = wallv1;
-                    }
+            let cp = closest_point_on_line_segment(new_pos, wl.p0, wl.p1);
+            let d = dist(cp, new_pos);
+            if d <= AGENT_RADIUS {
+                let push = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+                new_pos += push;
+                let tangent = normalize(wl.p0 - wl.p1);
+                if abs(dot(tangent, tile_flow)) > 0.75 {
+                    wall_avoid = wl.perp;
                 }
-                
-                let cp = closest_point_on_line_segment(new_pos, wall_line1.0, wall_line1.1);
-                let d = dist(cp, new_pos);
-                if d <= AGENT_RADIUS {
-                    let offset = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
-                    imdraw.add_line_3d(cp, cp + offset, Vec4f::yellow());
-                    new_pos += offset;
-
-                    let dp = abs(dot(wallv1, tile_flow));
-                    if dp > 0.75 {
-                        wall_avoid = wallv0;
-                    }
-                }
-
             }
         }
 
-        imdraw.add_line_3d(new_pos, new_pos + wall_avoid, Vec4f::cyan());
         new_pos += wall_avoid * AGENT_SPEED;
         pos.0 = new_pos;
     }
@@ -684,7 +677,6 @@ pub fn update_agents(
     let min_dist    = AGENT_RADIUS * 2.0;
     let min_dist_sq = min_dist * min_dist;
 
-    // claude: copy algorithm pass structure (build 3x3 neighbourhood per tile, then iter per entity)
     for _ in 0..CORRECTION_ITERATIONS {
         let mut corrections: HashMap<Entity, Vec3f> = HashMap::new();
 
