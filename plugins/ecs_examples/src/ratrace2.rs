@@ -186,6 +186,7 @@ const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
 const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
+const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
 
 const TILE_TYPES: &[TileType] = &[
     TileType::Wall,
@@ -578,6 +579,11 @@ pub fn update_agents(
             }
         }
 
+        // wall avoidance — look up once per cell, reuse for all entities in it
+        let walls = map.get_walls(cell.tile);
+        let flow_dir = map.get_flow(cell.tile);
+        let tile_flow = normalize(Vec3f::new(flow_dir.x, 0.0, flow_dir.y));
+
         for &entity_a in &cell.cell_agents {
             let Some(&pos_a) = positions.get(&entity_a) else { continue };
             let pa = vec2f(pos_a.x, pos_a.z);
@@ -591,8 +597,27 @@ pub fn update_agents(
                     sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
                 }
             }
+
+            let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
+            let sep_vel = if length(sep) > 0.001 {
+                normalize(sep) * SEPARATION_STRENGTH * density_scale
+            } else { Vec2f::zero() };
+
+            // wall avoidance: same dot-product trigger as before, larger radius
+            let mut wall_vel = Vec2f::zero();
+            for wl in walls {
+                let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
+                let d = dist(cp, pos_a);
+                if d < WALL_AVOID_RADIUS {
+                    let tangent = normalize(wl.p0 - wl.p1);
+                    if abs(dot(tangent, tile_flow)) > 0.75 {
+                        wall_vel = vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+                    }
+                }
+            }
+
             if let Ok((.., mut sf, mut ld, _)) = agents.get_mut(entity_a) {
-                sf.0 = sf.0 + sep;
+                sf.0 = sep_vel + wall_vel;
                 ld.0 += cell_density;
             }
         }
@@ -602,17 +627,11 @@ pub fn update_agents(
     // Pass 3: apply forces and move
     //
 
-    for (entity, mut pos, speed, mut wander, sf, ld, mut facing) in agents.iter_mut() {
+    for (entity, mut pos, speed, mut wander, sf, _ld, mut facing) in agents.iter_mut() {
         let tile = world_to_tile(pos.0);
 
-        // Separation — density already accumulated above, no extra map lookup needed
-        let density_scale = 1.0 + (ld.0 - 1.0).max(0.0) * 0.3;
-        let sep_vel = if length(sf.0) > 0.001 {
-            let n = normalize(sf.0);
-            vec3f(n.x, 0.0, n.y) * SEPARATION_STRENGTH * density_scale
-        } else {
-            Vec3f::zero()
-        };
+        // sep + wall avoidance pre-computed in Pass 2, stored in sf.0
+        let avoid_vel = vec3f(sf.0.x, 0.0, sf.0.y);
 
         // Wander: each agent drifts at a unique rate derived from entity index
         wander.0 += WANDER_DRIFT * (1.0 - (entity.index() % 5) as f32 * 0.1);
@@ -623,7 +642,7 @@ pub fn update_agents(
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * speed.0;
 
-        let total_vel = flow_vel + sep_vel + wander_vel;
+        let total_vel = flow_vel + avoid_vel + wander_vel;
 
         // Smooth turn toward velocity direction
         let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
@@ -632,37 +651,8 @@ pub fn update_agents(
             let desired = Quatf::from_euler_angles(0.0, yaw, 0.0);
             facing.0 = slerp(facing.0, desired, TURN_RATE);
         }
-        
-        // 
-        //
-        // collision and wall avoidance
-        //
 
-        let mut new_pos = pos.0 + total_vel;
-        let wall_tile = world_to_tile(new_pos);
-        let tile_flow = normalize(Vec3f::new(flow_norm.x, 0.0, flow_norm.y));
-        imdraw.add_line_3d(new_pos, new_pos + tile_flow, Vec4f::green());
-
-        let mut wall_avoid = Vec3f::zero();
-        for wl in map.get_walls(wall_tile) {
-            imdraw.add_line_3d(wl.p0, wl.p1, Vec4f::red());
-            let mid = (wl.p0 + wl.p1) * 0.5;
-            imdraw.add_line_3d(mid, mid + wl.perp * 2.0, Vec4f::cyan());
-
-            let cp = closest_point_on_line_segment(new_pos, wl.p0, wl.p1);
-            let d = dist(cp, new_pos);
-            if d <= AGENT_RADIUS {
-                let push = normalize(new_pos - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
-                new_pos += push;
-                let tangent = normalize(wl.p0 - wl.p1);
-                if abs(dot(tangent, tile_flow)) > 0.75 {
-                    wall_avoid = wl.perp;
-                }
-            }
-        }
-
-        new_pos += wall_avoid * AGENT_SPEED;
-        pos.0 = new_pos;
+        pos.0 = pos.0 + total_vel;
     }
 
     // 
@@ -714,9 +704,26 @@ pub fn update_agents(
         }
     }
 
-    // Write corrected positions back to ECS
+    // TODO: this would be ideally structured again per occupied tile per entity.
+    //
+    // Pass 5: wall collision resolution — hard push-out after all corrections
+    //
+
     for (entity, mut pos, ..) in agents.iter_mut() {
-        if let Some(&p) = positions.get(&entity) { pos.0 = p; }
+        let Some(p) = positions.get_mut(&entity) else { continue };
+        let wall_tile = world_to_tile(*p);
+        for wl in map.get_walls(wall_tile) {
+            imdraw.add_line_3d(wl.p0, wl.p1, Vec4f::red());
+            let mid = (wl.p0 + wl.p1) * 0.5;
+            imdraw.add_line_3d(mid, mid + wl.perp * 2.0, Vec4f::cyan());
+
+            let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
+            let d = dist(cp, *p);
+            if d < AGENT_RADIUS {
+                *p += normalize(*p - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
+            }
+        }
+        pos.0 = *p;
     }
 
     Ok(())
