@@ -24,7 +24,8 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
             "update_flow_field",
             "update_tile_editor",
             "update_agents",
-            "update_agent_transforms"
+            "update_agent_transforms",
+            "debug_draw_agents"
         ],
         render_graph: "mesh_wireframe_overlay"
     }
@@ -163,20 +164,18 @@ pub enum PlaceMode {
 
 const AGENT_SPEED: f32 = 0.1;
 const AGENT_RADIUS: f32 = 3.0;
-const AGENT_RADIUS2: f32 = AGENT_RADIUS * AGENT_RADIUS;
-const AGENT_SEGMENTS: usize = 8;
 const AGENT_BODY_HALF_WIDTH: f32 = 1.5;  // half-extent x/z (body 3 units wide)
 const AGENT_BODY_HALF_HEIGHT: f32 = 4.5; // half-extent y (body 9 units tall, ~1:3 ratio)
 const CORRECTION_ITERATIONS: usize = 4;
 const TURN_RATE: f32 = 0.1; // fraction of angular gap closed per frame (exponential smoothing)
 
 /// Separation radius at low density (shrinks as crowd grows)
-const BASE_SEP_RADIUS: f32     = 24.0;
-const MIN_SEP_RADIUS: f32      =  8.0;
-const SEP_RADIUS_DECAY: f32    =  0.25;   // world units of radius lost per agent
-const SEPARATION_STRENGTH: f32 =  0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
-const WANDER_DRIFT: f32        =  0.012;  // radians per frame
-const WANDER_STRENGTH: f32     =  0.08;   // fraction of agent speed
+const BASE_SEP_RADIUS: f32 = 24.0;
+const MIN_SEP_RADIUS: f32 = 8.0;
+const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
+const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
+const WANDER_DRIFT: f32 = 0.012;  // radians per frame
+const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
 
 const TILE_TYPES: &[TileType] = &[
     TileType::Wall,
@@ -188,7 +187,7 @@ const TILE_TYPES: &[TileType] = &[
 
 /// Shared cube mesh resource for agent body rendering
 #[derive(Resource)]
-struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
+pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
 
 /// Marker — identifies human agents in the ECS
 #[derive(Component)]
@@ -335,7 +334,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
     if !map.dirty { return Ok(()); }
     map.dirty = false;
 
-    // --- pass 1: reset flow/pressure and seed the heap with Platform tiles ---
+    // pass 1: reset flow/pressure and seed the heap with Platform tiles
     let mut cost: HashMap<(i32, i32), u32> = HashMap::new();
     let mut heap: BinaryHeap<(Reverse<u32>, i32, i32)> = BinaryHeap::new();
 
@@ -356,7 +355,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         }
     }
 
-    // --- pass 2: Dijkstra flood fill ---
+    // pass 2: Dijkstra flood fill
     const NEIGHBORS: [(i32, i32); 8] = [
         (1,0),(-1,0),(0,1),(0,-1),
         (1,1),(-1,1),(-1,-1),(1,-1)
@@ -378,7 +377,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         }
     }
 
-    // --- pass 3: compute flow direction (gradient toward lowest-cost neighbour) ---
+    // pass 3: compute flow direction (gradient toward lowest-cost neighbour)
     let flow_updates: Vec<(i32, i32, Vec2f, f32)> = cost.iter()
         .filter(|(&(tx, tz), _)| map.get_tile(Vec2i::new(tx, tz)) != TileType::Platform)
         .map(|(&(tx, tz), &c)| {
@@ -414,16 +413,14 @@ pub fn update_agents(
     mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut imdraw: ResMut<ImDrawRes>,
-    app:      Res<AppRes>,
-    viewport: Res<ViewportInfo>,
-    pmfx:     Res<PmfxRes>,
 ) -> Result<(), hotline_rs::Error> {
-    const Y_OFFSET: f32 = 1.0;
-    let agent_col = Vec4f::new(1.0, 0.0, 0.0, 1.0);
+    
+    //
+    // clear grid
+    //
 
-    // --- Pass 0: clear spatial grid and reset per-frame agent state ---
     map.clear_all_agents();
-    for (_, _, _, _, mut sf, mut ld, _) in agents.iter_mut() {
+    for (.., mut sf, mut ld, _) in agents.iter_mut() {
         sf.0 = Vec2f::zero();
         ld.0 = 0.0;
     }
@@ -432,17 +429,23 @@ pub fn update_agents(
     let sep_radius = (BASE_SEP_RADIUS - total_agents as f32 * SEP_RADIUS_DECAY).max(MIN_SEP_RADIUS);
     let sep_radius_sq = sep_radius * sep_radius;
 
-    // --- Pass 1: register each agent in the spatial grid (read-only) ---
+    //
+    // Pass 1: register each agent in the spatial grid (read-only)
     // Primary tile only — loose-grid registration removed to prevent double-counted separation forces
-    for (entity, pos, _, _, _, _, _) in agents.iter() {
+    //
+
+    for (entity, pos, ..) in agents.iter() {
         let tile = world_to_tile(pos.0);
         map.register_agent(tile, entity);
     }
 
-    // --- Pass 2: per-cell separation + density accumulation ---
+    //
+    // Pass 2: per-cell separation + density accumulation
     // Snapshot occupied cells with precomputed (chunk_key, morton idx) to avoid
     // re-computing chunk_key/morton in the hot inner loop and to prevent borrow conflicts.
     // `occupied` is also reused by the post-movement correction pass.
+    //
+
     struct OccupiedCell { tile: Vec2i, chunk_key: u64, idx: usize, cell_agents: Vec<Entity> }
     let occupied: Vec<OccupiedCell> = map.chunks.iter()
         .flat_map(|(&key, chunk)| {
@@ -462,110 +465,72 @@ pub fn update_agents(
         })
         .collect();
 
+    // Snapshot positions once — no per-entity unsafe reads needed
+    let positions: HashMap<Entity, Vec3f> = agents.iter()
+        .map(|(e, p, ..)| (e, p.0))
+        .collect();
+
+    //
+    // entity separation per tile, build 3x3, check per entity
+    //
+
     for cell in &occupied {
-        // density fetched directly via precomputed idx — no repeated chunk_key/morton math
         let cell_density = map.chunks[&cell.chunk_key].density[cell.idx];
 
-
-        for &entity_a in &cell.cell_agents {
-            // Read entity_a's position — Vec3f is Copy, borrow ends immediately
-            let pos_a: Vec3f = unsafe { agents.get_unchecked(entity_a) }
-                .map(|(_, p, _, _, _, _, _)| p.0)
-                .unwrap_or(Vec3f::zero());
-
-            // Accumulate separation from 3×3 neighbourhood
-            let mut sep_x = 0.0f32;
-            let mut sep_z = 0.0f32;
-            for dy in -1i32..=1 {
-                for dx in -1i32..=1 {
-                    let nbr = Vec2i::new(cell.tile.x + dx, cell.tile.y + dy);
-                    // snapshot neighbour list so we can read map without holding a borrow
-                    let nbr_agents: Vec<Entity> = map.get_agents_at(nbr).to_vec();
-                    for entity_b in nbr_agents {
-                        if entity_b == entity_a { continue; }
-                        // SAFETY: entity_b != entity_a — no aliased mutable access
-                        let pos_b: Vec3f = unsafe { agents.get_unchecked(entity_b) }
-                            .map(|(_, p, _, _, _, _, _)| p.0)
-                            .unwrap_or(pos_a);
-                        let diff_x = pos_a.x - pos_b.x;
-                        let diff_z = pos_a.z - pos_b.z;
-                        let dist_sq = diff_x * diff_x + diff_z * diff_z;
-                        if dist_sq > 0.01 && dist_sq < sep_radius_sq {
-                            let dist = dist_sq.sqrt();
-                            // falloff: agents at the edge of sep_radius contribute ~0; near-overlap contributes ~1
-                            let falloff = 1.0 - (dist / sep_radius).min(1.0);
-                            sep_x += diff_x / dist * falloff;
-                            sep_z += diff_z / dist * falloff;
-                        }
-                    }
+        // Build 3×3 neighbourhood once per tile
+        let mut nbr: Vec<(Entity, Vec2f)> = Vec::new();
+        for dy in -1i32..=1 {
+            for dx in -1i32..=1 {
+                for &e in map.get_agents_at(Vec2i::new(cell.tile.x + dx, cell.tile.y + dy)) {
+                    if let Some(&p) = positions.get(&e) { nbr.push((e, vec2f(p.x, p.z))); }
                 }
             }
+        }
 
-            // Write accumulated force + density back to entity_a — all reads are complete
-            // SAFETY: entity_a is uniquely targeted here, no aliased mutable borrow
-            if let Ok((_, _, _, _, mut sf, mut ld, _)) = unsafe { agents.get_unchecked(entity_a) } {
-                sf.0 = Vec2f::new(sf.0.x + sep_x, sf.0.y + sep_z);
+        for &entity_a in &cell.cell_agents {
+            let Some(&pos_a) = positions.get(&entity_a) else { continue };
+            let pa = vec2f(pos_a.x, pos_a.z);
+            let mut sep = Vec2f::zero();
+            for &(entity_b, pb) in &nbr {
+                if entity_b == entity_a { continue; }
+                let diff = pa - pb;
+                let dist_sq = dot(diff, diff);
+                if dist_sq > 0.01 && dist_sq < sep_radius_sq {
+                    let d = sqrt(dist_sq);
+                    sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
+                }
+            }
+            if let Ok((.., mut sf, mut ld, _)) = agents.get_mut(entity_a) {
+                sf.0 = sf.0 + sep;
                 ld.0 += cell_density;
             }
         }
     }
 
-    // Compute mouse world-hit once for agent hover visualisation
-    let mouse_world_hit: Option<Vec3f> = pmfx.get_camera_constants("main_camera").ok()
-        .and_then(|cam| {
-            let inv_vp = cam.view_projection_matrix.inverse();
-            let sp = app.get_mouse_pos();
-            let lx = sp.x as f32 - viewport.pos.0;
-            let ly = sp.y as f32 - viewport.pos.1;
-            let nx = (lx / viewport.size.0) * 2.0 - 1.0;
-            let ny = 1.0 - (ly / viewport.size.1) * 2.0;
-            let near = inv_vp * Vec4f::new(nx, ny, 0.0, 1.0);
-            let far  = inv_vp * Vec4f::new(nx, ny, 1.0, 1.0);
-            let np = near.xyz() / near.w;
-            let fp = far.xyz()  / far.w;
-            let dir = fp - np;
-            if dir.y.abs() > 0.0001 {
-                let t = -np.y / dir.y;
-                if t >= 0.0 { Some(np + dir * t) } else { None }
-            } else { None }
-        });
+    //
+    // Pass 3: apply forces and move
+    //
 
-    // --- Pass 3: apply forces, move, and draw ---
     for (entity, mut pos, speed, mut wander, sf, ld, mut facing) in agents.iter_mut() {
         let tile = world_to_tile(pos.0);
 
         // Separation — density already accumulated above, no extra map lookup needed
-        let sep_len = (sf.0.x * sf.0.x + sf.0.y * sf.0.y).sqrt();
         let density_scale = 1.0 + (ld.0 - 1.0).max(0.0) * 0.3;
-        let sep_vel = if sep_len > 0.001 {
-            Vec3f::new(sf.0.x / sep_len, 0.0, sf.0.y / sep_len)
-                * SEPARATION_STRENGTH * density_scale
+        let sep_vel = if length(sf.0) > 0.001 {
+            let n = normalize(sf.0);
+            vec3f(n.x, 0.0, n.y) * SEPARATION_STRENGTH * density_scale
         } else {
             Vec3f::zero()
         };
 
         // Wander: each agent drifts at a unique rate derived from entity index
         wander.0 += WANDER_DRIFT * (1.0 - (entity.index() % 5) as f32 * 0.1);
-        let wander_vel = Vec3f::new(wander.0.cos(), 0.0, wander.0.sin())
-            * AGENT_SPEED * speed.0 * WANDER_STRENGTH;
+        let wander_vel = vec3f(wander.0.cos(), 0.0, wander.0.sin()) * AGENT_SPEED * speed.0 * WANDER_STRENGTH;
 
         // Flow — normalise so diagonal (1,1) and cardinal (1,0) produce equal speed
         let flow = map.get_flow(tile);
-        let flow_len = (flow.x * flow.x + flow.y * flow.y).sqrt();
-        let flow_norm = if flow_len > 0.001 { flow / flow_len } else { flow };
-        let flow_vel = Vec3f::new(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * speed.0;
-
-        // Compute tile range covering the agent's bounding circle — position-continuous,
-        // avoids snap artifacts when the centre crosses a tile boundary.
-        let wall_tile_range = |px: f32, pz: f32| -> (i32, i32, i32, i32) {
-            (
-                ((px - AGENT_RADIUS) / TILE_SIZE).floor() as i32,
-                ((px + AGENT_RADIUS) / TILE_SIZE).floor() as i32,
-                ((pz - AGENT_RADIUS) / TILE_SIZE).floor() as i32,
-                ((pz + AGENT_RADIUS) / TILE_SIZE).floor() as i32,
-            )
-        };
-        let (tx0, tx1, tz0, tz1) = wall_tile_range(pos.0.x, pos.0.z);
+        let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
+        let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * speed.0;
 
         let total_vel = flow_vel + sep_vel + wander_vel;
 
@@ -577,6 +542,7 @@ pub fn update_agents(
             facing.0 = slerp(facing.0, desired, TURN_RATE);
         }
         
+        // 
         //
         // collision and wall avoidance
         //
@@ -704,42 +670,21 @@ pub fn update_agents(
         imdraw.add_line_3d(new_pos, new_pos + wall_avoid, Vec4f::cyan());
         new_pos += wall_avoid * AGENT_SPEED;
         pos.0 = new_pos;
-        
-        // Draw agent as an octagon
-        let p = pos.0;
-        for i in 0..AGENT_SEGMENTS {
-            let a0 = (i as f32 / AGENT_SEGMENTS as f32) * std::f32::consts::TAU;
-            let a1 = ((i + 1) as f32 / AGENT_SEGMENTS as f32) * std::f32::consts::TAU;
-            let p0 = Vec3f::new(p.x + a0.cos() * AGENT_RADIUS, Y_OFFSET, p.z + a0.sin() * AGENT_RADIUS);
-            let p1 = Vec3f::new(p.x + a1.cos() * AGENT_RADIUS, Y_OFFSET, p.z + a1.sin() * AGENT_RADIUS);
-            imdraw.add_line_3d(p0, p1, agent_col);
-        }
-
-        // Mouse-hover force visualisation
-        if let Some(hit) = mouse_world_hit {
-            let dx = pos.0.x - hit.x;
-            let dz = pos.0.z - hit.z;
-            if dx * dx + dz * dz < AGENT_RADIUS * AGENT_RADIUS * 4.0 {
-                let base = Vec3f::new(pos.0.x, Y_OFFSET + 1.0, pos.0.z);
-                // separation force — yellow
-                let sep_end = base + Vec3f::new(sf.0.x, 0.0, sf.0.y) * 2.0;
-                //imdraw.add_line_3d(base, sep_end, Vec4f::new(1.0, 1.0, 0.0, 1.0));
-                // flow direction — cyan
-                let flow_end = base + Vec3f::new(flow_norm.x, 0.0, flow_norm.y) * 5.0;
-                //imdraw.add_line_3d(base, flow_end, Vec4f::new(0.0, 1.0, 1.0, 1.0));
-            }
-        }
     }
 
-    // --- Correction pass: resolve agent-agent overlaps (PBD Jacobi, per occupied tile) ---
+    // 
+    // Correction pass: resolve agent-agent overlaps (PBD Jacobi, per occupied tile)
     // Reuses `occupied` from Pass 2. Snapshot post-movement positions for borrow-safe access.
+    //
+    
     let mut positions: HashMap<Entity, Vec3f> = agents.iter()
-        .map(|(e, p, _, _, _, _, _)| (e, p.0))
+        .map(|(e, p, ..)| (e, p.0))
         .collect();
 
     let min_dist    = AGENT_RADIUS * 2.0;
     let min_dist_sq = min_dist * min_dist;
 
+    // claude: copy algorithm pass structure (build 3x3 neighbourhood per tile, then iter per entity)
     for _ in 0..CORRECTION_ITERATIONS {
         let mut corrections: HashMap<Entity, Vec3f> = HashMap::new();
 
@@ -778,7 +723,7 @@ pub fn update_agents(
     }
 
     // Write corrected positions back to ECS
-    for (entity, mut pos, _, _, _, _, _) in agents.iter_mut() {
+    for (entity, mut pos, ..) in agents.iter_mut() {
         if let Some(&p) = positions.get(&entity) { pos.0 = p; }
     }
 
@@ -793,6 +738,23 @@ pub fn update_agent_transforms(
     for (agent_pos, facing, mut position, mut rotation) in agents.iter_mut() {
         position.0 = vec3f(agent_pos.0.x, AGENT_BODY_HALF_HEIGHT, agent_pos.0.z);
         rotation.0 = facing.0;
+    }
+    Ok(())
+}
+
+#[export_update_fn]
+pub fn debug_draw_agents(
+    agents: Query<(&AgentPos, &FacingRot), With<HumanAgent>>,
+    mut imdraw: ResMut<ImDrawRes>,
+) -> Result<(), hotline_rs::Error> {
+    const Y_OFFSET: f32 = 1.0;
+    let agent_col = Vec4f::new(1.0, 0.0, 0.0, 1.0);
+    for (pos, facing) in agents.iter() {
+        let p = pos.0;
+        let base = vec3f(p.x, Y_OFFSET, p.z);
+        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, agent_col);
+        let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
+        imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
     }
     Ok(())
 }

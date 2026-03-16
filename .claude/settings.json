@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(claude mcp add --transport stdio --scope user rust-analyzer-mcp -- cmd /c npx -y rust-analyzer-mcp)"
+    ]
+  }
+}

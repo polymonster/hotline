@@ -166,8 +166,6 @@ pub fn setup_ratrace(
         agent_facing: facing,
     });
 
-    let mut rng = rand::thread_rng();
-
     // --- Barrier ---
     let gate_positions: Vec<(f32, PassDir)> = vec![
         (-10.0, PassDir::PosZ),  // IN gate
