@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(claude mcp add --transport stdio --scope user rust-analyzer-mcp -- cmd /c npx -y rust-analyzer-mcp)"
+      "Bash(claude mcp add --transport stdio --scope user rust-analyzer-mcp -- cmd /c npx -y rust-analyzer-mcp)",
+      "Read(//c/Users/alex_/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/maths-rs-1.0.0/src/**)",
+      "Bash(xargs ls:*)",
+      "Bash(2)"
     ]
   }
 }

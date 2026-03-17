@@ -3,6 +3,7 @@
 ///
 
 use crate::prelude::*;
+use maths_rs::Vec3i;
 
 use std::collections::HashMap;
 
@@ -31,7 +32,7 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
     }
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum TileType {
     Empty,
@@ -99,20 +100,6 @@ fn morton_encode(x: usize, y: usize, z: usize) -> usize {
     (spread_bits_3d(x as u32) | (spread_bits_3d(y as u32) << 1) | (spread_bits_3d(z as u32) << 2)) as usize
 }
 
-/// Pack chunk coordinates into a u64 key (supports negative coords)
-fn chunk_key(cx: i32, cz: i32) -> u64 {
-    let x = cx as i64 as u64;
-    let z = cz as i64 as u64;
-    (x & 0xFFFFFFFF) | ((z & 0xFFFFFFFF) << 32)
-}
-
-/// Unpack chunk key back into (cx, cz)
-fn chunk_key_unpack(key: u64) -> (i32, i32) {
-    let cx = (key & 0xFFFFFFFF) as u32 as i32;
-    let cz = ((key >> 32) & 0xFFFFFFFF) as u32 as i32;
-    (cx, cz)
-}
-
 /// Floor division that handles negatives correctly
 fn floor_div(a: i32, b: i32) -> i32 {
     if a >= 0 || a % b == 0 { a / b } else { a / b - 1 }
@@ -130,10 +117,11 @@ fn tile_to_chunk(tx: i32, ty: i32, tz: i32) -> (i32, i32, i32, usize, usize, usi
     (cx, cy, cz, lx, ly, lz)
 }
 
-/// Convert world-space position to 2D tile coordinates (Vec2i.x = tile X, Vec2i.y = tile Z)
-fn world_to_tile(pos: Vec3f) -> Vec2i {
-    Vec2i::new(
+/// Convert world-space position to tile coordinates
+fn world_to_tile(pos: Vec3f) -> Vec3i {
+    Vec3i::new(
         (pos.x / TILE_SIZE).floor() as i32,
+        (pos.y / TILE_SIZE).floor() as i32,
         (pos.z / TILE_SIZE).floor() as i32,
     )
 }
@@ -147,30 +135,10 @@ fn pos_hash(x: f32, z: f32) -> f32 {
     (mixed >> 33) as f32 / u32::MAX as f32
 }
 
-const TILE_NAMES: &[&str] = &[
-    "Wall",
-    "Barrier",
-    "Escalator",
-    "Platform",
-    "TrainTrack"
-];
-
-const PLACE_NAMES: &[&str] = &[
-    "Wall",
-    "Barrier",
-    "Escalator",
-    "Platform",
-    "TrainTrack",
-    "Agent"
-];
-
 const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
 
 #[derive(PartialEq)]
-pub enum PlaceMode {
-    Tile(usize),
-    Agent,
-}
+pub enum EditorMode { Tile, Agent }
 
 const AGENT_SPEED: f32 = 0.1;
 const AGENT_RADIUS: f32 = 3.0;
@@ -230,13 +198,15 @@ pub(crate) struct FacingRot(Quatf);
 
 #[derive(Resource)]
 pub struct EditorState {
-    selected: PlaceMode,
+    mode: EditorMode,
+    tile_idx: usize,
+    agent_grid: i32,
     left_was_down: bool,
 }
 
 #[derive(Resource)]
 pub struct Map {
-    chunks: HashMap<u64, MapChunk>,
+    chunks: HashMap<(i32, i32, i32), MapChunk>,
     dirty: bool,
 }
 
@@ -245,36 +215,32 @@ impl Map {
         Self { chunks: HashMap::new(), dirty: true }
     }
 
-    fn set_tile(&mut self, tile: Vec2i, t: TileType) {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        let key = chunk_key(cx, cz);
-        let chunk = self.chunks.entry(key).or_insert_with(MapChunk::new);
+    fn set_tile(&mut self, tile: Vec3i, t: TileType) {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        let chunk = self.chunks.entry((cx, cy, cz)).or_insert_with(MapChunk::new);
         chunk.tiles[morton_encode(lx, ly, lz)] = t;
         self.dirty = true;
     }
 
-    fn get_flow(&self, tile: Vec2i) -> Vec2f {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        let key = chunk_key(cx, cz);
-        match self.chunks.get(&key) {
+    fn get_flow(&self, tile: Vec3i) -> Vec2f {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
             Some(chunk) => chunk.flow[morton_encode(lx, ly, lz)],
             None => Vec2f::zero(),
         }
     }
 
-    fn get_walls(&self, tile: Vec2i) -> &[WallLine] {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        let key = chunk_key(cx, cz);
-        match self.chunks.get(&key) {
+    fn get_walls(&self, tile: Vec3i) -> &[WallLine] {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
             Some(chunk) => &chunk.walls[morton_encode(lx, ly, lz)],
             None => &[],
         }
     }
 
-    fn get_tile(&self, tile: Vec2i) -> TileType {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        let key = chunk_key(cx, cz);
-        match self.chunks.get(&key) {
+    fn get_tile(&self, tile: Vec3i) -> TileType {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
             Some(chunk) => chunk.tiles[morton_encode(lx, ly, lz)],
             None => TileType::Empty,
         }
@@ -285,18 +251,18 @@ impl Map {
     }
 
     /// Register an agent entity into a tile cell; also increments density
-    fn register_agent(&mut self, tile: Vec2i, entity: Entity) {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        if let Some(chunk) = self.chunks.get_mut(&chunk_key(cx, cz)) {
+    fn register_agent(&mut self, tile: Vec3i, entity: Entity) {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        if let Some(chunk) = self.chunks.get_mut(&(cx, cy, cz)) {
             let idx = morton_encode(lx, ly, lz);
             chunk.agents[idx].push(entity);
             chunk.density[idx] += 1.0;
         }
     }
 
-    fn get_agents_at(&self, tile: Vec2i) -> &[Entity] {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, 0, tile.y);
-        match self.chunks.get(&chunk_key(cx, cz)) {
+    fn get_agents_at(&self, tile: Vec3i) -> &[Entity] {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
             Some(chunk) => &chunk.agents[morton_encode(lx, ly, lz)],
             None => &[],
         }
@@ -305,11 +271,11 @@ impl Map {
     fn save(&self) -> Result<(), hotline_rs::Error> {
         let mut buf: Vec<u8> = Vec::new();
         buf.extend_from_slice(b"RR2M");
-        buf.extend_from_slice(&1u32.to_le_bytes());
+        buf.extend_from_slice(&2u32.to_le_bytes());
         buf.extend_from_slice(&(self.chunks.len() as u32).to_le_bytes());
-        for (key, chunk) in &self.chunks {
-            let (cx, cz) = chunk_key_unpack(*key);
+        for (&(cx, cy, cz), chunk) in &self.chunks {
             buf.extend_from_slice(&cx.to_le_bytes());
+            buf.extend_from_slice(&cy.to_le_bytes());
             buf.extend_from_slice(&cz.to_le_bytes());
             let tile_bytes: &[u8; ARRAY_SIZE] = unsafe { std::mem::transmute(&chunk.tiles) };
             buf.extend_from_slice(tile_bytes);
@@ -325,18 +291,20 @@ impl Map {
             return Err("invalid map file".into());
         }
         pos += 4;
-        let _version = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+        let version = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
         pos += 4;
+        if version != 2 { return Err("map version mismatch".into()); }
         let num_chunks = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
         pos += 4;
         let mut map = Map::new();
         for _ in 0..num_chunks {
             let cx = i32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
             pos += 4;
+            let cy = i32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
+            pos += 4;
             let cz = i32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
             pos += 4;
-            let key = chunk_key(cx, cz);
-            let chunk = map.chunks.entry(key).or_insert_with(MapChunk::new);
+            let chunk = map.chunks.entry((cx, cy, cz)).or_insert_with(MapChunk::new);
             let tile_bytes: [u8; ARRAY_SIZE] = data[pos..pos+ARRAY_SIZE].try_into().unwrap();
             chunk.tiles = unsafe { std::mem::transmute(tile_bytes) };
             pos += ARRAY_SIZE;
@@ -355,69 +323,69 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
     map.dirty = false;
 
     // pass 1: reset flow/pressure and seed the heap with Platform tiles
-    let mut cost: HashMap<(i32, i32), u32> = HashMap::new();
-    let mut heap: BinaryHeap<(Reverse<u32>, i32, i32)> = BinaryHeap::new();
+    let mut cost: HashMap<(i32, i32, i32), u32> = HashMap::new();
+    let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
 
-    for (key, chunk) in &mut map.chunks {
-        let (cx, cz) = chunk_key_unpack(*key);
-        for lz in 0..CHUNK_SIZE {
-            for lx in 0..CHUNK_SIZE {
-                let idx = morton_encode(lx, 0, lz);
-                chunk.flow[idx] = Vec2f::zero();
-                chunk.pressure[idx] = f32::MAX;
-                if chunk.tiles[idx] == TileType::Platform {
-                    let tx = cx * CHUNK_SIZE as i32 + lx as i32;
-                    let tz = cz * CHUNK_SIZE as i32 + lz as i32;
-                    cost.insert((tx, tz), 0);
-                    heap.push((Reverse(0), tx, tz));
+    for (&(cx, cy, cz), chunk) in &mut map.chunks {
+        let cs = CHUNK_SIZE as i32;
+        for ly in 0..CHUNK_SIZE {
+            for lz in 0..CHUNK_SIZE {
+                for lx in 0..CHUNK_SIZE {
+                    let idx = morton_encode(lx, ly, lz);
+                    chunk.flow[idx] = Vec2f::zero();
+                    chunk.pressure[idx] = f32::MAX;
+                    if chunk.tiles[idx] == TileType::Platform {
+                        let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+                        cost.insert((tx, ty, tz), 0);
+                        heap.push((Reverse(0), tx, ty, tz));
+                    }
                 }
             }
         }
     }
 
-    // pass 2: Dijkstra flood fill
+    // pass 2: Dijkstra flood fill (XZ neighbors only — vertical links added per escalator/stair tile later)
     const NEIGHBORS: [(i32, i32); 8] = [
         (1,0),(-1,0),(0,1),(0,-1),
         (1,1),(-1,1),(-1,-1),(1,-1)
     ];
-    while let Some((Reverse(c), tx, tz)) = heap.pop() {
-        if cost.get(&(tx, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
+    while let Some((Reverse(c), tx, ty, tz)) = heap.pop() {
+        if cost.get(&(tx, ty, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
         for (dx, dz) in NEIGHBORS {
             let (nx, nz) = (tx + dx, tz + dz);
             // only traverse tiles in existing chunks — prevents infinite expansion into void
-            let (cx, _cy, cz, _, _, _) = tile_to_chunk(nx, 0, nz);
-            if !map.chunks.contains_key(&chunk_key(cx, cz)) { continue; }
-            let tile = map.get_tile(Vec2i::new(nx, nz));
+            let (cx, cy, cz, _, _, _) = tile_to_chunk(nx, ty, nz);
+            if !map.chunks.contains_key(&(cx, cy, cz)) { continue; }
+            let tile = map.get_tile(Vec3i::new(nx, ty, nz));
             if tile == TileType::Wall || tile == TileType::Barrier { continue; }
             let new_cost = c + 1;
-            if new_cost < cost.get(&(nx, nz)).copied().unwrap_or(u32::MAX) {
-                cost.insert((nx, nz), new_cost);
-                heap.push((Reverse(new_cost), nx, nz));
+            if new_cost < cost.get(&(nx, ty, nz)).copied().unwrap_or(u32::MAX) {
+                cost.insert((nx, ty, nz), new_cost);
+                heap.push((Reverse(new_cost), nx, ty, nz));
             }
         }
     }
 
     // pass 3: compute flow direction (gradient toward lowest-cost neighbour)
-    let flow_updates: Vec<(i32, i32, Vec2f, f32)> = cost.iter()
-        .filter(|(&(tx, tz), _)| map.get_tile(Vec2i::new(tx, tz)) != TileType::Platform)
-        .map(|(&(tx, tz), &c)| {
+    let flow_updates: Vec<(i32, i32, i32, Vec2f, f32)> = cost.iter()
+        .filter(|(&(tx, ty, tz), _)| map.get_tile(Vec3i::new(tx, ty, tz)) != TileType::Platform)
+        .map(|(&(tx, ty, tz), &c)| {
             let mut best_dir = Vec2f::zero();
             let mut best_cost = c;
             for (dx, dz) in NEIGHBORS {
-                let nc = cost.get(&(tx+dx, tz+dz)).copied().unwrap_or(u32::MAX);
+                let nc = cost.get(&(tx+dx, ty, tz+dz)).copied().unwrap_or(u32::MAX);
                 if nc < best_cost {
                     best_cost = nc;
                     best_dir = Vec2f::new(dx as f32, dz as f32);
                 }
             }
-            (tx, tz, best_dir, c as f32)
+            (tx, ty, tz, best_dir, c as f32)
         })
         .collect();
 
-    for (tx, tz, flow_dir, pressure) in flow_updates {
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, 0, tz);
-        let key = chunk_key(cx, cz);
-        if let Some(chunk) = map.chunks.get_mut(&key) {
+    for (tx, ty, tz, flow_dir, pressure) in flow_updates {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+        if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
             let idx = morton_encode(lx, ly, lz);
             chunk.flow[idx] = flow_dir;
             chunk.pressure[idx] = pressure;
@@ -426,31 +394,32 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
 
     // pass 4: bake wall lines per tile
     // collect all tile coords first to avoid borrow conflict
-    let all_tiles: Vec<(i32, i32)> = map.chunks.iter()
-        .flat_map(|(key, chunk)| {
-            let (cx, cz) = chunk_key_unpack(*key);
-            (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| {
-                let tx = cx * CHUNK_SIZE as i32 + lx as i32;
-                let tz = cz * CHUNK_SIZE as i32 + lz as i32;
-                (tx, tz)
-            }))
-            .filter(|&(tx, tz)| {
-                let idx = morton_encode((tx - cx * CHUNK_SIZE as i32) as usize, 0, (tz - cz * CHUNK_SIZE as i32) as usize);
-                chunk.tiles[idx] != TileType::Wall
+    let all_tiles: Vec<(i32, i32, i32)> = map.chunks.iter()
+        .flat_map(|(&(cx, cy, cz), chunk)| {
+            let cs = CHUNK_SIZE as i32;
+            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| {
+                (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32)
+            })))
+            .filter(|&(tx, ty, tz)| {
+                let lx = (tx - cx*CHUNK_SIZE as i32) as usize;
+                let ly = (ty - cy*CHUNK_SIZE as i32) as usize;
+                let lz = (tz - cz*CHUNK_SIZE as i32) as usize;
+                chunk.tiles[morton_encode(lx, ly, lz)] != TileType::Wall
             })
             .collect::<Vec<_>>()
         })
         .collect();
 
-    for (tx, tz) in all_tiles {
+    for (tx, ty, tz) in all_tiles {
         let cx_f = tx as f32 * TILE_SIZE + TILE_SIZE * 0.5;
+        let cy_f = ty as f32 * TILE_SIZE;
         let cz_f = tz as f32 * TILE_SIZE + TILE_SIZE * 0.5;
 
         let mut lines: Vec<WallLine> = Vec::new();
 
         // cardinal neighbors
         for (dx, dz) in [(-1i32,0i32),(1,0),(0,-1),(0,1)] {
-            if map.get_tile(Vec2i::new(tx + dx, tz + dz)) != TileType::Wall { continue; }
+            if map.get_tile(Vec3i::new(tx + dx, ty, tz + dz)) != TileType::Wall { continue; }
             let (p0x, p0z, p1x, p1z) = match (dx, dz) {
                 (-1, 0) => (-0.5, -0.5, -0.5,  0.5),
                 ( 1, 0) => ( 0.5, -0.5,  0.5,  0.5),
@@ -460,38 +429,37 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
             };
             let perp = vec3f(-dx as f32, 0.0, -dz as f32);
             lines.push(WallLine {
-                p0: vec3f(cx_f + p0x * TILE_SIZE, 0.0, cz_f + p0z * TILE_SIZE),
-                p1: vec3f(cx_f + p1x * TILE_SIZE, 0.0, cz_f + p1z * TILE_SIZE),
+                p0: vec3f(cx_f + p0x * TILE_SIZE, cy_f, cz_f + p0z * TILE_SIZE),
+                p1: vec3f(cx_f + p1x * TILE_SIZE, cy_f, cz_f + p1z * TILE_SIZE),
                 perp,
             });
         }
 
         // diagonal neighbors — two lines each, skip if blocked by adjacent cardinal wall
         for (dx, dz) in [(-1i32,-1i32),(-1,1),(1,1),(1,-1)] {
-            if map.get_tile(Vec2i::new(tx + dx, tz + dz)) != TileType::Wall { continue; }
+            if map.get_tile(Vec3i::new(tx + dx, ty, tz + dz)) != TileType::Wall { continue; }
             // Line A: x-facing (vertical in xz), extends in z-direction
-            if map.get_tile(Vec2i::new(tx, tz + dz)) != TileType::Wall {
+            if map.get_tile(Vec3i::new(tx, ty, tz + dz)) != TileType::Wall {
                 let (ax, az0, az1) = (dx as f32 * 0.5, dz as f32 * 0.5, dz as f32 * 1.5);
                 lines.push(WallLine {
-                    p0: vec3f(cx_f + ax * TILE_SIZE, 0.0, cz_f + az0 * TILE_SIZE),
-                    p1: vec3f(cx_f + ax * TILE_SIZE, 0.0, cz_f + az1 * TILE_SIZE),
+                    p0: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az0 * TILE_SIZE),
+                    p1: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az1 * TILE_SIZE),
                     perp: vec3f(-dx as f32, 0.0, 0.0),
                 });
             }
             // Line B: z-facing (horizontal in xz), extends in x-direction
-            if map.get_tile(Vec2i::new(tx + dx, tz)) != TileType::Wall {
+            if map.get_tile(Vec3i::new(tx + dx, ty, tz)) != TileType::Wall {
                 let (bz, bx0, bx1) = (dz as f32 * 0.5, dx as f32 * 0.5, dx as f32 * 1.5);
                 lines.push(WallLine {
-                    p0: vec3f(cx_f + bx0 * TILE_SIZE, 0.0, cz_f + bz * TILE_SIZE),
-                    p1: vec3f(cx_f + bx1 * TILE_SIZE, 0.0, cz_f + bz * TILE_SIZE),
+                    p0: vec3f(cx_f + bx0 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
+                    p1: vec3f(cx_f + bx1 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
                     perp: vec3f(0.0, 0.0, -dz as f32),
                 });
             }
         }
 
-        let (cx, _cy, cz, lx, ly, lz) = tile_to_chunk(tx, 0, tz);
-        let key = chunk_key(cx, cz);
-        if let Some(chunk) = map.chunks.get_mut(&key) {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+        if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
             chunk.walls[morton_encode(lx, ly, lz)] = lines;
         }
     }
@@ -538,22 +506,22 @@ pub fn update_agents(
     // `occupied` is also reused by the post-movement correction pass.
     //
 
-    struct OccupiedCell { tile: Vec2i, chunk_key: u64, idx: usize, cell_agents: Vec<Entity> }
+    struct OccupiedCell { tile: Vec3i, chunk_key: (i32, i32, i32), idx: usize, cell_agents: Vec<Entity> }
     let occupied: Vec<OccupiedCell> = map.chunks.iter()
         .flat_map(|(&key, chunk)| {
-            let (cx, cz) = chunk_key_unpack(key);
+            let (cx, cy, cz) = key;
             let cs = CHUNK_SIZE as i32;
-            // iterate lx/lz directly — no morton_decode needed
-            (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).filter_map(move |lx| {
-                let idx = morton_encode(lx, 0, lz);
+            // iterate lx/ly/lz directly — no morton_decode needed
+            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).filter_map(move |lx| {
+                let idx = morton_encode(lx, ly, lz);
                 if chunk.agents[idx].is_empty() { return None; }
                 Some(OccupiedCell {
-                    tile: Vec2i::new(cx * cs + lx as i32, cz * cs + lz as i32),
+                    tile: Vec3i::new(cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32),
                     chunk_key: key,
                     idx,
                     cell_agents: chunk.agents[idx].clone(),
                 })
-            }))
+            })))
         })
         .collect();
 
@@ -569,11 +537,11 @@ pub fn update_agents(
     for cell in &occupied {
         let cell_density = map.chunks[&cell.chunk_key].density[cell.idx];
 
-        // Build 3×3 neighbourhood once per tile
+        // Build 3×3 neighbourhood once per tile (same Y floor)
         let mut nbr: Vec<(Entity, Vec2f)> = Vec::new();
-        for dy in -1i32..=1 {
+        for dz in -1i32..=1 {
             for dx in -1i32..=1 {
-                for &e in map.get_agents_at(Vec2i::new(cell.tile.x + dx, cell.tile.y + dy)) {
+                for &e in map.get_agents_at(Vec3i::new(cell.tile.x + dx, cell.tile.y, cell.tile.z + dz)) {
                     if let Some(&p) = positions.get(&e) { nbr.push((e, vec2f(p.x, p.z))); }
                 }
             }
@@ -610,8 +578,15 @@ pub fn update_agents(
                 let d = dist(cp, pos_a);
                 if d < WALL_AVOID_RADIUS {
                     let tangent = normalize(wl.p0 - wl.p1);
-                    if abs(dot(tangent, tile_flow)) > 0.75 {
-                        wall_vel = vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+
+                    let dp = dot(wl.perp, tile_flow);
+                    if dp >= 0.0 {
+                        // push away from wall on the perp
+                        wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+                    }
+                    else {
+                        // project along wall vector
+                        wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
                     }
                 }
             }
@@ -675,7 +650,7 @@ pub fn update_agents(
             let mut nbr_pos: Vec<(Entity, Vec3f)> = Vec::new();
             for dz in -1i32..=1 {
                 for dx in -1i32..=1 {
-                    for &e in map.get_agents_at(Vec2i::new(cell.tile.x + dx, cell.tile.y + dz)) {
+                    for &e in map.get_agents_at(Vec3i::new(cell.tile.x + dx, cell.tile.y, cell.tile.z + dz)) {
                         if let Some(&p) = positions.get(&e) { nbr_pos.push((e, p)); }
                     }
                 }
@@ -747,11 +722,11 @@ pub fn debug_draw_agents(
     mut imdraw: ResMut<ImDrawRes>,
 ) -> Result<(), hotline_rs::Error> {
     const Y_OFFSET: f32 = 1.0;
-    let agent_col = Vec4f::new(1.0, 0.0, 0.0, 1.0);
     for (pos, facing) in agents.iter() {
         let p = pos.0;
         let base = vec3f(p.x, Y_OFFSET, p.z);
-        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, agent_col);
+        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, Vec4f::red());
+        imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::blue());
         let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
         imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
     }
@@ -771,7 +746,7 @@ pub fn setup_ratrace2(
     // create resources — load map from disk if it exists, otherwise start empty
     let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
     commands.insert_resource(map);
-    commands.insert_resource(EditorState { selected: PlaceMode::Tile(0), left_was_down: false });
+    commands.insert_resource(EditorState { mode: EditorMode::Tile, tile_idx: 0, agent_grid: 1, left_was_down: false });
 
     // create shared cube mesh for agent bodies
     let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
@@ -788,25 +763,34 @@ pub fn update_tile_editor_ui(
 ) -> Result<(), hotline_rs::Error> {
     imgui.set_global_context();
 
-    if imgui.begin_main_menu_bar() {
-        if imgui.button("clear") {
-            *map = Map::new();
+    if imgui.begin_window("Editor") {
+        if imgui.button(if editor.mode == EditorMode::Tile { ">Tile" } else { " Tile" }) {
+            editor.mode = EditorMode::Tile;
         }
-        let selected_name = match editor.selected {
-            PlaceMode::Tile(i) => PLACE_NAMES[i].to_string(),
-            PlaceMode::Agent => "Agent".to_string(),
-        };
-        let place_names: Vec<String> = PLACE_NAMES.iter().map(|s| s.to_string()).collect();
-        imgui.set_next_item_width(150.0);
-        let (_, new_selected) = imgui.combo_list("Place", &place_names, &selected_name);
-        editor.selected = if new_selected == "Agent" {
-            PlaceMode::Agent
-        } else {
-            let idx = TILE_NAMES.iter().position(|&n| n == new_selected.as_str()).unwrap_or(0);
-            PlaceMode::Tile(idx)
-        };
-        imgui.end_main_menu_bar();
+        imgui.same_line();
+        if imgui.button(if editor.mode == EditorMode::Agent { ">Agent" } else { " Agent" }) {
+            editor.mode = EditorMode::Agent;
+        }
+        imgui.separator();
+        match editor.mode {
+            EditorMode::Tile => {
+                let names: Vec<String> = TILE_TYPES.iter().map(|t| format!("{:?}", t)).collect();
+                let cur = format!("{:?}", TILE_TYPES[editor.tile_idx]);
+                let (_, chosen) = imgui.combo_list("Tile", &names, &cur);
+                if let Some(idx) = names.iter().position(|n| n == &chosen) {
+                    editor.tile_idx = idx;
+                }
+            }
+            EditorMode::Agent => {
+                imgui.input_int("Grid", &mut editor.agent_grid);
+                editor.agent_grid = editor.agent_grid.max(1);
+                imgui.text(&format!("{}x{} agents on click", editor.agent_grid, editor.agent_grid));
+            }
+        }
+        imgui.separator();
+        if imgui.button("clear") { *map = Map::new(); }
     }
+    imgui.end();
     Ok(())
 }
 
@@ -900,26 +884,35 @@ pub fn update_tile_editor(
 
                     if !app.is_sys_key_down(os::SysKey::Ctrl) {
                         if left_down {
-                            match editor.selected {
-                                PlaceMode::Tile(i) => {
-                                    map.set_tile(Vec2i::new(tile_x, tile_z), TILE_TYPES[i]);
+                            match editor.mode {
+                                EditorMode::Tile => {
+                                    map.set_tile(Vec3i::new(tile_x, 0, tile_z), TILE_TYPES[editor.tile_idx]);
                                 }
-                                PlaceMode::Agent => {
-                                    if left_pressed && map.get_tile(Vec2i::new(tile_x, tile_z)) == TileType::Empty {
-                                        commands.spawn((
-                                            HumanAgent,
-                                            AgentPos(Vec3f::new(hit.x, 0.0, hit.z)),
-                                            SpeedScale(0.8 + pos_hash(hit.x, hit.z) * 0.4),
-                                            WanderAngle(pos_hash(hit.z, hit.x) * std::f32::consts::TAU),
-                                            SepForce(Vec2f::zero()),
-                                            LocalDensity(0.0),
-                                            FacingRot(Quatf::identity()),
-                                            MeshComponent(cube_mesh.0.clone()),
-                                            Position(vec3f(hit.x, AGENT_BODY_HALF_HEIGHT, hit.z)),
-                                            Rotation(Quatf::identity()),
-                                            Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
-                                            WorldMatrix(Mat34f::identity()),
-                                        ));
+                                EditorMode::Agent => {
+                                    if left_pressed {
+                                        let n = editor.agent_grid;
+                                        let spacing = AGENT_RADIUS * 2.5;
+                                        let half = (n - 1) as f32 * spacing * 0.5;
+                                        for gz in 0..n {
+                                            for gx in 0..n {
+                                                let ax = hit.x + gx as f32 * spacing - half;
+                                                let az = hit.z + gz as f32 * spacing - half;
+                                                commands.spawn((
+                                                    HumanAgent,
+                                                    AgentPos(Vec3f::new(ax, 0.0, az)),
+                                                    SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
+                                                    WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
+                                                    SepForce(Vec2f::zero()),
+                                                    LocalDensity(0.0),
+                                                    FacingRot(Quatf::identity()),
+                                                    MeshComponent(cube_mesh.0.clone()),
+                                                    Position(vec3f(ax, AGENT_BODY_HALF_HEIGHT, az)),
+                                                    Rotation(Quatf::identity()),
+                                                    Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
+                                                    WorldMatrix(Mat34f::identity()),
+                                                ));
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -927,7 +920,7 @@ pub fn update_tile_editor(
                     }
                     else {
                         if left_down {
-                            map.set_tile(Vec2i::new(tile_x, tile_z), TileType::Empty);
+                            map.set_tile(Vec3i::new(tile_x, 0, tile_z), TileType::Empty);
                         }
                     }
                     editor.left_was_down = left_down;
@@ -951,15 +944,17 @@ pub fn update_tile_editor(
     }
 
     // draw all placed tiles and flow arrows
-    let y = Y_OFFSET;
-    for (key, chunk) in &map.chunks {
-        let (cx, cz) = chunk_key_unpack(*key);
-        for lz in 0..CHUNK_SIZE {
+    for (&(cx, cy, cz), chunk) in &map.chunks {
+        let cs = CHUNK_SIZE as i32;
+        for ly in 0..CHUNK_SIZE {
+            for lz in 0..CHUNK_SIZE {
             for lx in 0..CHUNK_SIZE {
-                let idx = morton_encode(lx, 0, lz);
+                let idx = morton_encode(lx, ly, lz);
 
-                let tx = cx * CHUNK_SIZE as i32 + lx as i32;
-                let tz = cz * CHUNK_SIZE as i32 + lz as i32;
+                let tx = cx * cs + lx as i32;
+                let ty = cy * cs + ly as i32;
+                let tz = cz * cs + lz as i32;
+                let y = ty as f32 * TILE_SIZE + Y_OFFSET;
 
                 let min_x = tx as f32 * TILE_SIZE;
                 let min_z = tz as f32 * TILE_SIZE;
@@ -995,6 +990,7 @@ pub fn update_tile_editor(
                     imdraw.add_line_3d(flow_end, tip + perp, flow_col);
                     imdraw.add_line_3d(flow_end, tip - perp, flow_col);
                 }
+            }
             }
         }
     }

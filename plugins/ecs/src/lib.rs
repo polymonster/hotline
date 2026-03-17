@@ -127,16 +127,12 @@ fn update_camera_orbit(
     let mut scroll_speed = 100.0;
     let control_speed = 0.1;
 
-    if enable_keyboard {
-        // modifiers
-        if app.is_sys_key_down(os::SysKey::Shift) {
-            // speed boost
-            scroll_speed *= boost_speed;
-        }
-        else if app.is_sys_key_down(os::SysKey::Ctrl) {
-            // fine control
-            scroll_speed *= control_speed;
-        }
+    // Shift boost is keyboard-gated (also used for drag pan); Ctrl fine zoom reads raw key state
+    // so it works even when an imgui text field has keyboard focus
+    if enable_keyboard && app.is_sys_key_down(os::SysKey::Shift) {
+        scroll_speed *= boost_speed;
+    } else if app.is_sys_key_down(os::SysKey::Ctrl) {
+        scroll_speed *= control_speed;
     }
 
     if enable_mouse {
@@ -186,16 +182,12 @@ fn update_camera_editor(
     let mut scroll_speed = 100.0;
     let control_speed = 0.1;
 
-    if enable_keyboard {
-        // modifiers
-        if app.is_sys_key_down(os::SysKey::Shift) {
-            // speed boost
-            scroll_speed *= boost_speed;
-        }
-        else if app.is_sys_key_down(os::SysKey::Ctrl) {
-            // fine control
-            scroll_speed *= control_speed;
-        }
+    // Shift boost is keyboard-gated (also used for drag pan); Ctrl fine zoom reads raw key state
+    // so it works even when an imgui text field has keyboard focus
+    if enable_keyboard && app.is_sys_key_down(os::SysKey::Shift) {
+        scroll_speed *= boost_speed;
+    } else if app.is_sys_key_down(os::SysKey::Ctrl) {
+        scroll_speed *= control_speed;
     }
 
     if enable_mouse {
