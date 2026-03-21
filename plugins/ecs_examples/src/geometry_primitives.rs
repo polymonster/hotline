@@ -1,6 +1,6 @@
 ///
 /// Geometry Primitives
-/// 
+///
 
 use crate::prelude::*;
 
@@ -66,14 +66,18 @@ pub fn setup_geometry_primitives(
         (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 4, 0, 4, false, true, 0.33, 0.9, 1.0), MeshType::Normal),
         (hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0), MeshType::Normal),
         (hotline_rs::primitives::create_teapot_mesh(&mut device.0, 4), MeshType::Normal),
+
+        (hotline_rs::primitives::create_cube_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_cube_tube_prism_mesh(&mut device.0, 16, 0, 8, true, true, 1.0, 0.66, 1.0), MeshType::Normal),
+        (hotline_rs::primitives::create_cube_tube_prism_mesh(&mut device.0, 16, 0, 16, true, true, 1.0, 0.3, 1.0), MeshType::Normal),
     ];
 
     // square number of rows and columns
     let rc = ceil(sqrt(meshes.len() as f32));
-    let irc = (rc + 0.5) as i32; 
+    let irc = (rc + 0.5) as i32;
 
     let size = 10.0;
-    let half_size = size * 0.5;    
+    let half_size = size * 0.5;
     let step = size * half_size;
     let half_extent = rc * half_size;
     let start_pos = vec3f(-half_extent * 4.0, size * 1.8, -half_extent * 4.0);
@@ -127,7 +131,7 @@ pub fn setup_geometry_primitives(
 /// Rotate all meshes continuously about the y-axis by delta time
 #[export_update_fn]
 pub fn rotate_meshes(
-    time: Res<TimeRes>, 
+    time: Res<TimeRes>,
     mut mesh_query: Query<&mut Rotation, Without<Billboard>>) -> Result<(), hotline_rs::Error> {
     for mut rotation in &mut mesh_query {
         rotation.0 *= Quat::from_euler_angles(0.0, f32::pi() * time.0.delta, 0.0);
