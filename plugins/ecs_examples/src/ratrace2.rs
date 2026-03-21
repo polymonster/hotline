@@ -4,6 +4,7 @@
 
 use crate::prelude::*;
 use maths_rs::Vec3i;
+use rayon::prelude::*;
 
 use std::collections::HashMap;
 
@@ -11,6 +12,24 @@ const CHUNK_SIZE: usize = 8; // must be power-of-2 for morton encoding to produc
 const TILE_SIZE: f32 = 10.0;
 const GRID_SIZE: i32 = 2000;
 const ARRAY_SIZE: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
+
+const AGENT_SPEED: f32 = 0.1;
+const AGENT_RADIUS: f32 = 1.0;
+const AGENT_BODY_HALF_WIDTH: f32 = AGENT_RADIUS / 2.0;  // half-extent x/z (body 3 units wide)
+const AGENT_BODY_HALF_HEIGHT: f32 = AGENT_RADIUS * 1.5; // half-extent y (body 9 units tall, ~1:3 ratio)
+const CORRECTION_ITERATIONS: usize = 4;
+const TURN_RATE: f32 = 0.1; // fraction of angular gap closed per frame (exponential smoothing)
+
+/// Separation radius at low density (shrinks as crowd grows)
+const BASE_SEP_RADIUS: f32 = 24.0;
+const MIN_SEP_RADIUS: f32 = 8.0;
+const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
+const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
+const WANDER_DRIFT: f32 = 0.012;  // radians per frame
+const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
+const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
+
+const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
 
 /// Init function for ratrace demo
 #[no_mangle]
@@ -35,12 +54,17 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum TileType {
-    Empty,
-    Wall,
-    Barrier,
-    Escalator,
-    Platform,
-    TrainTrack,
+    Empty,      // 0 — unset / outside region; treated as wall
+    Wall,       // 1 — explicit interior wall
+    Barrier,    // 2
+    Escalator,  // 3
+    Platform,   // 4 — flow sink
+    TrainTrack, // 5
+    Floor,      // 6 — explicitly placed walkable surface
+}
+
+fn is_walkable(t: TileType) -> bool {
+    matches!(t, TileType::Floor | TileType::Platform | TileType::Escalator | TileType::TrainTrack)
 }
 
 /// Baked wall line segment with inward-facing normal, in absolute world space (y=0)
@@ -61,8 +85,10 @@ pub struct MapChunk {
     pressure: [f32; ARRAY_SIZE],
     /// per-cell agent entity IDs (SoA); cleared and rebuilt each frame
     agents: [Vec<Entity>; ARRAY_SIZE],
-    /// baked wall lines for collision, updated when map.dirty
-    walls: [Vec<WallLine>; ARRAY_SIZE],
+    /// baked wall lines for collision, updated when map.dirty (flat array, morton order)
+    walls:      Vec<WallLine>,
+    wall_start: [u32; ARRAY_SIZE],
+    wall_count: [u8;  ARRAY_SIZE],
 }
 
 impl MapChunk {
@@ -72,8 +98,10 @@ impl MapChunk {
             flow:     [Vec2f::new(0.0, 1.0); ARRAY_SIZE],
             density:  [0.0; ARRAY_SIZE],
             pressure: [0.0; ARRAY_SIZE],
-            agents:   std::array::from_fn(|_| Vec::new()),
-            walls:    std::array::from_fn(|_| Vec::new()),
+            agents:     std::array::from_fn(|_| Vec::new()),
+            walls:      Vec::new(),
+            wall_start: [0; ARRAY_SIZE],
+            wall_count: [0; ARRAY_SIZE],
         }
     }
 
@@ -135,38 +163,34 @@ fn pos_hash(x: f32, z: f32) -> f32 {
     (mixed >> 33) as f32 / u32::MAX as f32
 }
 
-const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
-
 #[derive(PartialEq)]
 pub enum EditorMode { Tile, Agent }
 
-const AGENT_SPEED: f32 = 0.1;
-const AGENT_RADIUS: f32 = 3.0;
-const AGENT_BODY_HALF_WIDTH: f32 = 1.5;  // half-extent x/z (body 3 units wide)
-const AGENT_BODY_HALF_HEIGHT: f32 = 4.5; // half-extent y (body 9 units tall, ~1:3 ratio)
-const CORRECTION_ITERATIONS: usize = 4;
-const TURN_RATE: f32 = 0.1; // fraction of angular gap closed per frame (exponential smoothing)
-
-/// Separation radius at low density (shrinks as crowd grows)
-const BASE_SEP_RADIUS: f32 = 24.0;
-const MIN_SEP_RADIUS: f32 = 8.0;
-const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
-const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
-const WANDER_DRIFT: f32 = 0.012;  // radians per frame
-const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
-const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
-
 const TILE_TYPES: &[TileType] = &[
+    TileType::Floor,
     TileType::Wall,
     TileType::Barrier,
     TileType::Escalator,
     TileType::Platform,
-    TileType::TrainTrack
+    TileType::TrainTrack,
 ];
 
 /// Shared cube mesh resource for agent body rendering
 #[derive(Resource)]
 pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
+
+/// Persistent position buffer indexed by entity.index() — avoids per-frame HashMap allocation
+#[derive(Resource)] pub(crate) struct PosBuffer(Vec<Vec3f>);
+/// Separation+wall force per entity, written by p2_sep, read by p3_move
+#[derive(Resource)] pub(crate) struct SepBuf(Vec<Vec2f>);
+/// Local density per entity, written by p2_sep
+#[derive(Resource)] pub(crate) struct DensityBuf(Vec<f32>);
+/// Wander angle per entity (mirrors WanderAngle component)
+#[derive(Resource)] pub(crate) struct WanderBuf(Vec<f32>);
+/// Facing quaternion per entity (mirrors FacingRot component)
+#[derive(Resource)] pub(crate) struct FacingBuf(Vec<Quatf>);
+/// Speed scale per entity (mirrors SpeedScale component, read-only after spawn)
+#[derive(Resource)] pub(crate) struct SpeedBuf(Vec<f32>);
 
 /// Marker — identifies human agents in the ECS
 #[derive(Component)]
@@ -233,7 +257,12 @@ impl Map {
     fn get_walls(&self, tile: Vec3i) -> &[WallLine] {
         let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
         match self.chunks.get(&(cx, cy, cz)) {
-            Some(chunk) => &chunk.walls[morton_encode(lx, ly, lz)],
+            Some(chunk) => {
+                let i = morton_encode(lx, ly, lz);
+                let s = chunk.wall_start[i] as usize;
+                let n = chunk.wall_count[i] as usize;
+                &chunk.walls[s..s + n]
+            }
             None => &[],
         }
     }
@@ -257,6 +286,14 @@ impl Map {
             let idx = morton_encode(lx, ly, lz);
             chunk.agents[idx].push(entity);
             chunk.density[idx] += 1.0;
+        }
+    }
+
+    fn get_density(&self, tile: Vec3i) -> f32 {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
+            Some(chunk) => chunk.density[morton_encode(lx, ly, lz)],
+            None => 0.0,
         }
     }
 
@@ -357,7 +394,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
             let (cx, cy, cz, _, _, _) = tile_to_chunk(nx, ty, nz);
             if !map.chunks.contains_key(&(cx, cy, cz)) { continue; }
             let tile = map.get_tile(Vec3i::new(nx, ty, nz));
-            if tile == TileType::Wall || tile == TileType::Barrier { continue; }
+            if !is_walkable(tile) { continue; }
             let new_cost = c + 1;
             if new_cost < cost.get(&(nx, ty, nz)).copied().unwrap_or(u32::MAX) {
                 cost.insert((nx, ty, nz), new_cost);
@@ -392,75 +429,76 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         }
     }
 
-    // pass 4: bake wall lines per tile
-    // collect all tile coords first to avoid borrow conflict
-    let all_tiles: Vec<(i32, i32, i32)> = map.chunks.iter()
-        .flat_map(|(&(cx, cy, cz), chunk)| {
+    // pass 4: bake wall lines into flat per-chunk arrays, indexed by morton tile
+    // Phase A: build (chunk_key, [(morton_idx, Vec<WallLine>)]) using only immutable map borrows
+    let baked: Vec<((i32,i32,i32), Vec<(usize, Vec<WallLine>)>)> = map.chunks.keys()
+        .copied()
+        .map(|(cx, cy, cz)| {
             let cs = CHUNK_SIZE as i32;
-            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| {
-                (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32)
-            })))
-            .filter(|&(tx, ty, tz)| {
-                let lx = (tx - cx*CHUNK_SIZE as i32) as usize;
-                let ly = (ty - cy*CHUNK_SIZE as i32) as usize;
-                let lz = (tz - cz*CHUNK_SIZE as i32) as usize;
-                chunk.tiles[morton_encode(lx, ly, lz)] != TileType::Wall
-            })
-            .collect::<Vec<_>>()
+            let tile_walls: Vec<(usize, Vec<WallLine>)> = (0..CHUNK_SIZE)
+                .flat_map(|ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| (lx, ly, lz))))
+                .filter_map(|(lx, ly, lz)| {
+                    let idx = morton_encode(lx, ly, lz);
+                    if !is_walkable(map.chunks[&(cx,cy,cz)].tiles[idx]) { return None; }
+                    let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+                    let cx_f = tx as f32 * TILE_SIZE + TILE_SIZE * 0.5;
+                    let cy_f = ty as f32 * TILE_SIZE;
+                    let cz_f = tz as f32 * TILE_SIZE + TILE_SIZE * 0.5;
+                    let mut lines: Vec<WallLine> = Vec::new();
+
+                    for (dx, dz) in [(-1i32,0i32),(1,0),(0,-1),(0,1)] {
+                        if is_walkable(map.get_tile(Vec3i::new(tx+dx, ty, tz+dz))) { continue; }
+                        let (p0x, p0z, p1x, p1z) = match (dx, dz) {
+                            (-1, 0) => (-0.5, -0.5, -0.5,  0.5),
+                            ( 1, 0) => ( 0.5, -0.5,  0.5,  0.5),
+                            ( 0,-1) => (-0.5, -0.5,  0.5, -0.5),
+                            ( 0, 1) => (-0.5,  0.5,  0.5,  0.5),
+                            _ => unreachable!(),
+                        };
+                        lines.push(WallLine {
+                            p0: vec3f(cx_f + p0x * TILE_SIZE, cy_f, cz_f + p0z * TILE_SIZE),
+                            p1: vec3f(cx_f + p1x * TILE_SIZE, cy_f, cz_f + p1z * TILE_SIZE),
+                            perp: vec3f(-dx as f32, 0.0, -dz as f32),
+                        });
+                    }
+
+                    for (dx, dz) in [(-1i32,-1i32),(-1,1),(1,1),(1,-1)] {
+                        if is_walkable(map.get_tile(Vec3i::new(tx+dx, ty, tz+dz))) { continue; }
+                        if is_walkable(map.get_tile(Vec3i::new(tx, ty, tz+dz))) {
+                            let (ax, az0, az1) = (dx as f32 * 0.5, dz as f32 * 0.5, dz as f32 * 1.5);
+                            lines.push(WallLine {
+                                p0: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az0 * TILE_SIZE),
+                                p1: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az1 * TILE_SIZE),
+                                perp: vec3f(-dx as f32, 0.0, 0.0),
+                            });
+                        }
+                        if is_walkable(map.get_tile(Vec3i::new(tx+dx, ty, tz))) {
+                            let (bz, bx0, bx1) = (dz as f32 * 0.5, dx as f32 * 0.5, dx as f32 * 1.5);
+                            lines.push(WallLine {
+                                p0: vec3f(cx_f + bx0 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
+                                p1: vec3f(cx_f + bx1 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
+                                perp: vec3f(0.0, 0.0, -dz as f32),
+                            });
+                        }
+                    }
+
+                    Some((idx, lines))
+                })
+                .collect();
+            ((cx, cy, cz), tile_walls)
         })
         .collect();
 
-    for (tx, ty, tz) in all_tiles {
-        let cx_f = tx as f32 * TILE_SIZE + TILE_SIZE * 0.5;
-        let cy_f = ty as f32 * TILE_SIZE;
-        let cz_f = tz as f32 * TILE_SIZE + TILE_SIZE * 0.5;
-
-        let mut lines: Vec<WallLine> = Vec::new();
-
-        // cardinal neighbors
-        for (dx, dz) in [(-1i32,0i32),(1,0),(0,-1),(0,1)] {
-            if map.get_tile(Vec3i::new(tx + dx, ty, tz + dz)) != TileType::Wall { continue; }
-            let (p0x, p0z, p1x, p1z) = match (dx, dz) {
-                (-1, 0) => (-0.5, -0.5, -0.5,  0.5),
-                ( 1, 0) => ( 0.5, -0.5,  0.5,  0.5),
-                ( 0,-1) => (-0.5, -0.5,  0.5, -0.5),
-                ( 0, 1) => (-0.5,  0.5,  0.5,  0.5),
-                _ => unreachable!(),
-            };
-            let perp = vec3f(-dx as f32, 0.0, -dz as f32);
-            lines.push(WallLine {
-                p0: vec3f(cx_f + p0x * TILE_SIZE, cy_f, cz_f + p0z * TILE_SIZE),
-                p1: vec3f(cx_f + p1x * TILE_SIZE, cy_f, cz_f + p1z * TILE_SIZE),
-                perp,
-            });
-        }
-
-        // diagonal neighbors — two lines each, skip if blocked by adjacent cardinal wall
-        for (dx, dz) in [(-1i32,-1i32),(-1,1),(1,1),(1,-1)] {
-            if map.get_tile(Vec3i::new(tx + dx, ty, tz + dz)) != TileType::Wall { continue; }
-            // Line A: x-facing (vertical in xz), extends in z-direction
-            if map.get_tile(Vec3i::new(tx, ty, tz + dz)) != TileType::Wall {
-                let (ax, az0, az1) = (dx as f32 * 0.5, dz as f32 * 0.5, dz as f32 * 1.5);
-                lines.push(WallLine {
-                    p0: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az0 * TILE_SIZE),
-                    p1: vec3f(cx_f + ax * TILE_SIZE, cy_f, cz_f + az1 * TILE_SIZE),
-                    perp: vec3f(-dx as f32, 0.0, 0.0),
-                });
-            }
-            // Line B: z-facing (horizontal in xz), extends in x-direction
-            if map.get_tile(Vec3i::new(tx + dx, ty, tz)) != TileType::Wall {
-                let (bz, bx0, bx1) = (dz as f32 * 0.5, dx as f32 * 0.5, dx as f32 * 1.5);
-                lines.push(WallLine {
-                    p0: vec3f(cx_f + bx0 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
-                    p1: vec3f(cx_f + bx1 * TILE_SIZE, cy_f, cz_f + bz * TILE_SIZE),
-                    perp: vec3f(0.0, 0.0, -dz as f32),
-                });
-            }
-        }
-
-        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
-        if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
-            chunk.walls[morton_encode(lx, ly, lz)] = lines;
+    // Phase B: write baked walls into chunks
+    for (key, tile_walls) in baked {
+        let chunk = map.chunks.get_mut(&key).unwrap();
+        chunk.walls.clear();
+        chunk.wall_start = [0; ARRAY_SIZE];
+        chunk.wall_count = [0; ARRAY_SIZE];
+        for (idx, lines) in tile_walls {
+            chunk.wall_start[idx] = chunk.walls.len() as u32;
+            chunk.wall_count[idx] = lines.len() as u8;
+            chunk.walls.extend(lines);
         }
     }
 
@@ -472,32 +510,39 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
 pub fn update_agents(
     mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot), With<HumanAgent>>,
     mut map: ResMut<Map>,
-    mut imdraw: ResMut<ImDrawRes>,
+    mut pos_buf: ResMut<PosBuffer>,
+    mut sep_buf: ResMut<SepBuf>,
+    mut density_buf: ResMut<DensityBuf>,
+    mut wander_buf: ResMut<WanderBuf>,
+    mut facing_buf: ResMut<FacingBuf>,
+    mut speed_buf: ResMut<SpeedBuf>,
 ) -> Result<(), hotline_rs::Error> {
-    
+
     //
     // clear grid
     //
+    let t = std::time::Instant::now();
 
     map.clear_all_agents();
-    for (.., mut sf, mut ld, _) in agents.iter_mut() {
-        sf.0 = Vec2f::zero();
-        ld.0 = 0.0;
-    }
 
     let total_agents = agents.iter().count();
     let sep_radius = (BASE_SEP_RADIUS - total_agents as f32 * SEP_RADIUS_DECAY).max(MIN_SEP_RADIUS);
     let sep_radius_sq = sep_radius * sep_radius;
 
+    println!("clear:      {:>6}µs", t.elapsed().as_micros());
+
     //
     // Pass 1: register each agent in the spatial grid (read-only)
     // Primary tile only — loose-grid registration removed to prevent double-counted separation forces
     //
+    let t = std::time::Instant::now();
 
     for (entity, pos, ..) in agents.iter() {
         let tile = world_to_tile(pos.0);
         map.register_agent(tile, entity);
     }
+
+    println!("p1 reg:     {:>6}µs", t.elapsed().as_micros());
 
     //
     // Pass 2: per-cell separation + density accumulation
@@ -505,6 +550,7 @@ pub fn update_agents(
     // re-computing chunk_key/morton in the hot inner loop and to prevent borrow conflicts.
     // `occupied` is also reused by the post-movement correction pass.
     //
+    let t = std::time::Instant::now();
 
     struct OccupiedCell { tile: Vec3i, chunk_key: (i32, i32, i32), idx: usize, cell_agents: Vec<Entity> }
     let occupied: Vec<OccupiedCell> = map.chunks.iter()
@@ -525,181 +571,228 @@ pub fn update_agents(
         })
         .collect();
 
-    // Snapshot positions once — no per-entity unsafe reads needed
-    let positions: HashMap<Entity, Vec3f> = agents.iter()
-        .map(|(e, p, ..)| (e, p.0))
+    // Fill flat buffers — indexed by entity.index()
+    let max_idx = agents.iter().map(|(e, ..)| e.index() as usize).max().unwrap_or(0);
+    if pos_buf.0.len()     <= max_idx { pos_buf.0.resize(max_idx + 1, Vec3f::zero()); }
+    if sep_buf.0.len()     <= max_idx { sep_buf.0.resize(max_idx + 1, Vec2f::zero()); }
+    if density_buf.0.len() <= max_idx { density_buf.0.resize(max_idx + 1, 0.0); }
+    if wander_buf.0.len()  <= max_idx { wander_buf.0.resize(max_idx + 1, 0.0); }
+    if facing_buf.0.len()  <= max_idx { facing_buf.0.resize(max_idx + 1, Quatf::identity()); }
+    if speed_buf.0.len()   <= max_idx { speed_buf.0.resize(max_idx + 1, 1.0); }
+    for (e, pos, speed, wander, _, _, facing) in agents.iter() {
+        let i = e.index() as usize;
+        pos_buf.0[i]    = pos.0;
+        wander_buf.0[i] = wander.0;
+        facing_buf.0[i] = facing.0;
+        speed_buf.0[i]  = speed.0;
+    }
+
+    println!("p2 build:   {:>6}µs", t.elapsed().as_micros());
+
+    //
+    // p2_sep: per-entity separation + wall avoidance → parallel scatter to sep_buf/density_buf
+    //
+    let t = std::time::Instant::now();
+
+    let entity_tiles_sep: Vec<(usize, Vec3i)> = occupied.iter()
+        .flat_map(|cell| cell.cell_agents.iter().map(move |&e| (e.index() as usize, cell.tile)))
         .collect();
 
-    //
-    // entity separation per tile, build 3x3, check per entity
-    //
-
-    for cell in &occupied {
-        let cell_density = map.chunks[&cell.chunk_key].density[cell.idx];
-
-        // Build 3×3 neighbourhood once per tile (same Y floor)
-        let mut nbr: Vec<(Entity, Vec2f)> = Vec::new();
-        for dz in -1i32..=1 {
-            for dx in -1i32..=1 {
-                for &e in map.get_agents_at(Vec3i::new(cell.tile.x + dx, cell.tile.y, cell.tile.z + dz)) {
-                    if let Some(&p) = positions.get(&e) { nbr.push((e, vec2f(p.x, p.z))); }
-                }
-            }
-        }
-
-        // wall avoidance — look up once per cell, reuse for all entities in it
-        let walls = map.get_walls(cell.tile);
-        let flow_dir = map.get_flow(cell.tile);
-        let tile_flow = normalize(Vec3f::new(flow_dir.x, 0.0, flow_dir.y));
-
-        for &entity_a in &cell.cell_agents {
-            let Some(&pos_a) = positions.get(&entity_a) else { continue };
-            let pa = vec2f(pos_a.x, pos_a.z);
-            let mut sep = Vec2f::zero();
-            for &(entity_b, pb) in &nbr {
-                if entity_b == entity_a { continue; }
-                let diff = pa - pb;
+    let sp = sep_buf.0.as_mut_ptr() as usize;
+    let dp = density_buf.0.as_mut_ptr() as usize;
+    let pb = pos_buf.0.as_slice();
+    entity_tiles_sep.par_iter().for_each(|&(ia, tile)| {
+        let pos_a = pb[ia];
+        let pa    = vec2f(pos_a.x, pos_a.z);
+        let mut sep = Vec2f::zero();
+        for dz in -1i32..=1 { for dx in -1i32..=1 {
+            for &e in map.get_agents_at(Vec3i::new(tile.x+dx, tile.y, tile.z+dz)) {
+                let ib = e.index() as usize;
+                if ib == ia { continue; }
+                let diff = pa - vec2f(pb[ib].x, pb[ib].z);
                 let dist_sq = dot(diff, diff);
                 if dist_sq > 0.01 && dist_sq < sep_radius_sq {
                     let d = sqrt(dist_sq);
                     sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
                 }
             }
+        }}
+        let cell_density = map.get_density(tile);
+        let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
+        let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
-            let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
-            let sep_vel = if length(sep) > 0.001 {
-                normalize(sep) * SEPARATION_STRENGTH * density_scale
-            } else { Vec2f::zero() };
-
-            // wall avoidance: same dot-product trigger as before, larger radius
-            let mut wall_vel = Vec2f::zero();
-            for wl in walls {
-                let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
-                let d = dist(cp, pos_a);
-                if d < WALL_AVOID_RADIUS {
-                    let tangent = normalize(wl.p0 - wl.p1);
-
-                    let dp = dot(wl.perp, tile_flow);
-                    if dp >= 0.0 {
-                        // push away from wall on the perp
-                        wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
-                    }
-                    else {
-                        // project along wall vector
-                        wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
-                    }
+        let walls     = map.get_walls(tile);
+        let flow_dir  = map.get_flow(tile);
+        let tile_flow = normalize(Vec3f::new(flow_dir.x, 0.0, flow_dir.y));
+        let mut wall_vel = Vec2f::zero();
+        for wl in walls {
+            let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
+            let d = dist(cp, pos_a);
+            if d < WALL_AVOID_RADIUS {
+                let tangent = normalize(wl.p0 - wl.p1);
+                if dot(wl.perp, tile_flow) >= 0.0 {
+                    wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+                } else {
+                    wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
                 }
             }
-
-            if let Ok((.., mut sf, mut ld, _)) = agents.get_mut(entity_a) {
-                sf.0 = sep_vel + wall_vel;
-                ld.0 += cell_density;
-            }
         }
+        // SAFETY: ia is unique per entity
+        unsafe {
+            *(sp as *mut Vec2f).add(ia) = sep_vel + wall_vel;
+            *(dp as *mut f32).add(ia)   = cell_density;
+        }
+    });
+    // Batch-write ECS from flat buffers
+    for (entity, .., mut sf, mut ld, _) in agents.iter_mut() {
+        let ia = entity.index() as usize;
+        sf.0 = sep_buf.0[ia];
+        ld.0 = density_buf.0[ia];
     }
 
+    println!("p2 sep:     {:>6}µs", t.elapsed().as_micros());
+
     //
-    // Pass 3: apply forces and move
+    // Pass 3: apply forces and move — parallel scatter to flat buffers, batch ECS write
     //
+    let t = std::time::Instant::now();
 
-    for (entity, mut pos, speed, mut wander, sf, _ld, mut facing) in agents.iter_mut() {
-        let tile = world_to_tile(pos.0);
-
-        // sep + wall avoidance pre-computed in Pass 2, stored in sf.0
-        let avoid_vel = vec3f(sf.0.x, 0.0, sf.0.y);
-
-        // Wander: each agent drifts at a unique rate derived from entity index
-        wander.0 += WANDER_DRIFT * (1.0 - (entity.index() % 5) as f32 * 0.1);
-        let wander_vel = vec3f(wander.0.cos(), 0.0, wander.0.sin()) * AGENT_SPEED * speed.0 * WANDER_STRENGTH;
-
-        // Flow — normalise so diagonal (1,1) and cardinal (1,0) produce equal speed
-        let flow = map.get_flow(tile);
-        let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
-        let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * speed.0;
-
-        let total_vel = flow_vel + avoid_vel + wander_vel;
-
-        // Smooth turn toward velocity direction
-        let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
-        if vel_len > 0.001 {
-            let yaw = f32::atan2(total_vel.x, total_vel.z);
-            let desired = Quatf::from_euler_angles(0.0, yaw, 0.0);
-            facing.0 = slerp(facing.0, desired, TURN_RATE);
+    // entity_tiles_sep was built from pre-move occupied; reuse indices for move
+    let pp  = pos_buf.0.as_mut_ptr() as usize;
+    let wp  = wander_buf.0.as_mut_ptr() as usize;
+    let fp  = facing_buf.0.as_mut_ptr() as usize;
+    let sep = sep_buf.0.as_slice();
+    let wb  = wander_buf.0.as_slice();
+    let fb  = facing_buf.0.as_slice();
+    let spd = speed_buf.0.as_slice();
+    let pb  = pos_buf.0.as_slice();
+    entity_tiles_sep.par_iter().for_each(|&(ia, _)| {
+        let pos_a   = pb[ia];
+        let tile    = world_to_tile(pos_a);
+        let avoid   = vec3f(sep[ia].x, 0.0, sep[ia].y);
+        let wander  = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
+        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH;
+        let flow       = map.get_flow(tile);
+        let flow_norm  = if length(flow) > 0.001 { normalize(flow) } else { flow };
+        let flow_vel   = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia];
+        let total_vel  = flow_vel + avoid + wander_vel;
+        let new_pos    = pos_a + total_vel;
+        let new_facing = {
+            let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
+            if vel_len > 0.001 {
+                let yaw = f32::atan2(total_vel.x, total_vel.z);
+                slerp(fb[ia], Quatf::from_euler_angles(0.0, yaw, 0.0), TURN_RATE)
+            } else { fb[ia] }
+        };
+        // SAFETY: ia is unique per entity
+        unsafe {
+            *(pp as *mut Vec3f).add(ia)  = new_pos;
+            *(wp as *mut f32).add(ia)    = wander;
+            *(fp as *mut Quatf).add(ia)  = new_facing;
         }
-
-        pos.0 = pos.0 + total_vel;
+    });
+    // Batch-write ECS
+    for (entity, mut pos, _, mut wander, _, _, mut facing) in agents.iter_mut() {
+        let ia = entity.index() as usize;
+        pos.0    = pos_buf.0[ia];
+        wander.0 = wander_buf.0[ia];
+        facing.0 = facing_buf.0[ia];
     }
 
-    // 
-    // Correction pass: resolve agent-agent overlaps (PBD Jacobi, per occupied tile)
-    // Reuses `occupied` from Pass 2. Snapshot post-movement positions for borrow-safe access.
+    println!("p3 move:    {:>6}µs", t.elapsed().as_micros());
+
     //
-    
-    let mut positions: HashMap<Entity, Vec3f> = agents.iter()
-        .map(|(e, p, ..)| (e, p.0))
-        .collect();
+    // Correction pass: resolve agent-agent overlaps
+    // Re-register from pos_buf so neighborhoods reflect post-movement positions (fixes tile-boundary gaps).
+    //
+    let t = std::time::Instant::now();
+
+    map.clear_all_agents();
+    for (entity, ..) in agents.iter() {
+        map.register_agent(world_to_tile(pos_buf.0[entity.index() as usize]), entity);
+    }
+    let occupied: Vec<OccupiedCell> = map.chunks.iter()
+        .flat_map(|(&key, chunk)| {
+            let (cx, cy, cz) = key;
+            let cs = CHUNK_SIZE as i32;
+            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).filter_map(move |lx| {
+                let idx = morton_encode(lx, ly, lz);
+                if chunk.agents[idx].is_empty() { return None; }
+                Some(OccupiedCell {
+                    tile: Vec3i::new(cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32),
+                    chunk_key: key, idx,
+                    cell_agents: chunk.agents[idx].clone(),
+                })
+            })))
+        }).collect();
 
     let min_dist    = AGENT_RADIUS * 2.0;
     let min_dist_sq = min_dist * min_dist;
 
+    // Flat (entity_index, tile) list — one entry per agent, for parallel dispatch
+    let entity_tiles: Vec<(usize, Vec3i)> = occupied.iter()
+        .flat_map(|cell| cell.cell_agents.iter().map(move |&e| (e.index() as usize, cell.tile)))
+        .collect();
+
+    let mut delta = vec![Vec3f::zero(); pos_buf.0.len()];
     for _ in 0..CORRECTION_ITERATIONS {
-        let mut corrections: HashMap<Entity, Vec3f> = HashMap::new();
-
-        for cell in &occupied {
-            // Build 3×3 neighbourhood positions once per tile
-            let mut nbr_pos: Vec<(Entity, Vec3f)> = Vec::new();
-            for dz in -1i32..=1 {
-                for dx in -1i32..=1 {
-                    for &e in map.get_agents_at(Vec3i::new(cell.tile.x + dx, cell.tile.y, cell.tile.z + dz)) {
-                        if let Some(&p) = positions.get(&e) { nbr_pos.push((e, p)); }
-                    }
-                }
-            }
-
-            for &entity_a in &cell.cell_agents {
-                let Some(&pos_a) = positions.get(&entity_a) else { continue };
-                let mut correction = Vec3f::zero();
-                for &(entity_b, pos_b) in &nbr_pos {
-                    if entity_b == entity_a { continue; }
-                    let diff = (pos_a - pos_b) * vec3f(1.0, 0.0, 1.0);
+        // Store pointer as usize (Sync) so the closure satisfies rayon's Sync bound.
+        // SAFETY: each par task writes to a unique index (entity indices are unique).
+        let dp = delta.as_mut_ptr() as usize;
+        let pb = pos_buf.0.as_slice();
+        entity_tiles.par_iter().for_each(|&(ia, tile)| {
+            let pos_a = pb[ia];
+            let mut correction = Vec3f::zero();
+            for dz in -1i32..=1 { for dx in -1i32..=1 {
+                for &e in map.get_agents_at(Vec3i::new(tile.x+dx, tile.y, tile.z+dz)) {
+                    let ib = e.index() as usize;
+                    if ib == ia { continue; }
+                    let diff = (pos_a - pb[ib]) * vec3f(1.0, 0.0, 1.0);
                     let dist_sq = dot(diff, diff);
                     if dist_sq < min_dist_sq && dist_sq > 0.0001 {
                         let d = sqrt(dist_sq);
                         correction += (diff / d) * (min_dist - d) * 0.5;
                     }
                 }
-                if length(correction) > 0.0001 {
-                    *corrections.entry(entity_a).or_insert(Vec3f::zero()) += correction;
+            }}
+            unsafe { *(dp as *mut Vec3f).add(ia) = correction; }
+        });
+        for (p, d) in pos_buf.0.iter_mut().zip(delta.iter_mut()) {
+            *p += *d;
+            *d = Vec3f::zero();
+        }
+    }
+
+    println!("correction: {:>6}µs", t.elapsed().as_micros());
+
+    //
+    // Pass 5: wall collision resolution — hard push-out, per occupied tile so walls stay in cache
+    //
+    let t = std::time::Instant::now();
+
+    for cell in &occupied {
+        let chunk = &map.chunks[&cell.chunk_key];
+        let s = chunk.wall_start[cell.idx] as usize;
+        let n = chunk.wall_count[cell.idx] as usize;
+        let walls = &chunk.walls[s..s + n];
+        for &entity_a in &cell.cell_agents {
+            let p = &mut pos_buf.0[entity_a.index() as usize];
+            for wl in walls {
+                let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
+                let d = dist(cp, *p);
+                if d < AGENT_RADIUS && d > 0.0001 {
+                    *p += normalize(*p - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
                 }
             }
         }
-
-        for (e, corr) in corrections {
-            if let Some(pos) = positions.get_mut(&e) { *pos += corr; }
-        }
     }
 
-    // TODO: this would be ideally structured again per occupied tile per entity.
-    //
-    // Pass 5: wall collision resolution — hard push-out after all corrections
-    //
-
+    // write corrected positions back to ECS
     for (entity, mut pos, ..) in agents.iter_mut() {
-        let Some(p) = positions.get_mut(&entity) else { continue };
-        let wall_tile = world_to_tile(*p);
-        for wl in map.get_walls(wall_tile) {
-            imdraw.add_line_3d(wl.p0, wl.p1, Vec4f::red());
-            let mid = (wl.p0 + wl.p1) * 0.5;
-            imdraw.add_line_3d(mid, mid + wl.perp * 2.0, Vec4f::cyan());
-
-            let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
-            let d = dist(cp, *p);
-            if d < AGENT_RADIUS {
-                *p += normalize(*p - cp) * (AGENT_RADIUS - d) * vec3f(1.0, 0.0, 1.0);
-            }
-        }
-        pos.0 = *p;
+        pos.0 = pos_buf.0[entity.index() as usize];
     }
+
+    println!("p5 walls:   {:>6}µs", t.elapsed().as_micros());
 
     Ok(())
 }
@@ -751,6 +844,12 @@ pub fn setup_ratrace2(
     // create shared cube mesh for agent bodies
     let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     commands.insert_resource(AgentMesh(cube));
+    commands.insert_resource(PosBuffer(Vec::new()));
+    commands.insert_resource(SepBuf(Vec::new()));
+    commands.insert_resource(DensityBuf(Vec::new()));
+    commands.insert_resource(WanderBuf(Vec::new()));
+    commands.insert_resource(FacingBuf(Vec::new()));
+    commands.insert_resource(SpeedBuf(Vec::new()));
 
     Ok(())
 }
@@ -760,6 +859,7 @@ pub fn update_tile_editor_ui(
     mut imgui: ResMut<ImGuiRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
+    agents: Query<(), With<HumanAgent>>,
 ) -> Result<(), hotline_rs::Error> {
     imgui.set_global_context();
 
@@ -789,6 +889,15 @@ pub fn update_tile_editor_ui(
         }
         imgui.separator();
         if imgui.button("clear") { *map = Map::new(); }
+        imgui.separator();
+        let floor_tiles: usize = map.chunks.values()
+            .map(|c| c.tiles.iter().filter(|&&t| is_walkable(t)).count())
+            .sum();
+        let wall_count: usize = map.chunks.values().map(|c| c.walls.len()).sum();
+        imgui.text(&format!("agents: {}", agents.iter().count()));
+        imgui.text(&format!("chunks: {}", map.chunks.len()));
+        imgui.text(&format!("floors: {}", floor_tiles));
+        imgui.text(&format!("walls:  {}", wall_count));
     }
     imgui.end();
     Ok(())
@@ -839,12 +948,13 @@ pub fn update_tile_editor(
     const Y_OFFSET: f32 = 1.0;
 
     let tile_cols : &[Vec4f] = &[
-        Vec4f::black(),
-        Vec4f::white(),
-        Vec4f::red(),
-        Vec4f::blue(),
-        Vec4f::yellow(),
-        Vec4f::green(),
+        Vec4f::black(),                          // Empty
+        Vec4f::white(),                          // Wall
+        Vec4f::red(),                            // Barrier
+        Vec4f::blue(),                           // Escalator
+        Vec4f::yellow(),                         // Platform
+        Vec4f::green(),                          // TrainTrack
+        Vec4f::new(0.4, 0.4, 0.4, 1.0),         // Floor
     ];
 
     if enable_mouse {
@@ -943,13 +1053,14 @@ pub fn update_tile_editor(
         }
     }
 
-    // draw all placed tiles and flow arrows
+    // draw all placed tiles, flow arrows, and baked collision wall lines
     for (&(cx, cy, cz), chunk) in &map.chunks {
         let cs = CHUNK_SIZE as i32;
         for ly in 0..CHUNK_SIZE {
             for lz in 0..CHUNK_SIZE {
             for lx in 0..CHUNK_SIZE {
                 let idx = morton_encode(lx, ly, lz);
+                let tile = chunk.tiles[idx];
 
                 let tx = cx * cs + lx as i32;
                 let ty = cy * cs + ly as i32;
@@ -964,34 +1075,39 @@ pub fn update_tile_editor(
                 let mid_x = min_x + (max_x - min_x) * 0.5;
                 let mid_z = min_z + (max_z - min_z) * 0.5;
 
-                let col = tile_cols[chunk.tiles[idx] as usize];
-
-                if chunk.tiles[idx] != TileType::Empty {
+                if is_walkable(tile) {
+                    let col = tile_cols[tile as usize];
                     imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, min_z), col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, max_z), Vec3f::new(min_x, y, max_z), col);
                     imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), col);
                     imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), col);
-                }
-                else {
-                    let flow_dir = chunk.flow[idx]; // read directly via precomputed idx
-                    let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
-                    let flow_start = Vec3f::new(mid_x, y, mid_z);
-                    let flow_col = Vec4f::from((flow_dir3.xy() * 0.5 + 0.8, 0.0, 1.0));
 
-                    let flow_end = flow_start + flow_dir3;
-                    imdraw.add_line_3d(flow_start, flow_end, flow_col);
-
-                    let arrow_size = 0.2;
-                    let perp = maths_rs::perp(flow_dir3.xz()) * arrow_size;
-                    let perp = Vec3f::new(perp.x, 0.0, perp.y);
-                    let tip = flow_end - flow_dir3 * arrow_size;
-                    imdraw.add_line_3d(flow_end, tip + perp, flow_col);
-                    imdraw.add_line_3d(flow_end, tip - perp, flow_col);
+                    let flow_dir = chunk.flow[idx];
+                    if flow_dir != Vec2f::zero() {
+                        let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
+                        let flow_start = Vec3f::new(mid_x, y, mid_z);
+                        let flow_col = Vec4f::from((flow_dir3.xy() * 0.5 + 0.8, 0.0, 1.0));
+                        let flow_end = flow_start + flow_dir3;
+                        imdraw.add_line_3d(flow_start, flow_end, flow_col);
+                        let arrow_size = 0.2;
+                        let perp = maths_rs::perp(flow_dir3.xz()) * arrow_size;
+                        let perp3 = Vec3f::new(perp.x, 0.0, perp.y);
+                        let tip = flow_end - flow_dir3 * arrow_size;
+                        imdraw.add_line_3d(flow_end, tip + perp3, flow_col);
+                        imdraw.add_line_3d(flow_end, tip - perp3, flow_col);
+                    }
                 }
             }
             }
+        }
+
+        // draw baked collision wall outlines
+        let wall_col = Vec4f::white();
+        let y_off = Vec3f::new(0.0, Y_OFFSET, 0.0);
+        for wl in &chunk.walls {
+            imdraw.add_line_3d(wl.p0 + y_off, wl.p1 + y_off, wall_col);
         }
     }
 
