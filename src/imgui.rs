@@ -1407,6 +1407,30 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         }
     }
 
+    /// Edit a string via keyboard input; buf_size is the max capacity (including null terminator)
+    pub fn input_text(&mut self, label: &str, s: &mut String, buf_size: usize) -> bool {
+        let null_label = CString::new(label).unwrap();
+        let mut buf = vec![0u8; buf_size];
+        let bytes = s.as_bytes();
+        let copy_len = bytes.len().min(buf_size - 1);
+        buf[..copy_len].copy_from_slice(&bytes[..copy_len]);
+        let changed = unsafe {
+            igInputText(
+                null_label.as_ptr() as *const i8,
+                buf.as_mut_ptr() as *mut i8,
+                buf_size,
+                0,
+                None,
+                std::ptr::null_mut(),
+            )
+        };
+        if changed {
+            let len = buf.iter().position(|&b| b == 0).unwrap_or(buf_size);
+            *s = String::from_utf8_lossy(&buf[..len]).into_owned();
+        }
+        changed
+    }
+
     /// Modify float via slider input
     pub fn slider_float(&mut self, label: &str, v: &mut f32, min: f32, max: f32) -> bool {
         unsafe {
