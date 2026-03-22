@@ -2,6 +2,9 @@
 /// Rat Race 2 - Tilemap Editor & Game
 ///
 
+// TODO: keep eye on the random intermittent crash wne adding agents
+// TODO: lateral movement is happening, but they stop bunching together so much and dont form a tighter queue.
+
 use crate::prelude::*;
 use maths_rs::Vec3i;
 use rayon::prelude::*;
@@ -25,6 +28,7 @@ const BASE_SEP_RADIUS: f32 = 24.0;
 const MIN_SEP_RADIUS: f32 = 8.0;
 const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
+const QUEUE_SPREAD_STRENGTH: f32 = 0.04; // lateral drift toward less-dense side when queuing
 const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
 const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
@@ -77,8 +81,10 @@ struct WallLine {
 pub struct MapChunk {
     /// enum of tile type
     tiles: [TileType; ARRAY_SIZE],
-    /// 2D diffusion flow field
-    flow: [Vec2f; ARRAY_SIZE],
+    /// general per-tile ID — used as goal index for Platform tiles, available for all tile types
+    index: [u8; ARRAY_SIZE],
+    /// 2D flow fields per goal: flow[goal_idx][morton] = direction toward that goal
+    flow: Vec<[Vec2f; ARRAY_SIZE]>,
     /// agent count per cell — reset each frame alongside agents
     density: [f32; ARRAY_SIZE],
     /// pressure curve based on density, controls flow
@@ -94,10 +100,11 @@ pub struct MapChunk {
 impl MapChunk {
     fn new() -> Self {
         Self {
-            tiles:    [TileType::Empty; ARRAY_SIZE],
-            flow:     [Vec2f::new(0.0, 1.0); ARRAY_SIZE],
-            density:  [0.0; ARRAY_SIZE],
-            pressure: [0.0; ARRAY_SIZE],
+            tiles:      [TileType::Empty; ARRAY_SIZE],
+            index:      [0u8; ARRAY_SIZE],
+            flow:       vec![[Vec2f::zero(); ARRAY_SIZE]],
+            density:    [0.0; ARRAY_SIZE],
+            pressure:   [0.0; ARRAY_SIZE],
             agents:     std::array::from_fn(|_| Vec::new()),
             walls:      Vec::new(),
             wall_start: [0; ARRAY_SIZE],
@@ -191,6 +198,10 @@ pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
 #[derive(Resource)] pub(crate) struct FacingBuf(Vec<Quatf>);
 /// Speed scale per entity (mirrors SpeedScale component, read-only after spawn)
 #[derive(Resource)] pub(crate) struct SpeedBuf(Vec<f32>);
+/// Goal index per entity (mirrors Goal component)
+#[derive(Resource)] pub(crate) struct GoalBuf(Vec<u8>);
+/// Per-entity agent flags flat buffer (mirrors Flags component)
+#[derive(Resource)] pub(crate) struct FlagsBuf(Vec<u8>);
 
 /// Marker — identifies human agents in the ECS
 #[derive(Component)]
@@ -220,12 +231,25 @@ pub(crate) struct LocalDensity(f32);
 #[derive(Component)]
 pub(crate) struct FacingRot(Quatf);
 
+/// Which platform goal this agent is navigating toward (matches chunk.index on Platform tiles)
+#[derive(Component)]
+pub(crate) struct Goal(u8);
+
+/// Agent state flags bitmask (u8, expandable to u16/u32)
+pub const FLAG_WAITING: u8 = 1 << 0;  // agent has reached goal and is holding position
+#[derive(Component)]
+pub(crate) struct Flags(u8);
+
 #[derive(Resource)]
 pub struct EditorState {
     mode: EditorMode,
     tile_idx: usize,
     agent_grid: i32,
+    index: u8,
+    agent_goal: u8,
+    viz_goal: u8,
     left_was_down: bool,
+    save_filepath: String
 }
 
 #[derive(Resource)]
@@ -246,11 +270,34 @@ impl Map {
         self.dirty = true;
     }
 
-    fn get_flow(&self, tile: Vec3i) -> Vec2f {
+    fn set_tile_index(&mut self, tile: Vec3i, id: u8) {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        if let Some(chunk) = self.chunks.get_mut(&(cx, cy, cz)) {
+            chunk.index[morton_encode(lx, ly, lz)] = id;
+            self.dirty = true;
+        }
+    }
+
+    fn get_flow(&self, tile: Vec3i, goal: u8) -> Vec2f {
         let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
         match self.chunks.get(&(cx, cy, cz)) {
-            Some(chunk) => chunk.flow[morton_encode(lx, ly, lz)],
+            Some(chunk) => {
+                let layer = goal as usize;
+                if layer < chunk.flow.len() { chunk.flow[layer][morton_encode(lx, ly, lz)] }
+                else { Vec2f::zero() }
+            }
             None => Vec2f::zero(),
+        }
+    }
+
+    fn is_goal_tile(&self, tile: Vec3i, goal: u8) -> bool {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        match self.chunks.get(&(cx, cy, cz)) {
+            Some(chunk) => {
+                let idx = morton_encode(lx, ly, lz);
+                chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal
+            }
+            None => false,
         }
     }
 
@@ -275,6 +322,7 @@ impl Map {
         }
     }
 
+    // TODO: ambiguous. this is for per frame clear
     fn clear_all_agents(&mut self) {
         for chunk in self.chunks.values_mut() { chunk.clear_agents(); }
     }
@@ -305,10 +353,10 @@ impl Map {
         }
     }
 
-    fn save(&self) -> Result<(), hotline_rs::Error> {
+    fn save(&self, filepath: &str) -> Result<(), hotline_rs::Error> {
         let mut buf: Vec<u8> = Vec::new();
         buf.extend_from_slice(b"RR2M");
-        buf.extend_from_slice(&2u32.to_le_bytes());
+        buf.extend_from_slice(&3u32.to_le_bytes());
         buf.extend_from_slice(&(self.chunks.len() as u32).to_le_bytes());
         for (&(cx, cy, cz), chunk) in &self.chunks {
             buf.extend_from_slice(&cx.to_le_bytes());
@@ -316,8 +364,9 @@ impl Map {
             buf.extend_from_slice(&cz.to_le_bytes());
             let tile_bytes: &[u8; ARRAY_SIZE] = unsafe { std::mem::transmute(&chunk.tiles) };
             buf.extend_from_slice(tile_bytes);
+            buf.extend_from_slice(&chunk.index);
         }
-        std::fs::write(MAP_SAVE_PATH, buf)?;
+        std::fs::write(filepath, buf)?;
         Ok(())
     }
 
@@ -330,7 +379,7 @@ impl Map {
         pos += 4;
         let version = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap());
         pos += 4;
-        if version != 2 { return Err("map version mismatch".into()); }
+        if version != 2 && version != 3 { return Err("map version mismatch".into()); }
         let num_chunks = u32::from_le_bytes(data[pos..pos+4].try_into().unwrap()) as usize;
         pos += 4;
         let mut map = Map::new();
@@ -345,6 +394,10 @@ impl Map {
             let tile_bytes: [u8; ARRAY_SIZE] = data[pos..pos+ARRAY_SIZE].try_into().unwrap();
             chunk.tiles = unsafe { std::mem::transmute(tile_bytes) };
             pos += ARRAY_SIZE;
+            if version >= 3 {
+                chunk.index.copy_from_slice(&data[pos..pos+ARRAY_SIZE]);
+                pos += ARRAY_SIZE;
+            }
         }
         Ok(map)
     }
@@ -359,73 +412,84 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
     if !map.dirty { return Ok(()); }
     map.dirty = false;
 
-    // pass 1: reset flow/pressure and seed the heap with Platform tiles
-    let mut cost: HashMap<(i32, i32, i32), u32> = HashMap::new();
-    let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
-
-    for (&(cx, cy, cz), chunk) in &mut map.chunks {
-        let cs = CHUNK_SIZE as i32;
-        for ly in 0..CHUNK_SIZE {
-            for lz in 0..CHUNK_SIZE {
-                for lx in 0..CHUNK_SIZE {
-                    let idx = morton_encode(lx, ly, lz);
-                    chunk.flow[idx] = Vec2f::zero();
-                    chunk.pressure[idx] = f32::MAX;
-                    if chunk.tiles[idx] == TileType::Platform {
-                        let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
-                        cost.insert((tx, ty, tz), 0);
-                        heap.push((Reverse(0), tx, ty, tz));
-                    }
-                }
-            }
-        }
-    }
-
-    // pass 2: Dijkstra flood fill (XZ neighbors only — vertical links added per escalator/stair tile later)
     const NEIGHBORS: [(i32, i32); 8] = [
         (1,0),(-1,0),(0,1),(0,-1),
         (1,1),(-1,1),(-1,-1),(1,-1)
     ];
-    while let Some((Reverse(c), tx, ty, tz)) = heap.pop() {
-        if cost.get(&(tx, ty, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
-        for (dx, dz) in NEIGHBORS {
-            let (nx, nz) = (tx + dx, tz + dz);
-            // only traverse tiles in existing chunks — prevents infinite expansion into void
-            let (cx, cy, cz, _, _, _) = tile_to_chunk(nx, ty, nz);
-            if !map.chunks.contains_key(&(cx, cy, cz)) { continue; }
-            let tile = map.get_tile(Vec3i::new(nx, ty, nz));
-            if !is_walkable(tile) { continue; }
-            let new_cost = c + 1;
-            if new_cost < cost.get(&(nx, ty, nz)).copied().unwrap_or(u32::MAX) {
-                cost.insert((nx, ty, nz), new_cost);
-                heap.push((Reverse(new_cost), nx, ty, nz));
+
+    // pass 0: find max goal index across all Platform tiles, resize + zero all flow layers
+    let mut max_goal = 0u8;
+    for chunk in map.chunks.values() {
+        for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+            let idx = morton_encode(lx, ly, lz);
+            if chunk.tiles[idx] == TileType::Platform {
+                max_goal = max_goal.max(chunk.index[idx]);
             }
-        }
+        }}}
+    }
+    let num_goals = max_goal as usize + 1;
+    for chunk in map.chunks.values_mut() {
+        chunk.flow.resize(num_goals, [Vec2f::zero(); ARRAY_SIZE]);
+        for layer in &mut chunk.flow { layer.fill(Vec2f::zero()); }
+        chunk.pressure.fill(f32::MAX);
     }
 
-    // pass 3: compute flow direction (gradient toward lowest-cost neighbour)
-    let flow_updates: Vec<(i32, i32, i32, Vec2f, f32)> = cost.iter()
-        .filter(|(&(tx, ty, tz), _)| map.get_tile(Vec3i::new(tx, ty, tz)) != TileType::Platform)
-        .map(|(&(tx, ty, tz), &c)| {
-            let mut best_dir = Vec2f::zero();
-            let mut best_cost = c;
+    // passes 1-3: one Dijkstra per goal index
+    for goal_idx in 0..num_goals as u8 {
+        let mut cost: HashMap<(i32, i32, i32), u32> = HashMap::new();
+        let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
+
+        // pass 1: seed heap with Platform tiles matching this goal
+        for (&(cx, cy, cz), chunk) in &map.chunks {
+            let cs = CHUNK_SIZE as i32;
+            for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+                let idx = morton_encode(lx, ly, lz);
+                if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx {
+                    let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+                    cost.insert((tx, ty, tz), 0);
+                    heap.push((Reverse(0), tx, ty, tz));
+                }
+            }}}
+        }
+        if heap.is_empty() { continue; }
+
+        // pass 2: Dijkstra flood fill (XZ neighbors only)
+        while let Some((Reverse(c), tx, ty, tz)) = heap.pop() {
+            if cost.get(&(tx, ty, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
             for (dx, dz) in NEIGHBORS {
-                let nc = cost.get(&(tx+dx, ty, tz+dz)).copied().unwrap_or(u32::MAX);
-                if nc < best_cost {
-                    best_cost = nc;
-                    best_dir = Vec2f::new(dx as f32, dz as f32);
+                let (nx, nz) = (tx + dx, tz + dz);
+                let (cx, cy, cz, _, _, _) = tile_to_chunk(nx, ty, nz);
+                if !map.chunks.contains_key(&(cx, cy, cz)) { continue; }
+                let tile = map.get_tile(Vec3i::new(nx, ty, nz));
+                if !is_walkable(tile) { continue; }
+                let new_cost = c + 1;
+                if new_cost < cost.get(&(nx, ty, nz)).copied().unwrap_or(u32::MAX) {
+                    cost.insert((nx, ty, nz), new_cost);
+                    heap.push((Reverse(new_cost), nx, ty, nz));
                 }
             }
-            (tx, ty, tz, best_dir, c as f32)
-        })
-        .collect();
+        }
 
-    for (tx, ty, tz, flow_dir, pressure) in flow_updates {
-        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
-        if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
-            let idx = morton_encode(lx, ly, lz);
-            chunk.flow[idx] = flow_dir;
-            chunk.pressure[idx] = pressure;
+        // pass 3: compute flow direction (gradient toward lowest-cost neighbour)
+        let flow_updates: Vec<(i32, i32, i32, Vec2f, f32)> = cost.iter()
+            .map(|(&(tx, ty, tz), &c)| {
+                let mut best_dir = Vec2f::zero();
+                let mut best_cost = c;
+                for (dx, dz) in NEIGHBORS {
+                    let nc = cost.get(&(tx+dx, ty, tz+dz)).copied().unwrap_or(u32::MAX);
+                    if nc < best_cost { best_cost = nc; best_dir = Vec2f::new(dx as f32, dz as f32); }
+                }
+                (tx, ty, tz, best_dir, c as f32)
+            })
+            .collect();
+
+        for (tx, ty, tz, flow_dir, pressure) in flow_updates {
+            let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+            if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
+                let idx = morton_encode(lx, ly, lz);
+                chunk.flow[goal_idx as usize][idx] = flow_dir;
+                chunk.pressure[idx] = pressure;
+            }
         }
     }
 
@@ -508,7 +572,7 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
 /// Moves agents along the flow field with per-cell peer-repulsion spreading
 #[export_update_fn]
 pub fn update_agents(
-    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot), With<HumanAgent>>,
+    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut pos_buf: ResMut<PosBuffer>,
     mut sep_buf: ResMut<SepBuf>,
@@ -516,7 +580,11 @@ pub fn update_agents(
     mut wander_buf: ResMut<WanderBuf>,
     mut facing_buf: ResMut<FacingBuf>,
     mut speed_buf: ResMut<SpeedBuf>,
+    mut goal_buf: ResMut<GoalBuf>,
+    mut flags_buf: ResMut<FlagsBuf>,
 ) -> Result<(), hotline_rs::Error> {
+
+    let profile = false;
 
     //
     // clear grid
@@ -529,7 +597,7 @@ pub fn update_agents(
     let sep_radius = (BASE_SEP_RADIUS - total_agents as f32 * SEP_RADIUS_DECAY).max(MIN_SEP_RADIUS);
     let sep_radius_sq = sep_radius * sep_radius;
 
-    println!("clear:      {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("clear:      {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // Pass 1: register each agent in the spatial grid (read-only)
@@ -542,7 +610,7 @@ pub fn update_agents(
         map.register_agent(tile, entity);
     }
 
-    println!("p1 reg:     {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("p1 reg:     {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // Pass 2: per-cell separation + density accumulation
@@ -579,15 +647,19 @@ pub fn update_agents(
     if wander_buf.0.len()  <= max_idx { wander_buf.0.resize(max_idx + 1, 0.0); }
     if facing_buf.0.len()  <= max_idx { facing_buf.0.resize(max_idx + 1, Quatf::identity()); }
     if speed_buf.0.len()   <= max_idx { speed_buf.0.resize(max_idx + 1, 1.0); }
-    for (e, pos, speed, wander, _, _, facing) in agents.iter() {
+    if goal_buf.0.len()    <= max_idx { goal_buf.0.resize(max_idx + 1, 0); }
+    if flags_buf.0.len()   <= max_idx { flags_buf.0.resize(max_idx + 1, 0); }
+    for (e, pos, speed, wander, _, _, facing, goal, flags) in agents.iter() {
         let i = e.index() as usize;
         pos_buf.0[i]    = pos.0;
         wander_buf.0[i] = wander.0;
         facing_buf.0[i] = facing.0;
         speed_buf.0[i]  = speed.0;
+        goal_buf.0[i]   = goal.0;
+        flags_buf.0[i]  = flags.0;
     }
 
-    println!("p2 build:   {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("p2 build:   {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // p2_sep: per-entity separation + wall avoidance → parallel scatter to sep_buf/density_buf
@@ -598,9 +670,12 @@ pub fn update_agents(
         .flat_map(|cell| cell.cell_agents.iter().map(move |&e| (e.index() as usize, cell.tile)))
         .collect();
 
-    let sp = sep_buf.0.as_mut_ptr() as usize;
-    let dp = density_buf.0.as_mut_ptr() as usize;
-    let pb = pos_buf.0.as_slice();
+    let sp  = sep_buf.0.as_mut_ptr() as usize;
+    let dp  = density_buf.0.as_mut_ptr() as usize;
+    let fgp = flags_buf.0.as_mut_ptr() as usize;
+    let pb      = pos_buf.0.as_slice();
+    let gb      = goal_buf.0.as_slice();
+    let fb_prev = flags_buf.0.as_slice();   // previous frame flags — read-only for neighbour propagation
     entity_tiles_sep.par_iter().for_each(|&(ia, tile)| {
         let pos_a = pb[ia];
         let pa    = vec2f(pos_a.x, pos_a.z);
@@ -622,8 +697,9 @@ pub fn update_agents(
         let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
         let walls     = map.get_walls(tile);
-        let flow_dir  = map.get_flow(tile);
-        let tile_flow = normalize(Vec3f::new(flow_dir.x, 0.0, flow_dir.y));
+        let flow_dir  = map.get_flow(tile, gb[ia]);
+        let flow3     = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
+        let tile_flow = if length(flow3) > 0.001 { normalize(flow3) } else { Vec3f::zero() };
         let mut wall_vel = Vec2f::zero();
         for wl in walls {
             let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
@@ -637,20 +713,49 @@ pub fn update_agents(
                 }
             }
         }
+        // compute waiting flag: at own goal tile OR a same-goal neighbour in front was waiting last frame
+        let at_goal = map.is_goal_tile(tile, gb[ia]);
+        let flow_norm_2d = if length(flow_dir) > 0.001 { normalize(flow_dir) } else { Vec2f::zero() };
+        let neighbor_waiting = if !at_goal && length(flow_norm_2d) > 0.001 {
+            let mut found = false;
+            'outer: for ndz in -1i32..=1 { for ndx in -1i32..=1 {
+                if ndx == 0 && ndz == 0 { continue; }
+                // only neighbours in the forward half-plane of our flow direction can block us
+                if dot(Vec2f::new(ndx as f32, ndz as f32), flow_norm_2d) <= 0.0 { continue; }
+                for &nb_e in map.get_agents_at(Vec3i::new(tile.x+ndx, tile.y, tile.z+ndz)) {
+                    let ib = nb_e.index() as usize;
+                    if ib != ia && ib < fb_prev.len() && (fb_prev[ib] & FLAG_WAITING) != 0 && gb[ib] == gb[ia] {
+                        found = true; break 'outer;
+                    }
+                }
+            }}
+            found
+        } else { false };
+        let new_flags = if at_goal || neighbor_waiting { FLAG_WAITING } else { 0u8 };
+        // lateral spread: drift toward less-dense perpendicular neighbour when queuing
+        let spread_vel = if (neighbor_waiting || at_goal) && length(flow_norm_2d) > 0.001 {
+            let perp = Vec2f::new(-flow_norm_2d.y, flow_norm_2d.x);
+            let pi = Vec3i::new(perp.x.round() as i32, 0, perp.y.round() as i32);
+            let d_pos = map.get_density(Vec3i::new(tile.x + pi.x, tile.y, tile.z + pi.z));
+            let d_neg = map.get_density(Vec3i::new(tile.x - pi.x, tile.y, tile.z - pi.z));
+            perp * (d_neg - d_pos) * QUEUE_SPREAD_STRENGTH
+        } else { Vec2f::zero() };
         // SAFETY: ia is unique per entity
         unsafe {
-            *(sp as *mut Vec2f).add(ia) = sep_vel + wall_vel;
-            *(dp as *mut f32).add(ia)   = cell_density;
+            *(sp  as *mut Vec2f).add(ia) = sep_vel + wall_vel + spread_vel;
+            *(dp  as *mut f32).add(ia)   = cell_density;
+            *(fgp as *mut u8).add(ia)    = new_flags;
         }
     });
     // Batch-write ECS from flat buffers
-    for (entity, .., mut sf, mut ld, _) in agents.iter_mut() {
+    for (entity, .., mut sf, mut ld, _, _, mut fl) in agents.iter_mut() {
         let ia = entity.index() as usize;
         sf.0 = sep_buf.0[ia];
         ld.0 = density_buf.0[ia];
+        fl.0 = flags_buf.0[ia];
     }
 
-    println!("p2 sep:     {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("p2 sep:     {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // Pass 3: apply forces and move — parallel scatter to flat buffers, batch ECS write
@@ -661,20 +766,23 @@ pub fn update_agents(
     let pp  = pos_buf.0.as_mut_ptr() as usize;
     let wp  = wander_buf.0.as_mut_ptr() as usize;
     let fp  = facing_buf.0.as_mut_ptr() as usize;
-    let sep = sep_buf.0.as_slice();
-    let wb  = wander_buf.0.as_slice();
-    let fb  = facing_buf.0.as_slice();
-    let spd = speed_buf.0.as_slice();
-    let pb  = pos_buf.0.as_slice();
+    let sep     = sep_buf.0.as_slice();
+    let wb      = wander_buf.0.as_slice();
+    let fb      = facing_buf.0.as_slice();
+    let spd     = speed_buf.0.as_slice();
+    let pb      = pos_buf.0.as_slice();
+    let gb      = goal_buf.0.as_slice();
+    let fb_prev = flags_buf.0.as_slice();
     entity_tiles_sep.par_iter().for_each(|&(ia, _)| {
         let pos_a   = pb[ia];
         let tile    = world_to_tile(pos_a);
         let avoid   = vec3f(sep[ia].x, 0.0, sep[ia].y);
+        let waiting = ia < fb_prev.len() && (fb_prev[ia] & FLAG_WAITING) != 0;
         let wander  = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
-        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH;
-        let flow       = map.get_flow(tile);
+        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.3 } else { 1.0 };
+        let flow       = map.get_flow(tile, gb[ia]);
         let flow_norm  = if length(flow) > 0.001 { normalize(flow) } else { flow };
-        let flow_vel   = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia];
+        let flow_vel   = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
         let total_vel  = flow_vel + avoid + wander_vel;
         let new_pos    = pos_a + total_vel;
         let new_facing = {
@@ -692,14 +800,14 @@ pub fn update_agents(
         }
     });
     // Batch-write ECS
-    for (entity, mut pos, _, mut wander, _, _, mut facing) in agents.iter_mut() {
+    for (entity, mut pos, _, mut wander, _, _, mut facing, _, _) in agents.iter_mut() {
         let ia = entity.index() as usize;
         pos.0    = pos_buf.0[ia];
         wander.0 = wander_buf.0[ia];
         facing.0 = facing_buf.0[ia];
     }
 
-    println!("p3 move:    {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("p3 move:    {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // Correction pass: resolve agent-agent overlaps
@@ -763,7 +871,7 @@ pub fn update_agents(
         }
     }
 
-    println!("correction: {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("correction: {:>6}µs", t.elapsed().as_micros()) };
 
     //
     // Pass 5: wall collision resolution — hard push-out, per occupied tile so walls stay in cache
@@ -792,7 +900,7 @@ pub fn update_agents(
         pos.0 = pos_buf.0[entity.index() as usize];
     }
 
-    println!("p5 walls:   {:>6}µs", t.elapsed().as_micros());
+    if profile { println!("p5 walls:   {:>6}µs", t.elapsed().as_micros()) };
 
     Ok(())
 }
@@ -839,7 +947,17 @@ pub fn setup_ratrace2(
     // create resources — load map from disk if it exists, otherwise start empty
     let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
     commands.insert_resource(map);
-    commands.insert_resource(EditorState { mode: EditorMode::Tile, tile_idx: 0, agent_grid: 1, left_was_down: false });
+    commands.insert_resource(
+        EditorState { 
+            mode: EditorMode::Tile, 
+            tile_idx: 0, 
+            agent_grid: 1,
+            index: 0,
+            agent_goal: 0,
+            viz_goal: 0,
+            left_was_down: false,
+            save_filepath: MAP_SAVE_PATH.to_string()
+        });
 
     // create shared cube mesh for agent bodies
     let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
@@ -850,20 +968,37 @@ pub fn setup_ratrace2(
     commands.insert_resource(WanderBuf(Vec::new()));
     commands.insert_resource(FacingBuf(Vec::new()));
     commands.insert_resource(SpeedBuf(Vec::new()));
+    commands.insert_resource(GoalBuf(Vec::new()));
+    commands.insert_resource(FlagsBuf(Vec::new()));
 
     Ok(())
 }
 
 #[export_update_fn]
 pub fn update_tile_editor_ui(
+    mut commands: Commands,
     mut imgui: ResMut<ImGuiRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
-    agents: Query<(), With<HumanAgent>>,
+    agents: Query<Entity, With<HumanAgent>>,
 ) -> Result<(), hotline_rs::Error> {
     imgui.set_global_context();
 
     if imgui.begin_window("Editor") {
+        // save / load
+        imgui.input_text("##filepath", &mut editor.save_filepath, 256);
+        imgui.same_line();
+        if imgui.button("Save") {
+            let _ = map.save(&editor.save_filepath);
+        }
+        imgui.same_line();
+        if imgui.button("Load") {
+            if let Ok(mut loaded) = Map::load(&editor.save_filepath) {
+                loaded.dirty = true;
+                *map = loaded;
+            }
+        }
+
         if imgui.button(if editor.mode == EditorMode::Tile { ">Tile" } else { " Tile" }) {
             editor.mode = EditorMode::Tile;
         }
@@ -880,15 +1015,38 @@ pub fn update_tile_editor_ui(
                 if let Some(idx) = names.iter().position(|n| n == &chosen) {
                     editor.tile_idx = idx;
                 }
+                let mut pi = editor.index as i32;
+                imgui.input_int("Index", &mut pi);
+                editor.index = pi.clamp(0, 255) as u8;
             }
             EditorMode::Agent => {
                 imgui.input_int("Grid", &mut editor.agent_grid);
                 editor.agent_grid = editor.agent_grid.max(1);
-                imgui.text(&format!("{}x{} agents on click", editor.agent_grid, editor.agent_grid));
+                let mut ag = editor.agent_goal as i32;
+                imgui.input_int("Goal", &mut ag);
+                editor.agent_goal = ag.clamp(0, 255) as u8;
+                imgui.text(&format!("{}x{} agents → goal {}", editor.agent_grid, editor.agent_grid, editor.agent_goal));
             }
         }
         imgui.separator();
-        if imgui.button("clear") { *map = Map::new(); }
+        let num_layers = map.chunks.values().map(|c| c.flow.len()).max().unwrap_or(1);
+        let flow_items: Vec<String> = (0..num_layers).map(|i| format!("Goal {}", i)).collect();
+        let cur_viz = format!("Goal {}", editor.viz_goal.min((num_layers - 1) as u8));
+        let (_, selected) = imgui.combo_list("Viz Flow", &flow_items, &cur_viz);
+        editor.viz_goal = selected.trim_start_matches("Goal ").parse::<u8>().unwrap_or(0);
+
+        imgui.separator();
+
+        if imgui.button("clear map") { 
+            *map = Map::new(); 
+        }
+        imgui.same_line();
+        if imgui.button("clear agents") { 
+            for entity in &agents {
+                commands.entity(entity).despawn();
+            }
+        }
+
         imgui.separator();
         let floor_tiles: usize = map.chunks.values()
             .map(|c| c.tiles.iter().filter(|&&t| is_walkable(t)).count())
@@ -954,7 +1112,7 @@ pub fn update_tile_editor(
         Vec4f::blue(),                           // Escalator
         Vec4f::yellow(),                         // Platform
         Vec4f::green(),                          // TrainTrack
-        Vec4f::new(0.4, 0.4, 0.4, 1.0),         // Floor
+        Vec4f::new(0.4, 0.4, 0.4, 1.0),          // Floor
     ];
 
     if enable_mouse {
@@ -987,7 +1145,7 @@ pub fn update_tile_editor(
                 imdraw.add_line_3d(Vec3f::new(min_x, y, max_z), Vec3f::new(min_x, y, min_z), col);
 
                 // place / erase tiles
-                if !app.is_sys_key_down(os::SysKey::Alt) {
+                if !app.is_sys_key_down(os::SysKey::Alt) && !app.is_sys_key_down(os::SysKey::Shift) {
                     let buttons = app.get_mouse_buttons();
                     let left_down = buttons[os::MouseButton::Left as usize];
                     let left_pressed = left_down && !editor.left_was_down;
@@ -997,6 +1155,7 @@ pub fn update_tile_editor(
                             match editor.mode {
                                 EditorMode::Tile => {
                                     map.set_tile(Vec3i::new(tile_x, 0, tile_z), TILE_TYPES[editor.tile_idx]);
+                                    map.set_tile_index(Vec3i::new(tile_x, 0, tile_z), editor.index);
                                 }
                                 EditorMode::Agent => {
                                     if left_pressed {
@@ -1015,6 +1174,8 @@ pub fn update_tile_editor(
                                                     SepForce(Vec2f::zero()),
                                                     LocalDensity(0.0),
                                                     FacingRot(Quatf::identity()),
+                                                    Goal(editor.agent_goal),
+                                                    Flags(0),
                                                     MeshComponent(cube_mesh.0.clone()),
                                                     Position(vec3f(ax, AGENT_BODY_HALF_HEIGHT, az)),
                                                     Rotation(Quatf::identity()),
@@ -1035,20 +1196,6 @@ pub fn update_tile_editor(
                     }
                     editor.left_was_down = left_down;
                 }
-            }
-        }
-    }
-
-    // save / load with Ctrl+S / Ctrl+L
-    if app.is_sys_key_down(os::SysKey::Ctrl) {
-        let keys = app.get_keys_pressed();
-        if keys['S' as usize] {
-            let _ = map.save();
-        }
-        if keys['L' as usize] {
-            if let Ok(mut loaded) = Map::load(MAP_SAVE_PATH) {
-                loaded.dirty = true;
-                *map = loaded;
             }
         }
     }
@@ -1084,7 +1231,7 @@ pub fn update_tile_editor(
                     imdraw.add_line_3d(Vec3f::new(min_x, y, min_z), Vec3f::new(max_x, y, max_z), col);
                     imdraw.add_line_3d(Vec3f::new(max_x, y, min_z), Vec3f::new(min_x, y, max_z), col);
 
-                    let flow_dir = chunk.flow[idx];
+                    let flow_dir = chunk.flow.get(editor.viz_goal as usize).map(|l| l[idx]).unwrap_or(Vec2f::zero());
                     if flow_dir != Vec2f::zero() {
                         let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
                         let flow_start = Vec3f::new(mid_x, y, mid_z);
