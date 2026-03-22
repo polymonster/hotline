@@ -119,7 +119,7 @@ pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u3
 }
 
 /// Utility to create faceted meshes with varying index sizes depending on the index requirements
-fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices: Vec<usize>) -> pmfx::Mesh<D> {
+pub fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices: Vec<usize>) -> pmfx::Mesh<D> {
     let max_index = vertices.len();
     let index_buffer = if max_index > 65535 {
         let mut indices32 : Vec<u32> = Vec::new();
@@ -180,7 +180,7 @@ fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices:
 }
 
 /// Utility to create a facent mesh which will have hard edged normals and automatically generate and index buffer from vertices
-fn create_faceted_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>) -> pmfx::Mesh<D> {
+pub fn create_faceted_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>) -> pmfx::Mesh<D> {
     let mut indices = Vec::new();
     for i in 0..vertices.len() {
         indices.push(i);
@@ -2762,6 +2762,316 @@ pub fn create_tube_prism_mesh<D: gfx::Device>(
 
         create_faceted_mesh_3d(dev, triangle_vertices)
     }
+}
+
+/// Create an `segments` sided prism tube where the exterior is extruded out to a cube, if `smooth` the prism is a cylinder with smooth normals
+/// convert to a trapezoid using `taper` with a value between 0-1 to taper the top cap inward where 1 is no taper and 0 makes a pyramid
+/// use thickness to control the size of the inner hole
+#[allow(clippy::too_many_arguments)]
+pub fn create_cube_tube_prism_mesh<D: gfx::Device>(
+    dev: &mut D, segments: usize, trunc_start: usize, trunc_end: usize, smooth: bool, cap: bool, height: f32, thickness: f32, taper: f32) -> pmfx::Mesh<D> {
+    let axis = Vec3f::unit_y();
+    let right = Vec3f::unit_x();
+    let up = cross(axis, right);
+    let right = cross(axis, up);
+
+    // add an extra segment at the end to make uv's wrap nicely
+    let vertex_segments = segments + 1;
+
+    let prism_vertices = |radius: f32, flip: f32| -> (Vec<Vertex3D>, Vec<Vertex3D>) {
+        let mut vertices = Vec::new();
+        let mut cap_vertices = Vec::new();
+        let mut points = Vec::new();
+        let mut bottom_points = Vec::new();
+        let mut top_points = Vec::new();
+        let mut tangents = Vec::new();
+
+        // rotate around up axis and extract some data we can lookup to build vb and ib
+        let mut angle = 0.0;
+        let angle_step = f32::two_pi() / segments as f32;
+        for i in 0..vertex_segments {
+            // current
+            let mut x = cos(angle);
+            let mut y = -sin(angle);
+            let v1 = right * x + up * y;
+
+            // next
+            angle += angle_step;
+            x = cos(angle);
+            y = -sin(angle);
+            let v2 = right * x + up * y;
+
+            points.push(v1 * radius);
+            tangents.push(v2 - v1);
+
+            bottom_points.push(points[i] - Vec3f::unit_y() * height);
+            top_points.push(points[i] * taper + Vec3f::unit_y() * height);
+        }
+
+        // bottom ring
+        for i in 0..vertex_segments {
+            let u = 0.5 + atan2(bottom_points[i].z, bottom_points[i].x) / f32::two_pi();
+            let u = if i == segments { 0.0 } else { u };
+            let bt = cross(tangents[i], points[i]);
+            vertices.push(Vertex3D{
+                position: bottom_points[i],
+                normal: points[i] * flip,
+                tangent: tangents[i],
+                bitangent: bt,
+                texcoord: Vec2f::new(u * 3.0, 0.0)
+            });
+        }
+
+        // top ring
+        for i in 0..vertex_segments {
+            let u = 0.5 + atan2(top_points[i].z, top_points[i].x) / f32::two_pi();
+            let u = if i == segments { 0.0 } else { u };
+            let bt = cross(tangents[i], points[i]);
+            vertices.push(Vertex3D{
+                position: top_points[i],
+                normal: points[i] * flip,
+                tangent: tangents[i],
+                bitangent: bt,
+                texcoord: Vec2f::new(u * 3.0, 1.0)
+            });
+        }
+
+        // bottom cap
+        for point in bottom_points.iter().take(vertex_segments) {
+            cap_vertices.push(Vertex3D{
+                position: point.xyz(),
+                normal: -Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+                texcoord: point.xz() * 0.5 + 0.5
+            });
+        }
+
+        // top cap
+        for point in top_points.iter().take(vertex_segments) {
+            cap_vertices.push(Vertex3D{
+                position: point.xyz(),
+                normal: Vec3f::unit_y(),
+                tangent: Vec3f::unit_x(),
+                bitangent: Vec3f::unit_z(),
+                texcoord: point.xz() * 0.5 + 0.5
+            });
+        }
+
+        (vertices, cap_vertices)
+    };
+
+    let end_cap = |loop_start: usize, v: &Vec<Vertex3D>, inner_offset: usize, flip: f32| -> Vec<Vertex3D> {
+        // start
+        let bottom = loop_start;
+        let top = loop_start + vertex_segments;
+        let inner_bottom = bottom + inner_offset;
+        let inner_top = top + inner_offset;
+
+        let mut verts = vec![
+            v[bottom].clone(),
+            v[top].clone(),
+            v[inner_bottom].clone(),
+            v[inner_top].clone(),
+        ];
+
+        let b = normalize(verts[1].position - verts[0].position);
+        let t = normalize(verts[2].position - verts[0].position);
+        let n = cross(b, t) * flip;
+
+        for v in &mut verts {
+            v.normal = n;
+            v.tangent = t;
+            v.bitangent = b;
+        }
+
+        verts[0].texcoord = Vec2f::zero();
+        verts[1].texcoord = vec2f(0.0, 1.0);
+        verts[2].texcoord = vec2f(1.0 - thickness, 0.0);
+        verts[3].texcoord = vec2f(1.0 - thickness, 1.0);
+
+        verts
+    };
+
+    let (mut outer_vertices, mut outer_cap_vertices) = prism_vertices(1.0, 1.0);
+    let (inner_vertices, inner_cap_vertices) = prism_vertices(thickness, -1.0);
+
+    // project outer vertices onto cube, normals / tangent also need flattening
+    for v in &mut outer_vertices {
+        // keep y
+        let y = v.position.y;
+
+        // normalize xz onto cube
+        v.position.y = 0.0;
+        v.position = chebyshev_normalize(v.position);
+
+        // reset y
+        v.position.y = y;
+    }
+
+    // project outer cap vertices onto cube, normals stay the same
+    for v in &mut outer_cap_vertices {
+        // keep y
+        let y = v.position.y;
+
+        // normalize xz onto cube
+        v.position.y = 0.0;
+        v.position = chebyshev_normalize(v.position);
+
+        // reset y
+        v.position.y = y;
+    }
+
+    let mut indices = Vec::new();
+    let mut vertices = Vec::new();
+
+    // 2 tris per segment for outer (always faceted)
+    for i in trunc_start..trunc_end {
+        let bottom = i;
+        let top = i + vertex_segments;
+        let next = i + 1;
+        let top_next = i + 1 + vertex_segments;
+
+        let face_index = vertices.len();
+        vertices.extend(vec![
+            outer_vertices[bottom].clone(),
+            outer_vertices[top].clone(),
+            outer_vertices[next].clone(),
+            outer_vertices[top].clone(),
+            outer_vertices[top_next].clone(),
+            outer_vertices[next].clone()
+        ]);
+
+        let v = face_index;
+        let n = get_triangle_normal(
+            vertices[v].position,
+            vertices[v+2].position,
+            vertices[v+1].position
+        );
+
+        // set hard face normals
+        for vertex in vertices.iter_mut().skip(face_index) {
+            vertex.normal = n;
+        }
+    }
+
+    // faceted inner
+    if !smooth {
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            let face_index = vertices.len();
+            vertices.extend(vec![
+                inner_vertices[bottom].clone(),
+                inner_vertices[next].clone(),
+                inner_vertices[top].clone(),
+                inner_vertices[top].clone(),
+                inner_vertices[next].clone(),
+                inner_vertices[top_next].clone()
+            ]);
+
+            let v = face_index;
+            let n = get_triangle_normal(
+                vertices[v].position,
+                vertices[v+2].position,
+                vertices[v+1].position,
+            );
+
+            // set hard face normals
+            for vertex in vertices.iter_mut().skip(face_index) {
+                vertex.normal = n;
+            }
+        }
+    }
+
+    // top / bottom cap
+    if cap {
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            vertices.extend(vec![
+                outer_cap_vertices[top].clone(),
+                inner_cap_vertices[top].clone(),
+                inner_cap_vertices[top_next].clone(),
+                outer_cap_vertices[top].clone(),
+                inner_cap_vertices[top_next].clone(),
+                outer_cap_vertices[top_next].clone()
+            ]);
+
+            vertices.extend(vec![
+                inner_cap_vertices[bottom].clone(),
+                outer_cap_vertices[bottom].clone(),
+                outer_cap_vertices[next].clone(),
+                inner_cap_vertices[bottom].clone(),
+                outer_cap_vertices[next].clone(),
+                inner_cap_vertices[next].clone()
+            ]);
+        }
+    }
+
+    // end cap
+    if trunc_start != 0 || trunc_end != segments {
+        let mut cap_vertices = outer_vertices.to_vec();
+        let inner_offset = cap_vertices.len();
+        cap_vertices.extend(inner_vertices.clone());
+
+        let start_verts = end_cap(trunc_start, &cap_vertices, inner_offset, 1.0);
+        vertices.extend(vec![
+            start_verts[0].clone(),
+            start_verts[3].clone(),
+            start_verts[1].clone(),
+            start_verts[0].clone(),
+            start_verts[2].clone(),
+            start_verts[3].clone(),
+        ]);
+
+        let end_verts = end_cap(trunc_end, &cap_vertices, inner_offset, -1.0);
+        vertices.extend(vec![
+            end_verts[0].clone(),
+            end_verts[1].clone(),
+            end_verts[3].clone(),
+            end_verts[0].clone(),
+            end_verts[3].clone(),
+            end_verts[2].clone(),
+        ]);
+    }
+
+    // create facet indices
+    for i in 0..vertices.len() {
+        indices.push(i);
+    }
+
+    // smooth inner appeneded
+    if smooth {
+        let inner_offset = vertices.len();
+        vertices.extend(inner_vertices);
+
+        // sides
+        for i in trunc_start..trunc_end {
+            let bottom = i;
+            let top = i + vertex_segments;
+            let next = i + 1;
+            let top_next = i + 1 + vertex_segments;
+
+            // inner
+            indices.extend(vec![
+                bottom + inner_offset,
+                next + inner_offset,
+                top + inner_offset,
+                top + inner_offset,
+                next + inner_offset,
+                top_next + inner_offset,
+            ]);
+        }
+    }
+
+    create_mesh_3d(dev, vertices, indices)
 }
 
 fn cubic_interpolate(p1: Vec3f, p2: Vec3f, p3: Vec3f, p4: Vec3f, t: f32) -> Vec3f {
