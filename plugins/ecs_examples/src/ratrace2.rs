@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 const CHUNK_SIZE: usize = 8; // must be power-of-2 for morton encoding to produce dense indices
 const TILE_SIZE: f32 = 10.0;
+const TILE_OCCUPIED: u8 = 1;
 const GRID_SIZE: i32 = 2000;
 const ARRAY_SIZE: usize = CHUNK_SIZE * CHUNK_SIZE * CHUNK_SIZE;
 
@@ -44,12 +45,13 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
             "setup_ratrace2"
         ],
         update: systems![
-            "update_tile_editor_ui",
             "update_flow_field",
             "update_tile_editor",
             "update_agents",
             "update_agent_transforms",
-            "debug_draw_agents"
+            "debug_draw_agents",
+            "update_tile_editor_ui",
+            "update_perf_ui"
         ],
         render_graph: "mesh_wireframe_overlay"
     }
@@ -95,6 +97,8 @@ pub struct MapChunk {
     walls:      Vec<WallLine>,
     wall_start: [u32; ARRAY_SIZE],
     wall_count: [u8;  ARRAY_SIZE],
+    /// per-tile flags (bit 0 = TILE_OCCUPIED); set by register_agent, cleared by clear_agents
+    flags: [u8; ARRAY_SIZE],
 }
 
 impl MapChunk {
@@ -109,13 +113,17 @@ impl MapChunk {
             walls:      Vec::new(),
             wall_start: [0; ARRAY_SIZE],
             wall_count: [0; ARRAY_SIZE],
+            flags:      [0u8; ARRAY_SIZE],
         }
     }
 
     fn clear_agents(&mut self) {
-        for (v, d) in self.agents.iter_mut().zip(self.density.iter_mut()) {
-            v.clear();
-            *d = 0.0;
+        for (idx, f) in self.flags.iter_mut().enumerate() {
+            if *f & TILE_OCCUPIED != 0 {
+                self.agents[idx].clear();
+                self.density[idx] = 0.0;
+                *f = 0;
+            }
         }
     }
 }
@@ -186,22 +194,20 @@ const TILE_TYPES: &[TileType] = &[
 #[derive(Resource)]
 pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
 
-/// Persistent position buffer indexed by entity.index() — avoids per-frame HashMap allocation
-#[derive(Resource)] pub(crate) struct PosBuffer(Vec<Vec3f>);
-/// Separation+wall force per entity, written by p2_sep, read by p3_move
-#[derive(Resource)] pub(crate) struct SepBuf(Vec<Vec2f>);
-/// Local density per entity, written by p2_sep
-#[derive(Resource)] pub(crate) struct DensityBuf(Vec<f32>);
-/// Wander angle per entity (mirrors WanderAngle component)
-#[derive(Resource)] pub(crate) struct WanderBuf(Vec<f32>);
-/// Facing quaternion per entity (mirrors FacingRot component)
-#[derive(Resource)] pub(crate) struct FacingBuf(Vec<Quatf>);
-/// Speed scale per entity (mirrors SpeedScale component, read-only after spawn)
-#[derive(Resource)] pub(crate) struct SpeedBuf(Vec<f32>);
-/// Goal index per entity (mirrors Goal component)
-#[derive(Resource)] pub(crate) struct GoalBuf(Vec<u8>);
-/// Per-entity agent flags flat buffer (mirrors Flags component)
-#[derive(Resource)] pub(crate) struct FlagsBuf(Vec<u8>);
+/// Flat per-entity SoA buffers, all indexed by entity.index()
+#[derive(Resource, Default)]
+pub(crate) struct AgentSoa {
+    pub pos:     Vec<Vec3f>,
+    pub sep:     Vec<Vec2f>,
+    pub density: Vec<f32>,
+    pub wander:  Vec<f32>,
+    pub facing:  Vec<Quatf>,
+    pub speed:   Vec<f32>,
+    pub goal:    Vec<u8>,
+    pub flags:   Vec<u8>,
+    /// per-frame pass timers: (name, microseconds), refreshed every frame
+    pub timers:  Vec<(&'static str, u64)>,
+}
 
 /// Marker — identifies human agents in the ECS
 #[derive(Component)]
@@ -327,11 +333,12 @@ impl Map {
         for chunk in self.chunks.values_mut() { chunk.clear_agents(); }
     }
 
-    /// Register an agent entity into a tile cell; also increments density
+    /// Register an agent entity into a tile cell; also increments density and sets TILE_OCCUPIED flag
     fn register_agent(&mut self, tile: Vec3i, entity: Entity) {
         let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
         if let Some(chunk) = self.chunks.get_mut(&(cx, cy, cz)) {
             let idx = morton_encode(lx, ly, lz);
+            chunk.flags[idx] |= TILE_OCCUPIED;
             chunk.agents[idx].push(entity);
             chunk.density[idx] += 1.0;
         }
@@ -574,17 +581,12 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
 pub fn update_agents(
     mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
     mut map: ResMut<Map>,
-    mut pos_buf: ResMut<PosBuffer>,
-    mut sep_buf: ResMut<SepBuf>,
-    mut density_buf: ResMut<DensityBuf>,
-    mut wander_buf: ResMut<WanderBuf>,
-    mut facing_buf: ResMut<FacingBuf>,
-    mut speed_buf: ResMut<SpeedBuf>,
-    mut goal_buf: ResMut<GoalBuf>,
-    mut flags_buf: ResMut<FlagsBuf>,
+    mut soa: ResMut<AgentSoa>,
 ) -> Result<(), hotline_rs::Error> {
 
-    let profile = false;
+    // reborrow as raw ref so NLL can split field borrows (ResMut treats whole struct as one borrow)
+    let soa: &mut AgentSoa = &mut *soa;
+    soa.timers.clear();
 
     //
     // clear grid
@@ -597,7 +599,7 @@ pub fn update_agents(
     let sep_radius = (BASE_SEP_RADIUS - total_agents as f32 * SEP_RADIUS_DECAY).max(MIN_SEP_RADIUS);
     let sep_radius_sq = sep_radius * sep_radius;
 
-    if profile { println!("clear:      {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("clear", t.elapsed().as_micros() as u64));
 
     //
     // Pass 1: register each agent in the spatial grid (read-only)
@@ -610,96 +612,163 @@ pub fn update_agents(
         map.register_agent(tile, entity);
     }
 
-    if profile { println!("p1 reg:     {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("p1 reg", t.elapsed().as_micros() as u64));
 
     //
-    // Pass 2: per-cell separation + density accumulation
-    // Snapshot occupied cells with precomputed (chunk_key, morton idx) to avoid
-    // re-computing chunk_key/morton in the hot inner loop and to prevent borrow conflicts.
-    // `occupied` is also reused by the post-movement correction pass.
+    // Pass 2: scan flags to build occupied list (chunk_key, morton_idx), then flat per-agent cells.
     //
     let t = std::time::Instant::now();
 
-    struct OccupiedCell { tile: Vec3i, chunk_key: (i32, i32, i32), idx: usize, cell_agents: Vec<Entity> }
-    let occupied: Vec<OccupiedCell> = map.chunks.iter()
-        .flat_map(|(&key, chunk)| {
-            let (cx, cy, cz) = key;
-            let cs = CHUNK_SIZE as i32;
-            // iterate lx/ly/lz directly — no morton_decode needed
-            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).filter_map(move |lx| {
-                let idx = morton_encode(lx, ly, lz);
-                if chunk.agents[idx].is_empty() { return None; }
-                Some(OccupiedCell {
-                    tile: Vec3i::new(cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32),
-                    chunk_key: key,
-                    idx,
-                    cell_agents: chunk.agents[idx].clone(),
-                })
-            })))
+    let occupied: Vec<((i32,i32,i32), usize)> = map.chunks.iter()
+        .flat_map(|(&ck, chunk)| {
+            chunk.flags.iter().enumerate()
+                .filter(|(_, &f)| f & TILE_OCCUPIED != 0)
+                .map(move |(idx, _)| (ck, idx))
+        })
+        .collect();
+
+    // (entity_idx, chunk_key, morton_idx) — one entry per agent
+    let cells: Vec<(usize, (i32,i32,i32), usize)> = occupied.iter()
+        .flat_map(|&(ck, idx)| {
+            map.chunks[&ck].agents[idx].iter().map(move |&e| (e.index() as usize, ck, idx))
         })
         .collect();
 
     // Fill flat buffers — indexed by entity.index()
     let max_idx = agents.iter().map(|(e, ..)| e.index() as usize).max().unwrap_or(0);
-    if pos_buf.0.len()     <= max_idx { pos_buf.0.resize(max_idx + 1, Vec3f::zero()); }
-    if sep_buf.0.len()     <= max_idx { sep_buf.0.resize(max_idx + 1, Vec2f::zero()); }
-    if density_buf.0.len() <= max_idx { density_buf.0.resize(max_idx + 1, 0.0); }
-    if wander_buf.0.len()  <= max_idx { wander_buf.0.resize(max_idx + 1, 0.0); }
-    if facing_buf.0.len()  <= max_idx { facing_buf.0.resize(max_idx + 1, Quatf::identity()); }
-    if speed_buf.0.len()   <= max_idx { speed_buf.0.resize(max_idx + 1, 1.0); }
-    if goal_buf.0.len()    <= max_idx { goal_buf.0.resize(max_idx + 1, 0); }
-    if flags_buf.0.len()   <= max_idx { flags_buf.0.resize(max_idx + 1, 0); }
+    if soa.pos.len() <= max_idx { soa.pos.resize(max_idx + 1, Vec3f::zero()); }
+    if soa.sep.len() <= max_idx { soa.sep.resize(max_idx + 1, Vec2f::zero()); }
+    if soa.density.len() <= max_idx { soa.density.resize(max_idx + 1, 0.0); }
+    if soa.wander.len() <= max_idx { soa.wander.resize(max_idx + 1, 0.0); }
+    if soa.facing.len() <= max_idx { soa.facing.resize(max_idx + 1, Quatf::identity()); }
+    if soa.speed.len() <= max_idx { soa.speed.resize(max_idx + 1, 1.0); }
+    if soa.goal.len() <= max_idx { soa.goal.resize(max_idx + 1, 0); }
+    if soa.flags.len() <= max_idx { soa.flags.resize(max_idx + 1, 0); }
     for (e, pos, speed, wander, _, _, facing, goal, flags) in agents.iter() {
         let i = e.index() as usize;
-        pos_buf.0[i]    = pos.0;
-        wander_buf.0[i] = wander.0;
-        facing_buf.0[i] = facing.0;
-        speed_buf.0[i]  = speed.0;
-        goal_buf.0[i]   = goal.0;
-        flags_buf.0[i]  = flags.0;
+        soa.pos[i]    = pos.0;
+        soa.wander[i] = wander.0;
+        soa.facing[i] = facing.0;
+        soa.speed[i]  = speed.0;
+        soa.goal[i]   = goal.0;
+        soa.flags[i]  = flags.0;
     }
 
-    if profile { println!("p2 build:   {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("p2 build", t.elapsed().as_micros() as u64));
 
     //
-    // p2_sep: per-entity separation + wall avoidance → parallel scatter to sep_buf/density_buf
+    // p2_bake: sequential pass — gather nbr agent indices and pre-compute per-agent data.
+    // Moves all chunk/morton lookups out of the parallel hot loop.
     //
     let t = std::time::Instant::now();
 
-    let entity_tiles_sep: Vec<(usize, Vec3i)> = occupied.iter()
-        .flat_map(|cell| cell.cell_agents.iter().map(move |&e| (e.index() as usize, cell.tile)))
-        .collect();
+    let pb = soa.pos.as_slice();
+    let gb = soa.goal.as_slice();
+    let fbp = soa.flags.as_ptr() as usize;
+    let fbp_len = soa.flags.len();
 
-    let sp  = sep_buf.0.as_mut_ptr() as usize;
-    let dp  = density_buf.0.as_mut_ptr() as usize;
-    let fgp = flags_buf.0.as_mut_ptr() as usize;
-    let pb      = pos_buf.0.as_slice();
-    let gb      = goal_buf.0.as_slice();
-    let fb_prev = flags_buf.0.as_slice();   // previous frame flags — read-only for neighbour propagation
-    entity_tiles_sep.par_iter().for_each(|&(ia, tile)| {
-        let pos_a = pb[ia];
-        let pa    = vec2f(pos_a.x, pos_a.z);
-        let mut sep = Vec2f::zero();
+    let n = cells.len();
+    let mut baked_density = vec![0.0f32;        n];
+    let mut baked_flow    = vec![Vec2f::zero();  n];
+    let mut baked_flags   = vec![0u8;            n]; // FLAG_WAITING
+    // let mut baked_spread  = vec![Vec2f::zero();  n]; // lateral spread velocity
+    let mut nbr_start     = vec![0usize;     n + 1];
+    let mut nbr_flat      = Vec::<usize>::new();
+
+    for (ci, &(ia, ck, idx)) in cells.iter().enumerate() {
+        let chunk    = &map.chunks[&ck];
+        let goal     = gb[ia] as usize;
+        let density  = chunk.density[idx];
+        let flow_dir = if goal < chunk.flow.len() { chunk.flow[goal][idx] } else { Vec2f::zero() };
+
+        baked_density[ci] = density;
+        baked_flow[ci]    = flow_dir;
+
+        // gather all neighbour agents (3x3 in XZ) into nbr_flat
+        let tile = world_to_tile(pb[ia]);
         for dz in -1i32..=1 { for dx in -1i32..=1 {
-            for &e in map.get_agents_at(Vec3i::new(tile.x+dx, tile.y, tile.z+dz)) {
-                let ib = e.index() as usize;
-                if ib == ia { continue; }
-                let diff = pa - vec2f(pb[ib].x, pb[ib].z);
-                let dist_sq = dot(diff, diff);
-                if dist_sq > 0.01 && dist_sq < sep_radius_sq {
-                    let d = sqrt(dist_sq);
-                    sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
-                }
+            let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x+dx, tile.y, tile.z+dz);
+            let nidx = morton_encode(nlx, nly, nlz);
+            if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
+                nbr_flat.extend(nc.agents[nidx].iter().map(|&e| e.index() as usize));
             }
         }}
-        let cell_density = map.get_density(tile);
+        nbr_start[ci + 1] = nbr_flat.len();
+
+        // waiting flag: at goal (neighbor_waiting deferred to p2_sep via nbr_flat)
+        let at_goal = chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == gb[ia];
+        baked_flags[ci] = if at_goal { FLAG_WAITING } else { 0u8 };
+
+        // TODO: not working
+        // lateral spread velocity
+        /*
+        baked_spread[ci] = if (neighbor_waiting || at_goal) && length(flow_norm_2d) > 0.001 {
+            let perp = Vec2f::new(-flow_norm_2d.y, flow_norm_2d.x);
+            let pi   = Vec3i::new(perp.x.round() as i32, 0, perp.y.round() as i32);
+            let (nx1,ny1,nz1,lx1,ly1,lz1) = tile_to_chunk(tile.x + pi.x, tile.y, tile.z + pi.z);
+            let (nx2,ny2,nz2,lx2,ly2,lz2) = tile_to_chunk(tile.x - pi.x, tile.y, tile.z - pi.z);
+            let d_pos = map.chunks.get(&(nx1,ny1,nz1)).map_or(0.0, |c| c.density[morton_encode(lx1,ly1,lz1)]);
+            let d_neg = map.chunks.get(&(nx2,ny2,nz2)).map_or(0.0, |c| c.density[morton_encode(lx2,ly2,lz2)]);
+            perp * (d_neg - d_pos) * QUEUE_SPREAD_STRENGTH
+        } else { Vec2f::zero() };
+        */
+    }
+
+    soa.timers.push(("p2 bake", t.elapsed().as_micros() as u64));
+
+    //
+    // p2_sep: parallel — pure arithmetic + direct array indexing, no chunk/morton lookups
+    //
+    let t = std::time::Instant::now();
+
+    let sp = soa.sep.as_mut_ptr() as usize;
+    let dp = soa.density.as_mut_ptr() as usize;
+    let fgp = soa.flags.as_mut_ptr() as usize;
+
+    cells.par_iter().enumerate().for_each(|(ci, &(ia, ck, idx), )| {
+        let chunk = &map.chunks[&ck];
+        let pos_a = pb[ia];
+        let pa = vec2f(pos_a.x, pos_a.z);
+        let nbrs = &nbr_flat[nbr_start[ci]..nbr_start[ci+1]];
+        let flow_dir = baked_flow[ci];
+
+        // seaparation vs agents
+        let mut sep = Vec2f::zero();
+        for &ib in nbrs {
+            if ib == ia { continue; }
+            let diff = pa - vec2f(pb[ib].x, pb[ib].z);
+            let dist_sq = dot(diff, diff);
+            if dist_sq > 0.01 && dist_sq < sep_radius_sq {
+                let d = sqrt(dist_sq);
+                sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
+            }
+        }
+        let cell_density  = baked_density[ci];
         let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
         let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
-        let walls     = map.get_walls(tile);
-        let flow_dir  = map.get_flow(tile, gb[ia]);
-        let flow3     = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
-        let tile_flow = if length(flow3) > 0.001 { normalize(flow3) } else { Vec3f::zero() };
+        // queuing vs agents
+        // waiting flag: at_goal baked; check nbr_flat for same-goal forward neighbour waiting last frame
+        let at_goal = (baked_flags[ci] & FLAG_WAITING) != 0;
+        let flow_norm_2d = if length(flow_dir) > 0.001 { normalize(flow_dir) } else { Vec2f::zero() };
+        let neighbor_waiting = !at_goal && length(flow_norm_2d) > 0.001 && nbrs.iter().any(|&ib| {
+            // SAFETY: fbp aliases fgp (same soa.flags buffer); ib != ia so no write-read overlap
+            ib != ia
+            && ib < fbp_len && unsafe { *(fbp as *const u8).add(ib) } & FLAG_WAITING != 0
+            && gb[ib] == gb[ia]
+            && dot(vec2f(pb[ib].x, pb[ib].z) - pa, flow_norm_2d) > 0.0
+        });
+
+        // collision avoidance vs walls
+        let s = chunk.wall_start[idx] as usize;
+        let walls = &chunk.walls[s .. s + chunk.wall_count[idx] as usize];
+        let flow3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
+        let tile_flow = if length(flow3) > 0.001 { 
+            normalize(flow3) 
+        } 
+        else { 
+            Vec3f::zero() 
+        };
         let mut wall_vel = Vec2f::zero();
         for wl in walls {
             let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
@@ -713,78 +782,41 @@ pub fn update_agents(
                 }
             }
         }
-        // compute waiting flag: at own goal tile OR a same-goal neighbour in front was waiting last frame
-        let at_goal = map.is_goal_tile(tile, gb[ia]);
-        let flow_norm_2d = if length(flow_dir) > 0.001 { normalize(flow_dir) } else { Vec2f::zero() };
-        let neighbor_waiting = if !at_goal && length(flow_norm_2d) > 0.001 {
-            let mut found = false;
-            'outer: for ndz in -1i32..=1 { for ndx in -1i32..=1 {
-                if ndx == 0 && ndz == 0 { continue; }
-                // only neighbours in the forward half-plane of our flow direction can block us
-                if dot(Vec2f::new(ndx as f32, ndz as f32), flow_norm_2d) <= 0.0 { continue; }
-                for &nb_e in map.get_agents_at(Vec3i::new(tile.x+ndx, tile.y, tile.z+ndz)) {
-                    let ib = nb_e.index() as usize;
-                    if ib != ia && ib < fb_prev.len() && (fb_prev[ib] & FLAG_WAITING) != 0 && gb[ib] == gb[ia] {
-                        found = true; break 'outer;
-                    }
-                }
-            }}
-            found
-        } else { false };
-        let new_flags = if at_goal || neighbor_waiting { FLAG_WAITING } else { 0u8 };
-        // lateral spread: drift toward less-dense perpendicular neighbour when queuing
-        let spread_vel = if (neighbor_waiting || at_goal) && length(flow_norm_2d) > 0.001 {
-            let perp = Vec2f::new(-flow_norm_2d.y, flow_norm_2d.x);
-            let pi = Vec3i::new(perp.x.round() as i32, 0, perp.y.round() as i32);
-            let d_pos = map.get_density(Vec3i::new(tile.x + pi.x, tile.y, tile.z + pi.z));
-            let d_neg = map.get_density(Vec3i::new(tile.x - pi.x, tile.y, tile.z - pi.z));
-            perp * (d_neg - d_pos) * QUEUE_SPREAD_STRENGTH
-        } else { Vec2f::zero() };
+
         // SAFETY: ia is unique per entity
         unsafe {
-            *(sp  as *mut Vec2f).add(ia) = sep_vel + wall_vel + spread_vel;
-            *(dp  as *mut f32).add(ia)   = cell_density;
-            *(fgp as *mut u8).add(ia)    = new_flags;
+            *(sp  as *mut Vec2f).add(ia) = sep_vel + wall_vel; // + baked_spread[ci];
+            *(dp  as *mut f32).add(ia) = cell_density;
+            *(fgp as *mut u8).add(ia) = if at_goal || neighbor_waiting { FLAG_WAITING } else { 0u8 };
         }
     });
-    // Batch-write ECS from flat buffers
-    for (entity, .., mut sf, mut ld, _, _, mut fl) in agents.iter_mut() {
-        let ia = entity.index() as usize;
-        sf.0 = sep_buf.0[ia];
-        ld.0 = density_buf.0[ia];
-        fl.0 = flags_buf.0[ia];
-    }
-
-    if profile { println!("p2 sep:     {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("p2 sep", t.elapsed().as_micros() as u64));
 
     //
     // Pass 3: apply forces and move — parallel scatter to flat buffers, batch ECS write
     //
     let t = std::time::Instant::now();
 
-    // entity_tiles_sep was built from pre-move occupied; reuse indices for move
-    let pp  = pos_buf.0.as_mut_ptr() as usize;
-    let wp  = wander_buf.0.as_mut_ptr() as usize;
-    let fp  = facing_buf.0.as_mut_ptr() as usize;
-    let sep     = sep_buf.0.as_slice();
-    let wb      = wander_buf.0.as_slice();
-    let fb      = facing_buf.0.as_slice();
-    let spd     = speed_buf.0.as_slice();
-    let pb      = pos_buf.0.as_slice();
-    let gb      = goal_buf.0.as_slice();
-    let fb_prev = flags_buf.0.as_slice();
-    entity_tiles_sep.par_iter().for_each(|&(ia, _)| {
-        let pos_a   = pb[ia];
-        let tile    = world_to_tile(pos_a);
-        let avoid   = vec3f(sep[ia].x, 0.0, sep[ia].y);
+    let pp = soa.pos.as_mut_ptr() as usize;
+    let wp = soa.wander.as_mut_ptr() as usize;
+    let fp = soa.facing.as_mut_ptr() as usize;
+    let sep = soa.sep.as_slice();
+    let wb = soa.wander.as_slice();
+    let fb = soa.facing.as_slice();
+    let spd = soa.speed.as_slice();
+    let pb = soa.pos.as_slice();
+    let fb_prev = soa.flags.as_slice();
+    cells.par_iter().enumerate().for_each(|(ci, &(ia, _, _))| {
+        let pos_a = pb[ia];
+        let avoid = vec3f(sep[ia].x, 0.0, sep[ia].y);
         let waiting = ia < fb_prev.len() && (fb_prev[ia] & FLAG_WAITING) != 0;
-        let wander  = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
+        let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
         let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.3 } else { 1.0 };
-        let flow       = map.get_flow(tile, gb[ia]);
-        let flow_norm  = if length(flow) > 0.001 { normalize(flow) } else { flow };
-        let flow_vel   = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
-        let total_vel  = flow_vel + avoid + wander_vel;
-        let new_pos    = pos_a + total_vel;
+        let flow = baked_flow[ci];
+        let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
+        let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
+        let total_vel = flow_vel + avoid + wander_vel;
+        let new_pos = pos_a + total_vel;
         let new_facing = {
             let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
             if vel_len > 0.001 {
@@ -799,15 +831,7 @@ pub fn update_agents(
             *(fp as *mut Quatf).add(ia)  = new_facing;
         }
     });
-    // Batch-write ECS
-    for (entity, mut pos, _, mut wander, _, _, mut facing, _, _) in agents.iter_mut() {
-        let ia = entity.index() as usize;
-        pos.0    = pos_buf.0[ia];
-        wander.0 = wander_buf.0[ia];
-        facing.0 = facing_buf.0[ia];
-    }
-
-    if profile { println!("p3 move:    {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("p3 move", t.elapsed().as_micros() as u64));
 
     //
     // Correction pass: resolve agent-agent overlaps
@@ -817,74 +841,80 @@ pub fn update_agents(
 
     map.clear_all_agents();
     for (entity, ..) in agents.iter() {
-        map.register_agent(world_to_tile(pos_buf.0[entity.index() as usize]), entity);
+        map.register_agent(world_to_tile(soa.pos[entity.index() as usize]), entity);
     }
-    let occupied: Vec<OccupiedCell> = map.chunks.iter()
-        .flat_map(|(&key, chunk)| {
-            let (cx, cy, cz) = key;
-            let cs = CHUNK_SIZE as i32;
-            (0..CHUNK_SIZE).flat_map(move |ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).filter_map(move |lx| {
-                let idx = morton_encode(lx, ly, lz);
-                if chunk.agents[idx].is_empty() { return None; }
-                Some(OccupiedCell {
-                    tile: Vec3i::new(cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32),
-                    chunk_key: key, idx,
-                    cell_agents: chunk.agents[idx].clone(),
-                })
-            })))
-        }).collect();
+
+    // rebuild occupied + cells from post-move positions
+    let occupied: Vec<((i32,i32,i32), usize)> = map.chunks.iter()
+        .flat_map(|(&ck, chunk)| {
+            chunk.flags.iter().enumerate()
+                .filter(|(_, &f)| f & TILE_OCCUPIED != 0)
+                .map(move |(idx, _)| (ck, idx))
+        })
+        .collect();
+    let cells: Vec<(usize, (i32,i32,i32), usize)> = occupied.iter()
+        .flat_map(|&(ck, idx)| {
+            map.chunks[&ck].agents[idx].iter().map(move |&e| (e.index() as usize, ck, idx))
+        })
+        .collect();
+
+    // bake neighbour lists for correction (no flow/flags needed)
+    let n = cells.len();
+    let mut corr_nbr_start = vec![0usize; n + 1];
+    let mut corr_nbr_flat  = Vec::<usize>::new();
+    for (ci, &(ia, _, _)) in cells.iter().enumerate() {
+        let tile = world_to_tile(soa.pos[ia]);
+        for dz in -1i32..=1 { for dx in -1i32..=1 {
+            let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x+dx, tile.y, tile.z+dz);
+            let nidx = morton_encode(nlx, nly, nlz);
+            if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
+                corr_nbr_flat.extend(nc.agents[nidx].iter().map(|&e| e.index() as usize));
+            }
+        }}
+        corr_nbr_start[ci + 1] = corr_nbr_flat.len();
+    }
 
     let min_dist    = AGENT_RADIUS * 2.0;
     let min_dist_sq = min_dist * min_dist;
 
-    // Flat (entity_index, tile) list — one entry per agent, for parallel dispatch
-    let entity_tiles: Vec<(usize, Vec3i)> = occupied.iter()
-        .flat_map(|cell| cell.cell_agents.iter().map(move |&e| (e.index() as usize, cell.tile)))
-        .collect();
-
-    let mut delta = vec![Vec3f::zero(); pos_buf.0.len()];
+    let mut delta = vec![Vec3f::zero(); soa.pos.len()];
     for _ in 0..CORRECTION_ITERATIONS {
-        // Store pointer as usize (Sync) so the closure satisfies rayon's Sync bound.
         // SAFETY: each par task writes to a unique index (entity indices are unique).
         let dp = delta.as_mut_ptr() as usize;
-        let pb = pos_buf.0.as_slice();
-        entity_tiles.par_iter().for_each(|&(ia, tile)| {
+        let pb = soa.pos.as_slice();
+        cells.par_iter().enumerate().for_each(|(ci, &(ia, _, _))| {
             let pos_a = pb[ia];
             let mut correction = Vec3f::zero();
-            for dz in -1i32..=1 { for dx in -1i32..=1 {
-                for &e in map.get_agents_at(Vec3i::new(tile.x+dx, tile.y, tile.z+dz)) {
-                    let ib = e.index() as usize;
-                    if ib == ia { continue; }
-                    let diff = (pos_a - pb[ib]) * vec3f(1.0, 0.0, 1.0);
-                    let dist_sq = dot(diff, diff);
-                    if dist_sq < min_dist_sq && dist_sq > 0.0001 {
-                        let d = sqrt(dist_sq);
-                        correction += (diff / d) * (min_dist - d) * 0.5;
-                    }
+            for &ib in &corr_nbr_flat[corr_nbr_start[ci]..corr_nbr_start[ci+1]] {
+                if ib == ia { continue; }
+                let diff = (pos_a - pb[ib]) * vec3f(1.0, 0.0, 1.0);
+                let dist_sq = dot(diff, diff);
+                if dist_sq < min_dist_sq && dist_sq > 0.0001 {
+                    let d = sqrt(dist_sq);
+                    correction += (diff / d) * (min_dist - d) * 0.5;
                 }
-            }}
+            }
             unsafe { *(dp as *mut Vec3f).add(ia) = correction; }
         });
-        for (p, d) in pos_buf.0.iter_mut().zip(delta.iter_mut()) {
+        for (p, d) in soa.pos.iter_mut().zip(delta.iter_mut()) {
             *p += *d;
             *d = Vec3f::zero();
         }
     }
 
-    if profile { println!("correction: {:>6}µs", t.elapsed().as_micros()) };
+    soa.timers.push(("correction", t.elapsed().as_micros() as u64));
 
     //
-    // Pass 5: wall collision resolution — hard push-out, per occupied tile so walls stay in cache
+    // Pass 5: wall collision resolution — per occupied tile, walls stay in cache
     //
     let t = std::time::Instant::now();
 
-    for cell in &occupied {
-        let chunk = &map.chunks[&cell.chunk_key];
-        let s = chunk.wall_start[cell.idx] as usize;
-        let n = chunk.wall_count[cell.idx] as usize;
-        let walls = &chunk.walls[s..s + n];
-        for &entity_a in &cell.cell_agents {
-            let p = &mut pos_buf.0[entity_a.index() as usize];
+    for &(ck, idx) in &occupied {
+        let chunk = &map.chunks[&ck];
+        let s = chunk.wall_start[idx] as usize;
+        let walls = &chunk.walls[s .. s + chunk.wall_count[idx] as usize];
+        for &entity_a in &chunk.agents[idx] {
+            let p = &mut soa.pos[entity_a.index() as usize];
             for wl in walls {
                 let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
                 let d = dist(cp, *p);
@@ -895,12 +925,18 @@ pub fn update_agents(
         }
     }
 
-    // write corrected positions back to ECS
-    for (entity, mut pos, ..) in agents.iter_mut() {
-        pos.0 = pos_buf.0[entity.index() as usize];
-    }
+    soa.timers.push(("p5 walls", t.elapsed().as_micros() as u64));
 
-    if profile { println!("p5 walls:   {:>6}µs", t.elapsed().as_micros()) };
+    // single batch ECS write — all flat buffers are final after p5
+    for (entity, mut pos, _, mut wander, mut sf, mut ld, mut facing, _, mut fl) in agents.iter_mut() {
+        let ia = entity.index() as usize;
+        pos.0    = soa.pos[ia];
+        wander.0 = soa.wander[ia];
+        sf.0     = soa.sep[ia];
+        ld.0     = soa.density[ia];
+        facing.0 = soa.facing[ia];
+        fl.0     = soa.flags[ia];
+    }
 
     Ok(())
 }
@@ -962,14 +998,7 @@ pub fn setup_ratrace2(
     // create shared cube mesh for agent bodies
     let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     commands.insert_resource(AgentMesh(cube));
-    commands.insert_resource(PosBuffer(Vec::new()));
-    commands.insert_resource(SepBuf(Vec::new()));
-    commands.insert_resource(DensityBuf(Vec::new()));
-    commands.insert_resource(WanderBuf(Vec::new()));
-    commands.insert_resource(FacingBuf(Vec::new()));
-    commands.insert_resource(SpeedBuf(Vec::new()));
-    commands.insert_resource(GoalBuf(Vec::new()));
-    commands.insert_resource(FlagsBuf(Vec::new()));
+    commands.insert_resource(AgentSoa::default());
 
     Ok(())
 }
@@ -1258,5 +1287,22 @@ pub fn update_tile_editor(
         }
     }
 
+    Ok(())
+}
+
+#[export_update_fn]
+pub fn update_perf_ui(
+    mut imgui: ResMut<ImGuiRes>,
+    soa: Res<AgentSoa>,
+) -> Result<(), hotline_rs::Error> {
+    imgui.set_global_context();
+    if imgui.begin_window("perf") {
+        imgui.separator();
+        imgui.text("agent soa");
+        for (name, us) in &soa.timers {
+            imgui.text(&format!("{:<12} {:>6} us", name, us));
+        }
+    }
+    imgui.end();
     Ok(())
 }
