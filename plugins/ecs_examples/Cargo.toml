@@ -14,3 +14,4 @@ bevy_ecs.workspace = true
 rand = "0.8.5"
 rayon = "1"
 bitflags.workspace = true
+font-awesome.workspace = true

@@ -5,6 +5,9 @@
 // TODO: keep eye on the random intermittent crash wne adding agents
 // TODO: lateral movement is happening, but they stop bunching together so much and dont form a tighter queue.
 
+// TODO: rebuild flow should be continuous async
+
+
 use crate::prelude::*;
 use maths_rs::Vec3i;
 use rayon::prelude::*;
@@ -34,7 +37,7 @@ const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
 const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
 
-const MAP_SAVE_PATH: &str = "ratrace2_map.bin";
+const MAP_SAVE_PATH: &str = "queue_debug.bin";
 
 /// Init function for ratrace demo
 #[no_mangle]
@@ -262,11 +265,12 @@ pub struct EditorState {
 pub struct Map {
     chunks: HashMap<(i32, i32, i32), MapChunk>,
     dirty: bool,
+    flow_last_rebuild: std::time::Instant,
 }
 
 impl Map {
     fn new() -> Self {
-        Self { chunks: HashMap::new(), dirty: true }
+        Self { chunks: HashMap::new(), dirty: true, flow_last_rebuild: std::time::Instant::now() }
     }
 
     fn set_tile(&mut self, tile: Vec3i, t: TileType) {
@@ -447,14 +451,20 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
 
         // pass 1: seed heap with Platform tiles matching this goal
+        // tiles at or above capacity are skipped — full tiles stop attracting agents
+        const PLATFORM_CAPACITY: f32 = 3.0;
+        const DENSITY_COST_SCALE: u32 = 5;
         for (&(cx, cy, cz), chunk) in &map.chunks {
             let cs = CHUNK_SIZE as i32;
             for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
                 let idx = morton_encode(lx, ly, lz);
                 if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx {
+                    let density = chunk.density[idx];
+                    if density >= PLATFORM_CAPACITY { continue; }
                     let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
-                    cost.insert((tx, ty, tz), 0);
-                    heap.push((Reverse(0), tx, ty, tz));
+                    let seed_cost = (density as u32) * DENSITY_COST_SCALE;
+                    cost.insert((tx, ty, tz), seed_cost);
+                    heap.push((Reverse(seed_cost), tx, ty, tz));
                 }
             }}}
         }
@@ -747,6 +757,7 @@ pub fn update_agents(
         let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
         let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
+        /*
         // queuing vs agents
         // waiting flag: at_goal baked; check nbr_flat for same-goal forward neighbour waiting last frame
         let at_goal = (baked_flags[ci] & FLAG_WAITING) != 0;
@@ -758,6 +769,7 @@ pub fn update_agents(
             && gb[ib] == gb[ia]
             && dot(vec2f(pb[ib].x, pb[ib].z) - pa, flow_norm_2d) > 0.0
         });
+        */
 
         // collision avoidance vs walls
         let s = chunk.wall_start[idx] as usize;
@@ -784,14 +796,16 @@ pub fn update_agents(
         }
 
         // SAFETY: ia is unique per entity
+        let at_goal = (baked_flags[ci] & FLAG_WAITING) != 0;
         unsafe {
-            *(sp  as *mut Vec2f).add(ia) = sep_vel + wall_vel; // + baked_spread[ci];
+            *(sp  as *mut Vec2f).add(ia) = if at_goal { Vec2f::zero() } else { sep_vel + wall_vel };
             *(dp  as *mut f32).add(ia) = cell_density;
-            *(fgp as *mut u8).add(ia) = if at_goal || neighbor_waiting { FLAG_WAITING } else { 0u8 };
+            *(fgp as *mut u8).add(ia) = baked_flags[ci] & FLAG_WAITING;
         }
     });
     soa.timers.push(("p2 sep", t.elapsed().as_micros() as u64));
 
+    // TODO; reduce useage of lengths and normalizes, sin cos?
     //
     // Pass 3: apply forces and move — parallel scatter to flat buffers, batch ECS write
     //
@@ -811,7 +825,7 @@ pub fn update_agents(
         let avoid = vec3f(sep[ia].x, 0.0, sep[ia].y);
         let waiting = ia < fb_prev.len() && (fb_prev[ia] & FLAG_WAITING) != 0;
         let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
-        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.3 } else { 1.0 };
+        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.0 } else { 1.0 };
         let flow = baked_flow[ci];
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
@@ -826,9 +840,9 @@ pub fn update_agents(
         };
         // SAFETY: ia is unique per entity
         unsafe {
-            *(pp as *mut Vec3f).add(ia)  = new_pos;
-            *(wp as *mut f32).add(ia)    = wander;
-            *(fp as *mut Quatf).add(ia)  = new_facing;
+            *(pp as *mut Vec3f).add(ia) = new_pos;
+            *(wp as *mut f32).add(ia) = wander;
+            *(fp as *mut Quatf).add(ia) = new_facing;
         }
     });
     soa.timers.push(("p3 move", t.elapsed().as_micros() as u64));
@@ -839,6 +853,7 @@ pub fn update_agents(
     //
     let t = std::time::Instant::now();
 
+    // TODO: separate agent buckets? world_to_tile in pass 3?
     map.clear_all_agents();
     for (entity, ..) in agents.iter() {
         map.register_agent(world_to_tile(soa.pos[entity.index() as usize]), entity);
@@ -858,6 +873,7 @@ pub fn update_agents(
         })
         .collect();
 
+    // TODO: parallel? separate nbrs
     // bake neighbour lists for correction (no flow/flags needed)
     let n = cells.len();
     let mut corr_nbr_start = vec![0usize; n + 1];
@@ -926,6 +942,13 @@ pub fn update_agents(
     }
 
     soa.timers.push(("p5 walls", t.elapsed().as_micros() as u64));
+
+    // periodic density-driven flow rebuild
+    const FLOW_REBUILD_INTERVAL_SECS: f32 = 1.5;
+    if map.flow_last_rebuild.elapsed().as_secs_f32() >= FLOW_REBUILD_INTERVAL_SECS {
+        map.dirty = true;
+        map.flow_last_rebuild = std::time::Instant::now();
+    }
 
     // single batch ECS write — all flat buffers are final after p5
     for (entity, mut pos, _, mut wander, mut sf, mut ld, mut facing, _, mut fl) in agents.iter_mut() {
@@ -1019,6 +1042,18 @@ pub fn update_tile_editor_ui(
         imgui.same_line();
         if imgui.button("Save") {
             let _ = map.save(&editor.save_filepath);
+        }
+        imgui.same_line();
+        if imgui.button(font_awesome::strs::SYNC) {
+            if let Ok(mut reloaded) = Map::load(MAP_SAVE_PATH) {
+                reloaded.dirty = true;
+                *map = reloaded;
+            } else {
+                *map = Map::new();
+            }
+            for entity in agents.iter() {
+                commands.entity(entity).despawn();
+            }
         }
         imgui.same_line();
         if imgui.button("Load") {

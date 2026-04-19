@@ -139,7 +139,7 @@ fn update_camera_orbit(
         if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
             let right = view_proj.get_row(0).xyz();
             let up = view_proj.get_row(1).xyz();
-            camera.focus += up * -drag.y;
+            camera.focus += up * drag.y;
             camera.focus += right * -drag.x;
         }
         else {
@@ -194,7 +194,7 @@ fn update_camera_editor(
         if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
             let right = view_proj.get_row(0).xyz();
             let up = view_proj.get_row(1).xyz();
-            camera.focus += up * -drag.y;
+            camera.focus += up * drag.y;
             camera.focus += right * -drag.x;
         }
         else {
