@@ -423,7 +423,7 @@ fn compile_shader_spirv(
         // let _ = fs::remove_file(&temp_metal_file);
         let _ = fs::remove_file(&air_file);
 
-        println!("Compiled Metal shader: {}", output_file);
+        println!("cargo:warning=    compiled: {}", output_file);
         Ok(())
     }
 }
@@ -493,13 +493,22 @@ pub fn compile_dir(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn Erro
 
     assert!(status.code().unwrap() == 0);
 
+    let mut errors = Vec::new();
     for entry in glob(&format!("{output_dir}/**/*.json")).expect("") {
         if let Ok(path) = entry {
-            compile_piepline(path.to_str().unwrap(), temp_dir, output_dir)?;
+            let path_str = path.to_str().unwrap();
+            println!("cargo:warning=  compiling pipeline: {path_str}");
+            if let Err(e) = compile_piepline(path_str, temp_dir, output_dir) {
+                println!("cargo:warning=  pipeline error ({path_str}): {e}");
+                errors.push(format!("{}: {}", path_str, e));
+            }
         }
     }
-
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("\n").into())
+    }
 }
 
 #[cfg(test)]

@@ -9,7 +9,13 @@
       "Bash(cargo check:*)",
       "Bash(cargo tree:*)",
       "Bash(xargs:*)",
-      "Bash(cargo doc:*)"
+      "Bash(cargo doc:*)",
+      "Bash(curl -s \"https://crates.io/api/v1/crates/winit\")",
+      "Bash(cargo add *)",
+      "Bash(sed -i '' 's/winit = \"0.29.1\"/winit = \"0.30\"/' Cargo.toml)",
+      "Bash(cargo fetch *)",
+      "Bash(ls ~/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/ | grep winit)",
+      "Read(//Users/alex.dixon/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/**)"
     ]
   }
 }

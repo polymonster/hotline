@@ -136,7 +136,7 @@ StructuredBuffer<material_data> materials[1024] : register(t0, space2);
 StructuredBuffer<point_light_data> point_lights[] : register(t0, space3);
 StructuredBuffer<spot_light_data> spot_lights[] : register(t0, space4);
 StructuredBuffer<directional_light_data> directional_lights[] : register(t0, space5);
-StructuredBuffer<row_major float4x4> shadow_matrices[1024] : register(t0, space6);
+StructuredBuffer<row_major float4x4> shadow_matrices[] : register(t0, space6);
 
 // textures
 Texture2D textures[] : register(t0, space7);

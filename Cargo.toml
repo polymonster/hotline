@@ -54,7 +54,7 @@ features = ["docking"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 metal = "0.28.0"
-winit = "0.29.1"
+winit = "0.30"
 objc = "0.2.4"
 cocoa = "0.25.0"
 core-graphics-types = "0.1.3"

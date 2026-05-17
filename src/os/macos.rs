@@ -10,11 +10,10 @@ use std::sync::RwLock;
 
 use winit::{
     dpi::{LogicalPosition, LogicalSize},
-    event::{Event, WindowEvent, ElementState},
-    event_loop::{self, ControlFlow},
+    event::{WindowEvent, ElementState},
+    event_loop::ActiveEventLoop,
     keyboard::{Key, PhysicalKey, KeyCode},
-    platform::pump_events::{EventLoopExtPumpEvents, PumpStatus},
-    raw_window_handle::{HasWindowHandle, RawWindowHandle}
+    raw_window_handle::{HasWindowHandle, RawWindowHandle},
 };
 
 use cocoa::base::id as cocoa_id;
@@ -80,6 +79,8 @@ pub struct App {
     event_loop: Arc<RwLock<winit::event_loop::EventLoop<()>>>,
     input_state: Arc<RwLock<InputState>>,
     windows: Arc<RwLock<HashMap<winit::window::WindowId, Arc<winit::window::Window>>>>,
+    monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
 }
 
 unsafe impl Send for App {}
@@ -91,6 +92,7 @@ pub struct Window {
     window_id: winit::window::WindowId,
     input_state: Arc<RwLock<InputState>>,
     events: Arc<RwLock<super::WindowEventFlags>>,
+    cached_size: Arc<RwLock<winit::dpi::PhysicalSize<u32>>>,
 }
 
 unsafe impl Send for Window {}
@@ -186,6 +188,110 @@ impl App {
     }
 }
 
+struct FrameHandler<'a> {
+    resume: &'a mut bool,
+    input_state: Arc<RwLock<InputState>>,
+    monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+}
+
+impl winit::application::ApplicationHandler for FrameHandler<'_> {
+    fn resumed(&mut self, elwt: &ActiveEventLoop) {
+        let primary = elwt.primary_monitor();
+        *self.monitors.write().unwrap() = elwt.available_monitors().map(|m| {
+            let winit::dpi::PhysicalSize { width, height } = m.size();
+            let winit::dpi::PhysicalPosition { x, y } = m.position();
+            super::MonitorInfo {
+                rect: Rect { x, y, width: width as i32, height: height as i32 },
+                client_rect: Rect { x, y, width: width as i32, height: height as i32 },
+                dpi_scale: m.scale_factor() as f32,
+                primary: primary.as_ref() == Some(&m),
+            }
+        }).collect();
+    }
+
+    fn window_event(&mut self, _elwt: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
+        if let WindowEvent::Resized(new_size) = event {
+            if let Some(size) = self.window_sizes.read().unwrap().get(&window_id) {
+                *size.write().unwrap() = new_size;
+            }
+            return;
+        }
+
+        let mut state = self.input_state.write().unwrap();
+        match event {
+            WindowEvent::CloseRequested => {
+                *self.resume = false;
+            }
+            WindowEvent::RedrawRequested => {}
+            WindowEvent::CursorMoved { position, .. } => {
+                state.mouse_client_pos = super::Point {
+                    x: position.x as i32,
+                    y: position.y as i32,
+                };
+                state.hovered_window_id = Some(window_id);
+            }
+            WindowEvent::CursorEntered { .. } => {
+                state.hovered_window_id = Some(window_id);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if state.hovered_window_id == Some(window_id) {
+                    state.hovered_window_id = None;
+                }
+            }
+            WindowEvent::MouseInput { state: element_state, button, .. } => {
+                let pressed = element_state == ElementState::Pressed;
+                let index = match button {
+                    winit::event::MouseButton::Left => Some(super::MouseButton::Left as usize),
+                    winit::event::MouseButton::Middle => Some(super::MouseButton::Middle as usize),
+                    winit::event::MouseButton::Right => Some(super::MouseButton::Right as usize),
+                    winit::event::MouseButton::Back => Some(super::MouseButton::X1 as usize),
+                    winit::event::MouseButton::Forward => Some(super::MouseButton::X2 as usize),
+                    winit::event::MouseButton::Other(_) => None,
+                };
+                if let Some(idx) = index {
+                    state.mouse_down[idx] = pressed;
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                match delta {
+                    winit::event::MouseScrollDelta::LineDelta(h, v) => {
+                        state.mouse_wheel += v;
+                        state.mouse_hwheel += h;
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        state.mouse_wheel += (pos.y / 20.0) as f32;
+                        state.mouse_hwheel += (pos.x / 20.0) as f32;
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let pressed = event.state == ElementState::Pressed;
+                if let PhysicalKey::Code(key_code) = event.physical_key {
+                    let code = key_code as usize;
+                    if code < 256 {
+                        state.key_down[code] = pressed;
+                    }
+                }
+                if pressed {
+                    if let Key::Character(ref c) = event.logical_key {
+                        for ch in c.encode_utf16() {
+                            state.utf16_inputs.push(ch);
+                        }
+                    }
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let mods = modifiers.state();
+                state.sys_key_down[super::SysKey::Ctrl as usize] = mods.control_key();
+                state.sys_key_down[super::SysKey::Shift as usize] = mods.shift_key();
+                state.sys_key_down[super::SysKey::Alt as usize] = mods.alt_key();
+            }
+            _ => {}
+        }
+    }
+}
+
 impl super::App for App {
     type Window = Window;
     type NativeHandle = NativeHandle;
@@ -196,16 +302,21 @@ impl super::App for App {
             event_loop: Arc::new(RwLock::new(winit::event_loop::EventLoop::new().unwrap())),
             input_state: Arc::new(RwLock::new(InputState::new())),
             windows: Arc::new(RwLock::new(HashMap::new())),
+            monitors: Arc::new(RwLock::new(Vec::new())),
+            window_sizes: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
     /// Create a new operating system window
     fn create_window(&mut self, info: super::WindowInfo<Self>) -> Self::Window {
-        let window = winit::window::WindowBuilder::new()
-            .with_inner_size(winit::dpi::LogicalSize::new(info.rect.width, info.rect.height))
-            .with_position(winit::dpi::LogicalPosition::new(info.rect.x, info.rect.y))
-            .with_title(info.title)
-            .build(&*self.event_loop.read().unwrap())
+        #[allow(deprecated)]
+        let window = self.event_loop.read().unwrap()
+            .create_window(
+                winit::window::Window::default_attributes()
+                    .with_inner_size(winit::dpi::LogicalSize::new(info.rect.width, info.rect.height))
+                    .with_position(winit::dpi::LogicalPosition::new(info.rect.x, info.rect.y))
+                    .with_title(info.title)
+            )
             .unwrap();
         let window_id = window.id();
         let winit_window = Arc::new(window);
@@ -213,11 +324,16 @@ impl super::App for App {
         // Register window for position lookups
         self.windows.write().unwrap().insert(window_id, winit_window.clone());
 
+        let initial_size = winit_window.inner_size();
+        let cached_size = Arc::new(RwLock::new(initial_size));
+        self.window_sizes.write().unwrap().insert(window_id, cached_size.clone());
+
         Window {
             winit_window,
             window_id,
             input_state: self.input_state.clone(),
             events: Arc::new(RwLock::new(super::WindowEventFlags::NONE)),
+            cached_size,
         }
     }
 
@@ -229,113 +345,19 @@ impl super::App for App {
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool {
         objc::rc::autoreleasepool(|| {
-            // Update input state at frame start
             self.update_input_state();
 
             let mut resume = true;
-            let input_state = self.input_state.clone();
+            let mut handler = FrameHandler {
+                resume: &mut resume,
+                input_state: self.input_state.clone(),
+                monitors: self.monitors.clone(),
+                window_sizes: self.window_sizes.clone(),
+            };
 
             let _ = self.event_loop.write().and_then(|mut event_loop| {
-                let _status = event_loop.pump_events(Some(Duration::ZERO), |event, _elwt| {
-                    match event {
-                        Event::WindowEvent { event, window_id } => {
-                            let mut state = input_state.write().unwrap();
-
-                            match event {
-                                WindowEvent::CloseRequested => {
-                                    resume = false;
-                                }
-                                WindowEvent::RedrawRequested => {}
-
-                                // Mouse cursor position (window-relative from winit)
-                                WindowEvent::CursorMoved { position, .. } => {
-                                    // winit gives us logical coordinates relative to window content area
-                                    state.mouse_client_pos = super::Point {
-                                        x: position.x as i32,
-                                        y: position.y as i32,
-                                    };
-                                    state.hovered_window_id = Some(window_id);
-                                }
-
-                                // Mouse enter/leave for hover tracking
-                                WindowEvent::CursorEntered { .. } => {
-                                    state.hovered_window_id = Some(window_id);
-                                }
-                                WindowEvent::CursorLeft { .. } => {
-                                    if state.hovered_window_id == Some(window_id) {
-                                        state.hovered_window_id = None;
-                                    }
-                                }
-
-                                // Mouse buttons
-                                WindowEvent::MouseInput { state: element_state, button, .. } => {
-                                    let pressed = element_state == ElementState::Pressed;
-                                    // Map to MouseButton enum order: Left=0, Middle=1, Right=2, X1=3, X2=4
-                                    let index = match button {
-                                        winit::event::MouseButton::Left => Some(super::MouseButton::Left as usize),
-                                        winit::event::MouseButton::Middle => Some(super::MouseButton::Middle as usize),
-                                        winit::event::MouseButton::Right => Some(super::MouseButton::Right as usize),
-                                        winit::event::MouseButton::Back => Some(super::MouseButton::X1 as usize),
-                                        winit::event::MouseButton::Forward => Some(super::MouseButton::X2 as usize),
-                                        winit::event::MouseButton::Other(_) => None,
-                                    };
-                                    if let Some(idx) = index {
-                                        state.mouse_down[idx] = pressed;
-                                    }
-                                }
-
-                                // Mouse wheel
-                                WindowEvent::MouseWheel { delta, .. } => {
-                                    match delta {
-                                        winit::event::MouseScrollDelta::LineDelta(h, v) => {
-                                            state.mouse_wheel += v;
-                                            state.mouse_hwheel += h;
-                                        }
-                                        winit::event::MouseScrollDelta::PixelDelta(pos) => {
-                                            // Convert pixel delta to line delta (approximate)
-                                            state.mouse_wheel += (pos.y / 20.0) as f32;
-                                            state.mouse_hwheel += (pos.x / 20.0) as f32;
-                                        }
-                                    }
-                                }
-
-                                // Keyboard input
-                                WindowEvent::KeyboardInput { event, .. } => {
-                                    let pressed = event.state == ElementState::Pressed;
-
-                                    // Get physical key code for key_down array
-                                    if let PhysicalKey::Code(key_code) = event.physical_key {
-                                        let code = key_code as usize;
-                                        if code < 256 {
-                                            state.key_down[code] = pressed;
-                                        }
-                                    }
-
-                                    // Handle text input from logical key
-                                    if pressed {
-                                        if let Key::Character(ref c) = event.logical_key {
-                                            for ch in c.encode_utf16() {
-                                                state.utf16_inputs.push(ch);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                // Modifier keys
-                                WindowEvent::ModifiersChanged(modifiers) => {
-                                    let mods = modifiers.state();
-                                    state.sys_key_down[super::SysKey::Ctrl as usize] = mods.control_key();
-                                    state.sys_key_down[super::SysKey::Shift as usize] = mods.shift_key();
-                                    state.sys_key_down[super::SysKey::Alt as usize] = mods.alt_key();
-                                }
-
-                                _ => {}
-                            }
-                        }
-                        _ => {}
-                    }
-                });
-
+                use winit::platform::pump_events::EventLoopExtPumpEvents;
+                event_loop.pump_app_events(Some(Duration::ZERO), &mut handler);
                 Ok(())
             });
             resume
@@ -438,26 +460,7 @@ impl super::App for App {
     }
 
     fn enumerate_display_monitors(&self) -> Vec<super::MonitorInfo> {
-        let event_loop = &*self.event_loop.read().unwrap();
-        let primary_monitor = event_loop.primary_monitor();
-        event_loop.available_monitors().map(|monitor| {
-            let winit::dpi::PhysicalSize { width, height } = monitor.size();
-            let winit::dpi::PhysicalPosition { x, y } = monitor.position();
-            super::MonitorInfo {
-                rect: Rect {
-                    x, y,
-                    width: width as i32,
-                    height: height as i32
-                },
-                client_rect: Rect {
-                    x, y,
-                    width: width as i32,
-                    height: height as i32
-                },
-                dpi_scale: monitor.scale_factor() as f32,
-                primary: primary_monitor.as_ref() == Some(&monitor)
-            }
-        }).collect()
+        self.monitors.read().unwrap().clone()
     }
 
     /// Sets the mouse cursor
@@ -564,7 +567,7 @@ impl super::Window<App> for Window {
 
     /// Returns the screen position for the top-left corner of the window
     fn get_pos(&self) -> super::Point<i32> {
-        let pos = self.winit_window.outer_position().unwrap();
+        let pos = self.winit_window.outer_position().unwrap_or_default();
         super::Point {
             x: pos.x,
             y: pos.y
@@ -573,7 +576,7 @@ impl super::Window<App> for Window {
 
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> super::Rect<i32> {
-        let size = self.winit_window.inner_size();
+        let size = *self.cached_size.read().unwrap();
         super::Rect {
             x: 0,
             y: 0,
@@ -584,7 +587,7 @@ impl super::Window<App> for Window {
 
     /// Returns the screen position for the top-left corner of the window
     fn get_size(&self) -> super::Size<i32> {
-        let size = self.winit_window.inner_size();
+        let size = *self.cached_size.read().unwrap();
         super::Size {
             x: size.width as i32,
             y: size.height as i32
@@ -593,8 +596,8 @@ impl super::Window<App> for Window {
 
     /// Returns the screen rect of the window screen pos x, y , size x, y.
     fn get_window_rect(&self) -> super::Rect<i32> {
-        let pos = self.winit_window.outer_position().unwrap();
-        let size = self.winit_window.inner_size();
+        let pos = self.winit_window.outer_position().unwrap_or_default();
+        let size = *self.cached_size.read().unwrap();
         super::Rect {
             x: pos.x,
             y: pos.y,

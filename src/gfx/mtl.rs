@@ -24,6 +24,8 @@ use std::collections::HashMap;
 use std::result;
 
 use cocoa::{appkit::NSView, base::id as cocoa_id};
+#[allow(unused_imports)]
+use objc::{msg_send, sel, sel_impl};
 use core_graphics_types::geometry::CGSize;
 
 use std::path::Path;
@@ -293,6 +295,13 @@ pub struct SwapChain {
     backbuffer_texture: Texture,
     backbuffer_pass: RenderPass,
     backbuffer_pass_no_clear: RenderPass,
+    num_buffers: u32,
+    // GPU-side fence: present CB signals, each new CB waits — serialises GPU frames without blocking CPU
+    frame_event: metal::Event,
+    frame_value: u64,
+    // CPU-side ring: blocks the CPU only when num_buffers frames are already in flight,
+    // preventing shared-memory DynamicBuffer slots from being overwritten before the GPU is done
+    in_flight: std::sync::Arc<std::sync::Mutex<std::collections::VecDeque<metal::CommandBuffer>>>,
 }
 
 impl super::SwapChain<Device> for SwapChain {
@@ -300,10 +309,17 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn wait_for_last_frame(&self) {
+        let mut in_flight = self.in_flight.lock().unwrap();
+        if in_flight.len() >= self.num_buffers as usize {
+            if let Some(oldest) = in_flight.pop_front() {
+                drop(in_flight);
+                oldest.wait_until_completed();
+            }
+        }
     }
 
     fn get_num_buffers(&self) -> u32 {
-        3
+        self.num_buffers
     }
 
     fn get_frame_fence_value(&self) -> u64 {
@@ -361,9 +377,13 @@ impl super::SwapChain<Device> for SwapChain {
 
     fn swap(&mut self, device: &mut Device) {
         objc::rc::autoreleasepool(|| {
-            let cmd = device.command_queue.new_command_buffer();
+            self.frame_value += 1;
+            let in_flight_count = self.in_flight.lock().unwrap().len();
+            let cmd = device.command_queue.new_command_buffer().to_owned();
             cmd.present_drawable(&self.drawable);
+            cmd.encode_signal_event(&self.frame_event, self.frame_value);
             cmd.commit();
+            self.in_flight.lock().unwrap().push_back(cmd);
         });
     }
 }
@@ -510,8 +530,12 @@ impl CmdBuf {
 impl super::CmdBuf<Device> for CmdBuf {
     fn reset(&mut self, swap_chain: &SwapChain) {
         objc::rc::autoreleasepool(|| {
-            self.cmd = Some(self.cmd_queue.new_command_buffer().to_owned());
-            // Clear transient buffers from previous frame
+            let cmd = self.cmd_queue.new_command_buffer().to_owned();
+            // GPU waits for the previous frame's present signal before executing any work
+            if swap_chain.frame_value > 0 {
+                cmd.encode_wait_for_event(&swap_chain.frame_event, swap_chain.frame_value);
+            }
+            self.cmd = Some(cmd);
             self.transient_buffers.clear();
         });
     }
@@ -1269,6 +1293,9 @@ impl Device {
             let heap_descriptor = metal::HeapDescriptor::new();
             heap_descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
             heap_descriptor.set_size(heap_size);
+            // Enable hazard tracking so Metal automatically synchronizes heap-allocated
+            // textures across command buffers (by default heaps are MTLHazardTrackingModeUntracked)
+            unsafe { let _: () = msg_send![&*heap_descriptor, setHazardTrackingMode: metal::MTLHazardTrackingMode::Tracked]; };
 
             let heap = mtl_device.new_heap(&heap_descriptor);
 
@@ -1655,6 +1682,10 @@ impl super::Device for Device {
                     backbuffer_texture: backbuffer_texture,
                     backbuffer_pass: render_pass,
                     backbuffer_pass_no_clear: render_pass_no_clear,
+                    num_buffers: info.num_buffers,
+                    frame_event: self.metal_device.new_event(),
+                    frame_value: 0,
+                    in_flight: std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new())),
                 })
             })
         }
@@ -1971,13 +2002,15 @@ impl super::Device for Device {
         heap: &mut Heap
     ) -> result::Result<Buffer, super::Error> {
         objc::rc::autoreleasepool(|| {
+            // StorageModeShared: CPU and GPU share the same physical memory — no didModifyRange
+            // needed and no stale-copy hazard. StorageModeManaged has a separate GPU copy that
+            // requires an explicit sync notification after every CPU write; without it the GPU
+            // reads stale data, which is the source of the world-buffer tearing.
             let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
-                metal::MTLResourceOptions::StorageModeManaged;
+                metal::MTLResourceOptions::StorageModeShared;
 
             let byte_len = (info.stride * info.num_elements) as NSUInteger;
 
-            // TODO: allocating with metal_device works since StorageModeManaged
-            // we should migrate to actually sing the heap.
             let buf = if let Some(data) = data {
                 let bytes = data.as_ptr() as *const std::ffi::c_void;
                 self.metal_device.new_buffer_with_data(bytes, byte_len, opt)

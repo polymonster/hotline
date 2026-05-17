@@ -2668,9 +2668,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 cmd_buf.reset(swap_chain);
 
                 // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(name).unwrap();
-                Self::stats_start(cmd_buf, &mut stats);
-                self.pass_stats.insert(name.to_string(), stats);
+                if let Some(mut stats) = self.pass_stats.remove(name) {
+                    Self::stats_start(cmd_buf, &mut stats);
+                    self.pass_stats.insert(name.to_string(), stats);
+                }
             }
         }
     }
@@ -2728,9 +2729,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
             else if let Some(cmd_buf) = cmd_bufs.get_mut(node) {
                 // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(node).unwrap();
-                Self::stats_end(cmd_buf, &mut stats);
-                self.pass_stats.insert(node.to_string(), stats);
+                if let Some(mut stats) = self.pass_stats.remove(node) {
+                    Self::stats_end(cmd_buf, &mut stats);
+                    self.pass_stats.insert(node.to_string(), stats);
+                }
 
                 cmd_buf.close().unwrap();
                 device.execute(cmd_buf);
