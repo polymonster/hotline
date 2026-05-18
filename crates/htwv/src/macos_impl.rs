@@ -435,21 +435,32 @@ pub fn compile_piepline(
 ) -> Result<(), Box<dyn Error>> {
     let file_data = std::fs::read(filepath).unwrap();
     let file: Pmfx = serde_json::from_slice(&file_data)?;
+    let mut errors = Vec::new();
     for (_, permutation) in file.pipelines {
         for (_, pipeline) in &permutation {
             if let Some(vs) = &pipeline.vs {
-                compile_shader_spirv(&vs, input_dir, output_dir, &pipeline, ShaderStage::Vertex)?;
+                if let Err(e) = compile_shader_spirv(vs, input_dir, output_dir, &pipeline, ShaderStage::Vertex) {
+                    errors.push(format!("{vs}: {e}"));
+                }
             }
             if let Some(ps) = &pipeline.ps {
-                compile_shader_spirv(&ps, input_dir, output_dir, &pipeline, ShaderStage::Fragment)?;
+                if let Err(e) = compile_shader_spirv(ps, input_dir, output_dir, &pipeline, ShaderStage::Fragment) {
+                    errors.push(format!("{ps}: {e}"));
+                }
             }
             if let Some(cs) = &pipeline.cs {
-                compile_shader_spirv(&cs, input_dir, output_dir, &pipeline, ShaderStage::Compute)?;
+                if let Err(e) = compile_shader_spirv(cs, input_dir, output_dir, &pipeline, ShaderStage::Compute) {
+                    errors.push(format!("{cs}: {e}"));
+                }
             }
         }
     }
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors.join("\n").into())
+    }
 }
 
 pub fn compile_dir(input_dir: &str, output_dir: &str) -> Result<(), Box<dyn Error>> {

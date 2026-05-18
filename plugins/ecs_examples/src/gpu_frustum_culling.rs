@@ -364,7 +364,7 @@ pub fn dispatch_compute_frustum_cull(
             gfx::as_u8_slice(&indirect_draw.arg_buffer.get_srv_index().unwrap()));
 
         // world buffer info to lookup matrices and aabb info
-        let world_buffer_info = pmfx.get_world_buffer_info();
+        let world_buffer_info = pmfx.get_world_buffer_info(pipeline);
         cmd_buf.push_compute_constants(
             pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
@@ -405,7 +405,7 @@ pub fn draw_meshes_indirect_culling(
     cmd_buf.set_render_pipeline(&pipeline);
 
     // bind the world buffer info
-    let world_buffer_info = pmfx.get_world_buffer_info();
+    let world_buffer_info = pmfx.get_world_buffer_info(pipeline);
     cmd_buf.push_render_constants(
         pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 

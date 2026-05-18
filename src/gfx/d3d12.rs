@@ -1290,7 +1290,8 @@ impl Device {
                 let h = get_binding_descriptor_hash(constants.shader_register, constants.register_space, super::DescriptorType::PushConstants);
                 lookup.insert(h, PipelineSlotInfo {
                     index: slot_iter,
-                    count: Some(constants.num_values)
+                    count: Some(constants.num_values),
+                    sub_offset: 0,
                 });
                 slot_iter += 1;
             }
@@ -1357,7 +1358,8 @@ impl Device {
                     let h = get_binding_descriptor_hash(binding.shader_register, binding.register_space, binding.binding_type);
                     lookup.entry(h).or_insert(PipelineSlotInfo {
                         index: slot_iter,
-                        count: binding.num_descriptors
+                        count: binding.num_descriptors,
+                        sub_offset: 0,
                     });
                 }
                 slot_iter += 1;

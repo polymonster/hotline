@@ -1051,6 +1051,13 @@ impl super::Pipeline for RenderPipeline {
     fn get_pipeline_type() -> PipelineType {
         super::PipelineType::Render
     }
+
+    fn get_sub_binding_offset(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> u32 {
+        self.slot_lookup
+            .get(&(register, space, descriptor_type))
+            .map(|s| s.sub_offset)
+            .unwrap_or(0)
+    }
 }
 
 #[derive(Clone)]
@@ -1389,6 +1396,7 @@ impl Device {
                     PipelineSlotInfo {
                         index: canonical_index,
                         count: Some(push_constant.num_values),
+                        sub_offset: 0,
                     },
                 );
             }
@@ -1420,13 +1428,15 @@ impl Device {
                 };
                 let canonical_index = vertex_idx.or(fragment_idx).unwrap_or(0);
 
-                // Each binding gets a slot entry
-                for binding in bindings.iter() {
+                // Each binding gets a slot entry; sub_offset is the position within the group
+                // matching the [[id(N)]] value spirv-cross assigns in the descriptor set struct
+                for (sub_offset, binding) in bindings.iter().enumerate() {
                     slot_lookup.insert(
                         (binding.shader_register, binding.register_space, binding.binding_type),
                         PipelineSlotInfo {
                             index: canonical_index,
                             count: binding.num_descriptors,
+                            sub_offset: sub_offset as u32,
                         }
                     );
                 }

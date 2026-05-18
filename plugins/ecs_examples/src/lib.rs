@@ -261,7 +261,7 @@ pub fn render_meshes_bindless(
     cmd_buf.push_render_constants(pipeline, 0, 0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind the world buffer info
-    let world_buffer_info = pmfx.get_world_buffer_info();
+    let world_buffer_info = pmfx.get_world_buffer_info(pipeline);
     cmd_buf.push_render_constants(pipeline, 2, 0, gfx::num_32bit_constants(&world_buffer_info), 0, gfx::as_u8_slice(&world_buffer_info));
 
     // bind resource uses

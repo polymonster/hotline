@@ -183,7 +183,7 @@ pub fn render_meshes_bindless_ibl(
     cmd_buf.push_render_constants(pipeline, 0, 0, 4, 16, gfx::as_u8_slice(&camera.view_position));
 
     // bind world buffer info with IBL indices in user_data
-    let mut world_buffer_info = pmfx.get_world_buffer_info();
+    let mut world_buffer_info = pmfx.get_world_buffer_info(pipeline);
     world_buffer_info.user_data[0] = ibl_data.cubemap_srv;
     world_buffer_info.user_data[1] = ibl_data.lut_srv;
     cmd_buf.push_render_constants(
