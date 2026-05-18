@@ -1,5 +1,20 @@
 // TODO:
 
+macos
+- perf issues push constants
+- draw indirect
+- cbuffer instanced causes hugh perf issues (should be structured tbh)
+- tangent space normal map is black
+- bindless material
+- RW texture
+- MRT
+- shadow map is black
+- omni shadow is black
+- material ibl
+- dynamic cubemap
+- MSAA
+- mip downsample
+
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
 
@@ -14,21 +29,14 @@
 // - area light
 // - disney brdf
 
-// platforms
-// - bring across macos shader compilation
-// - integrate macos changes and fixup win32/d3d12
-// - try update windows-rs
-
 // engine
 // - reverse depth
 // - visibility buffer
 // - mesh shader
-// - hello triangle (ray tracing)
 // - HDR pipeline
 // - glft
 // - set name on resources
 // - lazy init print function
-// - example triangle culling via execute indirect
 
 // gfx
 // - Alpha to coverage
@@ -36,14 +44,13 @@
 // - API for fence
 
 // ui / debug
-// - per demo settings
 // - thread stats
 // - view menu + saving state
 // - imgui not tracked within draw call stats
 
-// build
-
 // DONE:
+// x per demo settings
+// x hello triangle (ray tracing)
 // x create tlas with heap?
 // x raytraced triangle
 // x test shader compilation with mac changes
@@ -158,7 +165,7 @@
 // x fix issues with crash when a return happens between begin/end render pass
 // x gfx::buffer should need to be mut for update
 // x propagate sample mask??
-// x Draw Instanced 
+// x Draw Instanced
 // x draw instanced
 // x pmfx v2 docs (view)
 // x batch vertex instance buffer

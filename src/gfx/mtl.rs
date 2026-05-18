@@ -435,8 +435,12 @@ impl CmdBuf {
         };
 
         // Bind push constants using setVertexBytes/setFragmentBytes (zero allocations)
+        // Skip binders that have not changed since the last draw
         for b in binder.values() {
             if let PipelineStageBinder::PushConstants(pc) = b {
+                if !pc.dirty {
+                    continue;
+                }
                 let data_size = (pc.num_32_bit_constants * 4) as u64;
                 let data_ptr = pc.data.as_ptr() as *const std::ffi::c_void;
 
@@ -452,16 +456,17 @@ impl CmdBuf {
             }
         }
 
-        // Group resource bindings by buffer_index
+        // Group resource bindings by buffer_index, skipping groups where nothing is dirty
         let mut groups: HashMap<u32, Vec<&ResourceBinder>> = HashMap::new();
         for b in binder.values() {
             if let PipelineStageBinder::Resource(rb) = b {
-                if rb.bound_resource.is_some() {
+                if rb.bound_resource.is_some() && rb.dirty {
                     groups.entry(rb.buffer_index).or_default().push(rb);
                 }
             }
         }
 
+        // TODO: move to to_mtl_stage function + implement the others
         let render_stage = match stage {
             super::ShaderType::Vertex => metal::MTLRenderStages::Vertex,
             super::ShaderType::Fragment => metal::MTLRenderStages::Fragment,
@@ -527,6 +532,20 @@ impl CmdBuf {
 
         self.allocate_stage_bindings(&vertex_binder, super::ShaderType::Vertex);
         self.allocate_stage_bindings(&fragment_binder, super::ShaderType::Fragment);
+
+        // Clear dirty flags on originals now that encoding is done
+        for b in self.vertex_binder.values_mut() {
+            match b {
+                PipelineStageBinder::PushConstants(pc) => pc.dirty = false,
+                PipelineStageBinder::Resource(rb) => rb.dirty = false,
+            }
+        }
+        for b in self.fragment_binder.values_mut() {
+            match b {
+                PipelineStageBinder::PushConstants(pc) => pc.dirty = false,
+                PipelineStageBinder::Resource(rb) => rb.dirty = false,
+            }
+        }
     }
 }
 
@@ -743,6 +762,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(binder) = self.vertex_binder.get_mut(&key) {
             if let PipelineStageBinder::Resource(ref mut rb) = binder {
                 rb.bound_resource = Some(ResourceBinding { heap_ptr, offset });
+                rb.dirty = true;
             }
         }
 
@@ -750,6 +770,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         if let Some(binder) = self.fragment_binder.get_mut(&key) {
             if let PipelineStageBinder::Resource(ref mut rb) = binder {
                 rb.bound_resource = Some(ResourceBinding { heap_ptr, offset });
+                rb.dirty = true;
             }
         }
 
@@ -778,6 +799,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             let dest_end = dest_start + data_size_dwords;
             if dest_end <= pc.data.len() {
                 pc.data[dest_start..dest_end].copy_from_slice(data_u32);
+                pc.dirty = true;
             }
             result = Some(());
         }
@@ -788,6 +810,7 @@ impl super::CmdBuf<Device> for CmdBuf {
             let dest_end = dest_start + data_size_dwords;
             if dest_end <= pc.data.len() {
                 pc.data[dest_start..dest_end].copy_from_slice(data_u32);
+                pc.dirty = true;
             }
             result = Some(());
         }
@@ -993,6 +1016,7 @@ struct PushConstantsBinder {
     pub data: Vec<u32>,
     pub num_32_bit_constants: u32,
     pub buffer_index: u32,
+    pub dirty: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -1008,6 +1032,7 @@ struct ResourceBinder {
     pub data_type: metal::MTLDataType,
     pub array_length: u64,
     pub bound_resource: Option<ResourceBinding>,
+    pub dirty: bool,
 }
 
 #[derive(Clone)]
@@ -1484,6 +1509,7 @@ impl Device {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
                             buffer_index,
+                            dirty: true,
                         }));
                     },
                     ShaderVisibility::Fragment => {
@@ -1494,6 +1520,7 @@ impl Device {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
                             buffer_index,
+                            dirty: true,
                         }));
                     },
                     ShaderVisibility::All => {
@@ -1506,12 +1533,14 @@ impl Device {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
                             buffer_index: v_buffer_index,
+                            dirty: true,
                         }));
 
                         fragment_binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
                             data: vec![0u32; push_constant.num_values as usize],
                             num_32_bit_constants: push_constant.num_values,
                             buffer_index: f_buffer_index,
+                            dirty: true,
                         }));
                     },
                     _ => {},
@@ -1561,6 +1590,7 @@ impl Device {
                                 data_type,
                                 array_length,
                                 bound_resource: None,
+                                dirty: true,
                             }));
                         }
                     }
@@ -1574,6 +1604,7 @@ impl Device {
                                 data_type,
                                 array_length,
                                 bound_resource: None,
+                                dirty: true,
                             }));
                         }
                     }
