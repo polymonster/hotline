@@ -1,4 +1,7 @@
 #![cfg(target_os = "macos")]
+// objc 0.2.x's sel_impl macro uses cfg(cargo-clippy) which is not a valid identifier
+// so it cannot be declared via check-cfg; suppress the lint for this file.
+#![allow(unexpected_cfgs)]
 
 use crate::os_platform;
 use crate::os::Window;
@@ -1300,6 +1303,7 @@ impl Device {
             let heap_descriptor = metal::HeapDescriptor::new();
             heap_descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
             heap_descriptor.set_size(heap_size);
+
             // Enable hazard tracking so Metal automatically synchronizes heap-allocated
             // textures across command buffers (by default heaps are MTLHazardTrackingModeUntracked)
             unsafe { let _: () = msg_send![&*heap_descriptor, setHazardTrackingMode: metal::MTLHazardTrackingMode::Tracked]; };
