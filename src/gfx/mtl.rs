@@ -326,7 +326,7 @@ impl super::SwapChain<Device> for SwapChain {
     }
 
     fn get_frame_fence_value(&self) -> u64 {
-        0
+        self.frame_value
     }
 
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) -> bool {
@@ -600,12 +600,51 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn begin_event(&mut self, colour: u32, name: &str) {
+        if let Some(enc) = self.render_encoder.as_ref() {
+            enc.push_debug_group(name);
+        } else if let Some(enc) = self.compute_encoder.as_ref() {
+            enc.push_debug_group(name);
+        } else if let Some(cmd) = self.cmd.as_ref() {
+            cmd.push_debug_group(name);
+        }
     }
 
     fn end_event(&mut self) {
+        if let Some(enc) = self.render_encoder.as_ref() {
+            enc.pop_debug_group();
+        } else if let Some(enc) = self.compute_encoder.as_ref() {
+            enc.pop_debug_group();
+        } else if let Some(cmd) = self.cmd.as_ref() {
+            cmd.pop_debug_group();
+        }
     }
 
     fn timestamp_query(&mut self, heap: &mut QueryHeap, resolve_buffer: &mut Buffer) {
+        if let Some(sample_buf) = heap.sample_buffer.as_ref() {
+            let idx = heap.alloc_index;
+            heap.alloc_index += 1;
+            resolve_buffer.counter_sample_buffer = Some(sample_buf.to_owned());
+            resolve_buffer.counter_sample_index = idx;
+            resolve_buffer.counter_cmd = self.cmd.clone();
+            if let Some(enc) = self.render_encoder.as_ref() {
+                // mid-pass: counter buffer must have been pre-registered in the render pass
+                // descriptor to call sampleCountersInBuffer — skip silently if not configured
+                let _ = enc;
+            } else if let Some(enc) = self.compute_encoder.as_ref() {
+                let _ = enc;
+            } else if let Some(cmd) = self.cmd.as_ref() {
+                // Between encoders: use a blit pass descriptor with the counter buffer
+                // registered so Metal accepts the sample call.
+                let blit_desc = metal::BlitPassDescriptor::new();
+                if let Some(attachment) = blit_desc.sample_buffer_attachments().object_at(0) {
+                    attachment.set_sample_buffer(sample_buf);
+                    attachment.set_start_of_encoder_sample_index(idx as _);
+                    attachment.set_end_of_encoder_sample_index(NSUInteger::MAX);
+                }
+                let blit = cmd.blit_command_encoder_with_descriptor(blit_desc);
+                blit.end_encoding();
+            }
+        }
     }
 
     fn begin_query(&mut self, heap: &mut QueryHeap, query_type: QueryType) -> usize {
@@ -948,6 +987,10 @@ pub struct Buffer {
     srv_index: Option<usize>,
     uav_index: Option<usize>,
     cbv_index: Option<usize>,
+    counter_sample_buffer: Option<metal::CounterSampleBuffer>,
+    counter_sample_index: usize,
+    // Metal substitute for a D3D12 GPU fence: wait_until_completed before resolving counter data
+    counter_cmd: Option<metal::CommandBuffer>,
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -1262,11 +1305,15 @@ impl super::Heap<Device> for Heap {
 }
 
 pub struct QueryHeap {
-
+    heap_type: super::QueryType,
+    sample_buffer: Option<metal::CounterSampleBuffer>,
+    alloc_index: usize,
+    capacity: usize,
 }
 
 impl super::QueryHeap<Device> for QueryHeap {
     fn reset(&mut self) {
+        self.alloc_index = 0;
     }
 }
 
@@ -1679,8 +1726,24 @@ impl super::Device for Device {
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
+        let sample_buffer = if info.heap_type == super::QueryType::Timestamp {
+            let counter_sets = self.metal_device.counter_sets();
+            let ts_set = counter_sets.iter().find(|cs| cs.name().eq_ignore_ascii_case("timestamp"));
+            ts_set.and_then(|cs| {
+                let desc = metal::CounterSampleBufferDescriptor::new();
+                desc.set_counter_set(cs);
+                desc.set_sample_count(info.num_queries as _);
+                desc.set_storage_mode(metal::MTLStorageMode::Shared);
+                self.metal_device.new_counter_sample_buffer_with_descriptor(&desc).ok()
+            })
+        } else {
+            None
+        };
         QueryHeap {
-
+            heap_type: info.heap_type,
+            sample_buffer,
+            alloc_index: 0,
+            capacity: info.num_queries,
         }
     }
 
@@ -2096,7 +2159,10 @@ impl super::Device for Device {
                 element_stride: info.stride,
                 srv_index,
                 uav_index,
-                cbv_index
+                cbv_index,
+                counter_sample_buffer: None,
+                counter_sample_index: 0,
+                counter_cmd: None,
             })
         })
     }
@@ -2155,7 +2221,10 @@ impl super::Device for Device {
                 element_stride: size,
                 srv_index: None,
                 uav_index: None,
-                cbv_index: None
+                cbv_index: None,
+                counter_sample_buffer: None,
+                counter_sample_index: 0,
+                counter_cmd: None,
             })
         })
     }
@@ -2445,6 +2514,39 @@ impl super::Device for Device {
     }
 
     fn read_timestamps(&self, swap_chain: &SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64> {
+        if let Some(sample_buf) = &buffer.counter_sample_buffer {
+            // Metal has no GPU-signalled fence; wait for the recording command buffer to finish
+            // before resolving counter data (equivalent to D3D12's GPU fence check).
+            if let Some(cmd) = &buffer.counter_cmd {
+                cmd.wait_until_completed();
+            }
+            let elem_size = std::mem::size_of::<u64>();
+            let count = (size_bytes / elem_size).max(1);
+            unsafe {
+                let range = metal::NSRange {
+                    location: buffer.counter_sample_index as _,
+                    length: count as _,
+                };
+                let ns_data: *mut objc::runtime::Object =
+                    msg_send![sample_buf.as_ref(), resolveCounterRange: range];
+                if !ns_data.is_null() {
+                    let bytes: *const u8 = msg_send![ns_data, bytes];
+                    let len: usize = msg_send![ns_data, length];
+                    let mut results = Vec::new();
+                    for i in 0..count {
+                        let offset = i * elem_size;
+                        if offset + elem_size <= len {
+                            let nanos = (bytes.add(offset) as *const u64).read_unaligned();
+                            // MTLCounterResultTimestamp.timestamp is nanoseconds on Apple Silicon
+                            results.push(nanos as f64 / 1_000_000_000.0);
+                        }
+                    }
+                    if !results.is_empty() {
+                        return results;
+                    }
+                }
+            }
+        }
         vec![]
     }
 
@@ -2453,7 +2555,7 @@ impl super::Device for Device {
     }
 
     fn get_timestamp_size_bytes() -> usize {
-        0
+        8 // u64; matches D3D12 — Metal uses CounterSampleBuffer, not this backing store
     }
 
     fn get_pipeline_statistics_size_bytes() -> usize {

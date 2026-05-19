@@ -114,7 +114,7 @@ pub fn setup_spot_lights(
 
     let size = 10.0;
     let height = 50.0;
-    let half_size = size * 0.5;    
+    let half_size = size * 0.5;
     let step = size * half_size;
     let half_extent = (rc-1.0) * step * 0.5;
     let start_pos = vec3f(-half_extent, size, -half_extent);
@@ -146,12 +146,12 @@ pub fn setup_spot_lights(
 
 #[export_update_fn]
 pub fn animate_spot_lights(
-    time: Res<TimeRes>, 
+    time: Res<TimeRes>,
     mut light_query: Query<&mut Position, With<LightComponent>>) -> Result<(), hotline_rs::Error> {
-    
+
     let t = time.accumulated;
     let rot0 = t;
-    
+
     let mut i = 0;
     for mut position in &mut light_query {
         if i < 16 {
@@ -161,7 +161,7 @@ pub fn animate_spot_lights(
             let ss = 300.0 * ts;
             position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
             position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
+
             let pr = rotate_2d(position.xz(), rot0);
             position.set_xz(pr);
         }
@@ -172,7 +172,7 @@ pub fn animate_spot_lights(
             let ss = 300.0 * ts;
             position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
             position.z = cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
+
             let pr = rotate_2d(position.xz(), -rot0);
             position.set_xz(pr);
         }
@@ -183,7 +183,7 @@ pub fn animate_spot_lights(
             let ss = 300.0 * ts;
             position.x = sin(fi * f32::two_pi()) * f32::tau() * ss;
             position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
+
             let pr = rotate_2d(position.xz(), -rot0);
             position.set_xz(pr);
         }
@@ -194,7 +194,7 @@ pub fn animate_spot_lights(
             let ss = 300.0 * ts;
             position.x = -sin(fi * f32::two_pi()) * f32::tau() * ss;
             position.z = -cos(fi * f32::two_pi()) * f32::tau() * ss;
-            
+
             let pr = rotate_2d(position.xz(), rot0);
             position.set_xz(pr);
         }

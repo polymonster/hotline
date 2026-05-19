@@ -1,19 +1,26 @@
 // TODO:
 
 macos
-- perf issues push constants
+x perf issues push constants
+x hot reload
+x window pos restore
+x shader errors don't properly display
+- gpu timestamp ???
+
 - draw indirect
-- cbuffer instanced causes hugh perf issues (should be structured tbh)
 - tangent space normal map is black
-- bindless material
-- RW texture
+- RW texture + better demo
 - MRT
 - shadow map is black
 - omni shadow is black
 - material ibl
 - dynamic cubemap
-- MSAA
+
 - mip downsample
+- MSAA
+
+- bindless material
+- cbuffer instanced causes hugh perf issues (should be structured tbh)
 
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture

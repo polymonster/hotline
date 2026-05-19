@@ -63,5 +63,6 @@
         "xtree": "cpp",
         "xutility": "cpp"
     },
-    "rust-analyzer.showUnlinkedFileNotification": false
+    "rust-analyzer.showUnlinkedFileNotification": false,
+    "rust-analyzer.checkOnSave": false
 }

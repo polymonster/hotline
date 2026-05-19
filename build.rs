@@ -24,10 +24,7 @@ fn main() {
 fn main() {
     use std::path::Path;
 
-    // Rerun when source shaders change
     println!("cargo:rerun-if-changed=shaders");
-    println!("cargo:rerun-if-changed=target/data/shaders");
-    println!("cargo:rerun-if-changed=target/temp/shaders");
 
     if std::env::var("CARGO_FEATURE_BUILD_DATA").is_ok() {
         let output_dir = Path::new("target/data/shaders");

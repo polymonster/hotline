@@ -9,7 +9,7 @@ use std::sync::Arc;
 use std::sync::RwLock;
 
 use winit::{
-    dpi::{LogicalPosition, LogicalSize},
+    dpi::{PhysicalPosition, PhysicalSize},
     event::{WindowEvent, ElementState},
     event_loop::ActiveEventLoop,
     keyboard::{Key, PhysicalKey, KeyCode},
@@ -313,8 +313,8 @@ impl super::App for App {
         let window = self.event_loop.read().unwrap()
             .create_window(
                 winit::window::Window::default_attributes()
-                    .with_inner_size(winit::dpi::LogicalSize::new(info.rect.width, info.rect.height))
-                    .with_position(winit::dpi::LogicalPosition::new(info.rect.x, info.rect.y))
+                    .with_inner_size(PhysicalSize::new(info.rect.width, info.rect.height))
+                    .with_position(PhysicalPosition::new(info.rect.x, info.rect.y))
                     .with_title(info.title)
             )
             .unwrap();
@@ -460,6 +460,26 @@ impl super::App for App {
     }
 
     fn enumerate_display_monitors(&self) -> Vec<super::MonitorInfo> {
+        {
+            let cached = self.monitors.read().unwrap();
+            if !cached.is_empty() {
+                return cached.clone();
+            }
+        }
+        // Monitors aren't populated until the first pump_app_events triggers `resumed`.
+        // Pump once here so the cache gets filled before the caller needs it.
+        let mut dummy_resume = true;
+        let mut handler = FrameHandler {
+            resume: &mut dummy_resume,
+            input_state: self.input_state.clone(),
+            monitors: self.monitors.clone(),
+            window_sizes: self.window_sizes.clone(),
+        };
+        let _ = self.event_loop.write().and_then(|mut event_loop| {
+            use winit::platform::pump_events::EventLoopExtPumpEvents;
+            event_loop.pump_app_events(Some(Duration::ZERO), &mut handler);
+            Ok(())
+        });
         self.monitors.read().unwrap().clone()
     }
 
@@ -554,7 +574,7 @@ impl super::Window<App> for Window {
 
     /// Set window position in screen space
     fn set_pos(&self, pos: super::Point<i32>) {
-        self.winit_window.set_outer_position(LogicalPosition {
+        self.winit_window.set_outer_position(PhysicalPosition {
             x: pos.x,
             y: pos.y
         });
@@ -562,7 +582,7 @@ impl super::Window<App> for Window {
 
     /// Set window size in screen coordinates
     fn set_size(&self, size: super::Size<i32>) {
-        self.winit_window.request_inner_size(LogicalSize::new(size.x, size.y));
+        self.winit_window.request_inner_size(PhysicalSize::new(size.x, size.y));
     }
 
     /// Returns the screen position for the top-left corner of the window
