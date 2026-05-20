@@ -1935,24 +1935,27 @@ impl super::Device for Device {
                 .object_at(0)
                 .unwrap();
 
-            // Get pixel format from pass, or default to BGRA8Unorm
+            // Get pixel format from pass; depth-only passes use Invalid (no colour attachment)
             let pixel_format = info.pass
                 .map(|p| p.pixel_format)
                 .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
             attachment.set_pixel_format(pixel_format);
 
-            // Apply blend state from pipeline info
-            if let Some(b) = info.blend_info.render_target.first() {
-                attachment.set_blending_enabled(b.blend_enabled);
-                attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
-                attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
-                attachment.set_source_rgb_blend_factor(to_mtl_blend_factor(&b.src_blend));
-                attachment.set_source_alpha_blend_factor(to_mtl_blend_factor(&b.src_blend_alpha));
-                attachment.set_destination_rgb_blend_factor(to_mtl_blend_factor(&b.dst_blend));
-                attachment.set_destination_alpha_blend_factor(to_mtl_blend_factor(&b.dst_blend_alpha));
-                attachment.set_write_mask(to_mtl_write_mask(&b.write_mask));
-            } else {
-                attachment.set_blending_enabled(false);
+            // Only configure blend/write state when there is a colour attachment
+            if pixel_format != metal::MTLPixelFormat::Invalid {
+                if let Some(b) = info.blend_info.render_target.first() {
+                    attachment.set_blending_enabled(b.blend_enabled);
+                    attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
+                    attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
+                    attachment.set_source_rgb_blend_factor(to_mtl_blend_factor(&b.src_blend));
+                    attachment.set_source_alpha_blend_factor(to_mtl_blend_factor(&b.src_blend_alpha));
+                    attachment.set_destination_rgb_blend_factor(to_mtl_blend_factor(&b.dst_blend));
+                    attachment.set_destination_alpha_blend_factor(to_mtl_blend_factor(&b.dst_blend_alpha));
+                    attachment.set_write_mask(to_mtl_write_mask(&b.write_mask));
+                } else {
+                    attachment.set_blending_enabled(false);
+                    attachment.set_write_mask(metal::MTLColorWriteMask::all());
+                }
             }
 
             // Set depth format on pipeline descriptor if pass has depth
@@ -2392,10 +2395,10 @@ impl super::Device for Device {
                 }
             }
 
-            // Get pixel format from first render target
+            // Get pixel format from first render target; Invalid for depth-only passes
             let pixel_format = info.render_targets.first()
                 .map(|rt| rt.metal_texture.pixel_format())
-                .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
+                .unwrap_or(metal::MTLPixelFormat::Invalid);
 
             // Handle depth stencil attachment
             let depth_format = if let Some(ds_texture) = &info.depth_stencil {
