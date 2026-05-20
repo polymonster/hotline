@@ -5,15 +5,17 @@ x perf issues push constants
 x hot reload
 x window pos restore
 x shader errors don't properly display
+x majority shader compilation
 - gpu timestamp ???
 
-- draw indirect
-- tangent space normal map is black
-- RW texture + better demo
-- MRT
 - shadow map is black
 - omni shadow is black
+
 - material ibl
+- tangent space normal map is black
+
+- RW texture + better demo
+- MRT
 - dynamic cubemap
 
 - mip downsample
@@ -21,6 +23,8 @@ x shader errors don't properly display
 
 - bindless material
 - cbuffer instanced causes hugh perf issues (should be structured tbh)
+
+- draw indirect
 
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture

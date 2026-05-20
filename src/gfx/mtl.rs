@@ -170,6 +170,30 @@ fn to_mtl_compare_func(func: super::ComparisonFunc) -> metal::MTLCompareFunction
     }
 }
 
+fn to_mtl_sampler_address_mode(mode: super::SamplerAddressMode) -> metal::MTLSamplerAddressMode {
+    match mode {
+        super::SamplerAddressMode::Wrap => metal::MTLSamplerAddressMode::Repeat,
+        super::SamplerAddressMode::Mirror => metal::MTLSamplerAddressMode::MirrorRepeat,
+        super::SamplerAddressMode::Clamp => metal::MTLSamplerAddressMode::ClampToEdge,
+        super::SamplerAddressMode::Border => metal::MTLSamplerAddressMode::ClampToBorderColor,
+        super::SamplerAddressMode::MirrorOnce => metal::MTLSamplerAddressMode::MirrorClampToEdge,
+    }
+}
+
+fn to_mtl_sampler_min_mag_filter(filter: super::SamplerFilter) -> metal::MTLSamplerMinMagFilter {
+    match filter {
+        super::SamplerFilter::Point => metal::MTLSamplerMinMagFilter::Nearest,
+        super::SamplerFilter::Linear | super::SamplerFilter::Anisotropic => metal::MTLSamplerMinMagFilter::Linear,
+    }
+}
+
+fn to_mtl_sampler_mip_filter(filter: super::SamplerFilter) -> metal::MTLSamplerMipFilter {
+    match filter {
+        super::SamplerFilter::Point => metal::MTLSamplerMipFilter::Nearest,
+        super::SamplerFilter::Linear | super::SamplerFilter::Anisotropic => metal::MTLSamplerMipFilter::Linear,
+    }
+}
+
 fn to_mtl_stencil_op(op: super::StencilOp) -> metal::MTLStencilOperation {
     match op {
         super::StencilOp::Keep => metal::MTLStencilOperation::Keep,
@@ -1153,7 +1177,7 @@ impl super::Texture<Device> for Texture {
     }
 
     fn get_uav_index(&self) -> Option<usize> {
-        None
+        self.uav_index
     }
 
     fn clone_inner(&self) -> Texture {
@@ -1980,13 +2004,17 @@ impl super::Device for Device {
 
             if let Some(static_samplers) = &info.pipeline_layout.static_samplers {
                 for sampler in static_samplers {
+                    let si = &sampler.sampler_info;
                     let desc = metal::SamplerDescriptor::new();
-                    desc.set_address_mode_r(metal::MTLSamplerAddressMode::Repeat);
-                    desc.set_address_mode_s(metal::MTLSamplerAddressMode::Repeat);
-                    desc.set_address_mode_t(metal::MTLSamplerAddressMode::Repeat);
-                    desc.set_min_filter(metal::MTLSamplerMinMagFilter::Linear);
-                    desc.set_mag_filter(metal::MTLSamplerMinMagFilter::Linear);
-                    desc.set_mip_filter(metal::MTLSamplerMipFilter::Linear);
+                    desc.set_address_mode_r(to_mtl_sampler_address_mode(si.address_w));
+                    desc.set_address_mode_s(to_mtl_sampler_address_mode(si.address_u));
+                    desc.set_address_mode_t(to_mtl_sampler_address_mode(si.address_v));
+                    desc.set_min_filter(to_mtl_sampler_min_mag_filter(si.filter));
+                    desc.set_mag_filter(to_mtl_sampler_min_mag_filter(si.filter));
+                    desc.set_mip_filter(to_mtl_sampler_mip_filter(si.filter));
+                    if let Some(func) = si.comparison {
+                        desc.set_compare_function(to_mtl_compare_func(func));
+                    }
                     desc.set_support_argument_buffers(true);
 
                     pipeline_static_samplers.push(MetalSamplerBinding {
@@ -2113,7 +2141,7 @@ impl super::Device for Device {
             // StorageModeShared: CPU and GPU share the same physical memory — no didModifyRange
             // needed and no stale-copy hazard. StorageModeManaged has a separate GPU copy that
             // requires an explicit sync notification after every CPU write; without it the GPU
-            // reads stale data, which is the source of the world-buffer tearing.
+            // reads stale data, causing tearing
             let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
                 metal::MTLResourceOptions::StorageModeShared;
 
@@ -2172,31 +2200,6 @@ impl super::Device for Device {
         info: &super::BufferInfo,
         data: Option<&[T]>,
     ) -> result::Result<Buffer, super::Error> {
-        /*
-        objc::rc::autoreleasepool(|| {
-            let opt = metal::MTLResourceOptions::CPUCacheModeDefaultCache |
-                metal::MTLResourceOptions::StorageModeManaged;
-
-            let byte_len = (info.stride * info.num_elements) as NSUInteger;
-
-            let buf = if let Some(data) = data {
-                let bytes = data.as_ptr() as *const std::ffi::c_void;
-                self.metal_device.new_buffer_with_data(bytes, byte_len, opt)
-            }
-            else {
-                self.metal_device.new_buffer(byte_len, opt)
-            };
-
-            Ok(Buffer{
-                metal_buffer: buf,
-                element_stride: info.stride,
-                srv_index: None,
-                uav_index: None,
-                cbv_index: None
-            })
-        })
-        */
-
         self.create_buffer_with_heap(
             info,
             data,
@@ -2376,6 +2379,7 @@ impl super::Device for Device {
             for rt in &info.render_targets {
                 let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
                 color_attachment.set_texture(Some(&rt.metal_texture));
+                color_attachment.set_slice(info.array_slice as u64);
 
                 if let Some(cc) = info.rt_clear {
                     color_attachment.set_load_action(metal::MTLLoadAction::Clear);
@@ -2397,6 +2401,7 @@ impl super::Device for Device {
             let depth_format = if let Some(ds_texture) = &info.depth_stencil {
                 let depth_attachment = descriptor.depth_attachment().unwrap();
                 depth_attachment.set_texture(Some(&ds_texture.metal_texture));
+                depth_attachment.set_slice(info.array_slice as u64);
 
                 if let Some(ds_clear) = &info.ds_clear {
                     if let Some(depth_val) = ds_clear.depth {
@@ -2416,6 +2421,7 @@ impl super::Device for Device {
                 if has_stencil_component(format) {
                     let stencil_attachment = descriptor.stencil_attachment().unwrap();
                     stencil_attachment.set_texture(Some(&ds_texture.metal_texture));
+                    stencil_attachment.set_slice(info.array_slice as u64);
 
                     if let Some(ds_clear) = &info.ds_clear {
                         if let Some(stencil_val) = ds_clear.stencil {

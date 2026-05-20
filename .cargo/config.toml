@@ -1,5 +1,5 @@
 [build]
 rustflags = ["-A", "unused"]
 
-[build.env]
+[env]
 MACOSX_DEPLOYMENT_TARGET = "15.0"
