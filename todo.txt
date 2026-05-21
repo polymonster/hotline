@@ -1,5 +1,3 @@
-// TODO:
-
 macos
 x perf issues push constants
 x hot reload
@@ -12,19 +10,20 @@ x shadow map is black
 x omni shadow is black
 x compute pipeline
 x RW texture + better demo
+x MSAA
+x MRT
+- mip downsample
 
 - gpu timestamp ???
 - pmfx hotreload
 - pmbuild needs universal install into hotline-data
 
-- MRT
-- MSAA
-- mip downsample
-
-- sample cmp shadow
 - material ibl
 - bindless material
+
+- sample cmp shadow
 - cbuffer instanced causes hugh perf issues (should be structured tbh)
+
 - draw indirect
 - video player
 - resource tests

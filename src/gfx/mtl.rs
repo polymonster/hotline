@@ -367,6 +367,7 @@ impl super::SwapChain<Device> for SwapChain {
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) -> bool {
         objc::rc::autoreleasepool(|| {
             let draw_size = window.get_size();
+            self.layer.set_contents_scale(window.get_dpi_scale() as f64);
             self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
 
             let drawable = self.layer.next_drawable()
@@ -376,8 +377,11 @@ impl super::SwapChain<Device> for SwapChain {
 
             self.backbuffer_texture = Texture {
                 metal_texture: drawable.texture().to_owned(),
+                resolved_texture: None,
                 srv_index: None,
+                msaa_srv_index: None,
                 uav_index: None,
+                resolvable: false,
                 heap_id: None
             };
 
@@ -440,6 +444,9 @@ pub struct CmdBuf {
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
     compute_binder: HashMap<SlotKey, PipelineStageBinder>,
+    /// Textures whose mips must be regenerated when the current render pass ends (see
+    /// RenderPass::generate_mips_textures), set in begin_render_pass and consumed in end_render_pass.
+    pending_mip_textures: Vec<metal::Texture>,
 }
 
 impl Clone for CmdBuf {
@@ -458,6 +465,7 @@ impl Clone for CmdBuf {
             vertex_binder: self.vertex_binder.clone(),
             fragment_binder: self.fragment_binder.clone(),
             compute_binder: self.compute_binder.clone(),
+            pending_mip_textures: self.pending_mip_textures.clone(),
         }
     }
 }
@@ -722,6 +730,10 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             // new encoder
             self.render_encoder = Some(render_encoder);
+
+            // remember any mip-chained targets so we can regenerate their mips once the pass ends
+            // (and its MSAA resolve has completed)
+            self.pending_mip_textures = render_pass.generate_mips_textures.clone();
         });
     }
 
@@ -731,6 +743,20 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::mtl end_render_pass called without matching begin")
                 .end_encoding();
             self.render_encoder = None;
+
+            // regenerate mips for any generate_mips targets now mip 0 has been written/resolved.
+            // A blit encoder is the only live encoder here, so Metal's ordering guarantees the
+            // resolve completes first.
+            if !self.pending_mip_textures.is_empty() {
+                if let Some(cmd) = self.cmd.as_ref() {
+                    let blit = cmd.new_blit_command_encoder();
+                    for tex in &self.pending_mip_textures {
+                        blit.generate_mipmaps(tex);
+                    }
+                    blit.end_encoding();
+                }
+                self.pending_mip_textures.clear();
+            }
         });
     }
 
@@ -1154,11 +1180,19 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
-    fn resolve_texture_subresource(&mut self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
+    fn resolve_texture_subresource(&mut self, _texture: &Texture, _subresource: u32) -> result::Result<(), super::Error> {
+        // No-op on Metal: MSAA resolve is performed at the end of the owning render pass via the
+        // StoreAndMultisampleResolve store action (see create_render_pass). pmfx records this into a
+        // barrier command buffer once at graph-setup and re-executes it every frame, but a committed
+        // Metal command buffer is single-use, so doing the resolve here would only run once.
         Ok(())
     }
 
-    fn generate_mip_maps(&mut self, texture: &Texture, device: &Device, heap: &Heap) -> result::Result<(), super::Error> {
+    fn generate_mip_maps(&mut self, _texture: &Texture, _device: &Device, _heap: &Heap) -> result::Result<(), super::Error> {
+        // Mips are generated inline at the end of the render pass that targets the resource (see
+        // end_render_pass / RenderPass::generate_mips_textures). The pmfx barrier mechanism this
+        // hooks into cannot run per-frame on Metal (device.execute is a no-op and command buffers
+        // are single-commit), so the work happens where the resolve does instead.
         Ok(())
     }
 
@@ -1347,8 +1381,15 @@ impl super::Pipeline for RenderPipeline {
 #[derive(Clone)]
 pub struct Texture {
     metal_texture: metal::Texture,
+    /// Single-sample resolve backing for an MSAA texture (samples > 1); also the texture sampled
+    /// when reading a resolvable target normally
+    resolved_texture: Option<metal::Texture>,
+    /// Bindless index of the resolved / non-MSAA view (returned by `get_srv_index`)
     srv_index: Option<usize>,
+    /// Bindless index of the MSAA view, for `Texture2DMS` reads (returned by `get_msaa_srv_index`)
+    msaa_srv_index: Option<usize>,
     uav_index: Option<usize>,
+    resolvable: bool,
     heap_id: Option<u16>
 }
 
@@ -1362,7 +1403,7 @@ impl super::Texture<Device> for Texture {
     }
 
     fn get_msaa_srv_index(&self) -> Option<usize> {
-        None
+        self.msaa_srv_index
     }
 
     fn get_uav_index(&self) -> Option<usize> {
@@ -1372,14 +1413,17 @@ impl super::Texture<Device> for Texture {
     fn clone_inner(&self) -> Texture {
         Texture {
             metal_texture: self.metal_texture.clone(),
+            resolved_texture: self.resolved_texture.clone(),
             srv_index: self.srv_index,
+            msaa_srv_index: self.msaa_srv_index,
             uav_index: self.uav_index,
+            resolvable: self.resolvable,
             heap_id: self.heap_id
         }
     }
 
     fn is_resolvable(&self) -> bool {
-        false
+        self.resolvable
     }
 
     fn get_shader_heap_id(&self) -> Option<u16> {
@@ -1416,8 +1460,14 @@ impl super::ReadBackRequest<Device> for ReadBackRequest {
 #[derive(Clone)]
 pub struct RenderPass {
     desc: metal::RenderPassDescriptor,
-    pixel_format: metal::MTLPixelFormat,
+    /// Colour attachment formats, one per MRT target (index 0 = SV_Target0)
+    pixel_formats: Vec<metal::MTLPixelFormat>,
     depth_format: Option<metal::MTLPixelFormat>,
+    /// MSAA sample count shared by all attachments in the pass (1 = no MSAA)
+    sample_count: u32,
+    /// Sampled textures (resolve backing or the target itself) with a mip chain that should have
+    /// their mips regenerated after this pass completes - filled for `generate_mips` targets.
+    generate_mips_textures: Vec<metal::Texture>,
 }
 
 impl super::RenderPass<Device> for RenderPass {
@@ -1563,6 +1613,16 @@ pub struct RaytracingTLAS {
 }
 
 impl Device {
+    /// Largest texture sample count <= `requested` that this device supports (always >= 1).
+    /// Apple GPUs commonly cap at 4x, so an 8x request is clamped down rather than asserting.
+    fn supported_sample_count(&self, requested: u32) -> u32 {
+        let mut count = requested.max(1);
+        while count > 1 && !self.metal_device.supports_texture_sample_count(count as NSUInteger) {
+            count /= 2;
+        }
+        count
+    }
+
     fn create_render_pass_for_swap_chain(
         &self,
         texture: &Texture,
@@ -1589,16 +1649,22 @@ impl Device {
             texture_descriptor.set_depth(1);
             texture_descriptor.set_texture_type(metal::MTLTextureType::D2);
             texture_descriptor.set_pixel_format(metal::MTLPixelFormat::RGBA8Unorm);
-            texture_descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
+            // Private storage: required for MSAA textures (which can't be Shared) and faster for
+            // GPU sampling on Apple Silicon. Texture data is uploaded via a staging buffer + blit.
+            texture_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
 
             // Determine the size required for the heap for the given descriptor
             let size_and_align = mtl_device.heap_texture_size_and_align(&texture_descriptor);
             let texture_size = align_pow2(size_and_align.size, size_and_align.align);
 
-            let heap_size = texture_size * info.num_descriptors.max(1) as u64;
+            // The 512x512 RGBA8 reference (~1MB) underestimates real descriptors: 2k material
+            // textures, IBL cubemaps and MSAA render targets are far larger. Oversize the heap so
+            // the bindless descriptor pool doesn't run out of memory when many/large textures load.
+            const HEAP_OVERSIZE_FACTOR: u64 = 2;
+            let heap_size = texture_size * info.num_descriptors.max(1) as u64 * HEAP_OVERSIZE_FACTOR;
 
             let heap_descriptor = metal::HeapDescriptor::new();
-            heap_descriptor.set_storage_mode(metal::MTLStorageMode::Shared);
+            heap_descriptor.set_storage_mode(metal::MTLStorageMode::Private);
             heap_descriptor.set_size(heap_size);
 
             // Enable hazard tracking so Metal automatically synchronizes heap-allocated
@@ -2064,6 +2130,7 @@ impl super::Device for Device {
                 view.setLayer(std::mem::transmute(layer.as_ref()));
 
                 let draw_size = win.get_size();
+                layer.set_contents_scale(win.get_dpi_scale() as f64);
                 layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
 
                 let drawable = layer.next_drawable()
@@ -2071,8 +2138,11 @@ impl super::Device for Device {
 
                 let backbuffer_texture = Texture {
                     metal_texture: drawable.texture().to_owned(),
+                    resolved_texture: None,
                     srv_index: None,
+                    msaa_srv_index: None,
                     uav_index: None,
+                    resolvable: false,
                     heap_id: None
                 };
                 let render_pass = self.create_render_pass_for_swap_chain(&backbuffer_texture, info.clear_colour);
@@ -2115,6 +2185,7 @@ impl super::Device for Device {
                 vertex_binder: HashMap::new(),
                 fragment_binder: HashMap::new(),
                 compute_binder: HashMap::new(),
+                pending_mip_textures: Vec::new(),
             }
         })
     }
@@ -2204,21 +2275,28 @@ impl super::Device for Device {
 
             pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
 
-            // TODO: attachments
-            let attachment = pipeline_state_descriptor
-                .color_attachments()
-                .object_at(0)
-                .unwrap();
+            // colour attachments - one per MRT target from the pass (SV_Target0..N). With no pass
+            // (eg. depth-only / default) fall back to a single BGRA8 attachment.
+            let pixel_formats: Vec<metal::MTLPixelFormat> = info.pass
+                .map(|p| p.pixel_formats.clone())
+                .filter(|f| !f.is_empty())
+                .unwrap_or_else(|| vec![metal::MTLPixelFormat::BGRA8Unorm]);
 
-            // Get pixel format from pass; depth-only passes use Invalid (no colour attachment)
-            let pixel_format = info.pass
-                .map(|p| p.pixel_format)
-                .unwrap_or(metal::MTLPixelFormat::BGRA8Unorm);
-            attachment.set_pixel_format(pixel_format);
+            for (i, &pixel_format) in pixel_formats.iter().enumerate() {
+                let attachment = pipeline_state_descriptor
+                    .color_attachments()
+                    .object_at(i as u64)
+                    .unwrap();
+                attachment.set_pixel_format(pixel_format);
 
-            // Only configure blend/write state when there is a colour attachment
-            if pixel_format != metal::MTLPixelFormat::Invalid {
-                if let Some(b) = info.blend_info.render_target.first() {
+                if pixel_format == metal::MTLPixelFormat::Invalid {
+                    continue;
+                }
+
+                // per-target blend state (falls back to the first / disabled)
+                let blend = info.blend_info.render_target.get(i)
+                    .or_else(|| info.blend_info.render_target.first());
+                if let Some(b) = blend {
                     attachment.set_blending_enabled(b.blend_enabled);
                     attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
                     attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
@@ -2233,7 +2311,7 @@ impl super::Device for Device {
                 }
             }
 
-            // Set depth format on pipeline descriptor if pass has depth
+            // Set depth format + MSAA sample count on pipeline descriptor to match the pass
             if let Some(pass) = &info.pass {
                 if let Some(depth_format) = pass.depth_format {
                     pipeline_state_descriptor.set_depth_attachment_pixel_format(depth_format);
@@ -2241,6 +2319,7 @@ impl super::Device for Device {
                         pipeline_state_descriptor.set_stencil_attachment_pixel_format(depth_format);
                     }
                 }
+                pipeline_state_descriptor.set_sample_count(pass.sample_count as NSUInteger);
             }
 
             // Create depth stencil state
@@ -2531,18 +2610,26 @@ impl super::Device for Device {
         objc::rc::autoreleasepool(|| {
             let desc = TextureDescriptor::new();
 
-            // TODO:
-            // initial_state
+            // clamp requested MSAA to what the device supports (eg. 8x -> 4x on most Apple GPUs)
+            let sample_count = self.supported_sample_count(info.samples);
+            let msaa = sample_count > 1;
 
             // desc
             desc.set_pixel_format(to_mtl_pixel_format(info.format));
             desc.set_width(info.width as NSUInteger);
             desc.set_height(info.height as NSUInteger);
             desc.set_depth(info.depth as NSUInteger);
-            desc.set_mipmap_level_count(info.mip_levels as NSUInteger);
+            // MSAA textures cannot have a mip chain
+            desc.set_mipmap_level_count(if msaa { 1 } else { info.mip_levels as NSUInteger });
             desc.set_usage(to_mtl_texture_usage(info.usage));
-            desc.set_storage_mode(metal::MTLStorageMode::Shared);
-            desc.set_texture_type(to_mtl_texture_type(info.tex_type));
+            // Must match the (Private) heap the texture is allocated from
+            desc.set_storage_mode(metal::MTLStorageMode::Private);
+            // MSAA Texture2D uses the D2Multisample type
+            desc.set_texture_type(if msaa && matches!(info.tex_type, super::TextureType::Texture2D) {
+                metal::MTLTextureType::D2Multisample
+            } else {
+                to_mtl_texture_type(info.tex_type)
+            });
 
             // For cubemaps, arrayLength must be 1 (6 faces are implicit)
             // For cube arrays, arrayLength is the number of cubemaps (not faces)
@@ -2553,9 +2640,7 @@ impl super::Device for Device {
             };
             desc.set_array_length(array_length as NSUInteger);
 
-            // TODO: multi sample
-            // desc.set_sample_count(info.samples as NSUInteger);
-            desc.set_sample_count(1);
+            desc.set_sample_count(sample_count as NSUInteger);
 
             // use supplied heap or fallback to the device default
             let shader_heap = if let Some(shader_heap) = heaps.shader {
@@ -2569,12 +2654,29 @@ impl super::Device for Device {
             let tex = shader_heap.mtl_heap.new_texture(&desc)
                 .expect("hotline_rs::gfx::mtl failed to allocate texture in heap!");
 
-            // upload texture data with support for mips, cubemaps, and array slices
+            // upload texture data with support for mips, cubemaps, and array slices.
+            // The heap is Private (not CPU-writable), so stage the bytes in a Shared buffer and
+            // blit each subresource into the texture on a one-shot command buffer.
             if let Some(data) = data {
                 let block_size = super::block_size_for_format(info.format) as u64;
                 let tpb = super::texels_per_block_for_format(info.format);
-                let mut data_offset: usize = 0;
 
+                let bytes = unsafe {
+                    std::slice::from_raw_parts(
+                        data.as_ptr() as *const u8,
+                        std::mem::size_of_val(data)
+                    )
+                };
+                let staging = self.metal_device.new_buffer_with_data(
+                    bytes.as_ptr() as *const std::ffi::c_void,
+                    bytes.len() as NSUInteger,
+                    metal::MTLResourceOptions::StorageModeShared
+                );
+
+                let cmd = self.command_queue.new_command_buffer();
+                let blit = cmd.new_blit_command_encoder();
+
+                let mut data_offset: u64 = 0;
                 for a in 0..info.array_layers {
                     let mut mip_w = info.width;
                     let mut mip_h = info.height;
@@ -2584,27 +2686,20 @@ impl super::Device for Device {
                         let pitch = block_size * (mip_w / tpb).max(1);
                         let depth_pitch = pitch * (mip_h / tpb).max(1);
 
-                        let region = metal::MTLRegion {
-                            origin: metal::MTLOrigin { x: 0, y: 0, z: 0 },
-                            size: metal::MTLSize {
-                                width: mip_w,
-                                height: mip_h,
-                                depth: mip_d,
-                            },
-                        };
-
-                        let mip_data_ptr = unsafe { (data.as_ptr() as *const u8).add(data_offset) };
-
-                        tex.replace_region_in_slice(
-                            region,
-                            mip as NSUInteger,
-                            a as NSUInteger,
-                            mip_data_ptr as _,
+                        blit.copy_from_buffer_to_texture(
+                            &staging,
+                            data_offset as NSUInteger,
                             pitch as NSUInteger,
                             depth_pitch as NSUInteger,
+                            metal::MTLSize { width: mip_w, height: mip_h, depth: mip_d },
+                            &tex,
+                            a as NSUInteger,
+                            mip as NSUInteger,
+                            metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                            metal::MTLBlitOption::empty(),
                         );
 
-                        data_offset += (depth_pitch * mip_d.max(1)) as usize;
+                        data_offset += depth_pitch * mip_d.max(1);
 
                         // halve dimensions for next mip (non-pot safe)
                         mip_w = (mip_w / 2).max(1);
@@ -2612,6 +2707,10 @@ impl super::Device for Device {
                         mip_d = (mip_d / 2).max(1);
                     }
                 }
+
+                blit.end_encoding();
+                cmd.commit();
+                cmd.wait_until_completed();
             }
 
             // allocate on the heap
@@ -2621,14 +2720,9 @@ impl super::Device for Device {
             // Encode texture into heap's argument buffer for bindless access
             shader_heap.encode_texture(alloc_index, &tex);
 
-            // assign srv or uav
-            let srv_index = if info.usage.contains(TextureUsage::SHADER_RESOURCE) {
-                Some(alloc_index)
-            }
-            else {
-                None
-            };
+            let shader_resource = info.usage.contains(TextureUsage::SHADER_RESOURCE);
 
+            // UAV only applies to the (non-MSAA) texture
             let uav_index = if info.usage.contains(TextureUsage::UNORDERED_ACCESS) {
                 Some(alloc_index)
             }
@@ -2636,12 +2730,58 @@ impl super::Device for Device {
                 None
             };
 
-            Ok(Texture{
-                metal_texture: tex,
-                srv_index,
-                uav_index,
-                heap_id: Some(shader_heap.id)
-            })
+            if msaa {
+                // The primary texture is the MSAA view (read as Texture2DMS via get_msaa_srv_index).
+                let msaa_srv_index = if shader_resource { Some(alloc_index) } else { None };
+
+                // Create a single-sample resolve backing so the texture can be read normally and
+                // resolved via resolve_texture_subresource (matches the D3D12 resolve concept).
+                let mut resolved_texture = None;
+                let mut srv_index = None;
+                if shader_resource {
+                    let rdesc = TextureDescriptor::new();
+                    rdesc.set_pixel_format(to_mtl_pixel_format(info.format));
+                    rdesc.set_width(info.width as NSUInteger);
+                    rdesc.set_height(info.height as NSUInteger);
+                    rdesc.set_depth(info.depth as NSUInteger);
+                    rdesc.set_mipmap_level_count(info.mip_levels as NSUInteger);
+                    rdesc.set_usage(to_mtl_texture_usage(info.usage));
+                    rdesc.set_storage_mode(metal::MTLStorageMode::Private);
+                    rdesc.set_texture_type(to_mtl_texture_type(info.tex_type));
+                    rdesc.set_array_length(array_length as NSUInteger);
+                    rdesc.set_sample_count(1);
+
+                    let resolve_tex = shader_heap.mtl_heap.new_texture(&rdesc)
+                        .expect("hotline_rs::gfx::mtl failed to allocate resolve texture in heap!");
+                    let resolve_index = shader_heap.allocate();
+                    shader_heap.texture_slots[resolve_index] = Some(resolve_tex.to_owned());
+                    shader_heap.encode_texture(resolve_index, &resolve_tex);
+                    srv_index = Some(resolve_index);
+                    resolved_texture = Some(resolve_tex);
+                }
+
+                Ok(Texture{
+                    metal_texture: tex,
+                    resolved_texture,
+                    srv_index,
+                    msaa_srv_index,
+                    uav_index,
+                    resolvable: shader_resource,
+                    heap_id: Some(shader_heap.id)
+                })
+            }
+            else {
+                let srv_index = if shader_resource { Some(alloc_index) } else { None };
+                Ok(Texture{
+                    metal_texture: tex,
+                    resolved_texture: None,
+                    srv_index,
+                    msaa_srv_index: None,
+                    uav_index,
+                    resolvable: false,
+                    heap_id: Some(shader_heap.id)
+                })
+            }
         })
     }
 
@@ -2653,27 +2793,49 @@ impl super::Device for Device {
             // new desc
             let descriptor = metal::RenderPassDescriptor::new();
 
-            // colour attachments
-            for rt in &info.render_targets {
-                let color_attachment = descriptor.color_attachments().object_at(0).unwrap();
+            // colour attachments - one per MRT target (SV_Target0..N)
+            let mut pixel_formats = Vec::new();
+            let mut generate_mips_textures = Vec::new();
+            for (i, rt) in info.render_targets.iter().enumerate() {
+                let color_attachment = descriptor.color_attachments().object_at(i as u64).unwrap();
                 color_attachment.set_texture(Some(&rt.metal_texture));
                 color_attachment.set_slice(info.array_slice as u64);
 
                 if let Some(cc) = info.rt_clear {
                     color_attachment.set_load_action(metal::MTLLoadAction::Clear);
                     color_attachment.set_clear_color(metal::MTLClearColor::new(cc.r as f64, cc.g as f64, cc.b as f64, 1.0));
-                    color_attachment.set_store_action(metal::MTLStoreAction::Store);
                 }
                 else {
                     color_attachment.set_load_action(metal::MTLLoadAction::Load);
+                }
+
+                // For an MSAA target with a resolve backing, resolve at the end of the pass (every
+                // frame) rather than via a separate resolve command buffer. StoreAndMultisampleResolve
+                // also keeps the raw MSAA samples so they remain readable as Texture2DMS (ReadMsaa).
+                if let Some(resolved) = rt.resolved_texture.as_ref() {
+                    color_attachment.set_resolve_texture(Some(resolved));
+                    color_attachment.set_store_action(metal::MTLStoreAction::StoreAndMultisampleResolve);
+                }
+                else {
                     color_attachment.set_store_action(metal::MTLStoreAction::Store);
+                }
+
+                pixel_formats.push(rt.metal_texture.pixel_format());
+
+                // a target with a mip chain (eg. generate_mips) needs its mips rebuilt from mip 0
+                // after the pass writes / resolves into it. Use the sampled texture (resolve backing
+                // for MSAA, otherwise the target itself).
+                let sampled = rt.resolved_texture.as_ref().unwrap_or(&rt.metal_texture);
+                if sampled.mipmap_level_count() > 1 {
+                    generate_mips_textures.push(sampled.to_owned());
                 }
             }
 
-            // Get pixel format from first render target; Invalid for depth-only passes
-            let pixel_format = info.render_targets.first()
-                .map(|rt| rt.metal_texture.pixel_format())
-                .unwrap_or(metal::MTLPixelFormat::Invalid);
+            // sample count shared by all attachments (read from the first colour/depth target)
+            let sample_count = info.render_targets.first()
+                .map(|rt| rt.metal_texture.sample_count() as u32)
+                .or_else(|| info.depth_stencil.map(|ds| ds.metal_texture.sample_count() as u32))
+                .unwrap_or(1);
 
             // Handle depth stencil attachment
             let depth_format = if let Some(ds_texture) = &info.depth_stencil {
@@ -2721,8 +2883,10 @@ impl super::Device for Device {
 
             Ok(RenderPass{
                 desc: descriptor.to_owned(),
-                pixel_format,
+                pixel_formats,
                 depth_format,
+                sample_count,
+                generate_mips_textures,
             })
         })
     }

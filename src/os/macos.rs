@@ -81,6 +81,8 @@ pub struct App {
     windows: Arc<RwLock<HashMap<winit::window::WindowId, Arc<winit::window::Window>>>>,
     monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
     window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+    /// When false, windows render at 1x (non-retina) for lower GPU cost (eg. with MSAA)
+    dpi_aware: bool,
 }
 
 unsafe impl Send for App {}
@@ -93,6 +95,8 @@ pub struct Window {
     input_state: Arc<RwLock<InputState>>,
     events: Arc<RwLock<super::WindowEventFlags>>,
     cached_size: Arc<RwLock<winit::dpi::PhysicalSize<u32>>>,
+    /// Inherited from `AppInfo.dpi_aware`; false = render at 1x (logical pixels)
+    dpi_aware: bool,
 }
 
 unsafe impl Send for Window {}
@@ -304,6 +308,7 @@ impl super::App for App {
             windows: Arc::new(RwLock::new(HashMap::new())),
             monitors: Arc::new(RwLock::new(Vec::new())),
             window_sizes: Arc::new(RwLock::new(HashMap::new())),
+            dpi_aware: info.dpi_aware,
         }
     }
 
@@ -334,6 +339,7 @@ impl super::App for App {
             input_state: self.input_state.clone(),
             events: Arc::new(RwLock::new(super::WindowEventFlags::NONE)),
             cached_size,
+            dpi_aware: self.dpi_aware,
         }
     }
 
@@ -511,6 +517,23 @@ impl super::App for App {
     }
 }
 
+impl Window {
+    /// Render-target size for this window: physical pixels when dpi-aware, otherwise the logical
+    /// 1x size (physical / scale_factor) so retina + MSAA isn't allocated at full backing scale.
+    fn render_size(&self) -> super::Size<i32> {
+        let size = *self.cached_size.read().unwrap();
+        if self.dpi_aware {
+            super::Size { x: size.width as i32, y: size.height as i32 }
+        } else {
+            let scale = self.winit_window.scale_factor().max(1.0);
+            super::Size {
+                x: ((size.width as f64 / scale).round() as i32).max(1),
+                y: ((size.height as f64 / scale).round() as i32).max(1),
+            }
+        }
+    }
+}
+
 impl super::Window<App> for Window {
     /// Bring window to front and draw ontop of all others
     fn bring_to_front(&self) {
@@ -596,22 +619,18 @@ impl super::Window<App> for Window {
 
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> super::Rect<i32> {
-        let size = *self.cached_size.read().unwrap();
+        let size = self.render_size();
         super::Rect {
             x: 0,
             y: 0,
-            width: size.width as i32,
-            height: size.height as i32
+            width: size.x,
+            height: size.y
         }
     }
 
-    /// Returns the screen position for the top-left corner of the window
+    /// Returns the render size of the window (physical pixels, or logical 1x when !dpi_aware)
     fn get_size(&self) -> super::Size<i32> {
-        let size = *self.cached_size.read().unwrap();
-        super::Size {
-            x: size.width as i32,
-            y: size.height as i32
-        }
+        self.render_size()
     }
 
     /// Returns the screen rect of the window screen pos x, y , size x, y.
@@ -633,9 +652,10 @@ impl super::Window<App> for Window {
         self.input_state.read().unwrap().mouse_client_pos
     }
 
-    /// Return the dpi scale for the current monitor the window is on
+    /// Return the dpi scale for the current monitor the window is on. When the app is not
+    /// dpi-aware the engine operates entirely in logical (1x) pixels, so the effective scale is 1.
     fn get_dpi_scale(&self) -> f32 {
-        self.winit_window.scale_factor() as f32
+        if self.dpi_aware { self.winit_window.scale_factor() as f32 } else { 1.0 }
     }
 
     /// Gets the internal native handle
