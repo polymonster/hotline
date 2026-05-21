@@ -444,9 +444,27 @@ pub struct CmdBuf {
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
     compute_binder: HashMap<SlotKey, PipelineStageBinder>,
-    /// Textures whose mips must be regenerated when the current render pass ends (see
-    /// RenderPass::generate_mips_textures), set in begin_render_pass and consumed in end_render_pass.
-    pending_mip_textures: Vec<metal::Texture>,
+    /// Render-graph barrier work recorded as intent rather than encoded immediately. Metal command
+    /// buffers are single-commit, so a barrier (which the graph replays every frame via
+    /// `Device::execute`) cannot be a pre-encoded buffer like it is on D3D12. Instead transition /
+    /// resolve / generate_mip_maps push ops here and `Device::execute` replays them into a fresh
+    /// command buffer each frame.
+    deferred_ops: Vec<DeferredBarrierOp>,
+}
+
+/// A unit of render-graph barrier work to replay each frame on Metal. Transition barriers are
+/// absent because Metal tracks hazards automatically for resources in a `Tracked` heap.
+#[derive(Clone)]
+enum DeferredBarrierOp {
+    /// Resolve an MSAA texture into its single-sample resolve backing via a load/no-clear pass.
+    Resolve {
+        msaa: metal::Texture,
+        resolve: metal::Texture,
+    },
+    /// Regenerate the mip chain of a sampled texture from mip 0 with a blit encoder.
+    GenerateMips {
+        texture: metal::Texture,
+    },
 }
 
 impl Clone for CmdBuf {
@@ -465,7 +483,7 @@ impl Clone for CmdBuf {
             vertex_binder: self.vertex_binder.clone(),
             fragment_binder: self.fragment_binder.clone(),
             compute_binder: self.compute_binder.clone(),
-            pending_mip_textures: self.pending_mip_textures.clone(),
+            deferred_ops: self.deferred_ops.clone(),
         }
     }
 }
@@ -730,10 +748,6 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             // new encoder
             self.render_encoder = Some(render_encoder);
-
-            // remember any mip-chained targets so we can regenerate their mips once the pass ends
-            // (and its MSAA resolve has completed)
-            self.pending_mip_textures = render_pass.generate_mips_textures.clone();
         });
     }
 
@@ -743,20 +757,6 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::mtl end_render_pass called without matching begin")
                 .end_encoding();
             self.render_encoder = None;
-
-            // regenerate mips for any generate_mips targets now mip 0 has been written/resolved.
-            // A blit encoder is the only live encoder here, so Metal's ordering guarantees the
-            // resolve completes first.
-            if !self.pending_mip_textures.is_empty() {
-                if let Some(cmd) = self.cmd.as_ref() {
-                    let blit = cmd.new_blit_command_encoder();
-                    for tex in &self.pending_mip_textures {
-                        blit.generate_mipmaps(tex);
-                    }
-                    blit.end_encoding();
-                }
-                self.pending_mip_textures.clear();
-            }
         });
     }
 
@@ -1180,19 +1180,28 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
-    fn resolve_texture_subresource(&mut self, _texture: &Texture, _subresource: u32) -> result::Result<(), super::Error> {
-        // No-op on Metal: MSAA resolve is performed at the end of the owning render pass via the
-        // StoreAndMultisampleResolve store action (see create_render_pass). pmfx records this into a
-        // barrier command buffer once at graph-setup and re-executes it every frame, but a committed
-        // Metal command buffer is single-use, so doing the resolve here would only run once.
+    fn resolve_texture_subresource(&mut self, texture: &Texture, _subresource: u32) -> result::Result<(), super::Error> {
+        // Record the resolve as deferred barrier work; Device::execute replays it into a fresh
+        // command buffer each frame (a committed Metal command buffer can't be re-submitted).
+        if let Some(resolve) = texture.resolved_texture.as_ref() {
+            self.deferred_ops.push(DeferredBarrierOp::Resolve {
+                msaa: texture.metal_texture.to_owned(),
+                resolve: resolve.to_owned(),
+            });
+        }
         Ok(())
     }
 
-    fn generate_mip_maps(&mut self, _texture: &Texture, _device: &Device, _heap: &Heap) -> result::Result<(), super::Error> {
-        // Mips are generated inline at the end of the render pass that targets the resource (see
-        // end_render_pass / RenderPass::generate_mips_textures). The pmfx barrier mechanism this
-        // hooks into cannot run per-frame on Metal (device.execute is a no-op and command buffers
-        // are single-commit), so the work happens where the resolve does instead.
+    fn generate_mip_maps(&mut self, texture: &Texture, _device: &Device, _heap: &Heap) -> result::Result<(), super::Error> {
+        // Record mip generation as deferred barrier work (replayed per-frame by Device::execute).
+        // Generate on the texture shaders actually sample: the resolve backing for an MSAA target
+        // (its mip 0 is filled by the preceding resolve op), otherwise the texture itself.
+        let target = texture.resolved_texture.as_ref().unwrap_or(&texture.metal_texture);
+        if target.mipmap_level_count() > 1 {
+            self.deferred_ops.push(DeferredBarrierOp::GenerateMips {
+                texture: target.to_owned(),
+            });
+        }
         Ok(())
     }
 
@@ -1465,9 +1474,6 @@ pub struct RenderPass {
     depth_format: Option<metal::MTLPixelFormat>,
     /// MSAA sample count shared by all attachments in the pass (1 = no MSAA)
     sample_count: u32,
-    /// Sampled textures (resolve backing or the target itself) with a mip chain that should have
-    /// their mips regenerated after this pass completes - filled for `generate_mips` targets.
-    generate_mips_textures: Vec<metal::Texture>,
 }
 
 impl super::RenderPass<Device> for RenderPass {
@@ -2185,7 +2191,7 @@ impl super::Device for Device {
                 vertex_binder: HashMap::new(),
                 fragment_binder: HashMap::new(),
                 compute_binder: HashMap::new(),
-                pending_mip_textures: Vec::new(),
+                deferred_ops: Vec::new(),
             }
         })
     }
@@ -2795,7 +2801,6 @@ impl super::Device for Device {
 
             // colour attachments - one per MRT target (SV_Target0..N)
             let mut pixel_formats = Vec::new();
-            let mut generate_mips_textures = Vec::new();
             for (i, rt) in info.render_targets.iter().enumerate() {
                 let color_attachment = descriptor.color_attachments().object_at(i as u64).unwrap();
                 color_attachment.set_texture(Some(&rt.metal_texture));
@@ -2809,26 +2814,13 @@ impl super::Device for Device {
                     color_attachment.set_load_action(metal::MTLLoadAction::Load);
                 }
 
-                // For an MSAA target with a resolve backing, resolve at the end of the pass (every
-                // frame) rather than via a separate resolve command buffer. StoreAndMultisampleResolve
-                // also keeps the raw MSAA samples so they remain readable as Texture2DMS (ReadMsaa).
-                if let Some(resolved) = rt.resolved_texture.as_ref() {
-                    color_attachment.set_resolve_texture(Some(resolved));
-                    color_attachment.set_store_action(metal::MTLStoreAction::StoreAndMultisampleResolve);
-                }
-                else {
-                    color_attachment.set_store_action(metal::MTLStoreAction::Store);
-                }
+                // Keep the rendered (MSAA) samples. The MSAA resolve and any mip downsample are
+                // driven by the render graph barriers (see resolve_texture_subresource /
+                // generate_mip_maps), not baked into every pass, so the barrier can decide when they
+                // happen (eg. only after the last of several passes that target the same resource).
+                color_attachment.set_store_action(metal::MTLStoreAction::Store);
 
                 pixel_formats.push(rt.metal_texture.pixel_format());
-
-                // a target with a mip chain (eg. generate_mips) needs its mips rebuilt from mip 0
-                // after the pass writes / resolves into it. Use the sampled texture (resolve backing
-                // for MSAA, otherwise the target itself).
-                let sampled = rt.resolved_texture.as_ref().unwrap_or(&rt.metal_texture);
-                if sampled.mipmap_level_count() > 1 {
-                    generate_mips_textures.push(sampled.to_owned());
-                }
             }
 
             // sample count shared by all attachments (read from the first colour/depth target)
@@ -2886,7 +2878,6 @@ impl super::Device for Device {
                 pixel_formats,
                 depth_format,
                 sample_count,
-                generate_mips_textures,
             })
         })
     }
@@ -2958,7 +2949,39 @@ impl super::Device for Device {
     }
 
     fn execute(&mut self, cmd: &CmdBuf) {
+        // Pass command buffers commit themselves in CmdBuf::close, so there is nothing to submit
+        // here for them. Barrier command buffers instead carry deferred ops (transition / resolve /
+        // generate mips) which we replay into a fresh command buffer every frame, mirroring how
+        // D3D12 re-executes a pre-recorded barrier command list.
+        if cmd.deferred_ops.is_empty() {
+            return;
+        }
 
+        objc::rc::autoreleasepool(|| {
+            let metal_cmd = self.command_queue.new_command_buffer();
+            for op in &cmd.deferred_ops {
+                match op {
+                    DeferredBarrierOp::Resolve { msaa, resolve } => {
+                        // a load/no-clear pass with a MultisampleResolve store action resolves the
+                        // MSAA samples into the single-sample backing without drawing anything.
+                        let descriptor = metal::RenderPassDescriptor::new();
+                        let attachment = descriptor.color_attachments().object_at(0).unwrap();
+                        attachment.set_texture(Some(msaa));
+                        attachment.set_resolve_texture(Some(resolve));
+                        attachment.set_load_action(metal::MTLLoadAction::Load);
+                        attachment.set_store_action(metal::MTLStoreAction::StoreAndMultisampleResolve);
+                        let encoder = metal_cmd.new_render_command_encoder(&descriptor);
+                        encoder.end_encoding();
+                    }
+                    DeferredBarrierOp::GenerateMips { texture } => {
+                        let blit = metal_cmd.new_blit_command_encoder();
+                        blit.generate_mipmaps(texture);
+                        blit.end_encoding();
+                    }
+                }
+            }
+            metal_cmd.commit();
+        });
     }
 
     fn report_live_objects(&self) -> result::Result<(), super::Error> {

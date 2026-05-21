@@ -12,7 +12,7 @@ x compute pipeline
 x RW texture + better demo
 x MSAA
 x MRT
-- mip downsample
+x mip downsample
 
 - gpu timestamp ???
 - pmfx hotreload
