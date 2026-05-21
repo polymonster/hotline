@@ -7,23 +7,27 @@ x window pos restore
 x shader errors don't properly display
 x majority shader compilation
 x dynamic cubemap
+x tangent space normal map is black
+x shadow map is black
+x omni shadow is black
+x compute pipeline
+x RW texture + better demo
+
 - gpu timestamp ???
 - pmfx hotreload
+- pmbuild needs universal install into hotline-data
 
-- shadow map is black
-- omni shadow is black
-- material ibl
-- tangent space normal map is black
-- RW texture + better demo
 - MRT
-- mip downsample
 - MSAA
+- mip downsample
+
+- sample cmp shadow
+- material ibl
 - bindless material
 - cbuffer instanced causes hugh perf issues (should be structured tbh)
-
 - draw indirect
-
-- pmbuild needs universal install into hotline-data
+- video player
+- resource tests
 
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture

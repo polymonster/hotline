@@ -139,18 +139,18 @@ StructuredBuffer<directional_light_data> directional_lights[] : register(t0, spa
 StructuredBuffer<row_major float4x4> shadow_matrices[] : register(t0, space6);
 
 // textures
-Texture2D textures[] : register(t0, space7);
-Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);
-TextureCube cubemaps[] : register(t0, space9);
-Texture2DArray texture_arrays[] : register(t0, space10);
-Texture3D volume_textures[] : register(t0, space11);
+Texture2D textures[] : register(t1, space7);
+Texture2DMS<float4, 8> msaa8x_textures[] : register(t1, space8);
+TextureCube cubemaps[] : register(t1, space9);
+Texture2DArray texture_arrays[] : register(t1, space10);
+Texture3D volume_textures[] : register(t1, space11);
 
 // tlas
 RaytracingAccelerationStructure scene_tlas[] : register(t0, space12);
 
 // uav textures
-RWTexture2D<float4> rw_textures[] : register(u0, space0);
-RWTexture3D<float4> rw_volume_textures[] : register(u0, space1);
+RWTexture2D<float4> rw_textures[] : register(u1, space0);
+RWTexture3D<float4> rw_volume_textures[] : register(u1, space1);
 
 // main constants to obtain the indices of the buffer types
 ConstantBuffer<world_buffer_info_data> world_buffer_info : register(b2);

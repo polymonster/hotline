@@ -304,6 +304,17 @@ fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
     }
 }
 
+// HLSL register kind ('t', 'u', 'b', 's') for a DescriptorType. Used to group bindings into MSL
+// descriptor sets keyed by (kind, register_number) so e.g. t0 and u0 never share a [[buffer(N)]].
+fn descriptor_register_kind(ty: super::DescriptorType) -> char {
+    match ty {
+        super::DescriptorType::ShaderResource => 't',
+        super::DescriptorType::UnorderedAccess => 'u',
+        super::DescriptorType::ConstantBuffer | super::DescriptorType::PushConstants => 'b',
+        super::DescriptorType::Sampler => 's',
+    }
+}
+
 #[derive(Clone)]
 pub struct Device {
     metal_device: metal::Device,
@@ -423,10 +434,12 @@ pub struct CmdBuf {
     bound_index_buffer: Option<metal::Buffer>,
     bound_index_stride: usize,
     bound_render_pipeline: Option<*const RenderPipeline>,
+    bound_compute_pipeline: Option<*const ComputePipeline>,
     metal_device: metal::Device,
     transient_buffers: Vec<metal::Buffer>,
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
+    compute_binder: HashMap<SlotKey, PipelineStageBinder>,
 }
 
 impl Clone for CmdBuf {
@@ -439,10 +452,12 @@ impl Clone for CmdBuf {
             bound_index_buffer: self.bound_index_buffer.clone(),
             bound_index_stride: self.bound_index_stride,
             bound_render_pipeline: self.bound_render_pipeline,
+            bound_compute_pipeline: self.bound_compute_pipeline,
             metal_device: self.metal_device.clone(),
             transient_buffers: self.transient_buffers.clone(),
             vertex_binder: self.vertex_binder.clone(),
             fragment_binder: self.fragment_binder.clone(),
+            compute_binder: self.compute_binder.clone(),
         }
     }
 }
@@ -571,6 +586,93 @@ impl CmdBuf {
             }
         }
     }
+
+    /// Flush the compute binder state onto the active compute encoder before a dispatch. Push
+    /// constants go via setBytes; explicitly bound (non-bindless) resources are encoded into a
+    /// transient argument buffer - bindless heap argument buffers are already bound by `set_heap`.
+    fn allocate_compute_resources(&mut self) {
+        let encoder = match self.compute_encoder.as_ref() {
+            Some(e) => e,
+            None => return,
+        };
+        let binder = self.compute_binder.clone();
+
+        // push constants
+        for b in binder.values() {
+            if let PipelineStageBinder::PushConstants(pc) = b {
+                if !pc.dirty {
+                    continue;
+                }
+                let data_size = (pc.num_32_bit_constants * 4) as u64;
+                let data_ptr = pc.data.as_ptr() as *const std::ffi::c_void;
+                encoder.set_bytes(pc.buffer_index as u64, data_size, data_ptr);
+            }
+        }
+
+        // explicitly bound resources, grouped by buffer_index
+        let mut groups: HashMap<u32, Vec<&ResourceBinder>> = HashMap::new();
+        for b in binder.values() {
+            if let PipelineStageBinder::Resource(rb) = b {
+                if rb.bound_resource.is_some() && rb.dirty {
+                    groups.entry(rb.buffer_index).or_default().push(rb);
+                }
+            }
+        }
+
+        for (buffer_index, mut binders) in groups {
+            binders.sort_by_key(|rb| rb.binding_index);
+
+            let arg_descs: Vec<metal::ArgumentDescriptor> = binders.iter().map(|rb| {
+                let arg_desc = metal::ArgumentDescriptor::new();
+                arg_desc.set_index(rb.binding_index as u64);
+                arg_desc.set_data_type(rb.data_type);
+                arg_desc.set_array_length(rb.array_length);
+                arg_desc.set_access(metal::MTLArgumentAccess::ReadWrite);
+                arg_desc.to_owned()
+            }).collect();
+
+            let arg_encoder = self.metal_device.new_argument_encoder(
+                metal::Array::from_owned_slice(&arg_descs)
+            );
+            let arg_buffer = self.metal_device.new_buffer(
+                arg_encoder.encoded_length(),
+                metal::MTLResourceOptions::StorageModeShared
+            );
+            arg_encoder.set_argument_buffer(&arg_buffer, 0);
+
+            for rb in &binders {
+                if let Some(ref binding) = rb.bound_resource {
+                    let heap = unsafe { &*binding.heap_ptr };
+                    encoder.use_heap(&heap.mtl_heap);
+
+                    match rb.data_type {
+                        metal::MTLDataType::Texture => {
+                            if let Some(texture) = heap.texture_slots.get(binding.offset).and_then(|t| t.as_ref()) {
+                                arg_encoder.set_texture(rb.binding_index as u64, texture);
+                            }
+                        }
+                        metal::MTLDataType::Pointer => {
+                            if let Some(buffer) = heap.buffer_slots.get(binding.offset).and_then(|b| b.as_ref()) {
+                                arg_encoder.set_buffer(rb.binding_index as u64, buffer, 0);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
+            encoder.set_buffer(buffer_index as u64, Some(&arg_buffer), 0);
+            self.transient_buffers.push(arg_buffer);
+        }
+
+        // clear dirty flags now encoding is done
+        for b in self.compute_binder.values_mut() {
+            match b {
+                PipelineStageBinder::PushConstants(pc) => pc.dirty = false,
+                PipelineStageBinder::Resource(rb) => rb.dirty = false,
+            }
+        }
+    }
 }
 
 impl super::CmdBuf<Device> for CmdBuf {
@@ -588,6 +690,10 @@ impl super::CmdBuf<Device> for CmdBuf {
 
     fn close(&mut self) -> result::Result<(), super::Error> {
         objc::rc::autoreleasepool(|| {
+            // close any open compute encoder before committing
+            if let Some(enc) = self.compute_encoder.take() {
+                enc.end_encoding();
+            }
             self.cmd.as_ref().expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before close").commit();
             self.cmd = None;
             Ok(())
@@ -603,6 +709,11 @@ impl super::CmdBuf<Device> for CmdBuf {
             // catch double begin
             assert!(self.render_encoder.is_none(),
                 "hotline_rs::gfx::mtl begin_render_pass called without matching CmdBuf::end_render_pass");
+
+            // close any open compute encoder - Metal forbids two live encoders on one cmd buffer
+            if let Some(enc) = self.compute_encoder.take() {
+                enc.end_encoding();
+            }
 
             // catch mismatched close/reset
             let render_encoder = self.cmd.as_ref()
@@ -769,7 +880,23 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
+        objc::rc::autoreleasepool(|| {
+            // open a compute encoder lazily; reused across dispatches until a render pass or close
+            if self.compute_encoder.is_none() {
+                let encoder = self.cmd.as_ref()
+                    .expect("hotline_rs::gfx::mtl expected a call to CmdBuf::reset before set_compute_pipeline")
+                    .new_compute_command_encoder()
+                    .to_owned();
+                self.compute_encoder = Some(encoder);
+            }
 
+            self.compute_encoder.as_ref().unwrap()
+                .set_compute_pipeline_state(&pipeline.pipeline_state);
+
+            // store pipeline pointer and clone binder template into command buffer state
+            self.bound_compute_pipeline = Some(pipeline as *const ComputePipeline);
+            self.compute_binder = pipeline.compute_binder.clone();
+        });
     }
 
     fn set_raytracing_pipeline(&mut self, pipeline: &RaytracingPipeline) {
@@ -777,6 +904,27 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_heap<T: SuperPipleline>(&mut self, pipeline: &T, heap: &Heap) {
+        // compute pipelines bind the heap argument buffers on the compute encoder (single stage)
+        if matches!(T::get_pipeline_type(), super::PipelineType::Compute) {
+            let encoder = self.compute_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to set_compute_pipeline before set_heap");
+            let cp: &ComputePipeline = unsafe { std::mem::transmute(pipeline) };
+
+            encoder.use_heap(&heap.mtl_heap);
+            for (_key, slot) in &cp.compute_binder {
+                if let PipelineStageBinder::Resource(res) = slot {
+                    let arg_buffer = match res.data_type {
+                        metal::MTLDataType::Texture => heap.get_texture_argument_buffer(),
+                        metal::MTLDataType::Pointer => heap.get_buffer_argument_buffer(),
+                        _ => continue,
+                    };
+                    encoder.set_buffer(res.buffer_index as u64, Some(arg_buffer), 0);
+                }
+            }
+            return;
+        }
+
         let encoder = self.render_encoder
             .as_ref()
             .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
@@ -837,6 +985,14 @@ impl super::CmdBuf<Device> for CmdBuf {
             }
         }
 
+        // Write to compute binder if present
+        if let Some(binder) = self.compute_binder.get_mut(&key) {
+            if let PipelineStageBinder::Resource(ref mut rb) = binder {
+                rb.bound_resource = Some(ResourceBinding { heap_ptr, offset });
+                rb.dirty = true;
+            }
+        }
+
         Some(())
     }
 
@@ -881,7 +1037,27 @@ impl super::CmdBuf<Device> for CmdBuf {
         result
     }
 
-    fn push_compute_constants<P: SuperPipleline, T: Sized>(&mut self, _pipeline: &P, _register: u32, _space: u32, _num_values: u32, _dest_offset: u32, _data: &[T]) -> Option<()> {
+    fn push_compute_constants<P: SuperPipleline, T: Sized>(&mut self, _pipeline: &P, register: u32, space: u32, num_values: u32, dest_offset: u32, data: &[T]) -> Option<()> {
+        let key = (register, space, super::DescriptorType::PushConstants);
+
+        let data_size_dwords = num_values as usize;
+        let data_u32 = unsafe {
+            std::slice::from_raw_parts(
+                data.as_ptr() as *const u32,
+                data_size_dwords
+            )
+        };
+
+        if let Some(PipelineStageBinder::PushConstants(ref mut pc)) = self.compute_binder.get_mut(&key) {
+            let dest_start = dest_offset as usize;
+            let dest_end = dest_start + data_size_dwords;
+            if dest_end <= pc.data.len() {
+                pc.data[dest_start..dest_end].copy_from_slice(data_u32);
+                pc.dirty = true;
+            }
+            return Some(());
+        }
+
         None
     }
 
@@ -945,7 +1121,20 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
-    fn dispatch(&mut self, group_count: Size3, _numthreads: Size3) {
+    fn dispatch(&mut self, group_count: Size3, numthreads: Size3) {
+        objc::rc::autoreleasepool(|| {
+            self.allocate_compute_resources();
+
+            let threadgroups = metal::MTLSize::new(
+                group_count.x as u64, group_count.y as u64, group_count.z as u64);
+            let threads_per_group = metal::MTLSize::new(
+                numthreads.x as u64, numthreads.y as u64, numthreads.z as u64);
+
+            self.compute_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to set_compute_pipeline before dispatch")
+                .dispatch_thread_groups(threadgroups, threads_per_group);
+        });
     }
 
     fn execute_indirect(
@@ -1238,12 +1427,17 @@ impl super::RenderPass<Device> for RenderPass {
 }
 
 pub struct ComputePipeline {
-    slots: Vec<u32>
+    pipeline_state: metal::ComputePipelineState,
+    slots: Vec<u32>,
+    /// Unified slot lookup by (register, space, descriptor_type)
+    slot_lookup: HashMap<SlotKey, PipelineSlotInfo>,
+    /// Single-stage binders for push constants and resource bindings
+    compute_binder: HashMap<SlotKey, PipelineStageBinder>,
 }
 
 impl super::Pipeline for ComputePipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        None
+        self.slot_lookup.get(&(register, space, descriptor_type))
     }
 
     fn get_pipeline_slots(&self) -> &Vec<u32> {
@@ -1252,6 +1446,13 @@ impl super::Pipeline for ComputePipeline {
 
     fn get_pipeline_type() -> PipelineType {
         super::PipelineType::Compute
+    }
+
+    fn get_sub_binding_offset(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> u32 {
+        self.slot_lookup
+            .get(&(register, space, descriptor_type))
+            .map(|s| s.sub_offset)
+            .unwrap_or(0)
     }
 }
 
@@ -1502,41 +1703,49 @@ impl Device {
             }
         }
 
-        // Add regular binding slots
+        // Add regular binding slots, grouped by (register_kind, shader_register) to mirror the
+        // descriptor-set layout produced by htwv's MSL codegen. Each (kind, register) becomes its
+        // own MSL [[buffer(N)]] slot so the heap's texture and buffer argument buffers never share
+        // a slot. sub_offset matches the [[id(N)]] value spirv-cross assigns within the set;
+        // callers compensate for the unsized-array-hack offset via get_sub_binding_offset.
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                // Determine if any binding needs vertex or fragment visibility
-                let needs_vertex = bindings.iter().any(|b|
-                    matches!(b.visibility, ShaderVisibility::Vertex | ShaderVisibility::All));
-                let needs_fragment = bindings.iter().any(|b|
-                    matches!(b.visibility, ShaderVisibility::Fragment | ShaderVisibility::All));
+                // (register_kind, shader_register) -> (buffer_index, next_sub_offset)
+                let mut v_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                let mut f_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
 
-                // Single buffer index per stage (only increment once, not per binding!)
-                let vertex_idx = if needs_vertex {
-                    let idx = vertex_binding_offset;
-                    vertex_binding_offset += 1;
-                    Some(idx)
-                } else {
-                    None
-                };
-                let fragment_idx = if needs_fragment {
-                    let idx = fragment_binding_offset;
-                    fragment_binding_offset += 1;
-                    Some(idx)
-                } else {
-                    None
-                };
-                let canonical_index = vertex_idx.or(fragment_idx).unwrap_or(0);
+                for binding in bindings {
+                    let key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
 
-                // Each binding gets a slot entry; sub_offset is the position within the group
-                // matching the [[id(N)]] value spirv-cross assigns in the descriptor set struct
-                for (sub_offset, binding) in bindings.iter().enumerate() {
+                    let v_slot = if matches!(binding.visibility, ShaderVisibility::Vertex | ShaderVisibility::All) {
+                        let entry = v_groups.entry(key).or_insert_with(|| {
+                            let idx = vertex_binding_offset;
+                            vertex_binding_offset += 1;
+                            (idx, 0)
+                        });
+                        let sub = entry.1;
+                        entry.1 += 1;
+                        Some((entry.0, sub))
+                    } else { None };
+
+                    let f_slot = if matches!(binding.visibility, ShaderVisibility::Fragment | ShaderVisibility::All) {
+                        let entry = f_groups.entry(key).or_insert_with(|| {
+                            let idx = fragment_binding_offset;
+                            fragment_binding_offset += 1;
+                            (idx, 0)
+                        });
+                        let sub = entry.1;
+                        entry.1 += 1;
+                        Some((entry.0, sub))
+                    } else { None };
+
+                    let (canonical_index, sub_offset) = v_slot.or(f_slot).unwrap_or((0, 0));
                     slot_lookup.insert(
                         (binding.shader_register, binding.register_space, binding.binding_type),
                         PipelineSlotInfo {
                             index: canonical_index,
                             count: binding.num_descriptors,
-                            sub_offset: sub_offset as u32,
+                            sub_offset,
                         }
                     );
                 }
@@ -1619,71 +1828,135 @@ impl Device {
             }
         }
 
-        // Add resource binders
+        // Add resource binders, grouped by (register_kind, shader_register). Each (kind, register)
+        // pair gets its own [[buffer(N)]] slot per stage so the heap's texture and buffer
+        // argument buffers are bound to distinct slots. Within a group, binding_index is the
+        // sub_offset that matches the [[id(N)]] value spirv-cross emits in the MSL set struct.
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                // Determine if any binding needs vertex or fragment visibility
-                let needs_vertex = bindings.iter().any(|b|
-                    matches!(b.visibility, ShaderVisibility::Vertex | ShaderVisibility::All));
-                let needs_fragment = bindings.iter().any(|b|
-                    matches!(b.visibility, ShaderVisibility::Fragment | ShaderVisibility::All));
+                // (register_kind, shader_register) -> (buffer_index, next_sub_offset)
+                let mut v_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                let mut f_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
 
-                // Single buffer index per stage (only increment once, not per binding!)
-                let vertex_idx = if needs_vertex {
-                    let idx = vertex_binding_offset;
-                    vertex_binding_offset += 1;
-                    Some(idx)
-                } else {
-                    None
-                };
-                let fragment_idx = if needs_fragment {
-                    let idx = fragment_binding_offset;
-                    fragment_binding_offset += 1;
-                    Some(idx)
-                } else {
-                    None
-                };
-
-                // Create ResourceBinder for each binding
-                for (i, binding) in bindings.iter().enumerate() {
+                for binding in bindings {
                     let key: SlotKey = (binding.shader_register, binding.register_space, binding.binding_type);
+                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
                     let data_type = to_mtl_data_type(
                         binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding")
                     );
                     let array_length = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
 
-                    // Add to vertex binder if visible to vertex stage
                     if matches!(binding.visibility, ShaderVisibility::Vertex | ShaderVisibility::All) {
-                        if let Some(v_idx) = vertex_idx {
-                            vertex_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
-                                buffer_index: v_idx,
-                                binding_index: i as u32,
-                                data_type,
-                                array_length,
-                                bound_resource: None,
-                                dirty: true,
-                            }));
-                        }
+                        let entry = v_groups.entry(group_key).or_insert_with(|| {
+                            let idx = vertex_binding_offset;
+                            vertex_binding_offset += 1;
+                            (idx, 0)
+                        });
+                        let sub = entry.1;
+                        entry.1 += 1;
+                        vertex_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
+                            buffer_index: entry.0,
+                            binding_index: sub,
+                            data_type,
+                            array_length,
+                            bound_resource: None,
+                            dirty: true,
+                        }));
                     }
 
-                    // Add to fragment binder if visible to fragment stage
                     if matches!(binding.visibility, ShaderVisibility::Fragment | ShaderVisibility::All) {
-                        if let Some(f_idx) = fragment_idx {
-                            fragment_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
-                                buffer_index: f_idx,
-                                binding_index: i as u32,
-                                data_type,
-                                array_length,
-                                bound_resource: None,
-                                dirty: true,
-                            }));
-                        }
+                        let entry = f_groups.entry(group_key).or_insert_with(|| {
+                            let idx = fragment_binding_offset;
+                            fragment_binding_offset += 1;
+                            (idx, 0)
+                        });
+                        let sub = entry.1;
+                        entry.1 += 1;
+                        fragment_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
+                            buffer_index: entry.0,
+                            binding_index: sub,
+                            data_type,
+                            array_length,
+                            bound_resource: None,
+                            dirty: true,
+                        }));
                     }
                 }
             }
         }
 
         (vertex_binder, fragment_binder)
+    }
+
+    /// Build a single-stage binder for a compute pipeline. Mirrors `build_stage_binders` but emits
+    /// one map: push constants and resource bindings share a single MSL [[buffer(N)]] namespace
+    /// (no vertex/fragment split). Buffer indices begin at `COMPUTE_BINDING_BASE` which must match
+    /// the [[buffer(N)]] slots htwv emits for the compute kernel.
+    fn build_compute_binder(
+        &self,
+        pipeline_bindings: &Option<Vec<DescriptorBinding>>,
+        pipeline_push_constants: &Option<Vec<PushConstantInfo>>,
+    ) -> HashMap<SlotKey, PipelineStageBinder> {
+        const MAX_BINDLESS_TEXTURES: u64 = 1024;
+        // Compute follows the same MSL [[buffer(N)]] layout htwv emits for the fragment stage:
+        // buffer(0) is reserved for the sampler descriptor set, push constants take buffer(1), and
+        // space0 resource descriptor sets follow at buffer(2)+. So start binding indices at 1.
+        const COMPUTE_BINDING_BASE: u32 = 1;
+
+        let mut binder: HashMap<SlotKey, PipelineStageBinder> = HashMap::new();
+        let mut binding_offset: u32 = COMPUTE_BINDING_BASE;
+
+        // Push constants (use setBytes - no ArgumentEncoder)
+        if let Some(push_constants) = pipeline_push_constants.as_ref() {
+            for push_constant in push_constants {
+                let key: SlotKey = (
+                    push_constant.shader_register,
+                    push_constant.register_space,
+                    DescriptorType::PushConstants,
+                );
+                let buffer_index = binding_offset;
+                binding_offset += 1;
+                binder.insert(key, PipelineStageBinder::PushConstants(PushConstantsBinder {
+                    data: vec![0u32; push_constant.num_values as usize],
+                    num_32_bit_constants: push_constant.num_values,
+                    buffer_index,
+                    dirty: true,
+                }));
+            }
+        }
+
+        // Resource bindings grouped by (register_kind, shader_register) - one [[buffer(N)]] per group
+        if let Some(bindings) = pipeline_bindings.as_ref() {
+            if !bindings.is_empty() {
+                let mut groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                for binding in bindings {
+                    let key: SlotKey = (binding.shader_register, binding.register_space, binding.binding_type);
+                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
+                    let data_type = to_mtl_data_type(
+                        binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding")
+                    );
+                    let array_length = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
+
+                    let entry = groups.entry(group_key).or_insert_with(|| {
+                        let idx = binding_offset;
+                        binding_offset += 1;
+                        (idx, 0)
+                    });
+                    let sub = entry.1;
+                    entry.1 += 1;
+                    binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
+                        buffer_index: entry.0,
+                        binding_index: sub,
+                        data_type,
+                        array_length,
+                        bound_resource: None,
+                        dirty: true,
+                    }));
+                }
+            }
+        }
+
+        binder
     }
 }
 
@@ -1836,10 +2109,12 @@ impl super::Device for Device {
                 bound_index_buffer: None,
                 bound_index_stride: 0,
                 bound_render_pipeline: None,
+                bound_compute_pipeline: None,
                 metal_device: self.metal_device.clone(),
                 transient_buffers: Vec::new(),
                 vertex_binder: HashMap::new(),
                 fragment_binder: HashMap::new(),
+                compute_binder: HashMap::new(),
             }
         })
     }
@@ -2477,8 +2752,36 @@ impl super::Device for Device {
         &self,
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
-        Ok(ComputePipeline{
-            slots: Vec::new()
+        objc::rc::autoreleasepool(|| {
+            // load the compute kernel function from the shader library
+            let function = unsafe {
+                let cs = info.cs;
+                let lib = self.metal_device.new_library_with_data(
+                    std::slice::from_raw_parts(cs.data, cs.data_size)
+                )?;
+                let name = &lib.function_names()[0];
+                lib.get_function(name, None).unwrap()
+            };
+
+            let pipeline_state = self.metal_device.new_compute_pipeline_state_with_function(&function)?;
+
+            // unified slot lookup + single-stage binder, both keyed by (register, space, type)
+            let slot_lookup = self.build_slot_lookup(
+                &info.pipeline_layout.bindings,
+                &info.pipeline_layout.push_constants,
+            );
+
+            let compute_binder = self.build_compute_binder(
+                &info.pipeline_layout.bindings,
+                &info.pipeline_layout.push_constants,
+            );
+
+            Ok(ComputePipeline {
+                pipeline_state,
+                slots: Vec::new(),
+                slot_lookup,
+                compute_binder,
+            })
         })
     }
 

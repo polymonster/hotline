@@ -101,6 +101,10 @@ name = "bindless"
 crate-type = ["bin"]
 
 [[example]]
+name = "compute"
+crate-type = ["bin"]
+
+[[example]]
 name = "imgui_demo"
 crate-type = ["bin"]
 

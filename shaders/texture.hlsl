@@ -188,24 +188,32 @@ ps_output ps_volume_texture_ray_march(vs_output input) {
 
 [numthreads(8, 8, 8)]
 void cs_write_texture3d(uint3 did : SV_DispatchThreadID) {
-    float3 dim = float3(64.0, 64.0, 64.0);
+    // animated time, packed into the spare resource slot by `dispatch_compute`
+    float t = asfloat(resources.input7.index);
+
     float3 grid_pos = did.xyz * 2.0 - float3(64.0, 64.0, 64.0);
-
-    float4 sphere;
-    float d = 1.0;
-
-    float nxz = voronoise(did.xz / 8.0, 1.0, 0.0);
-    float nxy = voronoise(did.xy / 8.0, 1.0, 0.0);
-    float nyz = voronoise(did.yz / 8.0, 1.0, 0.0);
-
     float3 n = normalize(grid_pos);
+
+    // scroll the noise fields over time so the volume churns
+    float2 flow = float2(t * 4.0, sin(t) * 4.0);
+    float nxz = voronoise(did.xz / 8.0 + flow, 1.0, 0.0);
+    float nxy = voronoise(did.xy / 8.0 - flow, 1.0, 0.0);
+    float nyz = voronoise(did.yz / 8.0 + flow.yx, 1.0, 0.0);
 
     float nn =
         abs(dot(n, float3(0.0, 1.0, 0.0))) * nxz
         + abs(dot(n, float3(0.0, 0.0, 1.0))) * nxy
         + abs(dot(n, float3(1.0, 0.0, 0.0))) * nyz;
 
-    rw_volume_textures[resources.input0.index][did.xyz] = float4(nn, 0.0, 0.0, nn < 0.9 ? 0.0 : 1.0);
+    // a travelling spherical shell pulses in and out, carving the surface threshold
+    float radius = length(grid_pos) / 64.0;
+    float pulse = 0.6 + 0.35 * sin(t * 1.5 - radius * 4.0);
+
+    // colour shifts through the spectrum over time for a livelier look
+    float3 colour = 0.5 + 0.5 * cos(t + nn * 6.0 + float3(0.0, 2.094, 4.188));
+
+    rw_volume_textures[resources.input0.index][did.xyz] =
+        float4(colour * nn, nn < pulse ? 0.0 : 1.0);
 }
 
 //

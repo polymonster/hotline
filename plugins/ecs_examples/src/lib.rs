@@ -536,6 +536,10 @@ pub fn dispatch_compute(
         );
     }
 
+    // stash animation time (user_data.x) in the last resource slot (`resources.input7.index`).
+    // current compute passes use at most 5 of the 8 input slots, so input7 is always free.
+    cmd_buf.push_compute_constants(pipeline, 0, 1, 1, 7 * 4, gfx::as_u8_slice(&[pmfx.push_constant_user_data[0]]));
+
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
 
     cmd_buf.dispatch(

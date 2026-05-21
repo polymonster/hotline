@@ -86,7 +86,7 @@ vs_output_material vs_mesh_lit(vs_input_mesh input) {
 
 ps_output ps_mesh_debug_tangent_space(vs_output_material input) {
     ps_output output;
-    output.colour = float4(0.0, 0.0, 0.0, 0.0);
+    output.colour = float4(0.0, 0.0, 0.0, 1.0);
 
     float3 ts_normal = textures[draw_indices.x].Sample(sampler_wrap_linear, input.texcoord.xy).xyz;
     ts_normal = ts_normal * 2.0 - 1.0;
