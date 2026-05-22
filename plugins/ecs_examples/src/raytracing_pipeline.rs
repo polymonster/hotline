@@ -244,7 +244,7 @@ pub fn render_meshes_raytraced(
                 cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 1, 17, gfx::as_u8_slice(&srv0));
 
                 // point light info
-                let world_buffer_info = pmfx.get_world_buffer_info(&raytracing_pipeline.pipeline);
+                let world_buffer_info = pmfx.get_world_buffer_info();
                 cmd_buf.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 2, 18, gfx::as_u8_slice(&world_buffer_info.point_light));
 
                 cmd_buf.set_heap(&raytracing_pipeline.pipeline, &pmfx.shader_heap);

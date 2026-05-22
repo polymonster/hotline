@@ -1291,7 +1291,6 @@ impl Device {
                 lookup.insert(h, PipelineSlotInfo {
                     index: slot_iter,
                     count: Some(constants.num_values),
-                    sub_offset: 0,
                 });
                 slot_iter += 1;
             }
@@ -1359,7 +1358,6 @@ impl Device {
                     lookup.entry(h).or_insert(PipelineSlotInfo {
                         index: slot_iter,
                         count: binding.num_descriptors,
-                        sub_offset: 0,
                     });
                 }
                 slot_iter += 1;

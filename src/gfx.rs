@@ -688,8 +688,6 @@ pub struct PipelineSlotInfo {
     pub index: u32,
     /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
     pub count: Option<u32>,
-    /// Sub-binding offset within the descriptor set (Metal [[id(N)]]); always 0 on D3D12
-    pub sub_offset: u32,
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
@@ -1273,12 +1271,6 @@ pub trait Pipeline {
     fn get_pipeline_slots(&self) -> &Vec<u32>;
     /// Returns the pipeline type
     fn get_pipeline_type() -> PipelineType;
-    /// Returns the sub-binding offset within the descriptor set for the given binding key.
-    /// On Metal this corresponds to the [[id(N)]] value assigned by spirv-cross.
-    /// On D3D12 the default impl returns 0 (heap index is used directly).
-    fn get_sub_binding_offset(&self, _register: u32, _space: u32, _descriptor_type: DescriptorType) -> u32 {
-        0
-    }
 }
 
 /// A command signature is used to `execute_indirect` commands

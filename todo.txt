@@ -14,12 +14,12 @@ x MSAA
 x MRT
 x mip downsample
 x gpu timestamp
+x pmfx hotreload
+x material ibl
+x bindless material
 
-- pmfx hotreload
+
 - pmbuild needs universal install into hotline-data
-
-- material ibl
-- bindless material
 
 - sample cmp shadow
 - cbuffer instanced causes huge perf issues (should be structured tbh)

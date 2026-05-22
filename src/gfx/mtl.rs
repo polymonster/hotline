@@ -969,6 +969,13 @@ impl super::CmdBuf<Device> for CmdBuf {
             let cp: &ComputePipeline = unsafe { std::mem::transmute(pipeline) };
 
             encoder.use_heap(&heap.mtl_heap);
+            // Structured buffers are device-allocated (not part of mtl_heap), so use_heap does not
+            // make them resident - they are reached indirectly through the bindless buffer argument
+            // buffer, so without this the GPU can read unmapped memory. Textures live in mtl_heap
+            // and are covered by use_heap above.
+            for buffer in heap.buffer_slots.iter().flatten() {
+                encoder.use_resource(buffer, metal::MTLResourceUsage::Read | metal::MTLResourceUsage::Write);
+            }
             for (_key, slot) in &cp.compute_binder {
                 if let PipelineStageBinder::Resource(res) = slot {
                     let arg_buffer = match res.data_type {
@@ -988,6 +995,18 @@ impl super::CmdBuf<Device> for CmdBuf {
 
         // Cast pipeline to RenderPipeline to access slot_lookup
         let rp: &RenderPipeline = unsafe { std::mem::transmute(pipeline) };
+
+        // Structured buffers are device-allocated (not part of mtl_heap), so use_heap_at does not
+        // make them resident - they are reached indirectly through the bindless buffer argument
+        // buffer, so without this the GPU can read unmapped memory. Textures live in mtl_heap and
+        // are covered by use_heap_at below.
+        for buffer in heap.buffer_slots.iter().flatten() {
+            encoder.use_resource_at(
+                buffer,
+                metal::MTLResourceUsage::Read | metal::MTLResourceUsage::Write,
+                metal::MTLRenderStages::Vertex | metal::MTLRenderStages::Fragment,
+            );
+        }
 
         // vertex bindings
         encoder.use_heap_at(&heap.mtl_heap, metal::MTLRenderStages::Vertex);
@@ -1409,13 +1428,6 @@ impl super::Pipeline for RenderPipeline {
     fn get_pipeline_type() -> PipelineType {
         super::PipelineType::Render
     }
-
-    fn get_sub_binding_offset(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> u32 {
-        self.slot_lookup
-            .get(&(register, space, descriptor_type))
-            .map(|s| s.sub_offset)
-            .unwrap_or(0)
-    }
 }
 
 #[derive(Clone)]
@@ -1533,13 +1545,6 @@ impl super::Pipeline for ComputePipeline {
 
     fn get_pipeline_type() -> PipelineType {
         super::PipelineType::Compute
-    }
-
-    fn get_sub_binding_offset(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> u32 {
-        self.slot_lookup
-            .get(&(register, space, descriptor_type))
-            .map(|s| s.sub_offset)
-            .unwrap_or(0)
     }
 }
 
@@ -1800,55 +1805,47 @@ impl Device {
                     PipelineSlotInfo {
                         index: canonical_index,
                         count: Some(push_constant.num_values),
-                        sub_offset: 0,
                     },
                 );
             }
         }
 
-        // Add regular binding slots, grouped by (register_kind, shader_register) to mirror the
-        // descriptor-set layout produced by htwv's MSL codegen. Each (kind, register) becomes its
-        // own MSL [[buffer(N)]] slot so the heap's texture and buffer argument buffers never share
-        // a slot. sub_offset matches the [[id(N)]] value spirv-cross assigns within the set;
-        // callers compensate for the unsized-array-hack offset via get_sub_binding_offset.
+        // Add regular binding slots, grouped by (register_kind, shader_register, register_space) to
+        // mirror the descriptor-set layout produced by htwv's MSL codegen. Each (kind, register,
+        // space) becomes its own MSL [[buffer(N)]] slot so the heap's texture and buffer argument
+        // buffers never share a slot, and bindless arrays sharing a register but differing by space
+        // (e.g. textures t1/space7, cubemaps t1/space9) each get their own set at id(0).
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                // (register_kind, shader_register) -> (buffer_index, next_sub_offset)
-                let mut v_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
-                let mut f_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                // (register_kind, shader_register, register_space) -> buffer_index
+                let mut v_groups: HashMap<(char, u32, u32), u32> = HashMap::new();
+                let mut f_groups: HashMap<(char, u32, u32), u32> = HashMap::new();
 
                 for binding in bindings {
-                    let key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
+                    let key = (descriptor_register_kind(binding.binding_type), binding.shader_register, binding.register_space);
 
                     let v_slot = if matches!(binding.visibility, ShaderVisibility::Vertex | ShaderVisibility::All) {
-                        let entry = v_groups.entry(key).or_insert_with(|| {
+                        Some(*v_groups.entry(key).or_insert_with(|| {
                             let idx = vertex_binding_offset;
                             vertex_binding_offset += 1;
-                            (idx, 0)
-                        });
-                        let sub = entry.1;
-                        entry.1 += 1;
-                        Some((entry.0, sub))
+                            idx
+                        }))
                     } else { None };
 
                     let f_slot = if matches!(binding.visibility, ShaderVisibility::Fragment | ShaderVisibility::All) {
-                        let entry = f_groups.entry(key).or_insert_with(|| {
+                        Some(*f_groups.entry(key).or_insert_with(|| {
                             let idx = fragment_binding_offset;
                             fragment_binding_offset += 1;
-                            (idx, 0)
-                        });
-                        let sub = entry.1;
-                        entry.1 += 1;
-                        Some((entry.0, sub))
+                            idx
+                        }))
                     } else { None };
 
-                    let (canonical_index, sub_offset) = v_slot.or(f_slot).unwrap_or((0, 0));
+                    let canonical_index = v_slot.or(f_slot).unwrap_or(0);
                     slot_lookup.insert(
                         (binding.shader_register, binding.register_space, binding.binding_type),
                         PipelineSlotInfo {
                             index: canonical_index,
                             count: binding.num_descriptors,
-                            sub_offset,
                         }
                     );
                 }
@@ -1931,35 +1928,34 @@ impl Device {
             }
         }
 
-        // Add resource binders, grouped by (register_kind, shader_register). Each (kind, register)
-        // pair gets its own [[buffer(N)]] slot per stage so the heap's texture and buffer
-        // argument buffers are bound to distinct slots. Within a group, binding_index is the
-        // sub_offset that matches the [[id(N)]] value spirv-cross emits in the MSL set struct.
+        // Add resource binders, grouped by (register_kind, shader_register, register_space). Each
+        // (kind, register, space) gets its own [[buffer(N)]] slot per stage so the heap's texture
+        // and buffer argument buffers are bound to distinct slots, and bindless arrays sharing a
+        // register but differing by space each get their own set. Each group holds exactly one
+        // binding, so it always sits at id(0) - binding_index is always 0.
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                // (register_kind, shader_register) -> (buffer_index, next_sub_offset)
-                let mut v_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
-                let mut f_groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                // (register_kind, shader_register, register_space) -> buffer_index
+                let mut v_groups: HashMap<(char, u32, u32), u32> = HashMap::new();
+                let mut f_groups: HashMap<(char, u32, u32), u32> = HashMap::new();
 
                 for binding in bindings {
                     let key: SlotKey = (binding.shader_register, binding.register_space, binding.binding_type);
-                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
+                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register, binding.register_space);
                     let data_type = to_mtl_data_type(
                         binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding")
                     );
                     let array_length = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
 
                     if matches!(binding.visibility, ShaderVisibility::Vertex | ShaderVisibility::All) {
-                        let entry = v_groups.entry(group_key).or_insert_with(|| {
+                        let buffer_index = *v_groups.entry(group_key).or_insert_with(|| {
                             let idx = vertex_binding_offset;
                             vertex_binding_offset += 1;
-                            (idx, 0)
+                            idx
                         });
-                        let sub = entry.1;
-                        entry.1 += 1;
                         vertex_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
-                            buffer_index: entry.0,
-                            binding_index: sub,
+                            buffer_index,
+                            binding_index: 0,
                             data_type,
                             array_length,
                             bound_resource: None,
@@ -1968,16 +1964,14 @@ impl Device {
                     }
 
                     if matches!(binding.visibility, ShaderVisibility::Fragment | ShaderVisibility::All) {
-                        let entry = f_groups.entry(group_key).or_insert_with(|| {
+                        let buffer_index = *f_groups.entry(group_key).or_insert_with(|| {
                             let idx = fragment_binding_offset;
                             fragment_binding_offset += 1;
-                            (idx, 0)
+                            idx
                         });
-                        let sub = entry.1;
-                        entry.1 += 1;
                         fragment_binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
-                            buffer_index: entry.0,
-                            binding_index: sub,
+                            buffer_index,
+                            binding_index: 0,
                             data_type,
                             array_length,
                             bound_resource: None,
@@ -2028,28 +2022,28 @@ impl Device {
             }
         }
 
-        // Resource bindings grouped by (register_kind, shader_register) - one [[buffer(N)]] per group
+        // Resource bindings grouped by (register_kind, shader_register, register_space) - one
+        // [[buffer(N)]] per group, so arrays sharing a register but differing by space each get
+        // their own set. Each group holds exactly one binding, so it always sits at id(0).
         if let Some(bindings) = pipeline_bindings.as_ref() {
             if !bindings.is_empty() {
-                let mut groups: HashMap<(char, u32), (u32, u32)> = HashMap::new();
+                let mut groups: HashMap<(char, u32, u32), u32> = HashMap::new();
                 for binding in bindings {
                     let key: SlotKey = (binding.shader_register, binding.register_space, binding.binding_type);
-                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register);
+                    let group_key = (descriptor_register_kind(binding.binding_type), binding.shader_register, binding.register_space);
                     let data_type = to_mtl_data_type(
                         binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding")
                     );
                     let array_length = binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES);
 
-                    let entry = groups.entry(group_key).or_insert_with(|| {
+                    let buffer_index = *groups.entry(group_key).or_insert_with(|| {
                         let idx = binding_offset;
                         binding_offset += 1;
-                        (idx, 0)
+                        idx
                     });
-                    let sub = entry.1;
-                    entry.1 += 1;
                     binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
-                        buffer_index: entry.0,
-                        binding_index: sub,
+                        buffer_index,
+                        binding_index: 0,
                         data_type,
                         array_length,
                         bound_resource: None,
@@ -2401,7 +2395,7 @@ impl super::Device for Device {
                 self.metal_device.new_depth_stencil_state(&ds_desc)
             };
 
-            // Create static samplers and argument buffer (at buffer(4) per htwv convention)
+            // Create static samplers and argument buffer (bound at fragment buffer(0))
             let mut pipeline_static_samplers = Vec::new();
             let mut sampler_argument_buffer = None;
 
@@ -2426,11 +2420,16 @@ impl super::Device for Device {
                     })
                 }
 
-                // Create argument buffer for samplers at buffer(4)
+                // Create argument buffer for samplers. SPIRV-Cross repacks the samplers actually
+                // used by a shader into spvDescriptorSetBuffer0 with sequential ids starting at 0
+                // (it does NOT preserve the HLSL register, eg. sampler_wrap_linear at s1 becomes
+                // [[id(0)]]). So encode each sampler at its position in the static_samplers list,
+                // which matches that packing order.
                 if !pipeline_static_samplers.is_empty() {
                     let arg_desc = metal::ArgumentDescriptor::new();
                     arg_desc.set_index(0);
                     arg_desc.set_data_type(metal::MTLDataType::Sampler);
+                    arg_desc.set_array_length(pipeline_static_samplers.len() as u64);
                     arg_desc.set_access(metal::MTLArgumentAccess::ReadOnly);
 
                     let argument_encoder = self.metal_device.new_argument_encoder(
@@ -2441,9 +2440,11 @@ impl super::Device for Device {
                         metal::MTLResourceOptions::StorageModeShared
                     );
 
-                    // Encode sampler into argument buffer
+                    // Encode each sampler at its packed id (list position)
                     argument_encoder.set_argument_buffer(&arg_buffer, 0);
-                    argument_encoder.set_sampler_state(0, &pipeline_static_samplers[0].sampler);
+                    for (id, s) in pipeline_static_samplers.iter().enumerate() {
+                        argument_encoder.set_sampler_state(id as u64, &s.sampler);
+                    }
 
                     sampler_argument_buffer = Some(arg_buffer);
                 }

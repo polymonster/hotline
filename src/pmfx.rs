@@ -445,9 +445,6 @@ pub struct DynamicBuffer<D: gfx::Device, T: Sized> {
     usage: gfx::BufferUsage,
     bb: usize,
     num_buffers: usize,
-    shader_register: u32,
-    register_space: u32,
-    binding_type: gfx::DescriptorType,
     resource_type: std::marker::PhantomData<T>
 }
 
@@ -461,19 +458,8 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
             usage,
             bb: 0,
             num_buffers,
-            shader_register: 0,
-            register_space: 0,
-            binding_type: gfx::DescriptorType::ShaderResource,
             resource_type: std::marker::PhantomData
         }
-    }
-
-    /// Set the shader binding location so `get_lookup` can resolve the Metal sub-binding offset
-    pub fn with_binding(mut self, register: u32, space: u32, binding_type: gfx::DescriptorType) -> Self {
-        self.shader_register = register;
-        self.register_space = space;
-        self.binding_type = binding_type;
-        self
     }
 
     pub fn get_bb(&self) -> usize { self.bb }
@@ -574,11 +560,9 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
         }
     }
 
-    pub fn get_lookup<P: gfx::Pipeline>(&self, pipeline: &P) -> GpuBufferLookup {
-        let sub_offset = pipeline.get_sub_binding_offset(
-            self.shader_register, self.register_space, self.binding_type);
+    pub fn get_lookup(&self) -> GpuBufferLookup {
         GpuBufferLookup {
-            index: (self.get_index() as u32).saturating_sub(sub_offset),
+            index: self.get_index() as u32,
             count: self.len as u32,
         }
     }
@@ -609,12 +593,9 @@ impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
             draw:              DynamicBuffer::<D, DrawData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             extent:            DynamicBuffer::<D, ExtentData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             material:          DynamicBuffer::<D, MaterialData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            point_light:       DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3)
-                                   .with_binding(0, 3, gfx::DescriptorType::ShaderResource),
-            spot_light:        DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3)
-                                   .with_binding(0, 4, gfx::DescriptorType::ShaderResource),
-            directional_light: DynamicBuffer::<D, DirectionalLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3)
-                                   .with_binding(0, 5, gfx::DescriptorType::ShaderResource),
+            point_light:       DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            spot_light:        DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            directional_light: DynamicBuffer::<D, DirectionalLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             camera:            DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3),
             shadow_matrix:     DynamicBuffer::<D, Mat4f>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
         }
@@ -1067,16 +1048,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
     /// Retunrs a `WorldBufferInfo` that contains the serv index and count of the various world buffers used
     /// during rendering
-    pub fn get_world_buffer_info<P: gfx::Pipeline>(&self, pipeline: &P) -> WorldBufferInfo {
+    pub fn get_world_buffer_info(&self) -> WorldBufferInfo {
         WorldBufferInfo {
-            draw:              self.world_buffers.draw.get_lookup(pipeline),
-            extent:            self.world_buffers.extent.get_lookup(pipeline),
-            material:          self.world_buffers.material.get_lookup(pipeline),
-            point_light:       self.world_buffers.point_light.get_lookup(pipeline),
-            spot_light:        self.world_buffers.spot_light.get_lookup(pipeline),
-            directional_light: self.world_buffers.directional_light.get_lookup(pipeline),
-            camera:            self.world_buffers.camera.get_lookup(pipeline),
-            shadow_matrix:     self.world_buffers.shadow_matrix.get_lookup(pipeline),
+            draw:              self.world_buffers.draw.get_lookup(),
+            extent:            self.world_buffers.extent.get_lookup(),
+            material:          self.world_buffers.material.get_lookup(),
+            point_light:       self.world_buffers.point_light.get_lookup(),
+            spot_light:        self.world_buffers.spot_light.get_lookup(),
+            directional_light: self.world_buffers.directional_light.get_lookup(),
+            camera:            self.world_buffers.camera.get_lookup(),
+            shadow_matrix:     self.world_buffers.shadow_matrix.get_lookup(),
             user_data:         self.push_constant_user_data,
         }
     }
