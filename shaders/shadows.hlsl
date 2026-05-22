@@ -82,7 +82,6 @@ float sample_shadow_cube_pcf_9(float3 cv, float d, uint sm_index, float sm_size)
     }
     shadow /= 9.0;
 
-    // shadow = cubemaps[shadow_map_index].SampleCmp(sampler_shadow_compare, cv, d).r;
     return shadow;
 }
 
@@ -117,28 +116,8 @@ float4 ps_single_directional_shadow(vs_output input) : SV_Target {
     //float shadow_sample = textures[shadow_map_index].Sample(sampler_clamp_point, sp.xy).r;
     //float shadow = sp.z >= shadow_sample ? 0.0 : 1.0;
 
-    // pcf sample-compare, inlined here rather than calling sample_shadow_pcf_9: passing the
-    // bindless texture array + comparison sampler through a function call mis-propagates in the
-    // shader codegen and the comparison resolves to black (the omni path inlines for the same reason)
     float2 sm_size = float2(4096.0, 4096.0);
-    float2 inv_sm_size = 1.0 / sm_size;
-    float2 pcf_offsets[9];
-    pcf_offsets[0] = float2(-1.0, -1.0) * inv_sm_size;
-    pcf_offsets[1] = float2(-1.0,  0.0) * inv_sm_size;
-    pcf_offsets[2] = float2(-1.0,  1.0) * inv_sm_size;
-    pcf_offsets[3] = float2( 0.0, -1.0) * inv_sm_size;
-    pcf_offsets[4] = float2( 0.0,  0.0) * inv_sm_size;
-    pcf_offsets[5] = float2( 0.0,  1.0) * inv_sm_size;
-    pcf_offsets[6] = float2( 1.0, -1.0) * inv_sm_size;
-    pcf_offsets[7] = float2( 1.0,  0.0) * inv_sm_size;
-    pcf_offsets[8] = float2( 1.0,  1.0) * inv_sm_size;
-
-    float shadow = 0.0;
-    [unroll]
-    for(int s = 0; s < 9; ++s) {
-        shadow += textures[shadow_map_index].SampleCmp(sampler_shadow_compare, sp.xy + pcf_offsets[s], sp.z);
-    }
-    shadow /= 9.0;
+    float shadow = sample_shadow_pcf_9(sp, shadow_map_index, sm_size);
 
     float3 l = light.dir.xyz;
     float diffuse = lambert(l, n);

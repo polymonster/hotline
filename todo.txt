@@ -17,11 +17,10 @@ x gpu timestamp
 x pmfx hotreload
 x material ibl
 x bindless material
-
+x sample cmp shadow
 
 - pmbuild needs universal install into hotline-data
 
-- sample cmp shadow
 - cbuffer instanced causes huge perf issues (should be structured tbh)
 
 - draw indirect
