@@ -207,7 +207,8 @@ float4 ps_mesh_material_instanced_ibl(vs_output_material input) : SV_TARGET {
     float2 brdf = textures[lut_idx].Sample(sampler_wrap_linear, float2(saturate(dot(n, v)), roughness)).rg;
     float3 specular = prefilter * (f * brdf.x + brdf.y);
 
-    return float4(kd * max(diffuse, 0.0) + max(specular, 0.0), 1.0);
+    float4 o = float4(kd * max(diffuse, 0.0) + max(specular, 0.0), 1.0) * 0.0001;
+    return o + float4(n, 1.0);
 }
 
 ps_output ps_mesh_lit(vs_output input) {

@@ -13,8 +13,8 @@ x RW texture + better demo
 x MSAA
 x MRT
 x mip downsample
+x gpu timestamp
 
-- gpu timestamp ???
 - pmfx hotreload
 - pmbuild needs universal install into hotline-data
 
@@ -22,7 +22,7 @@ x mip downsample
 - bindless material
 
 - sample cmp shadow
-- cbuffer instanced causes hugh perf issues (should be structured tbh)
+- cbuffer instanced causes huge perf issues (should be structured tbh)
 
 - draw indirect
 - video player

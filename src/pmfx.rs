@@ -2875,21 +2875,23 @@ impl ReloadResponder for PmfxReloadResponder {
     }
 
     fn build(&mut self) -> std::process::ExitStatus {
+        // Shader/data compilation is hooked into the crate's build.rs (under the `build_data`
+        // feature), so reuse that single path here. `cargo build --lib` re-runs the build script -
+        // which recompiles the data - while skipping the example/bin targets; when only files under
+        // `shaders/` changed cargo leaves the crate artifacts untouched, so this rebuilds data only.
         let hotline_path = super::get_data_path("../..");
-        let pmbuild = super::get_data_path("../../hotline-data/pmbuild.cmd");
-        let output = std::process::Command::new(pmbuild)
+        let output = std::process::Command::new("cargo")
             .current_dir(hotline_path)
-            .arg("win32-data")
-            .arg("-pmfx")
+            .args(["build", "--lib"])
             .output()
             .expect("hotline::hot_lib:: hot pmfx failed to compile!");
 
         if !output.stdout.is_empty() {
-            println!("{}", String::from_utf8(output.stdout).unwrap());
+            println!("{}", String::from_utf8_lossy(&output.stdout));
         }
 
         if !output.stderr.is_empty() {
-            println!("{}", String::from_utf8(output.stderr).unwrap());
+            println!("{}", String::from_utf8_lossy(&output.stderr));
         }
 
         if output.status.success() {

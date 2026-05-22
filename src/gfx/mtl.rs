@@ -213,6 +213,14 @@ fn has_stencil_component(format: metal::MTLPixelFormat) -> bool {
     )
 }
 
+fn is_depth_format(format: metal::MTLPixelFormat) -> bool {
+    matches!(format,
+        metal::MTLPixelFormat::Depth32Float_Stencil8
+        | metal::MTLPixelFormat::Depth32Float
+        | metal::MTLPixelFormat::Depth16Unorm
+    )
+}
+
 fn to_mtl_cull_mode(cull_mode: super::CullMode) -> metal::MTLCullMode {
     match cull_mode {
         super::CullMode::None => metal::MTLCullMode::None,
@@ -322,7 +330,16 @@ pub struct Device {
     shader_heap: Heap,
     adapter_info: AdapterInfo,
     heap_alloc_id: u16,
+    /// True when the GPU can sample timestamp counters at encoder stage boundaries, which lets us
+    /// take real per-encoder GPU timestamps. When false we fall back to MTLCommandBuffer's whole-CB
+    /// GPUStartTime / GPUEndTime (see timestamp_query / read_timestamps).
+    supports_stage_boundary_timestamps: bool,
 }
+
+/// MTLCounterSamplingPoint::atStageBoundary — sampling at the boundary between encoder stages.
+const MTL_COUNTER_SAMPLING_POINT_AT_STAGE_BOUNDARY: NSUInteger = 0;
+/// MTLCounterDontSample sentinel: a stage index that should not record a timestamp.
+const MTL_COUNTER_DONT_SAMPLE: NSUInteger = NSUInteger::MAX;
 
 #[derive(Clone)]
 pub struct SwapChain {
@@ -444,12 +461,8 @@ pub struct CmdBuf {
     vertex_binder: HashMap<SlotKey, PipelineStageBinder>,
     fragment_binder: HashMap<SlotKey, PipelineStageBinder>,
     compute_binder: HashMap<SlotKey, PipelineStageBinder>,
-    /// Render-graph barrier work recorded as intent rather than encoded immediately. Metal command
-    /// buffers are single-commit, so a barrier (which the graph replays every frame via
-    /// `Device::execute`) cannot be a pre-encoded buffer like it is on D3D12. Instead transition /
-    /// resolve / generate_mip_maps push ops here and `Device::execute` replays them into a fresh
-    /// command buffer each frame.
     deferred_ops: Vec<DeferredBarrierOp>,
+    pending_timestamp: Option<(metal::CounterSampleBuffer, NSUInteger)>,
 }
 
 /// A unit of render-graph barrier work to replay each frame on Metal. Transition barriers are
@@ -484,6 +497,7 @@ impl Clone for CmdBuf {
             fragment_binder: self.fragment_binder.clone(),
             compute_binder: self.compute_binder.clone(),
             deferred_ops: self.deferred_ops.clone(),
+            pending_timestamp: self.pending_timestamp.clone(),
         }
     }
 }
@@ -741,6 +755,19 @@ impl super::CmdBuf<Device> for CmdBuf {
                 enc.end_encoding();
             }
 
+            // if a timestamp pair is armed, sample the GPU clock at this encoder's stage boundaries:
+            // start_of_vertex = pass start, end_of_fragment = pass end (the inner boundaries are left
+            // as MTLCounterDontSample). Set on the descriptor before the encoder is created.
+            if let Some((sample_buffer, start)) = self.pending_timestamp.take() {
+                if let Some(att) = render_pass.desc.sample_buffer_attachments().object_at(0) {
+                    att.set_sample_buffer(&sample_buffer);
+                    att.set_start_of_vertex_sample_index(start);
+                    att.set_end_of_vertex_sample_index(MTL_COUNTER_DONT_SAMPLE);
+                    att.set_start_of_fragment_sample_index(MTL_COUNTER_DONT_SAMPLE);
+                    att.set_end_of_fragment_sample_index(start + 1);
+                }
+            }
+
             // catch mismatched close/reset
             let render_encoder = self.cmd.as_ref()
                 .expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset after close")
@@ -781,30 +808,23 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn timestamp_query(&mut self, heap: &mut QueryHeap, resolve_buffer: &mut Buffer) {
-        if let Some(sample_buf) = heap.sample_buffer.as_ref() {
-            let idx = heap.alloc_index;
-            heap.alloc_index += 1;
-            resolve_buffer.counter_sample_buffer = Some(sample_buf.to_owned());
-            resolve_buffer.counter_sample_index = idx;
-            resolve_buffer.counter_cmd = self.cmd.clone();
-            if let Some(enc) = self.render_encoder.as_ref() {
-                // mid-pass: counter buffer must have been pre-registered in the render pass
-                // descriptor to call sampleCountersInBuffer — skip silently if not configured
-                let _ = enc;
-            } else if let Some(enc) = self.compute_encoder.as_ref() {
-                let _ = enc;
-            } else if let Some(cmd) = self.cmd.as_ref() {
-                // Between encoders: use a blit pass descriptor with the counter buffer
-                // registered so Metal accepts the sample call.
-                let blit_desc = metal::BlitPassDescriptor::new();
-                if let Some(attachment) = blit_desc.sample_buffer_attachments().object_at(0) {
-                    attachment.set_sample_buffer(sample_buf);
-                    attachment.set_start_of_encoder_sample_index(idx as _);
-                    attachment.set_end_of_encoder_sample_index(NSUInteger::MAX);
-                }
-                let blit = cmd.blit_command_encoder_with_descriptor(blit_desc);
-                blit.end_encoding();
+        let idx = heap.alloc_index;
+        heap.alloc_index += 1;
+        resolve_buffer.counter_sample_index = idx;
+        resolve_buffer.counter_cmd = self.cmd.clone();
+
+        if let Some(sample_buffer) = heap.sample_buffer.as_ref() {
+            // counter-sampling path: tag the buffer so read_timestamps resolves the counter, and on
+            // the start sample of a pair arm the next encoder to record both stage-boundary samples
+            // ([idx, idx + 1]). Multiple start/end pairs in one CB each arm their own encoder.
+            resolve_buffer.counter_sample_buffer = Some(sample_buffer.to_owned());
+            if idx % 2 == 0 {
+                self.pending_timestamp = Some((sample_buffer.to_owned(), idx as NSUInteger));
             }
+        }
+        else {
+            // fallback path: no counter buffer, read GPUStartTime / GPUEndTime of the pass CB.
+            resolve_buffer.counter_sample_buffer = None;
         }
     }
 
@@ -909,10 +929,21 @@ impl super::CmdBuf<Device> for CmdBuf {
         objc::rc::autoreleasepool(|| {
             // open a compute encoder lazily; reused across dispatches until a render pass or close
             if self.compute_encoder.is_none() {
-                let encoder = self.cmd.as_ref()
-                    .expect("hotline_rs::gfx::mtl expected a call to CmdBuf::reset before set_compute_pipeline")
-                    .new_compute_command_encoder()
-                    .to_owned();
+                let cmd = self.cmd.as_ref()
+                    .expect("hotline_rs::gfx::mtl expected a call to CmdBuf::reset before set_compute_pipeline");
+                // if a timestamp pair is armed, sample the GPU clock at this encoder's boundaries
+                let encoder = if let Some((sample_buffer, start)) = self.pending_timestamp.take() {
+                    let desc = metal::ComputePassDescriptor::new();
+                    if let Some(att) = desc.sample_buffer_attachments().object_at(0) {
+                        att.set_sample_buffer(&sample_buffer);
+                        att.set_start_of_encoder_sample_index(start);
+                        att.set_end_of_encoder_sample_index(start + 1);
+                    }
+                    cmd.compute_command_encoder_with_descriptor(desc).to_owned()
+                }
+                else {
+                    cmd.new_compute_command_encoder().to_owned()
+                };
                 self.compute_encoder = Some(encoder);
             }
 
@@ -2070,6 +2101,12 @@ impl super::Device for Device {
             let tier = device.argument_buffers_support();
             assert_eq!(metal::MTLArgumentBuffersTier::Tier2, tier);
 
+            // Can the GPU sample timestamp counters at encoder stage boundaries? (Apple Silicon
+            // typically can; older/other GPUs may not, in which case we fall back to whole-CB times.)
+            let supports_stage_boundary_timestamps: bool = unsafe {
+                msg_send![&*device, supportsCounterSampling: MTL_COUNTER_SAMPLING_POINT_AT_STAGE_BOUNDARY]
+            };
+
             Device {
                 command_queue: command_queue,
                 shader_heap: Self::create_heap_mtl(&device, &HeapInfo{
@@ -2079,7 +2116,8 @@ impl super::Device for Device {
                 }, 1),
                 adapter_info: adapter_info,
                 metal_device: device,
-                heap_alloc_id: 2
+                heap_alloc_id: 2,
+                supports_stage_boundary_timestamps,
             }
        })
     }
@@ -2095,7 +2133,8 @@ impl super::Device for Device {
     }
 
     fn create_query_heap(&self, info: &QueryHeapInfo) -> QueryHeap {
-        let sample_buffer = if info.heap_type == super::QueryType::Timestamp {
+        let sample_buffer = if info.heap_type == super::QueryType::Timestamp
+            && self.supports_stage_boundary_timestamps {
             let counter_sets = self.metal_device.counter_sets();
             let ts_set = counter_sets.iter().find(|cs| cs.name().eq_ignore_ascii_case("timestamp"));
             ts_set.and_then(|cs| {
@@ -2192,6 +2231,7 @@ impl super::Device for Device {
                 fragment_binder: HashMap::new(),
                 compute_binder: HashMap::new(),
                 deferred_ops: Vec::new(),
+                pending_timestamp: None,
             }
         })
     }
@@ -2965,11 +3005,30 @@ impl super::Device for Device {
                         // a load/no-clear pass with a MultisampleResolve store action resolves the
                         // MSAA samples into the single-sample backing without drawing anything.
                         let descriptor = metal::RenderPassDescriptor::new();
-                        let attachment = descriptor.color_attachments().object_at(0).unwrap();
-                        attachment.set_texture(Some(msaa));
-                        attachment.set_resolve_texture(Some(resolve));
-                        attachment.set_load_action(metal::MTLLoadAction::Load);
-                        attachment.set_store_action(metal::MTLStoreAction::StoreAndMultisampleResolve);
+                        // depth/stencil targets must resolve through the depth (and stencil)
+                        // attachments, not a color attachment - a depth format on color
+                        // attachment 0 is "not color renderable" and trips Metal validation,
+                        // blocking GPU captures.
+                        if is_depth_format(msaa.pixel_format()) {
+                            let depth = descriptor.depth_attachment().unwrap();
+                            depth.set_texture(Some(msaa));
+                            depth.set_resolve_texture(Some(resolve));
+                            depth.set_load_action(metal::MTLLoadAction::Load);
+                            depth.set_store_action(metal::MTLStoreAction::MultisampleResolve);
+                            if has_stencil_component(msaa.pixel_format()) {
+                                let stencil = descriptor.stencil_attachment().unwrap();
+                                stencil.set_texture(Some(msaa));
+                                stencil.set_resolve_texture(Some(resolve));
+                                stencil.set_load_action(metal::MTLLoadAction::Load);
+                                stencil.set_store_action(metal::MTLStoreAction::MultisampleResolve);
+                            }
+                        } else {
+                            let attachment = descriptor.color_attachments().object_at(0).unwrap();
+                            attachment.set_texture(Some(msaa));
+                            attachment.set_resolve_texture(Some(resolve));
+                            attachment.set_load_action(metal::MTLLoadAction::Load);
+                            attachment.set_store_action(metal::MTLStoreAction::StoreAndMultisampleResolve);
+                        }
                         let encoder = metal_cmd.new_render_command_encoder(&descriptor);
                         encoder.end_encoding();
                     }
@@ -3012,39 +3071,48 @@ impl super::Device for Device {
         None
     }
 
-    fn read_timestamps(&self, swap_chain: &SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64> {
-        if let Some(sample_buf) = &buffer.counter_sample_buffer {
-            // Metal has no GPU-signalled fence; wait for the recording command buffer to finish
-            // before resolving counter data (equivalent to D3D12's GPU fence check).
-            if let Some(cmd) = &buffer.counter_cmd {
-                cmd.wait_until_completed();
-            }
-            let elem_size = std::mem::size_of::<u64>();
-            let count = (size_bytes / elem_size).max(1);
+    fn read_timestamps(&self, _swap_chain: &SwapChain, buffer: &Self::Buffer, _size_bytes: usize, _frame_written_fence: u64) -> Vec<f64> {
+        // Metal has no GPU-signalled fence; wait for the pass command buffer to finish before reading
+        // its timestamps (equivalent to D3D12's GPU fence check).
+        if let Some(cmd) = &buffer.counter_cmd {
+            cmd.wait_until_completed();
+        }
+
+        if let Some(sample_buffer) = &buffer.counter_sample_buffer {
+            // counter-sampling path: resolve the one timestamp this buffer points at. The GPU
+            // timestamp is in nanoseconds on Apple Silicon; gather_stats wants seconds.
             unsafe {
                 let range = metal::NSRange {
                     location: buffer.counter_sample_index as _,
-                    length: count as _,
+                    length: 1,
                 };
                 let ns_data: *mut objc::runtime::Object =
-                    msg_send![sample_buf.as_ref(), resolveCounterRange: range];
+                    msg_send![sample_buffer.as_ref(), resolveCounterRange: range];
                 if !ns_data.is_null() {
                     let bytes: *const u8 = msg_send![ns_data, bytes];
                     let len: usize = msg_send![ns_data, length];
-                    let mut results = Vec::new();
-                    for i in 0..count {
-                        let offset = i * elem_size;
-                        if offset + elem_size <= len {
-                            let nanos = (bytes.add(offset) as *const u64).read_unaligned();
-                            // MTLCounterResultTimestamp.timestamp is nanoseconds on Apple Silicon
-                            results.push(nanos as f64 / 1_000_000_000.0);
+                    if len >= std::mem::size_of::<u64>() {
+                        let nanos = (bytes as *const u64).read_unaligned();
+                        // MTLCounterErrorValue marks a sample the GPU could not record - treat as none
+                        if nanos != u64::MAX {
+                            return vec![nanos as f64 / 1_000_000_000.0];
                         }
-                    }
-                    if !results.is_empty() {
-                        return results;
                     }
                 }
             }
+            return vec![];
+        }
+
+        // fallback path: whole-CB timing. index 0 = start of pass, index 1 = end of pass.
+        if let Some(cmd) = &buffer.counter_cmd {
+            let seconds: f64 = unsafe {
+                if buffer.counter_sample_index == 0 {
+                    msg_send![cmd.as_ref(), GPUStartTime]
+                } else {
+                    msg_send![cmd.as_ref(), GPUEndTime]
+                }
+            };
+            return vec![seconds];
         }
         vec![]
     }
