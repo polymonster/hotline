@@ -38,11 +38,11 @@ const WAIT_PULL_STRENGTH:  f32 = 0.025; // spring constant pulling waiting agent
 const WAIT_DAMPING:        f32 = 0.4;   // velocity scale for waiting agents — dampens sep/pull jitter
 const WAIT_SLOTS_PER_TILE: u32 = 32;    // max distinct halton-sampled wait positions before wrap
 const WAIT_SLOT_INSET:     f32 = 0.7;   // halton sample range within tile (fraction of TILE_SIZE)
-const JOIN_CROWD_MIN_DENSITY: f32 = 12.0; // low-tolerance agents commit at this nbr density
-const JOIN_CROWD_MAX_DENSITY: f32 = 15.0; // high-tolerance agents hold out until at least this dense
+const JOIN_CROWD_MIN_DENSITY: f32 = 9.0; // low-tolerance agents commit at this nbr density
+const JOIN_CROWD_MAX_DENSITY: f32 = 12.0; // high-tolerance agents hold out until at least this dense
 const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
 
-const MAP_SAVE_PATH: &str = "queue_debug.bin";
+const MAP_SAVE_PATH: &str = "trains.bin";
 
 /// Init function for ratrace demo
 #[no_mangle]
@@ -55,6 +55,13 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
         update: systems![
             "update_flow_field",
             "update_tile_editor",
+            "update_train_cycle",
+            "update_entrance_auto_spawn",
+            "update_train_boarding",
+            "update_train_motion",
+            "update_entrance_spawn",
+            "update_train_dropoff",
+            "update_entrance_despawn",
             "update_agents",
             "update_agent_transforms",
             // "debug_draw_agents",
@@ -68,17 +75,20 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
 #[derive(Clone, Copy, PartialEq, Debug)]
 #[repr(u8)]
 pub enum TileType {
-    Empty,      // 0 — unset / outside region; treated as wall
-    Wall,       // 1 — explicit interior wall
-    Barrier,    // 2
-    Escalator,  // 3
-    Platform,   // 4 — flow sink
-    TrainTrack, // 5
-    Floor,      // 6 — explicitly placed walkable surface
+    Empty,         // 0 — unset / outside region; treated as wall
+    Wall,          // 1 — explicit interior wall
+    Barrier,       // 2
+    Escalator,     // 3
+    Platform,      // 4 — flow sink
+    TrainTrack,    // 5
+    Floor,         // 6 — explicitly placed walkable surface
+    Train,         // 7 — seat sink inside a train, paired with Platform of same index (TRAIN_GOAL_OFFSET)
+    TrainBoarding, // 8 — standing area inside a train at door positions (BOARDING_GOAL_OFFSET)
+    Entrance,      // 9 — spawn / despawn point; agents flow here via goal (index + ENTRANCE_GOAL_OFFSET)
 }
 
 fn is_walkable(t: TileType) -> bool {
-    matches!(t, TileType::Floor | TileType::Platform | TileType::Escalator | TileType::TrainTrack)
+    matches!(t, TileType::Floor | TileType::Platform | TileType::Escalator | TileType::TrainTrack | TileType::Train | TileType::TrainBoarding | TileType::Entrance)
 }
 
 /// Baked wall line segment with inward-facing normal, in absolute world space (y=0)
@@ -226,11 +236,196 @@ const TILE_TYPES: &[TileType] = &[
     TileType::Escalator,
     TileType::Platform,
     TileType::TrainTrack,
+    TileType::Train,
+    TileType::TrainBoarding,
+    TileType::Entrance,
 ];
+
+const BOARDING_GOAL_OFFSET: u8 = 64;  // TrainBoarding tile index N seeds flow layer (N + 64)
+const TRAIN_GOAL_OFFSET:    u8 = 128; // Train tile index N seeds flow layer (N + 128)
+const ENTRANCE_GOAL_OFFSET: u8 = 192; // Entrance tile index N seeds flow layer (N + 192)
+const DEPTH_BIAS_SCALE:     u32 = 3;  // per-step penalty added to seat seed cost so back-of-train wins
+const TRAIN_TRAVEL_DIST:    f32 = 200.0; // world units the train slides during leave/arrive
+const TRAIN_TRANSIT_SECS:   f32 = 3.0;   // duration of leaving / arriving animations
+const CYCLE_BOARDING_SECS:  f32 = 6.0;   // how long doors stay open per cycle
+const CYCLE_DOOR_DWELL:     f32 = 1.0;   // pause between open/close and motion start
+const CYCLE_GONE_SECS:      f32 = 4.0;   // how long the train is offscreen between cycles
+const ENTRANCE_SPAWN_SECS:  f32 = 1.5;   // auto-spawn interval per entrance
 
 /// Shared cube mesh resource for agent body rendering
 #[derive(Resource)]
 pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
+
+/// Per-train motion state. Translate-in/out is render-only (logical positions are station-aligned).
+#[derive(Clone, Copy, Debug)]
+pub enum TrainState { AtStation, Leaving, Gone, Arriving }
+
+#[derive(Clone, Copy)]
+pub struct TrainMotion {
+    pub state:   TrainState,
+    pub started: std::time::Instant, // moment the current state began (for animated progress)
+    pub axis:    Vec3f,              // unit vector along the platform's long axis
+}
+
+impl Default for TrainMotion {
+    fn default() -> Self {
+        Self { state: TrainState::AtStation, started: std::time::Instant::now(), axis: Vec3f::new(1.0, 0.0, 0.0) }
+    }
+}
+
+/// Auto-cycle step indicator for the timed train sequence.
+#[derive(Clone, Copy, Debug)]
+pub enum CycleStep { OpenDoors, Boarding, CloseDoors, Leave, GoneDwell, Arrive, ArriveDwell }
+
+/// Per-train auto-cycle state. When enabled, marches through CycleStep transitions on a timer
+/// without manual button presses. Sequence: Open → Boarding → Close → Leave → Gone → Arrive → settle → loop.
+#[derive(Clone, Copy)]
+pub struct TrainCycle {
+    pub enabled:    bool,
+    pub step:       CycleStep,
+    pub step_started: std::time::Instant,
+    pub dropoff_emitted: bool, // ensure drop-off only happens once per ArriveDwell phase
+}
+
+impl Default for TrainCycle {
+    fn default() -> Self {
+        Self { enabled: false, step: CycleStep::OpenDoors, step_started: std::time::Instant::now(), dropoff_emitted: false }
+    }
+}
+
+/// Train state: doors, motion, drop-off requests, cycle, and queued button presses.
+#[derive(Resource, Default)]
+pub struct Trains {
+    pub doors_open:       HashMap<u8, bool>,
+    pub pending:          Vec<(u8, bool)>, // (train_id, target_open) consumed by update_train_boarding
+    pub motion:           HashMap<u8, TrainMotion>,
+    pub pending_motion:   Vec<(u8, bool)>, // (train_id, true=leave / false=arrive)
+    pub pending_dropoff:  Vec<(u8, u32)>,  // (train_id, count) consumed by update_train_dropoff
+    pub cycle:            HashMap<u8, TrainCycle>,
+    pub dropoff_density:  HashMap<u8, f32>, // 0..1 — fraction of train capacity to drop off per cycle
+}
+
+const DEFAULT_DROPOFF_DENSITY: f32 = 0.3;
+
+/// Capacity = (number of Train tiles for train_id) * WAIT_SLOTS_PER_TILE.
+fn train_capacity(map: &Map, train_id: u8) -> u32 {
+    let mut tiles = 0u32;
+    for chunk in map.chunks.values() {
+        for i in 0..ARRAY_SIZE {
+            if chunk.tiles[i] == TileType::Train && chunk.index[i] == train_id {
+                tiles += 1;
+            }
+        }
+    }
+    tiles * WAIT_SLOTS_PER_TILE
+}
+
+/// Dropoff count = capacity * density (rounded). Density defaults to DEFAULT_DROPOFF_DENSITY.
+fn train_dropoff_count(trains: &Trains, map: &Map, train_id: u8) -> u32 {
+    let density = trains.dropoff_density.get(&train_id).copied().unwrap_or(DEFAULT_DROPOFF_DENSITY);
+    ((train_capacity(map, train_id) as f32) * density).round() as u32
+}
+
+/// Per-entrance auto-spawn state.
+#[derive(Clone, Copy)]
+pub struct EntranceAuto {
+    pub enabled:     bool,
+    pub last_spawn:  std::time::Instant,
+    pub interval_s:  f32,
+}
+
+impl Default for EntranceAuto {
+    fn default() -> Self {
+        Self { enabled: false, last_spawn: std::time::Instant::now(), interval_s: ENTRANCE_SPAWN_SECS }
+    }
+}
+
+/// Entrance state: spawn requests, per-entrance auto-spawn, seed for random goal selection.
+#[derive(Resource, Default)]
+pub struct Entrances {
+    pub pending_spawn: Vec<(u8, u32)>, // (entrance_id, count)
+    pub auto:          HashMap<u8, EntranceAuto>,
+    pub seed:          u64,
+}
+
+/// Cheap pseudo-random — used for goal selection on spawn; quality unimportant.
+fn rand_u32(seed: u64) -> u32 {
+    let mut x = seed.wrapping_mul(2654435761).wrapping_add(1442695040888963407);
+    x ^= x >> 33;
+    x = x.wrapping_mul(0xff51afd7ed558ccd);
+    x ^= x >> 33;
+    x as u32
+}
+
+/// All unique tile indices for a given TileType in the map.
+fn collect_indices(map: &Map, kind: TileType) -> Vec<u8> {
+    let mut out: Vec<u8> = map.chunks.values()
+        .flat_map(|c| c.tiles.iter().enumerate()
+            .filter(|(_, &t)| t == kind)
+            .map(|(i, _)| c.index[i]))
+        .collect();
+    out.sort_unstable();
+    out.dedup();
+    out
+}
+
+/// World-space tile centres for tiles of `kind` with matching `index`.
+fn collect_tile_centres(map: &Map, kind: TileType, index: u8) -> Vec<Vec3f> {
+    let mut out = Vec::new();
+    for (&(cx, _, cz), chunk) in &map.chunks {
+        let cs = CHUNK_SIZE as i32;
+        for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+            let idx = morton_encode(lx, ly, lz);
+            if chunk.tiles[idx] == kind && chunk.index[idx] == index {
+                let tx = (cx*cs + lx as i32) as f32 + 0.5;
+                let tz = (cz*cs + lz as i32) as f32 + 0.5;
+                out.push(Vec3f::new(tx * TILE_SIZE, 0.0, tz * TILE_SIZE));
+            }
+        }}}
+    }
+    out
+}
+
+/// Animated progress 0..1 for Leaving/Arriving; clamped.
+fn train_motion_progress(m: &TrainMotion) -> f32 {
+    let elapsed = m.started.elapsed().as_secs_f32();
+    (elapsed / TRAIN_TRANSIT_SECS).clamp(0.0, 1.0)
+}
+
+/// Visual world-space offset to apply to a train's tiles and to agents who boarded it.
+/// Leaving slides 0 → +axis*D; Gone holds at +D; Arriving slides −D → 0.
+fn train_visual_offset(m: &TrainMotion) -> Vec3f {
+    match m.state {
+        TrainState::AtStation => Vec3f::zero(),
+        TrainState::Leaving   => m.axis * train_motion_progress(m) * TRAIN_TRAVEL_DIST,
+        TrainState::Gone      => m.axis * TRAIN_TRAVEL_DIST,
+        TrainState::Arriving  => m.axis * (train_motion_progress(m) - 1.0) * TRAIN_TRAVEL_DIST,
+    }
+}
+
+/// Infer the train's translation axis from the bounding box of Platform tiles with matching index.
+/// Long axis = direction the train travels along.
+fn infer_train_axis(map: &Map, train_id: u8) -> Vec3f {
+    let mut min_x = i32::MAX; let mut max_x = i32::MIN;
+    let mut min_z = i32::MAX; let mut max_z = i32::MIN;
+    let mut found = false;
+    for (&(cx, _, cz), chunk) in &map.chunks {
+        let cs = CHUNK_SIZE as i32;
+        for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+            let idx = morton_encode(lx, ly, lz);
+            if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == train_id {
+                let tx = cx*cs + lx as i32;
+                let tz = cz*cs + lz as i32;
+                min_x = min_x.min(tx); max_x = max_x.max(tx);
+                min_z = min_z.min(tz); max_z = max_z.max(tz);
+                found = true;
+            }
+        }}}
+    }
+    if !found { return Vec3f::new(1.0, 0.0, 0.0); }
+    if (max_x - min_x) >= (max_z - min_z) { Vec3f::new(1.0, 0.0, 0.0) }
+    else                                  { Vec3f::new(0.0, 0.0, 1.0) }
+}
 
 /// Flat per-entity SoA buffers, all indexed by entity.index()
 #[derive(Resource, Default)]
@@ -474,13 +669,18 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         (1,1),(-1,1),(-1,-1),(1,-1)
     ];
 
-    // pass 0: find max goal index across all Platform tiles, resize + zero all flow layers
+    // pass 0: find max goal index across Platform, TrainBoarding and Train tiles, resize + zero all flow layers.
+    // Goal-space layout: platforms [0..64), boarding [64..128), seats [128..192).
     let mut max_goal = 0u8;
     for chunk in map.chunks.values() {
         for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
             let idx = morton_encode(lx, ly, lz);
-            if chunk.tiles[idx] == TileType::Platform {
-                max_goal = max_goal.max(chunk.index[idx]);
+            match chunk.tiles[idx] {
+                TileType::Platform      => max_goal = max_goal.max(chunk.index[idx]),
+                TileType::TrainBoarding => max_goal = max_goal.max(chunk.index[idx].saturating_add(BOARDING_GOAL_OFFSET)),
+                TileType::Train         => max_goal = max_goal.max(chunk.index[idx].saturating_add(TRAIN_GOAL_OFFSET)),
+                TileType::Entrance      => max_goal = max_goal.max(chunk.index[idx].saturating_add(ENTRANCE_GOAL_OFFSET)),
+                _ => {}
             }
         }}}
     }
@@ -496,8 +696,57 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         let mut cost: HashMap<(i32, i32, i32), u32> = HashMap::new();
         let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
 
-        // pass 1: seed heap with Platform tiles below the active density threshold.
-        // If all tiles exceed the threshold, double it and retry — ensures a goal always exists.
+        let is_boarding_goal = goal_idx >= BOARDING_GOAL_OFFSET && goal_idx < TRAIN_GOAL_OFFSET;
+        let is_seat_goal     = goal_idx >= TRAIN_GOAL_OFFSET    && goal_idx < ENTRANCE_GOAL_OFFSET;
+        let is_entrance_goal = goal_idx >= ENTRANCE_GOAL_OFFSET;
+        let train_id    = if is_seat_goal     { goal_idx - TRAIN_GOAL_OFFSET }
+                          else if is_boarding_goal { goal_idx - BOARDING_GOAL_OFFSET }
+                          else { 0 };
+        let entrance_id = if is_entrance_goal { goal_idx - ENTRANCE_GOAL_OFFSET } else { 0 };
+
+        // pass 1.5 (seat goals only): BFS from TrainBoarding tiles of this train_id through walkable
+        // tiles, recording depth. Seat seed cost is then biased so deeper Train tiles win.
+        let (depth_map, max_depth) = if is_seat_goal {
+            use std::collections::VecDeque;
+            let mut q: VecDeque<(i32, i32, i32)> = VecDeque::new();
+            let mut d: HashMap<(i32, i32, i32), u32> = HashMap::new();
+            for (&(cx, cy, cz), chunk) in &map.chunks {
+                let cs = CHUNK_SIZE as i32;
+                for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+                    let idx = morton_encode(lx, ly, lz);
+                    if chunk.tiles[idx] == TileType::TrainBoarding && chunk.index[idx] == train_id {
+                        let p = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+                        d.insert(p, 0);
+                        q.push_back(p);
+                    }
+                }}}
+            }
+            let mut mx = 0u32;
+            while let Some((tx, ty, tz)) = q.pop_front() {
+                let dist = d[&(tx, ty, tz)];
+                mx = mx.max(dist);
+                let cur_tile = map.get_tile(Vec3i::new(tx, ty, tz));
+                for (dx, dz) in NEIGHBORS {
+                    let (nx, nz) = (tx + dx, tz + dz);
+                    let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(nx, ty, nz);
+                    if let Some(c) = map.chunks.get(&(cx, cy, cz)) {
+                        let nidx = morton_encode(lx, ly, lz);
+                        let nt = c.tiles[nidx];
+                        if !is_walkable(nt) { continue; }
+                        let blocked = (cur_tile == TileType::Platform && nt == TileType::Train)
+                                   || (cur_tile == TileType::Train    && nt == TileType::Platform);
+                        if blocked { continue; }
+                        if d.contains_key(&(nx, ty, nz)) { continue; }
+                        d.insert((nx, ty, nz), dist + 1);
+                        q.push_back((nx, ty, nz));
+                    }
+                }
+            }
+            (d, mx)
+        } else { (HashMap::new(), 0) };
+
+        // pass 1: seed heap. Tile type selected by goal range; cost mixes density and (seats only) depth bias.
+        // If all candidate tiles exceed the density threshold, double it and retry.
         const PLATFORM_CAPACITY: f32 = 3.0;
         const DENSITY_COST_SCALE: u32 = 5;
         let mut threshold = PLATFORM_CAPACITY;
@@ -506,11 +755,24 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
                 let cs = CHUNK_SIZE as i32;
                 for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
                     let idx = morton_encode(lx, ly, lz);
-                    if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx {
+                    let seeds = if is_entrance_goal {
+                        chunk.tiles[idx] == TileType::Entrance && chunk.index[idx] == entrance_id
+                    } else if is_seat_goal {
+                        chunk.tiles[idx] == TileType::Train && chunk.index[idx] == train_id
+                    } else if is_boarding_goal {
+                        chunk.tiles[idx] == TileType::TrainBoarding && chunk.index[idx] == train_id
+                    } else {
+                        chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx
+                    };
+                    if seeds {
                         let density = chunk.density[idx];
                         if density >= threshold { continue; }
                         let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
-                        let seed_cost = (density as u32) * DENSITY_COST_SCALE;
+                        let base = (density as u32) * DENSITY_COST_SCALE;
+                        let seed_cost = if is_seat_goal {
+                            let dep = depth_map.get(&(tx, ty, tz)).copied().unwrap_or(0);
+                            base + (max_depth - dep) * DEPTH_BIAS_SCALE
+                        } else { base };
                         cost.insert((tx, ty, tz), seed_cost);
                         heap.push((Reverse(seed_cost), tx, ty, tz));
                     }
@@ -518,19 +780,26 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
             }
             if !heap.is_empty() { break; }
             threshold *= 2.0;
-            if threshold > 1024.0 { break; } // no platform tiles at all
+            if threshold > 1024.0 { break; } // no candidate tiles at all
         }
         if heap.is_empty() { continue; }
 
-        // pass 2: Dijkstra flood fill (XZ neighbors only)
+        // pass 2: Dijkstra flood fill (XZ neighbors only).
+        // Constraint: agents must enter the train through TrainBoarding. Direct Platform↔Train
+        // transitions are forbidden in any goal layer, forcing the flow through door tiles.
         while let Some((Reverse(c), tx, ty, tz)) = heap.pop() {
             if cost.get(&(tx, ty, tz)).copied().unwrap_or(u32::MAX) < c { continue; }
+            let cur_tile = map.get_tile(Vec3i::new(tx, ty, tz));
             for (dx, dz) in NEIGHBORS {
                 let (nx, nz) = (tx + dx, tz + dz);
                 let (cx, cy, cz, _, _, _) = tile_to_chunk(nx, ty, nz);
                 if !map.chunks.contains_key(&(cx, cy, cz)) { continue; }
                 let tile = map.get_tile(Vec3i::new(nx, ty, nz));
                 if !is_walkable(tile) { continue; }
+                let blocked_transition =
+                    (cur_tile == TileType::Platform && tile == TileType::Train) ||
+                    (cur_tile == TileType::Train    && tile == TileType::Platform);
+                if blocked_transition { continue; }
                 let new_cost = c + 1;
                 if new_cost < cost.get(&(nx, ty, nz)).copied().unwrap_or(u32::MAX) {
                     cost.insert((nx, ty, nz), new_cost);
@@ -638,10 +907,307 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
     Ok(())
 }
 
+/// Processes train door open/close events: swaps agent goals between Goal(N) and Goal(N + TRAIN_GOAL_OFFSET).
+/// On close, agents physically inside the train footprint keep their train goal; outsiders revert to platform.
+#[export_update_fn]
+pub fn update_train_boarding(
+    mut trains: ResMut<Trains>,
+    mut map: ResMut<Map>,
+    mut agents: Query<(&AgentPos, &mut Goal, &mut Flags), With<HumanAgent>>,
+) -> Result<(), hotline_rs::Error> {
+    if trains.pending.is_empty() { return Ok(()); }
+    let events: Vec<(u8, bool)> = trains.pending.drain(..).collect();
+    for (train_id, target_open) in events {
+        let boarding_goal = train_id.saturating_add(BOARDING_GOAL_OFFSET);
+        let seat_goal     = train_id.saturating_add(TRAIN_GOAL_OFFSET);
+        if target_open {
+            // open: platform-queued agents head for the boarding (door) tiles first.
+            // The auto-advance in p2_bake takes over once they reach a TrainBoarding tile.
+            for (_pos, mut goal, mut flags) in agents.iter_mut() {
+                if goal.0 == train_id {
+                    goal.0  = boarding_goal;
+                    flags.0 = 0;
+                }
+            }
+        } else {
+            // close: agents whose goal is boarding OR seat for this train stay if they're physically inside
+            // the train footprint (Train or TrainBoarding tile with matching index); others revert to platform.
+            for (pos, mut goal, mut flags) in agents.iter_mut() {
+                if goal.0 != boarding_goal && goal.0 != seat_goal { continue; }
+                let tile = world_to_tile(pos.0);
+                let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+                let inside = map.chunks.get(&(cx, cy, cz)).map_or(false, |c| {
+                    let mi = morton_encode(lx, ly, lz);
+                    matches!(c.tiles[mi], TileType::Train | TileType::TrainBoarding) && c.index[mi] == train_id
+                });
+                if !inside {
+                    goal.0  = train_id;
+                    flags.0 = 0;
+                }
+            }
+        }
+        trains.doors_open.insert(train_id, target_open);
+    }
+    map.dirty = true; // force flow rebuild with the new active goal layers
+    Ok(())
+}
+
+/// Advances each train's leave/arrive animation. On Leaving→Gone, bakes the visual offset into the
+/// agent's logical position + wait_pos and clears their goal (so they no longer track the train).
+/// Render offset is applied elsewhere (update_agent_transforms / tile draw).
+#[export_update_fn]
+pub fn update_train_motion(
+    mut commands: Commands,
+    mut trains:   ResMut<Trains>,
+    map:          Res<Map>,
+    agents:       Query<(Entity, &Goal), With<HumanAgent>>,
+) -> Result<(), hotline_rs::Error> {
+    // 1. consume button presses → state transitions
+    let cmds: Vec<(u8, bool)> = trains.pending_motion.drain(..).collect();
+    for (tid, leave) in cmds {
+        let entry = trains.motion.entry(tid).or_insert_with(TrainMotion::default);
+        if leave && matches!(entry.state, TrainState::AtStation) {
+            entry.axis    = infer_train_axis(&map, tid);
+            entry.state   = TrainState::Leaving;
+            entry.started = std::time::Instant::now();
+        } else if !leave && matches!(entry.state, TrainState::Gone) {
+            entry.state   = TrainState::Arriving;
+            entry.started = std::time::Instant::now();
+        }
+    }
+
+    // 2. advance Leaving / Arriving; capture completions for post-processing
+    let mut completed_leaving: Vec<(u8, Vec3f)> = Vec::new();
+    for (&tid, motion) in trains.motion.iter_mut() {
+        match motion.state {
+            TrainState::Leaving if train_motion_progress(motion) >= 1.0 => {
+                motion.state   = TrainState::Gone;
+                motion.started = std::time::Instant::now();
+                completed_leaving.push((tid, motion.axis * TRAIN_TRAVEL_DIST));
+            }
+            TrainState::Arriving if train_motion_progress(motion) >= 1.0 => {
+                motion.state   = TrainState::AtStation;
+                motion.started = std::time::Instant::now();
+            }
+            _ => {}
+        }
+    }
+
+    // 3. on Leaving→Gone: despawn every agent currently boarded on this train. They've left
+    // with it — no need to keep them around frozen at the depot.
+    for (tid, _offset) in completed_leaving {
+        let boarding = tid.saturating_add(BOARDING_GOAL_OFFSET);
+        let seat     = tid.saturating_add(TRAIN_GOAL_OFFSET);
+        for (entity, goal) in agents.iter() {
+            if goal.0 == boarding || goal.0 == seat {
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Drives the auto-cycle state machine per train. Each phase has a fixed duration; when it elapses
+/// the appropriate event is pushed onto Trains.pending* queues — same channel the manual buttons use.
+#[export_update_fn]
+pub fn update_train_cycle(
+    mut trains: ResMut<Trains>,
+    map:        Res<Map>,
+) -> Result<(), hotline_rs::Error> {
+    let now = std::time::Instant::now();
+    // collect train_ids first to avoid borrow issues while pushing to queues
+    let ids: Vec<u8> = trains.cycle.iter().filter(|(_, c)| c.enabled).map(|(&k, _)| k).collect();
+    for tid in ids {
+        let cycle = trains.cycle.get(&tid).copied().unwrap_or_default();
+        if !cycle.enabled { continue; }
+        let elapsed = now.duration_since(cycle.step_started).as_secs_f32();
+        let (next_step, action, duration) = match cycle.step {
+            CycleStep::ArriveDwell => (CycleStep::OpenDoors, None,                                   CYCLE_DOOR_DWELL),
+            CycleStep::OpenDoors   => (CycleStep::Boarding,  Some(("doors_open",  true)),           CYCLE_DOOR_DWELL),
+            CycleStep::Boarding    => (CycleStep::CloseDoors, None,                                  CYCLE_BOARDING_SECS),
+            CycleStep::CloseDoors  => (CycleStep::Leave,     Some(("doors_open",  false)),          CYCLE_DOOR_DWELL),
+            CycleStep::Leave       => (CycleStep::GoneDwell, Some(("motion",      true)),           TRAIN_TRANSIT_SECS + 0.1),
+            CycleStep::GoneDwell   => (CycleStep::Arrive,    None,                                  CYCLE_GONE_SECS),
+            CycleStep::Arrive      => (CycleStep::ArriveDwell, Some(("motion",    false)),          TRAIN_TRANSIT_SECS + 0.1),
+        };
+        if elapsed < duration { continue; }
+        // emit the action that closes the current step, then advance
+        if let Some((channel, val)) = action {
+            match channel {
+                "doors_open" => trains.pending.push((tid, val)),
+                "motion"     => trains.pending_motion.push((tid, val)),
+                _ => {}
+            }
+        }
+        let entering_arrive_dwell = matches!(next_step, CycleStep::ArriveDwell);
+        let entering_leave        = matches!(next_step, CycleStep::Leave);
+        let mut emit_dropoff = false;
+        {
+            let entry = trains.cycle.entry(tid).or_default();
+            entry.step = next_step;
+            entry.step_started = now;
+            if entering_arrive_dwell && !entry.dropoff_emitted {
+                emit_dropoff = true;
+                entry.dropoff_emitted = true;
+            }
+            if entering_leave { entry.dropoff_emitted = false; }
+        }
+        if emit_dropoff {
+            let n = train_dropoff_count(&trains, &map, tid);
+            if n > 0 { trains.pending_dropoff.push((tid, n)); }
+        }
+    }
+    Ok(())
+}
+
+/// Per-entrance auto-spawn: enqueues 1 spawn each interval when enabled.
+#[export_update_fn]
+pub fn update_entrance_auto_spawn(
+    mut entrances: ResMut<Entrances>,
+) -> Result<(), hotline_rs::Error> {
+    let now = std::time::Instant::now();
+    // gather list to push without aliasing
+    let mut to_spawn: Vec<u8> = Vec::new();
+    for (&eid, auto) in entrances.auto.iter_mut() {
+        if !auto.enabled { continue; }
+        if now.duration_since(auto.last_spawn).as_secs_f32() >= auto.interval_s {
+            auto.last_spawn = now;
+            to_spawn.push(eid);
+        }
+    }
+    for eid in to_spawn { entrances.pending_spawn.push((eid, 1)); }
+    Ok(())
+}
+
+/// Spawns agents at Entrance tiles when their pending_spawn queue has entries.
+/// Each spawn picks a random Platform index (from those present in the map) as the goal.
+#[export_update_fn]
+pub fn update_entrance_spawn(
+    mut commands:  Commands,
+    mut entrances: ResMut<Entrances>,
+    map:           Res<Map>,
+    cube_mesh:     Res<AgentMesh>,
+) -> Result<(), hotline_rs::Error> {
+    if entrances.pending_spawn.is_empty() { return Ok(()); }
+    let mut platforms = collect_indices(&map, TileType::Platform);
+    // fallback: if no platforms painted, agents still spawn with goal 0 so they're visible
+    if platforms.is_empty() { platforms.push(0); }
+    let events: Vec<(u8, u32)> = entrances.pending_spawn.drain(..).collect();
+    for (entrance_id, count) in events {
+        let centres = collect_tile_centres(&map, TileType::Entrance, entrance_id);
+        if centres.is_empty() { continue; }
+        for _ in 0..count {
+            entrances.seed = entrances.seed.wrapping_add(1);
+            let r1 = rand_u32(entrances.seed);
+            let r2 = rand_u32(entrances.seed.wrapping_add(0x9E37_79B9));
+            let pos    = centres[(r1 as usize) % centres.len()];
+            let goal   = platforms[(r2 as usize) % platforms.len()];
+            let jitter = (rand_u32(entrances.seed.wrapping_add(7)) as f32 / u32::MAX as f32 - 0.5) * TILE_SIZE * 0.5;
+            let jitter2= (rand_u32(entrances.seed.wrapping_add(11)) as f32 / u32::MAX as f32 - 0.5) * TILE_SIZE * 0.5;
+            let ax = pos.x + jitter;
+            let az = pos.z + jitter2;
+            commands.spawn((
+                HumanAgent,
+                AgentPos(Vec3f::new(ax, 0.0, az)),
+                SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
+                WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
+                SepForce(Vec2f::zero()),
+                LocalDensity(0.0),
+                FacingRot(Quatf::identity()),
+                Goal(goal),
+                Flags(0),
+                MeshComponent(cube_mesh.0.clone()),
+                Position(vec3f(ax, AGENT_BODY_HALF_HEIGHT, az)),
+                Rotation(Quatf::identity()),
+                Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
+                WorldMatrix(Mat34f::identity()),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Spawns drop-off agents on a train's Train tiles. Each gets a random goal from
+/// (all Entrance indices) ∪ (all Platform indices except this train's own).
+#[export_update_fn]
+pub fn update_train_dropoff(
+    mut commands:  Commands,
+    mut trains:    ResMut<Trains>,
+    mut entrances: ResMut<Entrances>, // reuse the seed counter so randomness keeps advancing
+    map:           Res<Map>,
+    cube_mesh:     Res<AgentMesh>,
+) -> Result<(), hotline_rs::Error> {
+    if trains.pending_dropoff.is_empty() { return Ok(()); }
+    let platforms = collect_indices(&map, TileType::Platform);
+    let entrance_ids = collect_indices(&map, TileType::Entrance);
+    let events: Vec<(u8, u32)> = trains.pending_dropoff.drain(..).collect();
+    for (train_id, count) in events {
+        let centres = collect_tile_centres(&map, TileType::Train, train_id);
+        if centres.is_empty() { continue; }
+        // build destination pool: entrances (as goal = id + offset) + platforms (excluding this train's id)
+        let mut pool: Vec<u8> = Vec::new();
+        for &p in &platforms { if p != train_id { pool.push(p); } }
+        for &e in &entrance_ids { pool.push(e.saturating_add(ENTRANCE_GOAL_OFFSET)); }
+        if pool.is_empty() { continue; }
+        for _ in 0..count {
+            entrances.seed = entrances.seed.wrapping_add(1);
+            let r1 = rand_u32(entrances.seed);
+            let r2 = rand_u32(entrances.seed.wrapping_add(0x9E37_79B9));
+            let pos  = centres[(r1 as usize) % centres.len()];
+            let goal = pool[(r2 as usize) % pool.len()];
+            let jitter = (rand_u32(entrances.seed.wrapping_add(7)) as f32 / u32::MAX as f32 - 0.5) * TILE_SIZE * 0.5;
+            let jitter2= (rand_u32(entrances.seed.wrapping_add(11)) as f32 / u32::MAX as f32 - 0.5) * TILE_SIZE * 0.5;
+            let ax = pos.x + jitter;
+            let az = pos.z + jitter2;
+            commands.spawn((
+                HumanAgent,
+                AgentPos(Vec3f::new(ax, 0.0, az)),
+                SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
+                WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
+                SepForce(Vec2f::zero()),
+                LocalDensity(0.0),
+                FacingRot(Quatf::identity()),
+                Goal(goal),
+                Flags(0),
+                MeshComponent(cube_mesh.0.clone()),
+                Position(vec3f(ax, AGENT_BODY_HALF_HEIGHT, az)),
+                Rotation(Quatf::identity()),
+                Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
+                WorldMatrix(Mat34f::identity()),
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Despawns agents that have reached their entrance goal — i.e. they're on an Entrance tile
+/// whose index matches their goal-offset value.
+#[export_update_fn]
+pub fn update_entrance_despawn(
+    mut commands: Commands,
+    map:          Res<Map>,
+    agents:       Query<(Entity, &AgentPos, &Goal), With<HumanAgent>>,
+) -> Result<(), hotline_rs::Error> {
+    for (entity, pos, goal) in agents.iter() {
+        if goal.0 < ENTRANCE_GOAL_OFFSET { continue; }
+        let want = goal.0.saturating_sub(ENTRANCE_GOAL_OFFSET);
+        let tile = world_to_tile(pos.0);
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        if let Some(c) = map.chunks.get(&(cx, cy, cz)) {
+            let i = morton_encode(lx, ly, lz);
+            if c.tiles[i] == TileType::Entrance && c.index[i] == want {
+                commands.entity(entity).despawn();
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Moves agents along the flow field with per-cell peer-repulsion spreading
 #[export_update_fn]
 pub fn update_agents(
-    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
+    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &mut Goal, &mut Flags), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut soa: ResMut<AgentSoa>,
     mut editor: ResMut<EditorState>,
@@ -736,12 +1302,12 @@ pub fn update_agents(
     let wait_pos_ptr = soa.wait_pos.as_mut_ptr() as usize;
 
     let n = cells.len();
-    let mut baked_density = vec![0.0f32;        n];
-    let mut baked_flow    = vec![Vec2f::zero();  n];
-    let mut baked_flags   = vec![0u8;            n]; // FLAG_WAITING
-    // let mut baked_spread  = vec![Vec2f::zero();  n]; // lateral spread velocity
-    let mut nbr_start     = vec![0usize;     n + 1];
-    let mut nbr_flat      = Vec::<usize>::new();
+    let mut baked_density   = vec![0.0f32;        n];
+    let mut baked_flow      = vec![Vec2f::zero();  n];
+    let mut baked_flags     = vec![0u8;            n]; // FLAG_WAITING
+    let mut baked_goal_swap = vec![0u8;            n]; // 0 = no swap; otherwise = new goal (>= TRAIN_GOAL_OFFSET so 0 is unambiguous)
+    let mut nbr_start       = vec![0usize;     n + 1];
+    let mut nbr_flat        = Vec::<usize>::new();
 
     for (ci, &(ia, ck, idx)) in cells.iter().enumerate() {
         let chunk    = &map.chunks[&ck];
@@ -769,7 +1335,40 @@ pub fn update_agents(
 
         // waiting flag: sticky — once an agent reaches (or stops short of) a goal it stays in queue mode.
         // First arrival assigns a Halton-sampled wait_pos on the current tile; the pull keeps them near it.
-        let at_goal = chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == gb[ia];
+        // TrainBoarding is a *staging* sink: reaching it auto-advances goal to the seat layer (no waiting commit here).
+        let mut at_goal = match chunk.tiles[idx] {
+            TileType::Platform => chunk.index[idx] == gb[ia],
+            TileType::Train    => chunk.index[idx].saturating_add(TRAIN_GOAL_OFFSET) == gb[ia],
+            TileType::Entrance => chunk.index[idx].saturating_add(ENTRANCE_GOAL_OFFSET) == gb[ia],
+            _ => false,
+        };
+        if chunk.tiles[idx] == TileType::TrainBoarding
+            && chunk.index[idx].saturating_add(BOARDING_GOAL_OFFSET) == gb[ia] {
+            // Boarding tile reached. Allocate a seat only if a neighbouring Train tile (same train_id)
+            // has room. Otherwise wait here — TrainBoarding acts as standing-room overflow with the
+            // same Halton/density mechanics as the platform queue.
+            let train_id = chunk.index[idx];
+            let mut seat_open = false;
+            'check: for dz in -1i32..=1 { for dx in -1i32..=1 {
+                if dx == 0 && dz == 0 { continue; }
+                let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + dx, tile.y, tile.z + dz);
+                if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
+                    let nidx = morton_encode(nlx, nly, nlz);
+                    if nc.tiles[nidx] == TileType::Train
+                        && nc.index[nidx] == train_id
+                        && nc.density[nidx] < WAIT_SLOTS_PER_TILE as f32 {
+                        seat_open = true;
+                        break 'check;
+                    }
+                }
+            }}
+            if seat_open {
+                baked_goal_swap[ci] = train_id.saturating_add(TRAIN_GOAL_OFFSET);
+                at_goal = false;
+            } else {
+                at_goal = true; // overflow: wait on the boarding tile
+            }
+        }
 
         // Stop one tile short of the goal — some agents, scaled by goal crowding.
         // Per-entity roll is deterministic so each agent has a stable disposition;
@@ -780,7 +1379,12 @@ pub fn update_agents(
             let (acx, acy, acz, alx, aly, alz) = tile_to_chunk(ax, tile.y, az);
             if let Some(ac) = map.chunks.get(&(acx, acy, acz)) {
                 let aidx = morton_encode(alx, aly, alz);
-                let ahead_is_goal = ac.tiles[aidx] == TileType::Platform && ac.index[aidx] == gb[ia];
+                let ahead_is_goal = match ac.tiles[aidx] {
+                    TileType::Platform => ac.index[aidx] == gb[ia],
+                    TileType::Train    => ac.index[aidx].saturating_add(TRAIN_GOAL_OFFSET) == gb[ia],
+                    // TrainBoarding is a transient stage, not a stop_short target
+                    _ => false,
+                };
                 if ahead_is_goal {
                     let crowd = ((ac.density[aidx] / WAIT_SLOTS_PER_TILE as f32) - 0.5).max(0.0) * 2.0;
                     let roll = ((ia as u32).wrapping_mul(2654435761) >> 24) as f32 / 255.0;
@@ -847,6 +1451,17 @@ pub fn update_agents(
     }
 
     soa.timers.push(("p2 bake", t.elapsed().as_micros() as u64));
+
+    // scatter goal-swap requests by entity index for the writeback loop
+    let mut goal_swap_by_ia: Vec<u8> = vec![0; soa.pos.len()];
+    let mut any_goal_swap = false;
+    for (ci, &(ia, _, _)) in cells.iter().enumerate() {
+        let s = baked_goal_swap[ci];
+        if s != 0 && ia < goal_swap_by_ia.len() {
+            goal_swap_by_ia[ia] = s;
+            any_goal_swap = true;
+        }
+    }
 
     //
     // p2_sep: parallel — pure arithmetic + direct array indexing, no chunk/morton lookups
@@ -1081,7 +1696,7 @@ pub fn update_agents(
     }
 
     // single batch ECS write — all flat buffers are final after p5
-    for (entity, mut pos, _, mut wander, mut sf, mut ld, mut facing, _, mut fl) in agents.iter_mut() {
+    for (entity, mut pos, _, mut wander, mut sf, mut ld, mut facing, mut goal, mut fl) in agents.iter_mut() {
         let ia = entity.index() as usize;
         pos.0    = soa.pos[ia];
         wander.0 = soa.wander[ia];
@@ -1089,6 +1704,18 @@ pub fn update_agents(
         ld.0     = soa.density[ia];
         facing.0 = soa.facing[ia];
         fl.0     = soa.flags[ia];
+        if ia < goal_swap_by_ia.len() {
+            let s = goal_swap_by_ia[ia];
+            if s != 0 {
+                goal.0 = s;
+                fl.0   = 0; // drop sticky waiting so they move toward the new seat goal
+            }
+        }
+    }
+
+    if any_goal_swap {
+        // a boarding->seat swap happened this frame; force a flow rebuild so the new active layer is current
+        map.dirty = true;
     }
 
     Ok(())
@@ -1097,23 +1724,34 @@ pub fn update_agents(
 /// Syncs AgentPos and FacingRot to Position and Rotation for mesh rendering
 #[export_update_fn]
 pub fn update_agent_transforms(
-    mut agents: Query<(&AgentPos, &FacingRot, &mut Position, &mut Rotation), With<HumanAgent>>,
+    mut agents: Query<(&AgentPos, &FacingRot, &Goal, &mut Position, &mut Rotation), With<HumanAgent>>,
+    trains: Res<Trains>,
 ) -> Result<(), hotline_rs::Error> {
-    for (agent_pos, facing, mut position, mut rotation) in agents.iter_mut() {
-        position.0 = vec3f(agent_pos.0.x, AGENT_BODY_HALF_HEIGHT, agent_pos.0.z);
+    for (agent_pos, facing, goal, mut position, mut rotation) in agents.iter_mut() {
+        let offset = agent_train_offset(&trains, goal.0);
+        position.0 = vec3f(agent_pos.0.x, AGENT_BODY_HALF_HEIGHT, agent_pos.0.z) + offset;
         rotation.0 = facing.0;
     }
     Ok(())
 }
 
+/// Maps an agent's goal value to the visual offset of its associated train (if any).
+fn agent_train_offset(trains: &Trains, goal: u8) -> Vec3f {
+    let tid = if goal >= TRAIN_GOAL_OFFSET { goal - TRAIN_GOAL_OFFSET }
+              else if goal >= BOARDING_GOAL_OFFSET { goal - BOARDING_GOAL_OFFSET }
+              else { return Vec3f::zero(); };
+    trains.motion.get(&tid).map(train_visual_offset).unwrap_or(Vec3f::zero())
+}
+
 #[export_update_fn]
 pub fn debug_draw_agents(
-    agents: Query<(&AgentPos, &FacingRot, &Flags), With<HumanAgent>>,
+    agents: Query<(&AgentPos, &FacingRot, &Flags, &Goal), With<HumanAgent>>,
+    trains: Res<Trains>,
     mut imdraw: ResMut<ImDrawRes>,
 ) -> Result<(), hotline_rs::Error> {
     const Y_OFFSET: f32 = 1.0;
-    for (pos, facing, flags) in agents.iter() {
-        let p = pos.0;
+    for (pos, facing, flags, goal) in agents.iter() {
+        let p = pos.0 + agent_train_offset(&trains, goal.0);
         let base = vec3f(p.x, Y_OFFSET, p.z);
         // colour by state: red = moving, green = waiting via at_goal/stop_short, cyan = crowd-join
         let waiting    = (flags.0 & FLAG_WAITING)    != 0;
@@ -1161,6 +1799,8 @@ pub fn setup_ratrace2(
     let cube = hotline_rs::primitives::create_cube_mesh(&mut device.0);
     commands.insert_resource(AgentMesh(cube));
     commands.insert_resource(AgentSoa::default());
+    commands.insert_resource(Trains::default());
+    commands.insert_resource(Entrances::default());
 
     Ok(())
 }
@@ -1171,6 +1811,8 @@ pub fn update_tile_editor_ui(
     mut imgui: ResMut<ImGuiRes>,
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
+    mut trains: ResMut<Trains>,
+    mut entrances: ResMut<Entrances>,
     agents: Query<Entity, With<HumanAgent>>,
     agent_flags: Query<&Flags, With<HumanAgent>>,
 ) -> Result<(), hotline_rs::Error> {
@@ -1283,8 +1925,102 @@ pub fn update_tile_editor_ui(
             imgui.separator();
         }
 
+        // Trains panel: list unique train indices (any Train or TrainBoarding tile contributes) and a button per train
+        let mut train_ids: Vec<u8> = map.chunks.values()
+            .flat_map(|c| c.tiles.iter().enumerate()
+                .filter(|(_, &t)| matches!(t, TileType::Train | TileType::TrainBoarding))
+                .map(|(i, _)| c.index[i]))
+            .collect();
+        train_ids.sort_unstable();
+        train_ids.dedup();
+
+        if !train_ids.is_empty() {
+            imgui.text("Trains:");
+            for tid in train_ids {
+                let open  = trains.doors_open.get(&tid).copied().unwrap_or(false);
+                let state = trains.motion.get(&tid).map(|m| m.state).unwrap_or(TrainState::AtStation);
+                let state_label = match state {
+                    TrainState::AtStation => if open { "at station, open" } else { "at station, closed" },
+                    TrainState::Leaving   => "leaving...",
+                    TrainState::Gone      => "gone",
+                    TrainState::Arriving  => "arriving...",
+                };
+                imgui.text(&format!("Train {} [{}]", tid, state_label));
+                // door buttons only when at station
+                if matches!(state, TrainState::AtStation) {
+                    let door_label = if open { format!("Close##{}", tid) } else { format!("Open##{}", tid) };
+                    if imgui.button(&door_label) {
+                        trains.pending.push((tid, !open));
+                    }
+                    imgui.same_line();
+                    // leave only when doors closed
+                    if !open {
+                        if imgui.button(&format!("Leave##{}", tid)) {
+                            trains.pending_motion.push((tid, true));
+                        }
+                    }
+                }
+                // arrive only when gone
+                if matches!(state, TrainState::Gone) {
+                    if imgui.button(&format!("Arrive##{}", tid)) {
+                        trains.pending_motion.push((tid, false));
+                    }
+                }
+                // drop off only at station — count scales with train capacity × density slider
+                if matches!(state, TrainState::AtStation) {
+                    imgui.same_line();
+                    if imgui.button(&format!("Drop Off##{}", tid)) {
+                        let n = train_dropoff_count(&trains, &map, tid);
+                        if n > 0 { trains.pending_dropoff.push((tid, n)); }
+                    }
+                }
+                // auto-cycle checkbox per train
+                let mut auto = trains.cycle.get(&tid).map(|c| c.enabled).unwrap_or(false);
+                if imgui.checkbox(&format!("Auto cycle##t{}", tid), &mut auto) {
+                    let entry = trains.cycle.entry(tid).or_default();
+                    entry.enabled = auto;
+                    entry.step_started = std::time::Instant::now();
+                    // when enabling, start from OpenDoors if at station, ArriveDwell otherwise
+                    entry.step = if matches!(state, TrainState::AtStation) { CycleStep::OpenDoors }
+                                 else                                       { CycleStep::ArriveDwell };
+                    entry.dropoff_emitted = false;
+                }
+                // drop-off density slider (0..1) — gets multiplied by train capacity to set the spawn count.
+                // Cap shown for clarity: "density × capacity = N agents".
+                let cap = train_capacity(&map, tid);
+                let mut density = trains.dropoff_density.get(&tid).copied().unwrap_or(DEFAULT_DROPOFF_DENSITY);
+                if imgui.slider_float(&format!("Dropoff density##t{}", tid), &mut density, 0.0, 1.0) {
+                    trains.dropoff_density.insert(tid, density);
+                }
+                imgui.same_line();
+                imgui.text(&format!("({}/{} agents)", ((cap as f32) * density).round() as u32, cap));
+            }
+            imgui.separator();
+        }
+
+        // Entrances panel — Spawn button + Auto checkbox per entrance
+        let entrance_ids = collect_indices(&map, TileType::Entrance);
+        if !entrance_ids.is_empty() {
+            imgui.text("Entrances:");
+            for eid in entrance_ids {
+                imgui.text(&format!("Entrance {}", eid));
+                imgui.same_line();
+                if imgui.button(&format!("Spawn##e{}", eid)) {
+                    entrances.pending_spawn.push((eid, 10));
+                }
+                imgui.same_line();
+                let mut auto = entrances.auto.get(&eid).map(|a| a.enabled).unwrap_or(false);
+                if imgui.checkbox(&format!("Auto##e{}", eid), &mut auto) {
+                    let entry = entrances.auto.entry(eid).or_default();
+                    entry.enabled = auto;
+                    entry.last_spawn = std::time::Instant::now();
+                }
+            }
+            imgui.separator();
+        }
+
         if imgui.button("clear map") {
-            *map = Map::new(); 
+            *map = Map::new();
         }
         imgui.same_line();
         if imgui.button("clear agents") { 
@@ -1317,6 +2053,7 @@ pub fn update_tile_editor(
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
     cube_mesh: Res<AgentMesh>,
+    trains: Res<Trains>,
     mut commands: Commands,
 ) -> Result<(), hotline_rs::Error> {
 
@@ -1359,6 +2096,9 @@ pub fn update_tile_editor(
         Vec4f::yellow(),                         // Platform
         Vec4f::green(),                          // TrainTrack
         Vec4f::new(0.4, 0.4, 0.4, 1.0),          // Floor
+        Vec4f::new(1.0, 0.5, 0.0, 1.0),          // Train (orange)
+        Vec4f::new(0.0, 0.7, 0.7, 1.0),          // TrainBoarding (teal)
+        Vec4f::new(1.0, 0.2, 0.8, 1.0),          // Entrance (magenta)
     ];
 
     if enable_mouse {
@@ -1503,6 +2243,59 @@ pub fn update_tile_editor(
         let y_off = Vec3f::new(0.0, Y_OFFSET, 0.0);
         for wl in &chunk.walls {
             imdraw.add_line_3d(wl.p0 + y_off, wl.p1 + y_off, wall_col);
+        }
+    }
+
+    // per-train bounds box — XZ AABB of all Train + TrainBoarding tiles with matching index.
+    // Box translates with the train's motion offset (tile data itself stays put).
+    {
+        use std::collections::HashMap;
+        let mut bounds: HashMap<u8, (f32, f32, f32, f32)> = HashMap::new(); // tid -> (min_x, min_z, max_x, max_z)
+        for (&(cx, _, cz), chunk) in &map.chunks {
+            let cs = CHUNK_SIZE as i32;
+            for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+                let idx = morton_encode(lx, ly, lz);
+                let t = chunk.tiles[idx];
+                if !matches!(t, TileType::Train | TileType::TrainBoarding) { continue; }
+                let tid = chunk.index[idx];
+                let tx = (cx*cs + lx as i32) as f32 * TILE_SIZE;
+                let tz = (cz*cs + lz as i32) as f32 * TILE_SIZE;
+                let b = bounds.entry(tid).or_insert((tx, tz, tx + TILE_SIZE, tz + TILE_SIZE));
+                b.0 = b.0.min(tx); b.1 = b.1.min(tz);
+                b.2 = b.2.max(tx + TILE_SIZE); b.3 = b.3.max(tz + TILE_SIZE);
+            }}}
+        }
+        const TRAIN_HEIGHT: f32 = 15.0; // 1.5 tiles tall
+        let y_lo = Y_OFFSET;
+        let y_hi = Y_OFFSET + TRAIN_HEIGHT;
+        for (tid, (mnx, mnz, mxx, mxz)) in bounds {
+            let offset = trains.motion.get(&tid).map(train_visual_offset).unwrap_or(Vec3f::zero());
+            let (ox, oz) = (offset.x, offset.z);
+            let col = Vec4f::new(1.0, 0.5, 0.0, 1.0); // orange to match train
+            // 8 corners: l = lo Y, h = hi Y; 00/10/11/01 = (min,min)(max,min)(max,max)(min,max)
+            let l00 = Vec3f::new(mnx + ox, y_lo, mnz + oz);
+            let l10 = Vec3f::new(mxx + ox, y_lo, mnz + oz);
+            let l11 = Vec3f::new(mxx + ox, y_lo, mxz + oz);
+            let l01 = Vec3f::new(mnx + ox, y_lo, mxz + oz);
+            let h00 = Vec3f::new(mnx + ox, y_hi, mnz + oz);
+            let h10 = Vec3f::new(mxx + ox, y_hi, mnz + oz);
+            let h11 = Vec3f::new(mxx + ox, y_hi, mxz + oz);
+            let h01 = Vec3f::new(mnx + ox, y_hi, mxz + oz);
+            // bottom face
+            imdraw.add_line_3d(l00, l10, col);
+            imdraw.add_line_3d(l10, l11, col);
+            imdraw.add_line_3d(l11, l01, col);
+            imdraw.add_line_3d(l01, l00, col);
+            // top face
+            imdraw.add_line_3d(h00, h10, col);
+            imdraw.add_line_3d(h10, h11, col);
+            imdraw.add_line_3d(h11, h01, col);
+            imdraw.add_line_3d(h01, h00, col);
+            // vertical edges
+            imdraw.add_line_3d(l00, h00, col);
+            imdraw.add_line_3d(l10, h10, col);
+            imdraw.add_line_3d(l11, h11, col);
+            imdraw.add_line_3d(l01, h01, col);
         }
     }
 
