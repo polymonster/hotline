@@ -32,9 +32,14 @@ const BASE_SEP_RADIUS: f32 = 24.0;
 const MIN_SEP_RADIUS: f32 = 8.0;
 const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
-const QUEUE_SPREAD_STRENGTH: f32 = 0.04; // lateral drift toward less-dense side when queuing
 const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
+const WAIT_PULL_STRENGTH:  f32 = 0.025; // spring constant pulling waiting agents back to wait_pos
+const WAIT_DAMPING:        f32 = 0.4;   // velocity scale for waiting agents — dampens sep/pull jitter
+const WAIT_SLOTS_PER_TILE: u32 = 32;    // max distinct halton-sampled wait positions before wrap
+const WAIT_SLOT_INSET:     f32 = 0.7;   // halton sample range within tile (fraction of TILE_SIZE)
+const JOIN_CROWD_MIN_DENSITY: f32 = 12.0; // low-tolerance agents commit at this nbr density
+const JOIN_CROWD_MAX_DENSITY: f32 = 15.0; // high-tolerance agents hold out until at least this dense
 const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
 
 const MAP_SAVE_PATH: &str = "queue_debug.bin";
@@ -52,7 +57,7 @@ pub fn ratrace2(client: &mut Client<gfx_platform::Device, os_platform::App>) -> 
             "update_tile_editor",
             "update_agents",
             "update_agent_transforms",
-            "debug_draw_agents",
+            // "debug_draw_agents",
             "update_tile_editor_ui",
             "update_perf_ui"
         ],
@@ -102,6 +107,9 @@ pub struct MapChunk {
     wall_count: [u8;  ARRAY_SIZE],
     /// per-tile flags (bit 0 = TILE_OCCUPIED); set by register_agent, cleared by clear_agents
     flags: [u8; ARRAY_SIZE],
+    /// monotonically increments (mod WAIT_SLOTS_PER_TILE) on each agent's first arrival;
+    /// combined with a per-tile hash offset to pick a Halton sample for the wait position
+    wait_slot: [std::sync::atomic::AtomicU8; ARRAY_SIZE],
 }
 
 impl MapChunk {
@@ -117,6 +125,7 @@ impl MapChunk {
             wall_start: [0; ARRAY_SIZE],
             wall_count: [0; ARRAY_SIZE],
             flags:      [0u8; ARRAY_SIZE],
+            wait_slot:  std::array::from_fn(|_| std::sync::atomic::AtomicU8::new(0)),
         }
     }
 
@@ -181,6 +190,32 @@ fn pos_hash(x: f32, z: f32) -> f32 {
     (mixed >> 33) as f32 / u32::MAX as f32
 }
 
+/// Halton low-discrepancy sequence in 1D for the given prime base; output in [0, 1)
+fn halton_1d(mut i: u32, base: u32) -> f32 {
+    let mut f = 1.0_f32;
+    let mut r = 0.0_f32;
+    while i > 0 {
+        f /= base as f32;
+        r += f * (i % base) as f32;
+        i /= base;
+    }
+    r
+}
+
+/// 2D Halton sample → tile-relative XZ offset in [-INSET/2, +INSET/2] * TILE_SIZE
+fn halton_wait_offset(slot: u32) -> (f32, f32) {
+    // skip index 0 (always (0,0)); +1 gives a well-spread first sample
+    let hx = halton_1d(slot + 1, 2);
+    let hz = halton_1d(slot + 1, 3);
+    ((hx - 0.5) * WAIT_SLOT_INSET * TILE_SIZE,
+     (hz - 0.5) * WAIT_SLOT_INSET * TILE_SIZE)
+}
+
+/// Deterministic per-tile offset into the Halton sequence — adds variation between tiles
+fn tile_slot_offset(tx: i32, tz: i32) -> u32 {
+    (tx as u32).wrapping_mul(73856093) ^ (tz as u32).wrapping_mul(19349663)
+}
+
 #[derive(PartialEq)]
 pub enum EditorMode { Tile, Agent }
 
@@ -200,14 +235,15 @@ pub(crate) struct AgentMesh(pmfx::Mesh<gfx_platform::Device>);
 /// Flat per-entity SoA buffers, all indexed by entity.index()
 #[derive(Resource, Default)]
 pub(crate) struct AgentSoa {
-    pub pos:     Vec<Vec3f>,
-    pub sep:     Vec<Vec2f>,
-    pub density: Vec<f32>,
-    pub wander:  Vec<f32>,
-    pub facing:  Vec<Quatf>,
-    pub speed:   Vec<f32>,
-    pub goal:    Vec<u8>,
-    pub flags:   Vec<u8>,
+    pub pos:      Vec<Vec3f>,
+    pub sep:      Vec<Vec2f>,
+    pub density:  Vec<f32>,
+    pub wander:   Vec<f32>,
+    pub facing:   Vec<Quatf>,
+    pub speed:    Vec<f32>,
+    pub goal:     Vec<u8>,
+    pub flags:    Vec<u8>,
+    pub wait_pos: Vec<Vec3f>, // assigned on first arrival at goal, pulled toward while waiting
     /// per-frame pass timers: (name, microseconds), refreshed every frame
     pub timers:  Vec<(&'static str, u64)>,
 }
@@ -245,7 +281,8 @@ pub(crate) struct FacingRot(Quatf);
 pub(crate) struct Goal(u8);
 
 /// Agent state flags bitmask (u8, expandable to u16/u32)
-pub const FLAG_WAITING: u8 = 1 << 0;  // agent has reached goal and is holding position
+pub const FLAG_WAITING:    u8 = 1 << 0;  // agent has reached/decided to wait, holding position
+pub const FLAG_CROWD_JOIN: u8 = 1 << 1;  // committed via crowd-join (vs at_goal/stop_short)
 #[derive(Component)]
 pub(crate) struct Flags(u8);
 
@@ -258,7 +295,16 @@ pub struct EditorState {
     agent_goal: u8,
     viz_goal: u8,
     left_was_down: bool,
-    save_filepath: String
+    save_filepath: String,
+    /// debug one-shot: when set, the next update_agents frame snapshots all current agents into
+    /// waiting state at their current tiles, then clears the flag — new agents spawned afterwards
+    /// are unaffected
+    pub force_all_waiting: bool,
+    /// debug toggle: when true, the "join nearby queue" self-decision is disabled —
+    /// agents only commit via at_goal or stop_short
+    pub disable_crowd_join: bool,
+    /// last tile under the mouse cursor (set by update_tile_editor, displayed in UI)
+    pub hover_tile: Option<(i32, i32, i32)>,
 }
 
 #[derive(Resource)]
@@ -450,23 +496,29 @@ pub fn update_flow_field(mut map: ResMut<Map>) -> Result<(), hotline_rs::Error> 
         let mut cost: HashMap<(i32, i32, i32), u32> = HashMap::new();
         let mut heap: BinaryHeap<(Reverse<u32>, i32, i32, i32)> = BinaryHeap::new();
 
-        // pass 1: seed heap with Platform tiles matching this goal
-        // tiles at or above capacity are skipped — full tiles stop attracting agents
+        // pass 1: seed heap with Platform tiles below the active density threshold.
+        // If all tiles exceed the threshold, double it and retry — ensures a goal always exists.
         const PLATFORM_CAPACITY: f32 = 3.0;
         const DENSITY_COST_SCALE: u32 = 5;
-        for (&(cx, cy, cz), chunk) in &map.chunks {
-            let cs = CHUNK_SIZE as i32;
-            for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
-                let idx = morton_encode(lx, ly, lz);
-                if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx {
-                    let density = chunk.density[idx];
-                    if density >= PLATFORM_CAPACITY { continue; }
-                    let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
-                    let seed_cost = (density as u32) * DENSITY_COST_SCALE;
-                    cost.insert((tx, ty, tz), seed_cost);
-                    heap.push((Reverse(seed_cost), tx, ty, tz));
-                }
-            }}}
+        let mut threshold = PLATFORM_CAPACITY;
+        loop {
+            for (&(cx, cy, cz), chunk) in &map.chunks {
+                let cs = CHUNK_SIZE as i32;
+                for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+                    let idx = morton_encode(lx, ly, lz);
+                    if chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == goal_idx {
+                        let density = chunk.density[idx];
+                        if density >= threshold { continue; }
+                        let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+                        let seed_cost = (density as u32) * DENSITY_COST_SCALE;
+                        cost.insert((tx, ty, tz), seed_cost);
+                        heap.push((Reverse(seed_cost), tx, ty, tz));
+                    }
+                }}}
+            }
+            if !heap.is_empty() { break; }
+            threshold *= 2.0;
+            if threshold > 1024.0 { break; } // no platform tiles at all
         }
         if heap.is_empty() { continue; }
 
@@ -592,7 +644,11 @@ pub fn update_agents(
     mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut soa: ResMut<AgentSoa>,
+    mut editor: ResMut<EditorState>,
 ) -> Result<(), hotline_rs::Error> {
+    let force_all_waiting = editor.force_all_waiting;
+    let disable_crowd_join = editor.disable_crowd_join;
+    editor.force_all_waiting = false;
 
     // reborrow as raw ref so NLL can split field borrows (ResMut treats whole struct as one borrow)
     let soa: &mut AgentSoa = &mut *soa;
@@ -654,6 +710,7 @@ pub fn update_agents(
     if soa.speed.len() <= max_idx { soa.speed.resize(max_idx + 1, 1.0); }
     if soa.goal.len() <= max_idx { soa.goal.resize(max_idx + 1, 0); }
     if soa.flags.len() <= max_idx { soa.flags.resize(max_idx + 1, 0); }
+    if soa.wait_pos.len() <= max_idx { soa.wait_pos.resize(max_idx + 1, Vec3f::zero()); }
     for (e, pos, speed, wander, _, _, facing, goal, flags) in agents.iter() {
         let i = e.index() as usize;
         soa.pos[i]    = pos.0;
@@ -676,6 +733,7 @@ pub fn update_agents(
     let gb = soa.goal.as_slice();
     let fbp = soa.flags.as_ptr() as usize;
     let fbp_len = soa.flags.len();
+    let wait_pos_ptr = soa.wait_pos.as_mut_ptr() as usize;
 
     let n = cells.len();
     let mut baked_density = vec![0.0f32;        n];
@@ -694,20 +752,84 @@ pub fn update_agents(
         baked_density[ci] = density;
         baked_flow[ci]    = flow_dir;
 
-        // gather all neighbour agents (3x3 in XZ) into nbr_flat
+        // gather all neighbour agents (3x3 in XZ) into nbr_flat; also peak-density of surrounding tiles
         let tile = world_to_tile(pb[ia]);
+        let mut max_nbr_density = 0.0f32;
         for dz in -1i32..=1 { for dx in -1i32..=1 {
             let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x+dx, tile.y, tile.z+dz);
             let nidx = morton_encode(nlx, nly, nlz);
             if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
                 nbr_flat.extend(nc.agents[nidx].iter().map(|&e| e.index() as usize));
+                if dx != 0 || dz != 0 {
+                    max_nbr_density = max_nbr_density.max(nc.density[nidx]);
+                }
             }
         }}
         nbr_start[ci + 1] = nbr_flat.len();
 
-        // waiting flag: at goal (neighbor_waiting deferred to p2_sep via nbr_flat)
+        // waiting flag: sticky — once an agent reaches (or stops short of) a goal it stays in queue mode.
+        // First arrival assigns a Halton-sampled wait_pos on the current tile; the pull keeps them near it.
         let at_goal = chunk.tiles[idx] == TileType::Platform && chunk.index[idx] == gb[ia];
-        baked_flags[ci] = if at_goal { FLAG_WAITING } else { 0u8 };
+
+        // Stop one tile short of the goal — some agents, scaled by goal crowding.
+        // Per-entity roll is deterministic so each agent has a stable disposition;
+        // crowd ramps 0→1 between 50% and 100% goal density, no early bail-outs below that.
+        let stop_short = if !at_goal && (flow_dir.x != 0.0 || flow_dir.y != 0.0) {
+            let ax = tile.x + flow_dir.x as i32;
+            let az = tile.z + flow_dir.y as i32;
+            let (acx, acy, acz, alx, aly, alz) = tile_to_chunk(ax, tile.y, az);
+            if let Some(ac) = map.chunks.get(&(acx, acy, acz)) {
+                let aidx = morton_encode(alx, aly, alz);
+                let ahead_is_goal = ac.tiles[aidx] == TileType::Platform && ac.index[aidx] == gb[ia];
+                if ahead_is_goal {
+                    let crowd = ((ac.density[aidx] / WAIT_SLOTS_PER_TILE as f32) - 0.5).max(0.0) * 2.0;
+                    let roll = ((ia as u32).wrapping_mul(2654435761) >> 24) as f32 / 255.0;
+                    roll < crowd
+                } else { false }
+            } else { false }
+        } else { false };
+
+        // "I'm next to a packed queue for my goal" — each agent has a stable per-entity tolerance
+        // between MIN and MAX. Low-tolerance agents commit early (nbr density >= 15), high-tolerance
+        // agents push on until the queue is truly saturated (>= 30). Same-goal-waiting check
+        // confirms it's an actual queue, not a transient cluster.
+        let tolerance_roll = ((ia as u32).wrapping_mul(2246822519) >> 24) as f32 / 255.0;
+        let tolerance = JOIN_CROWD_MIN_DENSITY + (JOIN_CROWD_MAX_DENSITY - JOIN_CROWD_MIN_DENSITY) * tolerance_roll;
+        let join_crowd = !disable_crowd_join
+            && max_nbr_density >= tolerance
+            && nbr_flat[nbr_start[ci]..nbr_start[ci+1]].iter().any(|&ib| {
+                ib != ia
+                    && ib < fbp_len
+                    && unsafe { *(fbp as *const u8).add(ib) } & FLAG_WAITING != 0
+                    && gb[ib] == gb[ia]
+            });
+
+        let should_wait = at_goal || stop_short || join_crowd || force_all_waiting;
+        let prev_flags = if ia < fbp_len { unsafe { *(fbp as *const u8).add(ia) } } else { 0u8 };
+        let was_waiting = (prev_flags & FLAG_WAITING) != 0;
+        // sticky FLAG_WAITING; FLAG_CROWD_JOIN sticks once set so the colour stays after they settle
+        let mut bf = if should_wait || was_waiting { FLAG_WAITING } else { 0u8 };
+        if (join_crowd && !was_waiting) || (prev_flags & FLAG_CROWD_JOIN) != 0 {
+            bf |= FLAG_CROWD_JOIN;
+        }
+        baked_flags[ci] = bf;
+        if should_wait && !was_waiting {
+            use std::sync::atomic::Ordering;
+            // bump current tile's counter; offset by per-tile hash so each tile uses a different halton phase
+            let n = chunk.wait_slot[idx].fetch_add(1, Ordering::Relaxed) as u32;
+            let slot = (n + tile_slot_offset(tile.x, tile.z)) % WAIT_SLOTS_PER_TILE;
+            let (ox, oz) = halton_wait_offset(slot);
+            let wp = vec3f(
+                (tile.x as f32 + 0.5) * TILE_SIZE + ox,
+                pb[ia].y,
+                (tile.z as f32 + 0.5) * TILE_SIZE + oz,
+            );
+            unsafe { *(wait_pos_ptr as *mut Vec3f).add(ia) = wp; }
+            // wrap counter explicitly so it never grows beyond u8 range over long sessions
+            if n + 1 >= WAIT_SLOTS_PER_TILE {
+                chunk.wait_slot[idx].store(((n + 1) % WAIT_SLOTS_PER_TILE) as u8, Ordering::Relaxed);
+            }
+        }
 
         // TODO: not working
         // lateral spread velocity
@@ -796,11 +918,11 @@ pub fn update_agents(
         }
 
         // SAFETY: ia is unique per entity
-        let at_goal = (baked_flags[ci] & FLAG_WAITING) != 0;
+        // sep applies to waiting agents too — others can push them off wait_pos; the pull force returns them
         unsafe {
-            *(sp  as *mut Vec2f).add(ia) = if at_goal { Vec2f::zero() } else { sep_vel + wall_vel };
+            *(sp  as *mut Vec2f).add(ia) = sep_vel + wall_vel;
             *(dp  as *mut f32).add(ia) = cell_density;
-            *(fgp as *mut u8).add(ia) = baked_flags[ci] & FLAG_WAITING;
+            *(fgp as *mut u8).add(ia) = baked_flags[ci] & (FLAG_WAITING | FLAG_CROWD_JOIN);
         }
     });
     soa.timers.push(("p2 sep", t.elapsed().as_micros() as u64));
@@ -820,6 +942,7 @@ pub fn update_agents(
     let spd = soa.speed.as_slice();
     let pb = soa.pos.as_slice();
     let fb_prev = soa.flags.as_slice();
+    let wpb = soa.wait_pos.as_slice();
     cells.par_iter().enumerate().for_each(|(ci, &(ia, _, _))| {
         let pos_a = pb[ia];
         let avoid = vec3f(sep[ia].x, 0.0, sep[ia].y);
@@ -829,9 +952,16 @@ pub fn update_agents(
         let flow = baked_flow[ci];
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
-        let total_vel = flow_vel + avoid + wander_vel;
-        let new_pos = pos_a + total_vel;
-        let new_facing = {
+        let pull_vel = if waiting {
+            let wp = wpb[ia];
+            vec3f(wp.x - pos_a.x, 0.0, wp.z - pos_a.z) * WAIT_PULL_STRENGTH
+        } else { Vec3f::zero() };
+        let total_vel = flow_vel + avoid + wander_vel + pull_vel;
+        let new_pos = if waiting { pos_a + total_vel * WAIT_DAMPING } else { pos_a + total_vel };
+        let new_facing = if waiting {
+            // freeze facing once waiting — sep/pull jitter would otherwise spin the agent
+            fb[ia]
+        } else {
             let vel_len = length(vec3f(total_vel.x, 0.0, total_vel.z));
             if vel_len > 0.001 {
                 let yaw = f32::atan2(total_vel.x, total_vel.z);
@@ -978,14 +1108,20 @@ pub fn update_agent_transforms(
 
 #[export_update_fn]
 pub fn debug_draw_agents(
-    agents: Query<(&AgentPos, &FacingRot), With<HumanAgent>>,
+    agents: Query<(&AgentPos, &FacingRot, &Flags), With<HumanAgent>>,
     mut imdraw: ResMut<ImDrawRes>,
 ) -> Result<(), hotline_rs::Error> {
     const Y_OFFSET: f32 = 1.0;
-    for (pos, facing) in agents.iter() {
+    for (pos, facing, flags) in agents.iter() {
         let p = pos.0;
         let base = vec3f(p.x, Y_OFFSET, p.z);
-        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, Vec4f::red());
+        // colour by state: red = moving, green = waiting via at_goal/stop_short, cyan = crowd-join
+        let waiting    = (flags.0 & FLAG_WAITING)    != 0;
+        let crowd_join = (flags.0 & FLAG_CROWD_JOIN) != 0;
+        let body_col = if !waiting        { Vec4f::red() }
+                       else if crowd_join { Vec4f::new(0.0, 1.0, 1.0, 1.0) }
+                       else               { Vec4f::green() };
+        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, body_col);
         imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::blue());
         let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
         imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
@@ -1007,15 +1143,18 @@ pub fn setup_ratrace2(
     let map = Map::load(MAP_SAVE_PATH).unwrap_or_else(|_| Map::new());
     commands.insert_resource(map);
     commands.insert_resource(
-        EditorState { 
-            mode: EditorMode::Tile, 
-            tile_idx: 0, 
+        EditorState {
+            mode: EditorMode::Tile,
+            tile_idx: 0,
             agent_grid: 1,
             index: 0,
             agent_goal: 0,
             viz_goal: 0,
             left_was_down: false,
-            save_filepath: MAP_SAVE_PATH.to_string()
+            save_filepath: MAP_SAVE_PATH.to_string(),
+            force_all_waiting: false,
+            disable_crowd_join: false,
+            hover_tile: None,
         });
 
     // create shared cube mesh for agent bodies
@@ -1033,6 +1172,7 @@ pub fn update_tile_editor_ui(
     mut map: ResMut<Map>,
     mut editor: ResMut<EditorState>,
     agents: Query<Entity, With<HumanAgent>>,
+    agent_flags: Query<&Flags, With<HumanAgent>>,
 ) -> Result<(), hotline_rs::Error> {
     imgui.set_global_context();
 
@@ -1101,7 +1241,49 @@ pub fn update_tile_editor_ui(
 
         imgui.separator();
 
-        if imgui.button("clear map") { 
+        if imgui.button("Wait All (debug)") {
+            editor.force_all_waiting = true;
+        }
+        let mut disable_join = editor.disable_crowd_join;
+        if imgui.checkbox("Disable crowd-join", &mut disable_join) {
+            editor.disable_crowd_join = disable_join;
+        }
+
+        imgui.separator();
+
+        // hover-tile inspector
+        if let Some((tx, ty, tz)) = editor.hover_tile {
+            let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+            imgui.text(&format!("Tile ({}, {}, {})", tx, ty, tz));
+            if let Some(c) = map.chunks.get(&(cx, cy, cz)) {
+                let mi = morton_encode(lx, ly, lz);
+                let agents_here = c.agents[mi].len();
+                let density    = c.density[mi];
+                let pressure   = c.pressure[mi];
+                let tile_kind  = c.tiles[mi];
+                let index      = c.index[mi];
+                let wait_slot  = c.wait_slot[mi].load(std::sync::atomic::Ordering::Relaxed);
+                let goal       = editor.viz_goal as usize;
+                let flow       = if goal < c.flow.len() { c.flow[goal][mi] } else { Vec2f::zero() };
+                // count waiting agents in this tile
+                let (mut waiting_n, mut crowd_n) = (0usize, 0usize);
+                for &e in &c.agents[mi] {
+                    if let Ok(f) = agent_flags.get(e) {
+                        if (f.0 & FLAG_WAITING)    != 0 { waiting_n += 1; }
+                        if (f.0 & FLAG_CROWD_JOIN) != 0 { crowd_n += 1; }
+                    }
+                }
+                imgui.text(&format!("Type: {:?}  Index: {}", tile_kind, index));
+                imgui.text(&format!("Agents: {}  Waiting: {}  Crowd-join: {}", agents_here, waiting_n, crowd_n));
+                imgui.text(&format!("Density: {:.1}  Pressure: {:.1}  Wait slot: {}", density, pressure, wait_slot));
+                imgui.text(&format!("Flow (g{}): ({:.2}, {:.2})", goal, flow.x, flow.y));
+            } else {
+                imgui.text("(no chunk)");
+            }
+            imgui.separator();
+        }
+
+        if imgui.button("clear map") {
             *map = Map::new(); 
         }
         imgui.same_line();
@@ -1194,6 +1376,8 @@ pub fn update_tile_editor(
                 // clamp to grid bounds
                 let tile_x = tile_x.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
                 let tile_z = tile_z.clamp(-GRID_SIZE / 2, GRID_SIZE / 2 - 1);
+
+                editor.hover_tile = Some((tile_x, 0, tile_z));
 
                 let min_x = tile_x as f32 * TILE_SIZE;
                 let min_z = tile_z as f32 * TILE_SIZE;
