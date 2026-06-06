@@ -1199,6 +1199,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         }
     }
 
+    /// Position the next window at an absolute screen coordinate before calling `begin`
+    pub fn set_next_window_pos(&mut self, x: f32, y: f32) {
+        unsafe {
+            igSetNextWindowPos(ImVec2 { x, y }, 0, IMVEC2_ZERO);
+        }
+    }
+
     /// Begin a window with no settings, you can use this to re-use existing and setup windows
     pub fn begin_window(&mut self, name: &str) -> bool {
         unsafe {
