@@ -8,6 +8,8 @@
 // lot of train state crap
 // bypass bevy ecs for soa / entities entirely
 // the tolerance for queue join, should be dynamic based on business
+// queu join disabled 
+// no shuffle drift density when train open. just flow inside
 
 
 
@@ -37,14 +39,13 @@ const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
 const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
-const WAIT_PULL_STRENGTH:  f32 = 0.025; // spring constant pulling waiting agents back to wait_pos
+const WAIT_PULL_STRENGTH:  f32 = 0.1; // spring constant pulling waiting agents back to wait_pos
 const WAIT_DAMPING:        f32 = 0.4;   // velocity scale for waiting agents — dampens sep/pull jitter
 const WAIT_SLOTS_PER_TILE: u32 = 32;    // max distinct halton-sampled wait positions before wrap
 const WAIT_SLOT_INSET:     f32 = 0.7;   // halton sample range within tile (fraction of TILE_SIZE)
 const JOIN_CROWD_MIN_DENSITY: f32 = 9.0; // low-tolerance agents commit at this nbr density
 const JOIN_CROWD_MAX_DENSITY: f32 = 12.0; // high-tolerance agents hold out until at least this dense
 const WALL_AVOID_RADIUS: f32 = AGENT_RADIUS * 2.5; // soft avoidance lookahead, larger than collision radius
-const PANEL_DILATION:    f32 = TILE_SIZE; // inward thickness of Platform↔Train side-panel walls
 
 const MAP_SAVE_PATH: &str = "trains.bin";
 
@@ -248,10 +249,10 @@ const TILE_TYPES: &[TileType] = &[
 
 const BOARDING_GOAL_OFFSET: u8 = 64;  // TrainBoarding tile index N seeds flow layer (N + 64)
 const TRAIN_GOAL_OFFSET:    u8 = 128; // Train tile index N seeds flow layer (N + 128)
-const DEPTH_BIAS_SCALE:     u32 = 3;  // per-step penalty added to seat seed cost so back-of-train wins
-const TRAIN_TRAVEL_DIST:    f32 = 200.0; // world units the train slides during leave/arrive
+const DEPTH_BIAS_SCALE:     u32 = 3;    // per-step penalty added to seat seed cost so back-of-train wins
+const TRAIN_TRAVEL_DIST:    f32 = 1000.0; // world units the train slides during leave/arrive
 const TRAIN_TRANSIT_SECS:   f32 = 3.0;   // duration of leaving / arriving animations
-const CYCLE_BOARDING_SECS:  f32 = 6.0;   // how long doors stay open per cycle
+const CYCLE_BOARDING_SECS:  f32 = 20.0;   // how long doors stay open per cycle
 const CYCLE_DOOR_DWELL:     f32 = 1.0;   // pause between open/close and motion start
 const CYCLE_GONE_SECS:      f32 = 4.0;   // how long the train is offscreen between cycles
 const ENTRANCE_SPAWN_SECS:  f32 = 1.5;   // auto-spawn interval per entrance
@@ -309,7 +310,7 @@ pub struct Trains {
     pub dropoff_density:  HashMap<u8, f32>, // 0..1 — fraction of train capacity to drop off per cycle
 }
 
-const DEFAULT_DROPOFF_DENSITY: f32 = 0.05;
+const DEFAULT_DROPOFF_DENSITY: f32 = 0.0;
 
 /// Capacity = (number of Train tiles for train_id) * WAIT_SLOTS_PER_TILE.
 fn train_capacity(map: &Map, train_id: u8) -> u32 {
@@ -510,6 +511,7 @@ pub struct EditorState {
     /// agents only commit via at_goal or stop_short
     pub disable_crowd_join: bool,
     pub pause_agents: bool,
+    pub debug_draw: bool,
     pub force_spawn_goal: bool,
     /// last tile under the mouse cursor (set by update_tile_editor, displayed in UI)
     pub hover_tile: Option<(i32, i32, i32)>,
@@ -856,6 +858,19 @@ pub fn update_flow_field(
                         }
                     }
                 }
+                // Boarding: TrainBoarding tiles point directly toward adjacent Train tiles.
+                if is_boarding_goal && cur_tile == TileType::TrainBoarding {
+                    for (dx, dz) in NEIGHBORS {
+                        let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tx+dx, ty, tz+dz);
+                        if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
+                            let nmi = morton_encode(nlx, nly, nlz);
+                            if nc.tiles[nmi] == TileType::Train && nc.index[nmi] == train_id {
+                                return (tx, ty, tz, Vec2f::new(dx as f32, dz as f32), c as f32);
+                            }
+                        }
+                    }
+                }
+
                 // Disembarking: TrainBoarding tiles always point to adjacent Platform.
                 if cur_tile == TileType::TrainBoarding && !is_boarding_goal && !is_seat_goal {
                     for (dx, dz) in NEIGHBORS {
@@ -864,6 +879,15 @@ pub fn update_flow_field(
                         }
                     }
                 }
+
+                if cur_tile == TileType::Train && !is_boarding_goal && !is_seat_goal {
+                    for (dx, dz) in NEIGHBORS {
+                        if map.get_tile(Vec3i::new(tx+dx, ty, tz+dz)) == TileType::TrainBoarding {
+                            return (tx, ty, tz, Vec2f::new(dx as f32, dz as f32), c as f32);
+                        }
+                    }
+                }
+
                 // Exiting: Platform tiles not targeted by this goal layer push toward the nearest
                 // Floor tile, so disembarking agents are driven off the platform rather than pulled
                 // back by wander. Falls through to Dijkstra if no Floor neighbour exists.
@@ -957,9 +981,14 @@ pub fn update_flow_field(
                         let p1   = vec3f(cx_f + p1x * TILE_SIZE, cy_f, cz_f + p1z * TILE_SIZE);
                         let perp      = vec3f(-dx as f32, 0.0, -dz as f32);
                         let flip_perp = perp * vec3f(-1.0, 0.0, -1.0);
+
+                        if is_panel_plat {
+                            continue;
+                        }
+                        
                         // Platform side: flip_perp points into train; Train side: natural perp already points into train
                         let wall_perp = if is_panel_plat { flip_perp } else { perp };
-                        lines.push(WallLine { p0: p1, p1: p0, perp: wall_perp });
+                        lines.push(WallLine { p0: p0, p1: p1, perp: perp });
                     }
 
                     for (dx, dz) in [(-1i32,-1i32),(-1,1),(1,1),(1,-1)] {
@@ -1316,7 +1345,7 @@ pub fn update_train_dropoff(
     mut trains:    ResMut<Trains>,
     mut entrances: ResMut<Entrances>, // reuse the seed counter so randomness keeps advancing
     mut soa:       ResMut<AgentSoa>,
-    map:           Res<Map>,
+    mut map:       ResMut<Map>,
     cube_mesh:     Res<AgentMesh>,
     editor:        Res<EditorState>,
 ) -> Result<(), hotline_rs::Error> {
@@ -1372,6 +1401,7 @@ pub fn update_train_dropoff(
             soa.wait_pos[ia] = Vec3f::new(ax, 0.0, az);
         }
     }
+    map.dirty = true; // ensure flow is rebuilt so drop-off agents have valid platform/entrance flow
     soa.timers.push(("train_dropoff", _t.elapsed().as_micros() as u64));
     Ok(())
 }
@@ -1545,12 +1575,18 @@ pub fn update_agents(
         };
         if chunk.tiles[idx] == TileType::TrainBoarding
             && chunk.index[idx].saturating_add(BOARDING_GOAL_OFFSET) == gb[ia] {
-            // Boarding tile reached. Allocate a seat only if a neighbouring Train tile (same train_id)
-            // has room. Otherwise wait here — TrainBoarding acts as standing-room overflow with the
-            // same Halton/density mechanics as the platform queue.
+            // Boarding tile reached. Only allocate a seat once the agent's full radius is inside
+            // the boarding tile — prevents the seat pull dragging them back through the wall.
             let train_id = chunk.index[idx];
+            let tile_cx = (tile.x as f32 + 0.5) * TILE_SIZE;
+            let tile_cz = (tile.z as f32 + 0.5) * TILE_SIZE;
+            let half    = TILE_SIZE * 0.5;
+            let fully_inside          = (pb[ia].x - tile_cx).abs() <= half - AGENT_RADIUS
+                                     && (pb[ia].z - tile_cz).abs() <= half - AGENT_RADIUS;
+            let fully_avoidance_inside = (pb[ia].x - tile_cx).abs() <= half - WALL_AVOID_RADIUS
+                                      && (pb[ia].z - tile_cz).abs() <= half - WALL_AVOID_RADIUS;
             let mut seat_open = false;
-            'check: for dz in -1i32..=1 { for dx in -1i32..=1 {
+            if fully_inside && fully_avoidance_inside { 'check: for dz in -1i32..=1 { for dx in -1i32..=1 {
                 if dx == 0 && dz == 0 { continue; }
                 let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + dx, tile.y, tile.z + dz);
                 if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
@@ -1562,7 +1598,7 @@ pub fn update_agents(
                         break 'check;
                     }
                 }
-            }}
+            }}}
             if seat_open {
                 baked_goal_swap[ci] = train_id.saturating_add(TRAIN_GOAL_OFFSET);
                 at_goal = false;
@@ -1849,8 +1885,8 @@ pub fn update_agents(
         for &entity_a in &map.chunks[&ck].agents[idx] {
             let ia  = entity_a.index() as usize;
             let p   = &mut soa.pos[ia];
-            let fl  = soa.flow[ia];
-            let dir = vec3f(fl.x, 0.0, fl.y);
+            let fl   = soa.flow[ia];
+            let dir  = vec3f(fl.x, 0.0, fl.y);
             let tile = world_to_tile(*p);
             for ndz in -1i32..=1 { for ndx in -1i32..=1 {
                 let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + ndx, tile.y, tile.z + ndz);
@@ -1943,13 +1979,16 @@ fn agent_train_offset(trains: &Trains, riding: Option<&RidingTrain>, _goal: u8) 
 
 #[export_update_fn]
 pub fn debug_draw_agents(
-    agents: Query<(&AgentPos, &FacingRot, &Flags, &Goal, Option<&RidingTrain>), With<HumanAgent>>,
+    agents: Query<(Entity, &AgentPos, &FacingRot, &Flags, &Goal, Option<&RidingTrain>), With<HumanAgent>>,
     trains: Res<Trains>,
     map:    Res<Map>,
+    soa:    Res<AgentSoa>,
+    editor: Res<EditorState>,
     mut imdraw: ResMut<ImDrawRes>,
 ) -> Result<(), hotline_rs::Error> {
+    if !editor.debug_draw { return Ok(()); }
     const Y: f32 = 1.0;
-    for (pos, facing, flags, goal, riding) in agents.iter() {
+    for (entity, pos, facing, flags, goal, riding) in agents.iter() {
         let p    = pos.0 + agent_train_offset(&trains, riding, goal.0);
         let base = vec3f(p.x, Y, p.z);
         let waiting    = (flags.0 & FLAG_WAITING)    != 0;
@@ -1959,8 +1998,18 @@ pub fn debug_draw_agents(
         imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::blue());
         let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
         imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
+        if waiting {
+            let ia = entity.index() as usize;
+            if ia < soa.wait_pos.len() {
+                let wp = soa.wait_pos[ia];
+                imdraw.add_line_3d(base, vec3f(wp.x, Y, wp.z), Vec4f::white());
+            }
+        }
 
-        // wall avoidance debug: replay the avoidance check and draw active vectors
+        // wall collision debug: replay exact Pass-5 computation and draw each component
+        let ia   = entity.index() as usize;
+        let flow = if ia < soa.flow.len() { soa.flow[ia] } else { Vec2f::zero() };
+        let dir  = vec3f(flow.x, 0.0, flow.y);
         let tile = world_to_tile(pos.0);
         for dz in -1i32..=1 { for dx in -1i32..=1 {
             let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x + dx, tile.y, tile.z + dz);
@@ -1970,15 +2019,31 @@ pub fn debug_draw_agents(
                 for wl in &chunk.walls[s .. s + chunk.wall_count[idx] as usize] {
                     let cp = closest_point_on_line_segment(pos.0, wl.p0, wl.p1);
                     let d  = dist(cp, pos.0);
-                    if d < WALL_AVOID_RADIUS {
-                        let cp_draw = vec3f(cp.x, Y, cp.z);
+                    if d < WALL_AVOID_RADIUS && d > 0.0001 {
+                        let cp_draw  = vec3f(cp.x, Y, cp.z);
+                        let from_cp  = (pos.0 - cp) * vec3f(1.0, 0.0, 1.0);
+                        let side     = if dot(from_cp, wl.perp) >= 0.0 { 1.0f32 } else { -1.0f32 };
+                        let perp     = wl.perp * side;
+                        let wall_dir = normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0));
+                        let tang     = wall_dir * dot(dir, wall_dir);
+                        let push_dir = perp + tang;
+                        let push     = if length(push_dir) > 0.001 { normalize(push_dir) } else { perp };
+
                         // closest point: white dot
                         imdraw.add_circle_3d_xz(cp_draw, 0.3, Vec4f::white());
-                        // perp push direction: magenta
-                        imdraw.add_line_3d(cp_draw, cp_draw + wl.perp * 3.0, Vec4f::new(1.0, 0.0, 1.0, 1.0));
-                        // hard collision active (inside AGENT_RADIUS): red line agent→cp
+                        // baked perp raw winding (yellow from cp)
+                        imdraw.add_line_3d(cp_draw, cp_draw + wl.perp * 3.0, Vec4f::yellow());
+                        // side-corrected perp (green from agent)
+                        imdraw.add_line_3d(base, base + perp * 3.0, Vec4f::green());
+                        // tangential slide — flow projected onto wall (orange from agent)
+                        imdraw.add_line_3d(base, base + tang * 3.0, Vec4f::new(1.0, 0.5, 0.0, 1.0));
+                        // final push (cyan from agent)
+                        imdraw.add_line_3d(base, base + push * 4.0, Vec4f::cyan());
+
+                        // penetrating (inside AGENT_RADIUS): magenta
                         if d < AGENT_RADIUS {
-                            imdraw.add_line_3d(base, cp_draw, Vec4f::red());
+                            imdraw.add_line_3d(base, cp_draw, Vec4f::new(1.0, 0.0, 1.0, 1.0));
+                            imdraw.add_circle_3d_xz(base, AGENT_RADIUS, Vec4f::new(1.0, 0.0, 1.0, 1.0));
                         }
                     }
                 }
@@ -2005,7 +2070,7 @@ pub fn setup_ratrace2(
         EditorState {
             mode: EditorMode::Tile,
             tile_idx: 0,
-            agent_grid: 1,
+            agent_grid: 4,
             index: 0,
             agent_goal: 0,
             viz_goal: 0,
@@ -2014,6 +2079,7 @@ pub fn setup_ratrace2(
             force_all_waiting: false,
             disable_crowd_join: true,
             pause_agents: false,
+            debug_draw: true,
             force_spawn_goal: false,
             hover_world_pos: None,
             hover_screen_pos: None,
@@ -2073,6 +2139,8 @@ pub fn update_tile_editor_ui(
 
         let mut pause = editor.pause_agents;
         if imgui.checkbox("Pause agents", &mut pause) { editor.pause_agents = pause; }
+        let mut dbg = editor.debug_draw;
+        if imgui.checkbox("Debug draw", &mut dbg) { editor.debug_draw = dbg; }
         imgui.separator();
 
         if imgui.button(if editor.mode == EditorMode::Tile { ">Tile" } else { " Tile" }) {
@@ -2414,12 +2482,10 @@ pub fn update_tile_editor(
                                 EditorMode::Agent => {
                                     if left_pressed {
                                         let n = editor.agent_grid;
-                                        let spacing = AGENT_RADIUS * 2.5;
-                                        let half = (n - 1) as f32 * spacing * 0.5;
-                                        for gz in 0..n {
-                                            for gx in 0..n {
-                                                let ax = hit.x + gx as f32 * spacing - half;
-                                                let az = hit.z + gz as f32 * spacing - half;
+                                        let area = n as f32 * TILE_SIZE * 0.5;
+                                        for i in 0..(n * n) {
+                                                let ax = hit.x + (halton_1d(i as u32 + 1, 2) - 0.5) * area;
+                                                let az = hit.z + (halton_1d(i as u32 + 1, 3) - 0.5) * area;
                                                 commands.spawn((
                                                     HumanAgent,
                                                     AgentPos(Vec3f::new(ax, 0.0, az)),
@@ -2436,7 +2502,6 @@ pub fn update_tile_editor(
                                                     Scale(vec3f(AGENT_BODY_HALF_WIDTH, AGENT_BODY_HALF_HEIGHT, AGENT_BODY_HALF_WIDTH)),
                                                     WorldMatrix(Mat34f::identity()),
                                                 ));
-                                            }
                                         }
                                     }
                                 }
