@@ -1778,8 +1778,10 @@ pub fn update_agents(
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
         let pull_vel = if waiting {
-            let wp = wpb[ia];
-            vec3f(wp.x - pos_a.x, 0.0, wp.z - pos_a.z) * WAIT_PULL_STRENGTH
+            let wp    = wpb[ia];
+            let to_wp = vec3f(wp.x - pos_a.x, 0.0, wp.z - pos_a.z);
+            let d     = length(to_wp);
+            if d > AGENT_RADIUS { to_wp / d * WAIT_PULL_STRENGTH } else { Vec3f::zero() }
         } else { Vec3f::zero() };
         let total_vel = flow_vel + avoid + wander_vel + pull_vel;
         let new_pos = if waiting { pos_a + total_vel * WAIT_DAMPING } else { pos_a + total_vel };
