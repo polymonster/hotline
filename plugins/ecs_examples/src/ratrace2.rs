@@ -37,8 +37,10 @@ const BASE_SEP_RADIUS: f32 = 24.0;
 const MIN_SEP_RADIUS: f32 = 8.0;
 const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
+const OPPOSING_PASS_STRENGTH: f32 = 1.0; // lateral left-of-facing bias when meeting an oncoming agent (blended into sep)
 const WANDER_DRIFT: f32 = 0.012;  // radians per frame
 const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
+const LANE_BIAS_STRENGTH: f32 = 0.5; // fraction of speed pushed toward the baked lane side (perp of flow)
 const WAIT_PULL_STRENGTH:  f32 = 0.1; // spring constant pulling waiting agents back to wait_pos
 const WAIT_DAMPING:        f32 = 0.4;   // velocity scale for waiting agents — dampens sep/pull jitter
 const WAIT_SLOTS_PER_TILE: u32 = 32;    // max distinct halton-sampled wait positions before wrap
@@ -99,6 +101,7 @@ fn is_walkable(t: TileType) -> bool {
 }
 
 /// Baked wall line segment with inward-facing normal, in absolute world space (y=0)
+#[derive(Clone, Copy)]
 struct WallLine {
     p0:   Vec3f,
     p1:   Vec3f,
@@ -926,6 +929,12 @@ pub fn update_flow_field(
                 .unwrap_or(Vec2f::zero())
         };
         let bias_updates: Vec<(i32, i32, i32, Vec2f)> = cost.keys().map(|&(tx, ty, tz)| {
+            // platform/train (+ their boarding) tiles don't get a lane side-bias — agents queue freely
+            // there, not in lanes
+            if matches!(map.get_tile(Vec3i::new(tx, ty, tz)),
+                TileType::Platform | TileType::Train | TileType::PlatformBoarding | TileType::TrainBoarding) {
+                return (tx, ty, tz, Vec2f::zero());
+            }
             let f  = flow_at(tx, ty, tz);
             let fl = length(f);
             if fl <= 0.001 { return (tx, ty, tz, Vec2f::zero()); }
@@ -935,6 +944,11 @@ pub fn update_flow_field(
                 let g = flow_at(tx + dx, ty, tz + dz);
                 if length(g) > 0.001 && dot(normalize(g), fnv) < WANDER_LANE_DOT {
                     bias -= Vec2f::new(dx as f32, dz as f32); // push away from the conflicting neighbour
+                }
+                // non-walkable orthogonal neighbour: push away across the shared edge (its perp is (dx,dz)),
+                // so agents naturally steer off walls
+                if (dx == 0 || dz == 0) && !is_walkable(map.get_tile(Vec3i::new(tx + dx, ty, tz + dz))) {
+                    bias -= Vec2f::new(dx as f32, dz as f32);
                 }
             }
             bias -= fnv * dot(bias, fnv); // keep only the lateral (perpendicular to flow) component
@@ -948,13 +962,15 @@ pub fn update_flow_field(
         }
     }
 
-    // pass 4: bake wall lines into flat per-chunk arrays, indexed by morton tile
-    // Phase A: build (chunk_key, [(morton_idx, Vec<WallLine>)]) using only immutable map borrows
-    let baked: Vec<((i32,i32,i32), Vec<(usize, Vec<WallLine>)>)> = map.chunks.keys()
+    // pass 4: bake wall lines into flat per-chunk arrays, indexed by morton tile.
+    // Each tile stores not only its own edge walls but every wall in the 3x3 neighbourhood within range
+    // of it, so the runtime collision/avoidance only ever scans the agent's own tile.
+    // Phase A: generate each walkable tile's own edge walls, keyed by world-tile coord (immutable borrows).
+    let gen: HashMap<(i32,i32,i32), Vec<WallLine>> = map.chunks.keys()
         .copied()
-        .map(|(cx, cy, cz)| {
+        .flat_map(|(cx, cy, cz)| {
             let cs = CHUNK_SIZE as i32;
-            let tile_walls: Vec<(usize, Vec<WallLine>)> = (0..CHUNK_SIZE)
+            (0..CHUNK_SIZE)
                 .flat_map(|ly| (0..CHUNK_SIZE).flat_map(move |lz| (0..CHUNK_SIZE).map(move |lx| (lx, ly, lz))))
                 .filter_map(|(lx, ly, lz)| {
                     let idx = morton_encode(lx, ly, lz);
@@ -1040,24 +1056,41 @@ pub fn update_flow_field(
                         }
                     }
 
-                    Some((idx, lines))
+                    if lines.is_empty() { None } else { Some(((tx, ty, tz), lines)) }
                 })
-                .collect();
-            ((cx, cy, cz), tile_walls)
+                .collect::<Vec<_>>()
         })
         .collect();
 
-    // Phase B: write baked walls into chunks
-    for (key, tile_walls) in baked {
-        let chunk = map.chunks.get_mut(&key).unwrap();
-        chunk.walls.clear();
-        chunk.wall_start = [0; ARRAY_SIZE];
-        chunk.wall_count = [0; ARRAY_SIZE];
-        for (idx, lines) in tile_walls {
-            chunk.wall_start[idx] = chunk.walls.len() as u32;
-            chunk.wall_count[idx] = lines.len() as u8;
-            chunk.walls.extend(lines);
-        }
+    // Phase B: gather each walkable tile's 3x3 neighbourhood into its own flat list. A wall is kept when
+    // its segment comes within reach of the tile — reach = avoid radius + tile half-diagonal, so no wall an
+    // agent anywhere in the tile could be within WALL_AVOID_RADIUS of is ever dropped.
+    let reach = WALL_AVOID_RADIUS + TILE_SIZE * std::f32::consts::FRAC_1_SQRT_2;
+    let keys: Vec<(i32,i32,i32)> = map.chunks.keys().copied().collect();
+    for (cx, cy, cz) in keys {
+        let cs = CHUNK_SIZE as i32;
+        let mut walls: Vec<WallLine> = Vec::new();
+        let mut wall_start = [0u32; ARRAY_SIZE];
+        let mut wall_count = [0u8;  ARRAY_SIZE];
+        for ly in 0..CHUNK_SIZE { for lz in 0..CHUNK_SIZE { for lx in 0..CHUNK_SIZE {
+            let idx = morton_encode(lx, ly, lz);
+            if !is_walkable(map.chunks[&(cx,cy,cz)].tiles[idx]) { continue; }
+            let (tx, ty, tz) = (cx*cs + lx as i32, cy*cs + ly as i32, cz*cs + lz as i32);
+            let c = vec3f((tx as f32 + 0.5) * TILE_SIZE, ty as f32 * TILE_SIZE, (tz as f32 + 0.5) * TILE_SIZE);
+            wall_start[idx] = walls.len() as u32;
+            for ndz in -1i32..=1 { for ndx in -1i32..=1 {
+                if let Some(near) = gen.get(&(tx+ndx, ty, tz+ndz)) {
+                    for wl in near {
+                        if dist(closest_point_on_line_segment(c, wl.p0, wl.p1), c) <= reach { walls.push(*wl); }
+                    }
+                }
+            }}
+            wall_count[idx] = (walls.len() as u32 - wall_start[idx]) as u8;
+        }}}
+        let chunk = map.chunks.get_mut(&(cx,cy,cz)).unwrap();
+        chunk.walls = walls;
+        chunk.wall_start = wall_start;
+        chunk.wall_count = wall_count;
     }
 
     soa.timers.push(("flow_field", _flow_t.elapsed().as_micros() as u64));
@@ -1716,10 +1749,14 @@ pub fn update_agents(
                 let d = sqrt(dist_sq);
                 sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
             }
-            // lateral move out of opposing direction agents
+            // opposing-traffic avoidance: a neighbour facing roughly opposite is a head-on meeting. Both
+            // agents step to the left of their own facing — opposite world directions — so they slide past
+            // instead of deadlocking. The left bias is global, so the choice is always mutually consistent.
             if dist_sq < sep_radius_sq {
-                if dot(soa.facing[ia], soa.facing[ib]) < 0.0 {
-                    sep += normalize(perp(diff) * WALL_AVOID_RADIUS);
+                let fwd   = (soa.facing[ia] * vec3f(0.0, 0.0, 1.0)).xz();
+                let other = (soa.facing[ib] * vec3f(0.0, 0.0, 1.0)).xz();
+                if length(fwd) > 0.001 && dot(fwd, other) < 0.0 {
+                    sep += perp(normalize(fwd)) * OPPOSING_PASS_STRENGTH; // left of facing
                 }
             }
         }
@@ -1727,42 +1764,34 @@ pub fn update_agents(
         let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
         let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
-        // collision avoidance vs walls
-        // 3x3 scan so a free-end cap in an adjacent tile is seen while rounding it (own-tile-only would
-        // miss it — the agent approaches the tip from the neighbouring tile). TODO: walls should already be
-        // registered into every tile they can influence, then this can drop back to own-tile.
+        // collision avoidance vs walls — own tile only: the bake step already gathered every nearby wall
+        // (including adjacent-tile caps) into this tile's list, so no neighbour scan is needed.
+        let s = chunk.wall_start[idx] as usize;
+        let walls = &chunk.walls[s .. s + chunk.wall_count[idx] as usize];
         let flow3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
         let tile_flow = if length(flow3) > 0.001 { normalize(flow3) } else { Vec3f::zero() };
         let mut wall_vel = Vec2f::zero();
-        let tile = world_to_tile(pos_a);
-        for ndz in -1i32..=1 { for ndx in -1i32..=1 {
-            let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + ndx, tile.y, tile.z + ndz);
-            if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
-                let nidx = morton_encode(nlx, nly, nlz);
-                let ns = nc.wall_start[nidx] as usize;
-                for wl in &nc.walls[ns .. ns + nc.wall_count[nidx] as usize] {
-                    let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
-                    let d = dist(cp, pos_a);
-                    if d >= WALL_AVOID_RADIUS { continue; }
-                    // tip-gated rounding: past a free end shove tangentially around the cap; this is the
-                    // steering the hard Pass-5 cap push used to do, now accumulated as velocity with the rest
-                    let cap1 = wl.free1 && dist(cp, wl.p1) < 0.001;
-                    let cap0 = wl.free0 && dist(cp, wl.p0) < 0.001;
-                    if cap1 {
-                        wall_vel += normalize(wl.p1 - wl.p0).xz() * AGENT_SPEED;
-                    } else if cap0 {
-                        wall_vel += normalize(wl.p0 - wl.p1).xz() * AGENT_SPEED;
-                    } else {
-                        let tangent = normalize(wl.p0 - wl.p1);
-                        if dot(wl.perp, tile_flow) >= 0.0 {
-                            wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
-                        } else {
-                            wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
-                        }
-                    }
+        for wl in walls {
+            let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
+            let d = dist(cp, pos_a);
+            if d >= WALL_AVOID_RADIUS { continue; }
+            // tip-gated rounding: past a free end shove tangentially around the cap; this is the
+            // steering the hard Pass-5 cap push used to do, now accumulated as velocity with the rest
+            let cap1 = wl.free1 && dist(cp, wl.p1) < 0.001;
+            let cap0 = wl.free0 && dist(cp, wl.p0) < 0.001;
+            if cap1 {
+                wall_vel += normalize(wl.p1 - wl.p0).xz() * AGENT_SPEED;
+            } else if cap0 {
+                wall_vel += normalize(wl.p0 - wl.p1).xz() * AGENT_SPEED;
+            } else {
+                let tangent = normalize(wl.p0 - wl.p1);
+                if dot(wl.perp, tile_flow) >= 0.0 {
+                    wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+                } else {
+                    wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
                 }
             }
-        }}
+        }
 
         // SAFETY: ia is unique per entity
         // sep applies to waiting agents too — others can push them off wait_pos; the pull force returns them
@@ -1799,10 +1828,10 @@ pub fn update_agents(
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let fdir = vec3f(flow_norm.x, 0.0, flow_norm.y);
         
-        // wander
+        // wander: small random lateral jitter only
         let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
         let mut wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.0 } else { 1.0 };
-        
+
         // forward-bias: strip any component opposing the flow so wander only jitters sideways/forward and
         // can't push an agent back into the tile it just left (which reads as jittering against the crowd).
         if !waiting && length(fdir) > 0.001 {
@@ -1810,17 +1839,16 @@ pub fn update_agents(
             if back < 0.0 { wander_vel = wander_vel - fdir * back; }
         }
 
-        // lane-bias: flip any wander component pointing toward a conflicting neighbour lane back to the
-        // in-lane side, so wander can't drift agents across into a differently-flowing lane.
+        // lane bias: a decisive shove toward the baked lane side (perp of flow). Commits agents to one side
+        // — like a starting line — so they travel along their own tile flow instead of running the seam
+        // between two flow tiles that point 90° apart.
         let lane = baked_wander[ci];
-        let lane3 = vec3f(lane.x, 0.0, lane.y);
-        if !waiting && length(lane3) > 0.001 {
-            let bn = normalize(lane3);
-            let d  = dot(wander_vel, bn);
-            if d < 0.0 { wander_vel = wander_vel - bn * (2.0 * d); }
-        }
+        let lane_vel = if !waiting && length(lane) > 0.001 {
+            normalize(vec3f(lane.x, 0.0, lane.y)) * AGENT_SPEED * spd[ia] * LANE_BIAS_STRENGTH
+        } else { Vec3f::zero() };
 
         // flow
+        let lane3 = vec3f(lane.x, 0.0, lane.y);
         let flow_vel = fdir * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
         
         // pull velocity toward waiting places
@@ -1830,7 +1858,7 @@ pub fn update_agents(
             let d     = length(to_wp);
             if d > AGENT_RADIUS { to_wp / d * WAIT_PULL_STRENGTH } else { Vec3f::zero() }
         } else { Vec3f::zero() };
-        let total_vel = flow_vel + avoid + wander_vel + pull_vel;
+        let total_vel = flow_vel + avoid + pull_vel + wander_vel + lane_vel;
         let new_pos = if waiting { pos_a + total_vel * WAIT_DAMPING } else { pos_a + total_vel };
         let new_facing = if waiting {
             // freeze facing once waiting — sep/pull jitter would otherwise spin the agent
@@ -1930,27 +1958,22 @@ pub fn update_agents(
     //
     let t = std::time::Instant::now();
 
+    // body penetration only — rounding the caps is now soft wall_vel steering (Pass 2). A radial eject to
+    // AGENT_RADIUS leaves the rest of the avoid band free for wall_vel. Own tile only: the bake step
+    // gathered every nearby wall into this tile's list.
     for &(ck, idx) in &occupied {
-        for &entity_a in &map.chunks[&ck].agents[idx] {
-            let ia  = entity_a.index() as usize;
-            let p   = &mut soa.pos[ia];
-            let tile = world_to_tile(*p);
-            for ndz in -1i32..=1 { for ndx in -1i32..=1 {
-                let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + ndx, tile.y, tile.z + ndz);
-                if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
-                    let nidx = morton_encode(nlx, nly, nlz);
-                    let ns = nc.wall_start[nidx] as usize;
-                    // body penetration only — rounding the caps is now soft wall_vel steering (Pass 2).
-                    // a radial eject to AGENT_RADIUS leaves the rest of the avoid band free for wall_vel.
-                    for wl in &nc.walls[ns .. ns + nc.wall_count[nidx] as usize] {
-                        let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
-                        let d  = dist(cp, *p);
-                        if d < AGENT_RADIUS && d > 0.0001 {
-                            *p += normalize((*p - cp) * vec3f(1.0, 0.0, 1.0)) * (AGENT_RADIUS - d);
-                        }
-                    }
+        let chunk = &map.chunks[&ck];
+        let s = chunk.wall_start[idx] as usize;
+        let walls = &chunk.walls[s .. s + chunk.wall_count[idx] as usize];
+        for &entity_a in &chunk.agents[idx] {
+            let p = &mut soa.pos[entity_a.index() as usize];
+            for wl in walls {
+                let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
+                let d  = dist(cp, *p);
+                if d < AGENT_RADIUS && d > 0.0001 {
+                    *p += normalize((*p - cp) * vec3f(1.0, 0.0, 1.0)) * (AGENT_RADIUS - d);
                 }
-            }}
+            }
         }
     }
 
@@ -2044,24 +2067,26 @@ pub fn debug_draw_agents(
         let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
         imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
         if waiting {
+            // only tether while the relevant train is stopped at the station — hide it while it's
+            // arriving/leaving/gone (missing motion entry counts as at-station).
+            let tid = riding.map(|r| r.0).unwrap_or(goal.0);
+            let at_station = trains.motion.get(&tid).map(|m| matches!(m.state, TrainState::AtStation)).unwrap_or(true);
             let ia = entity.index() as usize;
-            if ia < soa.wait_pos.len() {
+            if at_station && ia < soa.wait_pos.len() {
                 let wp = soa.wait_pos[ia];
                 imdraw.add_line_3d(base, vec3f(wp.x, Y, wp.z), Vec4f::white());
             }
         }
 
-        // wall collision debug: replay exact Pass-5 computation and draw each component
-        let ia   = entity.index() as usize;
-        let flow = if ia < soa.flow.len() { soa.flow[ia] } else { Vec2f::zero() };
-        let dir  = vec3f(flow.x, 0.0, flow.y);
+        // wall collision debug: replay the Pass-5 computation and draw each component. Own tile only —
+        // the bake step gathered every nearby wall (incl. adjacent-tile caps) into this tile's list.
         let tile = world_to_tile(pos.0);
-        for dz in -1i32..=1 { for dx in -1i32..=1 {
-            let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x + dx, tile.y, tile.z + dz);
-            if let Some(chunk) = map.chunks.get(&(cx, cy, cz)) {
-                let idx = morton_encode(lx, ly, lz);
-                let s = chunk.wall_start[idx] as usize;
-                for wl in &chunk.walls[s .. s + chunk.wall_count[idx] as usize] {
+        let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tile.x, tile.y, tile.z);
+        if let Some(chunk) = map.chunks.get(&(cx, cy, cz)) {
+            let idx = morton_encode(lx, ly, lz);
+            let s = chunk.wall_start[idx] as usize;
+            for wl in &chunk.walls[s .. s + chunk.wall_count[idx] as usize] {
+                {
                     let cp = closest_point_on_line_segment(pos.0, wl.p0, wl.p1);
                     let d  = dist(cp, pos.0);
 
@@ -2098,7 +2123,7 @@ pub fn debug_draw_agents(
 
                 }
             }
-        }}
+        }
     }
     Ok(())
 }
