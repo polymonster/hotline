@@ -116,6 +116,9 @@ pub struct MapChunk {
     index: [u8; ARRAY_SIZE],
     /// 2D flow fields per goal: flow[goal_idx][morton] = direction toward that goal
     flow: Vec<[Vec2f; ARRAY_SIZE]>,
+    /// per-goal lateral wander constraint: direction to bias wander toward (away from conflicting
+    /// neighbour lanes), perpendicular to flow. Runtime-derived alongside flow; not serialized.
+    wander_bias: Vec<[Vec2f; ARRAY_SIZE]>,
     /// agent count per cell — reset each frame alongside agents
     density: [f32; ARRAY_SIZE],
     /// pressure curve based on density, controls flow
@@ -139,6 +142,7 @@ impl MapChunk {
             tiles:      [TileType::Empty; ARRAY_SIZE],
             index:      [0u8; ARRAY_SIZE],
             flow:       vec![[Vec2f::zero(); ARRAY_SIZE]],
+            wander_bias: Vec::new(),
             density:    [0.0; ARRAY_SIZE],
             pressure:   [0.0; ARRAY_SIZE],
             agents:     std::array::from_fn(|_| Vec::new()),
@@ -324,7 +328,7 @@ pub struct Trains {
     pub dropoff_density:  HashMap<u8, f32>, // 0..1 — fraction of train capacity to drop off per cycle
 }
 
-const DEFAULT_DROPOFF_DENSITY: f32 = 0.0;
+const DEFAULT_DROPOFF_DENSITY: f32 = 0.2;
 
 /// Capacity = (number of Train tiles for train_id) * WAIT_SLOTS_PER_TILE.
 fn train_capacity(map: &Map, train_id: u8) -> u32 {
@@ -730,6 +734,8 @@ pub fn update_flow_field(
     for chunk in map.chunks.values_mut() {
         chunk.flow.resize(num_goals, [Vec2f::zero(); ARRAY_SIZE]);
         for layer in &mut chunk.flow { layer.fill(Vec2f::zero()); }
+        chunk.wander_bias.resize(num_goals, [Vec2f::zero(); ARRAY_SIZE]);
+        for layer in &mut chunk.wander_bias { layer.fill(Vec2f::zero()); }
         chunk.pressure.fill(f32::MAX);
     }
 
@@ -844,17 +850,22 @@ pub fn update_flow_field(
 
                 // Adjacency chain — the mirror of board/disembark. Each link prefers the next tile
                 // (by matching id where it matters) and falls back to the Dijkstra gradient below.
-                let chain = if into_train {
+                // The "point in" (boarding) chain only applies to tiles belonging to this goal's train
+                // (index == goal_idx). Door tiles of any other train — i.e. agents leaving toward a
+                // different goal — always use the out/exit chain below, so they never flip inward when a
+                // train starts boarding. Boarding always points in; disembarking always points out.
+                let chain = if into_train && cur_idx == Some(goal_idx) {
                     // into-train: Platform → PlatformBoarding → TrainBoarding → Train.
-                    // Only a platform tile that is itself this goal's sink (its index == goal_idx, shared
-                    // by platform and train) funnels into the door chain; other platform tiles fall through
-                    // to the Dijkstra gradient.
                     match cur_tile {
-                        TileType::Platform if cur_idx == Some(goal_idx) =>
+                        TileType::Platform =>
                             nbr_dir(TileType::PlatformBoarding, Some(goal_idx))
                                 .or_else(|| nbr_dir(TileType::TrainBoarding, Some(goal_idx))),
                         TileType::PlatformBoarding => nbr_dir(TileType::TrainBoarding, Some(goal_idx)),
-                        TileType::TrainBoarding    => nbr_dir(TileType::Train, Some(goal_idx)),
+                        // point away from the platform side (straight into the train) rather than at a
+                        // specific Train tile — a diagonal Train neighbour would snag agents on the door wall.
+                        TileType::TrainBoarding    => nbr_dir(TileType::PlatformBoarding, None)
+                            .or_else(|| nbr_dir(TileType::Platform, None))
+                            .map(|d| d * -1.0),
                         _ => None, // Train tiles are the sink
                     }
                 } else {
@@ -899,6 +910,40 @@ pub fn update_flow_field(
                 let idx = morton_encode(lx, ly, lz);
                 chunk.flow[goal_idx as usize][idx] = flow_dir;
                 chunk.pressure[idx] = pressure;
+            }
+        }
+
+        // wander_bias sub-pass: flow for this goal is now fully written, so compute the lateral
+        // wander constraint per reachable tile — a vector biasing wander away from neighbour tiles
+        // whose flow belongs to a different lane (conflicting direction). Keeps agents from wandering
+        // across lanes (e.g. an L-flow row drifting down into a U-flow row). Geometry/walls are not
+        // considered here — those are handled by wall collision.
+        const WANDER_LANE_DOT: f32 = 0.5; // neighbour flow within ~60deg of ours counts as the same lane
+        let flow_at = |tx: i32, ty: i32, tz: i32| -> Vec2f {
+            let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+            map.chunks.get(&(cx, cy, cz))
+                .map(|c| c.flow[goal_idx as usize][morton_encode(lx, ly, lz)])
+                .unwrap_or(Vec2f::zero())
+        };
+        let bias_updates: Vec<(i32, i32, i32, Vec2f)> = cost.keys().map(|&(tx, ty, tz)| {
+            let f  = flow_at(tx, ty, tz);
+            let fl = length(f);
+            if fl <= 0.001 { return (tx, ty, tz, Vec2f::zero()); }
+            let fnv = f / fl;
+            let mut bias = Vec2f::zero();
+            for (dx, dz) in NEIGHBORS {
+                let g = flow_at(tx + dx, ty, tz + dz);
+                if length(g) > 0.001 && dot(normalize(g), fnv) < WANDER_LANE_DOT {
+                    bias -= Vec2f::new(dx as f32, dz as f32); // push away from the conflicting neighbour
+                }
+            }
+            bias -= fnv * dot(bias, fnv); // keep only the lateral (perpendicular to flow) component
+            (tx, ty, tz, bias)
+        }).collect();
+        for (tx, ty, tz, bias) in bias_updates {
+            let (cx, cy, cz, lx, ly, lz) = tile_to_chunk(tx, ty, tz);
+            if let Some(chunk) = map.chunks.get_mut(&(cx, cy, cz)) {
+                chunk.wander_bias[goal_idx as usize][morton_encode(lx, ly, lz)] = bias;
             }
         }
     }
@@ -1532,6 +1577,7 @@ pub fn update_agents(
     let n = cells.len();
     let mut baked_density   = vec![0.0f32;        n];
     let mut baked_flow      = vec![Vec2f::zero();  n];
+    let mut baked_wander    = vec![Vec2f::zero();  n]; // lateral wander constraint (per goal)
     let mut baked_flags     = vec![0u8;            n]; // FLAG_WAITING
     let mut nbr_start       = vec![0usize;     n + 1];
     let mut nbr_flat        = Vec::<usize>::new();
@@ -1544,6 +1590,7 @@ pub fn update_agents(
 
         baked_density[ci] = density;
         baked_flow[ci]    = flow_dir;
+        baked_wander[ci]  = if goal < chunk.wander_bias.len() { chunk.wander_bias[goal][idx] } else { Vec2f::zero() };
 
         // gather all neighbour agents (3x3 in XZ) into nbr_flat; also peak-density of surrounding tiles
         let tile = world_to_tile(pb[ia]);
@@ -1669,34 +1716,53 @@ pub fn update_agents(
                 let d = sqrt(dist_sq);
                 sep += diff / d * (1.0 - (d / sep_radius).min(1.0));
             }
+            // lateral move out of opposing direction agents
+            if dist_sq < sep_radius_sq {
+                if dot(soa.facing[ia], soa.facing[ib]) < 0.0 {
+                    sep += normalize(perp(diff) * WALL_AVOID_RADIUS);
+                }
+            }
         }
         let cell_density  = baked_density[ci];
         let density_scale = 1.0 + (cell_density - 1.0).max(0.0) * 0.3;
         let sep_vel = if length(sep) > 0.001 { normalize(sep) * SEPARATION_STRENGTH * density_scale } else { Vec2f::zero() };
 
         // collision avoidance vs walls
-        let s = chunk.wall_start[idx] as usize;
-        let walls = &chunk.walls[s .. s + chunk.wall_count[idx] as usize];
+        // 3x3 scan so a free-end cap in an adjacent tile is seen while rounding it (own-tile-only would
+        // miss it — the agent approaches the tip from the neighbouring tile). TODO: walls should already be
+        // registered into every tile they can influence, then this can drop back to own-tile.
         let flow3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
-        let tile_flow = if length(flow3) > 0.001 { 
-            normalize(flow3) 
-        } 
-        else { 
-            Vec3f::zero() 
-        };
+        let tile_flow = if length(flow3) > 0.001 { normalize(flow3) } else { Vec3f::zero() };
         let mut wall_vel = Vec2f::zero();
-        for wl in walls {
-            let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
-            let d = dist(cp, pos_a);
-            if d < WALL_AVOID_RADIUS {
-                let tangent = normalize(wl.p0 - wl.p1);
-                if dot(wl.perp, tile_flow) >= 0.0 {
-                    wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
-                } else {
-                    wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
+        let tile = world_to_tile(pos_a);
+        for ndz in -1i32..=1 { for ndx in -1i32..=1 {
+            let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + ndx, tile.y, tile.z + ndz);
+            if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
+                let nidx = morton_encode(nlx, nly, nlz);
+                let ns = nc.wall_start[nidx] as usize;
+                for wl in &nc.walls[ns .. ns + nc.wall_count[nidx] as usize] {
+                    let cp = closest_point_on_line_segment(pos_a, wl.p0, wl.p1);
+                    let d = dist(cp, pos_a);
+                    if d >= WALL_AVOID_RADIUS { continue; }
+                    // tip-gated rounding: past a free end shove tangentially around the cap; this is the
+                    // steering the hard Pass-5 cap push used to do, now accumulated as velocity with the rest
+                    let cap1 = wl.free1 && dist(cp, wl.p1) < 0.001;
+                    let cap0 = wl.free0 && dist(cp, wl.p0) < 0.001;
+                    if cap1 {
+                        wall_vel += normalize(wl.p1 - wl.p0).xz() * AGENT_SPEED;
+                    } else if cap0 {
+                        wall_vel += normalize(wl.p0 - wl.p1).xz() * AGENT_SPEED;
+                    } else {
+                        let tangent = normalize(wl.p0 - wl.p1);
+                        if dot(wl.perp, tile_flow) >= 0.0 {
+                            wall_vel += vec2f(wl.perp.x, wl.perp.z) * AGENT_SPEED;
+                        } else {
+                            wall_vel += tangent.xz() * dot(tangent, tile_flow) * AGENT_SPEED;
+                        }
+                    }
                 }
             }
-        }
+        }}
 
         // SAFETY: ia is unique per entity
         // sep applies to waiting agents too — others can push them off wait_pos; the pull force returns them
@@ -1729,11 +1795,35 @@ pub fn update_agents(
         let pos_a = pb[ia];
         let avoid = vec3f(sep[ia].x, 0.0, sep[ia].y);
         let waiting = ia < fb_prev.len() && (fb_prev[ia] & FLAG_WAITING) != 0;
-        let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
-        let wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.0 } else { 1.0 };
         let flow = baked_flow[ci];
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
-        let flow_vel = vec3f(flow_norm.x, 0.0, flow_norm.y) * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
+        let fdir = vec3f(flow_norm.x, 0.0, flow_norm.y);
+        
+        // wander
+        let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
+        let mut wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.0 } else { 1.0 };
+        
+        // forward-bias: strip any component opposing the flow so wander only jitters sideways/forward and
+        // can't push an agent back into the tile it just left (which reads as jittering against the crowd).
+        if !waiting && length(fdir) > 0.001 {
+            let back = dot(wander_vel, fdir);
+            if back < 0.0 { wander_vel = wander_vel - fdir * back; }
+        }
+
+        // lane-bias: flip any wander component pointing toward a conflicting neighbour lane back to the
+        // in-lane side, so wander can't drift agents across into a differently-flowing lane.
+        let lane = baked_wander[ci];
+        let lane3 = vec3f(lane.x, 0.0, lane.y);
+        if !waiting && length(lane3) > 0.001 {
+            let bn = normalize(lane3);
+            let d  = dot(wander_vel, bn);
+            if d < 0.0 { wander_vel = wander_vel - bn * (2.0 * d); }
+        }
+
+        // flow
+        let flow_vel = fdir * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
+        
+        // pull velocity toward waiting places
         let pull_vel = if waiting {
             let wp    = wpb[ia];
             let to_wp = vec3f(wp.x - pos_a.x, 0.0, wp.z - pos_a.z);
@@ -1844,48 +1934,19 @@ pub fn update_agents(
         for &entity_a in &map.chunks[&ck].agents[idx] {
             let ia  = entity_a.index() as usize;
             let p   = &mut soa.pos[ia];
-            let fl   = soa.flow[ia];
-            let dir  = vec3f(fl.x, 0.0, fl.y);
             let tile = world_to_tile(*p);
             for ndz in -1i32..=1 { for ndx in -1i32..=1 {
                 let (ncx, ncy, ncz, nlx, nly, nlz) = tile_to_chunk(tile.x + ndx, tile.y, tile.z + ndz);
                 if let Some(nc) = map.chunks.get(&(ncx, ncy, ncz)) {
                     let nidx = morton_encode(nlx, nly, nlz);
                     let ns = nc.wall_start[nidx] as usize;
+                    // body penetration only — rounding the caps is now soft wall_vel steering (Pass 2).
+                    // a radial eject to AGENT_RADIUS leaves the rest of the avoid band free for wall_vel.
                     for wl in &nc.walls[ns .. ns + nc.wall_count[nidx] as usize] {
                         let cp = closest_point_on_line_segment(*p, wl.p0, wl.p1);
                         let d  = dist(cp, *p);
-                        if d < WALL_AVOID_RADIUS && d > 0.0001 {
-                            let baked = wl.away * vec3f(1.0, 0.0, 1.0);
-                            let push = if length(baked) > 0.001 {
-                                // capsule: radial cap at a free end (closest point is that tip), else a
-                                // consistent perpendicular axis sign-corrected to the agent's side — no radial
-                                // ambiguity along the body, so wander can't bounce the agent back into the wall.
-                                let cap0 = wl.free0 && dist(cp, wl.p0) < 0.001;
-                                let cap1 = wl.free1 && dist(cp, wl.p1) < 0.001;
-                                if cap1 {
-                                    // free +end: shove along the wall axis, outward past the tip (around the end)
-                                    normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0))
-                                } else if cap0 {
-                                    normalize((wl.p0 - wl.p1) * vec3f(1.0, 0.0, 1.0))
-                                } else {
-                                    let n = normalize(baked);
-                                    let s = if dot((*p - cp) * vec3f(1.0, 0.0, 1.0), n) >= 0.0 { 1.0 } else { -1.0 };
-                                    n * s
-                                }
-                            } else {
-                                // fallback: push out from the closest point; slide along the wall in heading,
-                                // but only mid-segment (radial at a tip so it can't drag back into the line).
-                                let away   = normalize((*p - cp) * vec3f(1.0, 0.0, 1.0));
-                                let at_end = dist(cp, wl.p0) < 0.001 || dist(cp, wl.p1) < 0.001;
-                                if at_end { away } else {
-                                    let wall_dir = normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0));
-                                    let slide    = wall_dir * dot(dir, wall_dir);
-                                    let push_dir = away + slide;
-                                    if length(push_dir) > 0.001 { normalize(push_dir) } else { away }
-                                }
-                            };
-                            *p += push * (WALL_AVOID_RADIUS - d);
+                        if d < AGENT_RADIUS && d > 0.0001 {
+                            *p += normalize((*p - cp) * vec3f(1.0, 0.0, 1.0)) * (AGENT_RADIUS - d);
                         }
                     }
                 }
@@ -1958,9 +2019,9 @@ pub fn debug_draw_agents(
         for wl in &chunk.walls {
             let a = vec3f(wl.p0.x, Y, wl.p0.z);
             let b = vec3f(wl.p1.x, Y, wl.p1.z);
-            imdraw.add_line_3d(a, b, Vec4f::new(1.0, 0.4, 0.0, 1.0));
+            //imdraw.add_line_3d(a, b, Vec4f::new(1.0, 0.4, 0.0, 1.0));
             let mid = (a + b) * 0.5;
-            imdraw.add_line_3d(mid, mid + vec3f(wl.perp.x, 0.0, wl.perp.z) * 1.0, Vec4f::new(0.6, 0.25, 0.0, 1.0));
+            //imdraw.add_line_3d(mid, mid + vec3f(wl.perp.x, 0.0, wl.perp.z) * 1.0, Vec4f::new(0.6, 0.25, 0.0, 1.0));
             // free-end cap push directions (magenta): outward along the wall axis, past the tip
             let axis = wl.p1 - wl.p0;
             let len  = length(vec3f(axis.x, 0.0, axis.z));
@@ -1978,8 +2039,8 @@ pub fn debug_draw_agents(
         let waiting    = (flags.0 & FLAG_WAITING)    != 0;
         let crowd_join = (flags.0 & FLAG_CROWD_JOIN) != 0;
         let body_col = if !waiting { Vec4f::red() } else if crowd_join { Vec4f::cyan() } else { Vec4f::green() };
-        imdraw.add_circle_3d_xz(base, AGENT_RADIUS, body_col);
-        imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::blue());
+        //imdraw.add_circle_3d_xz(base, AGENT_RADIUS, body_col);
+        //imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::blue());
         let fwd = facing.0 * vec3f(0.0, 0.0, 1.0);
         imdraw.add_line_3d(base, base + fwd * AGENT_RADIUS * 1.5, Vec4f::yellow());
         if waiting {
@@ -2003,45 +2064,38 @@ pub fn debug_draw_agents(
                 for wl in &chunk.walls[s .. s + chunk.wall_count[idx] as usize] {
                     let cp = closest_point_on_line_segment(pos.0, wl.p0, wl.p1);
                     let d  = dist(cp, pos.0);
-                    if d < WALL_AVOID_RADIUS && d > 0.0001 {
-                        // mirror Pass-5 exactly: baked away axis (sign-corrected) if present, else closest-point.
-                        let cp_draw = vec3f(cp.x, Y, cp.z);
-                        let baked   = wl.away * vec3f(1.0, 0.0, 1.0);
-                        let has_baked = length(baked) > 0.001;
-                        let push = if has_baked {
-                            let cap0 = wl.free0 && dist(cp, wl.p0) < 0.001;
-                            let cap1 = wl.free1 && dist(cp, wl.p1) < 0.001;
-                            if cap1 {
-                                normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0))
-                            } else if cap0 {
-                                normalize((wl.p0 - wl.p1) * vec3f(1.0, 0.0, 1.0))
-                            } else {
-                                let n = normalize(baked);
-                                let s = if dot((pos.0 - cp) * vec3f(1.0, 0.0, 1.0), n) >= 0.0 { 1.0 } else { -1.0 };
-                                n * s
-                            }
-                        } else {
-                            let away   = normalize((pos.0 - cp) * vec3f(1.0, 0.0, 1.0));
-                            let at_end = dist(cp, wl.p0) < 0.001 || dist(cp, wl.p1) < 0.001;
-                            if at_end { away } else {
-                                let wall_dir = normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0));
-                                let slide    = wall_dir * dot(dir, wall_dir);
-                                let push_dir = away + slide;
-                                if length(push_dir) > 0.001 { normalize(push_dir) } else { away }
-                            }
-                        };
 
+                    /*
+                    if d < WALL_AVOID_RADIUS && d > 0.0001 {
                         // closest point: cyan dot if using a baked axis, white otherwise
                         imdraw.add_circle_3d_xz(cp_draw, 0.3, if has_baked { Vec4f::cyan() } else { Vec4f::white() });
-                        // final push (cyan from agent)
-                        imdraw.add_line_3d(base, base + push * 4.0, Vec4f::cyan());
-
                         // penetrating (inside AGENT_RADIUS): magenta
                         if d < AGENT_RADIUS {
                             imdraw.add_line_3d(base, cp_draw, Vec4f::new(1.0, 0.0, 1.0, 1.0));
                             imdraw.add_circle_3d_xz(base, AGENT_RADIUS, Vec4f::new(1.0, 0.0, 1.0, 1.0));
                         }
                     }
+                    */
+
+                    // push
+                    let d0 = dist(pos.0, wl.p0);
+                    let d1 = dist(pos.0, wl.p1);
+                    let cap0 = wl.free0 && d0 < WALL_AVOID_RADIUS && d0 > 0.0001;
+                    let cap1 = wl.free1 && d1 < WALL_AVOID_RADIUS && d1 > 0.0001;
+                    if cap1 {
+                        // free +end: shove along the wall axis, outward past the tip (around the end)
+                        let vv = normalize((wl.p1 - wl.p0) * vec3f(1.0, 0.0, 1.0));
+                        imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::red());
+                        imdraw.add_line_3d(base, base + vv * 4.0, Vec4f::red());
+                        imdraw.add_line_3d(base, wl.p1, Vec4f::red());
+                    } 
+                    else if cap0 {
+                        let vv = normalize((wl.p0 - wl.p1) * vec3f(1.0, 0.0, 1.0));
+                        imdraw.add_circle_3d_xz(base, WALL_AVOID_RADIUS, Vec4f::white());
+                        imdraw.add_line_3d(base, base + vv * 4.0, Vec4f::white());
+                        imdraw.add_line_3d(base, wl.p0, Vec4f::white());
+                    }
+
                 }
             }
         }}
@@ -2549,8 +2603,8 @@ pub fn update_tile_editor(
 
                     let flow_dir = chunk.flow.get(editor.viz_goal as usize).map(|l| l[idx]).unwrap_or(Vec2f::zero());
                     if flow_dir != Vec2f::zero() {
-                        let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y);
                         let flow_start = Vec3f::new(mid_x, y, mid_z);
+                        let flow_dir3 = Vec3f::new(flow_dir.x, 0.0, flow_dir.y) * 2.0; // 2x longer
                         let flow_col = Vec4f::from((flow_dir3.xy() * 0.5 + 0.8, 0.0, 1.0));
                         let flow_end = flow_start + flow_dir3;
                         imdraw.add_line_3d(flow_start, flow_end, flow_col);
@@ -2560,6 +2614,20 @@ pub fn update_tile_editor(
                         let tip = flow_end - flow_dir3 * arrow_size;
                         imdraw.add_line_3d(flow_end, tip + perp3, flow_col);
                         imdraw.add_line_3d(flow_end, tip - perp3, flow_col);
+
+                        // lateral wander-bias arrow (cyan), drawn the same length as the flow arrow
+                        let bias = chunk.wander_bias.get(editor.viz_goal as usize).map(|l| l[idx]).unwrap_or(Vec2f::zero());
+                        if bias != Vec2f::zero() {
+                            let bias_col = Vec4f::new(0.0, 1.0, 1.0, 1.0);
+                            let bias3 = normalize(Vec3f::new(bias.x, 0.0, bias.y)) * length(flow_dir3);
+                            let bias_end = flow_start + bias3;
+                            imdraw.add_line_3d(flow_start, bias_end, bias_col);
+                            let bperp = maths_rs::perp(bias3.xz()) * arrow_size;
+                            let bperp3 = Vec3f::new(bperp.x, 0.0, bperp.y);
+                            let btip = bias_end - bias3 * arrow_size;
+                            imdraw.add_line_3d(bias_end, btip + bperp3, bias_col);
+                            imdraw.add_line_3d(bias_end, btip - bperp3, bias_col);
+                        }
                     }
                 }
             }
