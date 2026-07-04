@@ -2,7 +2,6 @@
 // utilties to compile into the core hotline engine
 //
 
-/*
 cbuffer mip_info : register(b0) {
     uint read;
     uint write;
@@ -10,11 +9,9 @@ cbuffer mip_info : register(b0) {
 
 RWTexture2D<float4> rw_texture[] : register(u0, space0);
 groupshared uint4 group_accumulated[5];
-*/
 
 [numthreads(32, 32, 1)]
 void cs_mip_chain_texture2d(uint2 did: SV_DispatchThreadID) {
-    /*
     uint2 offsets[9];
     offsets[0] = uint2( 0,  0);
     offsets[1] = uint2(-1, -1);
@@ -35,7 +32,6 @@ void cs_mip_chain_texture2d(uint2 did: SV_DispatchThreadID) {
     }
 
     rw_texture[write][did.xy] = level_up / 9.0;
-    */
 }
 
 //

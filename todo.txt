@@ -51,6 +51,8 @@ x sample cmp shadow
 // - lazy init print function
 
 // gfx
+// - cross platform append/consume buffer (buffer + atomic counter). metal has no
+//   AppendStructuredBuffer; currently mapped to a plain buffer so counter semantics are lost
 // - Alpha to coverage
 // - Stencil Ref / Buffer
 // - API for fence

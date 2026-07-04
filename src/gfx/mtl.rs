@@ -304,6 +304,8 @@ fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
     match resource_type {
         super::ResourceType::StructuredBuffer |
         super::ResourceType::RWStructuredBuffer |
+        super::ResourceType::AppendStructuredBuffer |
+        super::ResourceType::ConsumeStructuredBuffer |
         super::ResourceType::ConstantBuffer |
         super::ResourceType::ByteAddressBuffer |
         super::ResourceType::RWByteAddressBuffer |

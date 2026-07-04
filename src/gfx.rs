@@ -596,6 +596,10 @@ pub enum ResourceType {
     StructuredBuffer,
     /// Read-write structured buffer (RWStructuredBuffer)
     RWStructuredBuffer,
+    /// Append structured buffer (AppendStructuredBuffer)
+    AppendStructuredBuffer,
+    /// Consume structured buffer (ConsumeStructuredBuffer)
+    ConsumeStructuredBuffer,
     /// Constant buffer (cbuffer/ConstantBuffer)
     #[serde(alias = "cbuffer")]
     ConstantBuffer,
