@@ -23,7 +23,11 @@ void cs_mip_chain_texture2d(uint2 did: SV_DispatchThreadID) {
     offsets[7] = uint2( 1, -1);
     offsets[8] = uint2( 0, -1);
 
+#ifndef __spirv__
+    // DXC's SPIR-V backend can't cast a groupshared (address-space 3) lvalue to void,
+    // which is what pmfx_touch expands to. Skip it on the spirv/metal path for now.
     pmfx_touch(group_accumulated[0]);
+#endif
 
     float4 level_up = float4(0.0, 0.0, 0.0, 0.0);
 
