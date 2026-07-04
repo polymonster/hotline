@@ -6,7 +6,7 @@ mod draw_push_constants;
 mod draw_indirect;
 mod geometry_primitives;
 mod draw_vertex_buffer_instanced;
-mod draw_cbuffer_instanced;
+mod draw_structured_buffer_instanced;
 mod bindless_texture;
 mod tangent_space_normal_maps;
 mod bindless_material;
@@ -644,7 +644,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "draw_indirect",
         "geometry_primitives",
         "draw_vertex_buffer_instanced",
-        "draw_cbuffer_instanced",
+        "draw_structured_buffer_instanced",
         "bindless_texture",
         "tangent_space_normal_maps",
         "bindless_material",

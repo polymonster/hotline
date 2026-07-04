@@ -80,7 +80,12 @@ pub struct App {
     input_state: Arc<RwLock<InputState>>,
     windows: Arc<RwLock<HashMap<winit::window::WindowId, Arc<winit::window::Window>>>>,
     monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    // Per-window cells, mirrored on `Window`. We cache state that's normally read from winit
+    // (scale, size, position) because the equivalent winit calls dispatch objc messages
+    // (`backingScaleFactor`, `frame`) to the wrong receiver on macOS and panic.
+    window_scales: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<f64>>>>>,
     window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+    window_positions: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>>>>,
     /// When false, windows render at 1x (non-retina) for lower GPU cost (eg. with MSAA)
     dpi_aware: bool,
 }
@@ -94,7 +99,9 @@ pub struct Window {
     window_id: winit::window::WindowId,
     input_state: Arc<RwLock<InputState>>,
     events: Arc<RwLock<super::WindowEventFlags>>,
+    cached_scale: Arc<RwLock<f64>>,
     cached_size: Arc<RwLock<winit::dpi::PhysicalSize<u32>>>,
+    cached_position: Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>,
     /// Inherited from `AppInfo.dpi_aware`; false = render at 1x (logical pixels)
     dpi_aware: bool,
 }
@@ -174,15 +181,24 @@ impl App {
         // Current mouse_pos is computed on-demand in get_mouse_pos()
         state.mouse_pos_prev = state.mouse_pos;
 
-        // Compute current screen position from window + client pos
+        // Compute current screen position from window + client pos.
+        // Cached position is physical; mouse_client_pos is already in render-coord units
+        // (logical when !dpi_aware), so scale position to match.
         if let Some(window_id) = state.hovered_window_id {
-            if let Some(window) = self.windows.read().unwrap().get(&window_id) {
-                if let Ok(pos) = window.outer_position() {
-                    state.mouse_pos = super::Point {
-                        x: pos.x + state.mouse_client_pos.x,
-                        y: pos.y + state.mouse_client_pos.y,
-                    };
-                }
+            if let Some(pos_cell) = self.window_positions.read().unwrap().get(&window_id) {
+                let pos = *pos_cell.read().unwrap();
+                let scale = if self.dpi_aware {
+                    1.0
+                } else {
+                    self.window_scales.read().unwrap()
+                        .get(&window_id)
+                        .map(|s| (*s.read().unwrap()).max(1.0))
+                        .unwrap_or(1.0)
+                };
+                state.mouse_pos = super::Point {
+                    x: (pos.x as f64 / scale).round() as i32 + state.mouse_client_pos.x,
+                    y: (pos.y as f64 / scale).round() as i32 + state.mouse_client_pos.y,
+                };
             }
         }
 
@@ -196,7 +212,10 @@ struct FrameHandler<'a> {
     resume: &'a mut bool,
     input_state: Arc<RwLock<InputState>>,
     monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    window_scales: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<f64>>>>>,
     window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+    window_positions: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>>>>,
+    dpi_aware: bool,
 }
 
 impl winit::application::ApplicationHandler for FrameHandler<'_> {
@@ -215,9 +234,21 @@ impl winit::application::ApplicationHandler for FrameHandler<'_> {
     }
 
     fn window_event(&mut self, _elwt: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
+        if let WindowEvent::ScaleFactorChanged { scale_factor, .. } = event {
+            if let Some(scale) = self.window_scales.read().unwrap().get(&window_id) {
+                *scale.write().unwrap() = scale_factor;
+            }
+            return;
+        }
         if let WindowEvent::Resized(new_size) = event {
             if let Some(size) = self.window_sizes.read().unwrap().get(&window_id) {
                 *size.write().unwrap() = new_size;
+            }
+            return;
+        }
+        if let WindowEvent::Moved(new_pos) = event {
+            if let Some(pos) = self.window_positions.read().unwrap().get(&window_id) {
+                *pos.write().unwrap() = new_pos;
             }
             return;
         }
@@ -229,9 +260,19 @@ impl winit::application::ApplicationHandler for FrameHandler<'_> {
             }
             WindowEvent::RedrawRequested => {}
             WindowEvent::CursorMoved { position, .. } => {
+                // winit reports physical pixels; convert to logical (1x) when !dpi_aware
+                // so coords match the render size returned to clients.
+                let scale = if self.dpi_aware {
+                    1.0
+                } else {
+                    self.window_scales.read().unwrap()
+                        .get(&window_id)
+                        .map(|s| (*s.read().unwrap()).max(1.0))
+                        .unwrap_or(1.0)
+                };
                 state.mouse_client_pos = super::Point {
-                    x: position.x as i32,
-                    y: position.y as i32,
+                    x: (position.x / scale).round() as i32,
+                    y: (position.y / scale).round() as i32,
                 };
                 state.hovered_window_id = Some(window_id);
             }
@@ -307,7 +348,9 @@ impl super::App for App {
             input_state: Arc::new(RwLock::new(InputState::new())),
             windows: Arc::new(RwLock::new(HashMap::new())),
             monitors: Arc::new(RwLock::new(Vec::new())),
+            window_scales: Arc::new(RwLock::new(HashMap::new())),
             window_sizes: Arc::new(RwLock::new(HashMap::new())),
+            window_positions: Arc::new(RwLock::new(HashMap::new())),
             dpi_aware: info.dpi_aware,
         }
     }
@@ -329,16 +372,39 @@ impl super::App for App {
         // Register window for position lookups
         self.windows.write().unwrap().insert(window_id, winit_window.clone());
 
-        let initial_size = winit_window.inner_size();
-        let cached_size = Arc::new(RwLock::new(initial_size));
+        // Seed scale from the primary monitor; updated by ScaleFactorChanged events.
+        // Avoid calling winit_window.scale_factor() here — on macOS it can dispatch
+        // backingScaleFactor to the application delegate and panic.
+        let initial_scale = self.monitors.read().unwrap()
+            .iter()
+            .find(|m| m.primary)
+            .map(|m| m.dpi_scale as f64)
+            .unwrap_or(1.0);
+        let cached_scale = Arc::new(RwLock::new(initial_scale));
+        self.window_scales.write().unwrap().insert(window_id, cached_scale.clone());
+
+        // Seed size/position from creation info; updated by Resized / Moved events.
+        // Avoid winit_window.inner_size()/outer_position() — both dispatch `frame`
+        // through paths that can panic on macOS for the same objc-receiver reason.
+        let cached_size = Arc::new(RwLock::new(PhysicalSize::new(
+            info.rect.width.max(0) as u32,
+            info.rect.height.max(0) as u32,
+        )));
         self.window_sizes.write().unwrap().insert(window_id, cached_size.clone());
+
+        let cached_position = Arc::new(RwLock::new(PhysicalPosition::new(
+            info.rect.x, info.rect.y,
+        )));
+        self.window_positions.write().unwrap().insert(window_id, cached_position.clone());
 
         Window {
             winit_window,
             window_id,
             input_state: self.input_state.clone(),
             events: Arc::new(RwLock::new(super::WindowEventFlags::NONE)),
+            cached_scale,
             cached_size,
+            cached_position,
             dpi_aware: self.dpi_aware,
         }
     }
@@ -358,7 +424,10 @@ impl super::App for App {
                 resume: &mut resume,
                 input_state: self.input_state.clone(),
                 monitors: self.monitors.clone(),
+                window_scales: self.window_scales.clone(),
                 window_sizes: self.window_sizes.clone(),
+                window_positions: self.window_positions.clone(),
+                dpi_aware: self.dpi_aware,
             };
 
             let _ = self.event_loop.write().and_then(|mut event_loop| {
@@ -479,7 +548,10 @@ impl super::App for App {
             resume: &mut dummy_resume,
             input_state: self.input_state.clone(),
             monitors: self.monitors.clone(),
+            window_scales: self.window_scales.clone(),
             window_sizes: self.window_sizes.clone(),
+            window_positions: self.window_positions.clone(),
+            dpi_aware: self.dpi_aware,
         };
         let _ = self.event_loop.write().and_then(|mut event_loop| {
             use winit::platform::pump_events::EventLoopExtPumpEvents;
@@ -525,7 +597,7 @@ impl Window {
         if self.dpi_aware {
             super::Size { x: size.width as i32, y: size.height as i32 }
         } else {
-            let scale = self.winit_window.scale_factor().max(1.0);
+            let scale = (*self.cached_scale.read().unwrap()).max(1.0);
             super::Size {
                 x: ((size.width as f64 / scale).round() as i32).max(1),
                 y: ((size.height as f64 / scale).round() as i32).max(1),
@@ -610,7 +682,7 @@ impl super::Window<App> for Window {
 
     /// Returns the screen position for the top-left corner of the window
     fn get_pos(&self) -> super::Point<i32> {
-        let pos = self.winit_window.outer_position().unwrap_or_default();
+        let pos = *self.cached_position.read().unwrap();
         super::Point {
             x: pos.x,
             y: pos.y
@@ -635,7 +707,7 @@ impl super::Window<App> for Window {
 
     /// Returns the screen rect of the window screen pos x, y , size x, y.
     fn get_window_rect(&self) -> super::Rect<i32> {
-        let pos = self.winit_window.outer_position().unwrap_or_default();
+        let pos = *self.cached_position.read().unwrap();
         let size = *self.cached_size.read().unwrap();
         super::Rect {
             x: pos.x,
@@ -655,7 +727,7 @@ impl super::Window<App> for Window {
     /// Return the dpi scale for the current monitor the window is on. When the app is not
     /// dpi-aware the engine operates entirely in logical (1x) pixels, so the effective scale is 1.
     fn get_dpi_scale(&self) -> f32 {
-        if self.dpi_aware { self.winit_window.scale_factor() as f32 } else { 1.0 }
+        if self.dpi_aware { *self.cached_scale.read().unwrap() as f32 } else { 1.0 }
     }
 
     /// Gets the internal native handle

@@ -29,20 +29,16 @@ vs_output vs_mesh_vertex_buffer_instanced(vs_input_mesh input, vs_input_instance
 }
 
 //
-// example using a cbuffer to lookup instance info from SV_InstanceID
+// example using a structured buffer to lookup instance info from SV_InstanceID
 //
 
-struct cbuffer_instance_data {
-    row_major float3x4 cbuffer_world_matrix[1024];
-};
+StructuredBuffer<row_major float3x4> instance_world_matrices : register(t0);
 
-ConstantBuffer<cbuffer_instance_data> cbuffer_instance : register(b1);
-
-vs_output vs_mesh_cbuffer_instanced(vs_input_mesh input, uint iid: SV_InstanceID) {
+vs_output vs_mesh_structured_buffer_instanced(vs_input_mesh input, uint iid: SV_InstanceID) {
     vs_output output;
 
 	float4 pos = float4(input.position.xyz, 1.0);
-    pos.xyz = mul(cbuffer_instance.cbuffer_world_matrix[iid], pos);
+    pos.xyz = mul(instance_world_matrices[iid], pos);
 
     output.position = mul(view_projection_matrix, pos);
     output.world_pos = pos;

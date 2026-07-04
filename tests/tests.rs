@@ -677,8 +677,8 @@ fn draw_vertex_buffer_instanced() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
-fn draw_cbuffer_instanced() -> Result<(), hotline_rs::Error> {
-    boot_client_ecs_plugin_demo("draw_cbuffer_instanced")
+fn draw_structured_buffer_instanced() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("draw_structured_buffer_instanced")
 }
 
 #[test]

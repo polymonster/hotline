@@ -1715,6 +1715,31 @@ impl Device {
             // textures across command buffers (by default heaps are MTLHazardTrackingModeUntracked)
             unsafe { let _: () = msg_send![&*heap_descriptor, setHazardTrackingMode: metal::MTLHazardTrackingMode::Tracked]; };
 
+            /*
+            // newHeapWithDescriptor: returns nil on allocation failure (e.g. requested size
+            // exceeds what the GPU can back). metal-rs wraps the result without checking, so
+            // every later deref of a nil heap would trip foreign-types' from_ptr assert with
+            // no useful context. Probe first via raw msg_send so we can report what was
+            // actually requested before falling back to metal-rs's wrapper.
+            let probe_ptr: *mut objc::runtime::Object = unsafe {
+                msg_send![&*mtl_device, newHeapWithDescriptor: &*heap_descriptor]
+            };
+            assert!(
+                !probe_ptr.is_null(),
+                "hotline_rs::gfx::mtl: failed to allocate MTLHeap ({:.1} MB, {} descriptors, storage Private). \
+                 Requested size = texture_size({} B) * num_descriptors({}) * HEAP_OVERSIZE_FACTOR({}). \
+                 Reduce num_descriptors in HeapInfo, or use a smaller per-batch heap for buffer-only allocations.",
+                heap_size as f64 / (1024.0 * 1024.0),
+                info.num_descriptors,
+                texture_size,
+                info.num_descriptors.max(1),
+                HEAP_OVERSIZE_FACTOR
+            );
+            // probe_ptr is a +1 retained heap; release it and let metal-rs allocate again so
+            // we keep using its wrapper type without juggling raw pointer ownership.
+            unsafe { let _: () = msg_send![probe_ptr, release]; }
+            */
+
             let heap = mtl_device.new_heap(&heap_descriptor);
 
             // Create texture argument encoder for bindless access

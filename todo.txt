@@ -18,10 +18,12 @@ x pmfx hotreload
 x material ibl
 x bindless material
 x sample cmp shadow
+x cbuffer instanced causes huge perf issues (should be structured tbh)
+
+- cleanup mem
 
 - pmbuild needs universal install into hotline-data
-
-- cbuffer instanced causes huge perf issues (should be structured tbh)
+- single shader compile, htwv
 
 - draw indirect
 - video player
