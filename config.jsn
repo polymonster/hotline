@@ -1,7 +1,7 @@
 {
     // configure build tools
     tools<windows>: {
-        pmfx: "hotline-data/bin/win32/pmfx/pmfx.exe"
+        pmfx: "py -3 hotline-data/pmfx-shader/pmfx.py"
         texturec: "hotline-data/bin/win32/texturec/texturec.exe"
         pmfx_dev: "py -3 hotline-data/pmfx-shader/pmfx.py"
     }
