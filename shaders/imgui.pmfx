@@ -10,6 +10,18 @@
             address_w: "Wrap",
         }
     }
+    render_target_blend_states: {
+        alpha: {
+            blend_enabled: true
+            src_blend: SrcAlpha
+            dst_blend: InvSrcAlpha
+        }
+    }
+    blend_states: {
+        alpha: {
+            render_target: ["alpha"]
+        }
+    }
     pipelines: {
         default: {
             vs: vs_main,
@@ -19,7 +31,8 @@
             ],
             static_samplers: {
                 sampler0: "wrap_linear"
-            }
+            },
+            blend_state: "alpha"
         }
     }
 }

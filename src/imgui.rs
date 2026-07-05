@@ -13,6 +13,7 @@ use crate::gfx::CmdBuf;
 use crate::gfx::Device;
 use crate::gfx::SwapChain;
 use crate::gfx::Texture;
+use crate::gfx::Pipeline;
 
 use maths_rs::Vec4f;
 
@@ -454,6 +455,7 @@ fn render_draw_data<D: Device>(
             cmd.set_vertex_buffer(&buffers.vb, 0);
             cmd.set_index_buffer(&buffers.ib);
             cmd.set_render_pipeline(pipeline);
+
             cmd.push_render_constants(pipeline, 0, 0, 16, 0, &mvp);
 
             let clip_off = draw_data.DisplayPos;
@@ -492,7 +494,7 @@ fn render_draw_data<D: Device>(
                             cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv);
                         }
                         else {
-                            // bund srv in another heap
+                            // bound srv in another heap
                             for heap in image_heaps {
                                 if heap.get_heap_id() == heap_id {
                                     cmd.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
@@ -591,7 +593,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let io = &mut *igGetIO();
 
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
 
             // construct path for ini to be along side the exe
             let exe_path = std::env::current_exe().ok().unwrap();
@@ -1568,10 +1570,23 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 impl<D, A> Drop for ImGui<D, A> where D: Device, A: App {
     fn drop(&mut self) {
         unsafe {
-            igDestroyPlatformWindows();
+            // Clean up main viewport's user data (set during create)
+            let main_vp = &mut *igGetMainViewport();
+            if !main_vp.PlatformUserData.is_null() {
+                std::ptr::drop_in_place(main_vp.PlatformUserData as *mut ViewportData<D, A>);
+                main_vp.PlatformUserData = std::ptr::null_mut();
+            }
+            if !main_vp.PlatformHandle.is_null() {
+                std::ptr::drop_in_place(main_vp.PlatformHandle as *mut A::NativeHandle);
+                main_vp.PlatformHandle = std::ptr::null_mut();
+            }
+
             let platform_io = &mut *igGetPlatformIO();
             std::ptr::drop_in_place(platform_io.Monitors.Data as *mut ImGuiPlatformMonitor);
             platform_io.Monitors.Data = std::ptr::null_mut();
+
+            // Destroy non-main viewport windows
+            igDestroyPlatformWindows();
         }
     }
 }

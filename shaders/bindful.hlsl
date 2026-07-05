@@ -1,7 +1,7 @@
 //#pragma argument(developmentfeatures)
 
 struct vs_input {
-    float3 position : POSITION; 
+    float3 position : POSITION;
     float4 uv : TEXCOORD0;
 };
 

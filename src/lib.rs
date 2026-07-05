@@ -242,16 +242,33 @@ pub mod prelude {
         // modules
         gfx,
         os,
+        client,
+        plugin,
         pmfx,
         imgui,
+        image,
+
+        // platform specific
+        gfx_platform,
+        os_platform,
 
         // traits
+        ecs_base::*,
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
+        pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData, WorldBufferReserveInfo, WorldBufferInfo},
         os::{App, Window},
         pmfx::Pmfx,
         imgui::ImGui,
         imdraw::ImDraw,
+        client::{Client, HotlineInfo, PluginInfo},
+        plugin::{Plugin},
         av::{VideoPlayer},
+
+        // macros
+        hotline_plugin,
+        system_func,
+        demos,
+        systems
     };
 }
 
@@ -261,7 +278,7 @@ pub use os::macos as os_platform;
 
 /// This is a hardcoded compile time selection of os backend for macos as null
 #[cfg(target_os = "macos")]
-pub use gfx::null as gfx_platform;
+pub use gfx::mtl as gfx_platform;
 
 /// This is a hardcoded compile time selection of os backend for macos as  null
 #[cfg(target_os = "macos")]

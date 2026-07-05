@@ -1,28 +1,28 @@
 ///
-/// Draw cbuffer Instanced
+/// Draw Structured Buffer Instanced
 ///
 
-use crate::prelude::*; 
+use crate::prelude::*;
 
-/// Creates a instance batch, where the `InstanceBatch` parent will update a cbuffer containing 
-/// the cbuffer is created in a separate heap and the matrices and indexed into using the instance id system value semantic
+/// Creates an instance batch where the per-instance world matrices live in a `StructuredBuffer`
+/// bound as an SRV and indexed by `SV_InstanceID` in the vertex shader.
 #[no_mangle]
-pub fn draw_cbuffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
+pub fn draw_structured_buffer_instanced(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(&hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
     ScheduleInfo {
         setup: systems![
-            "setup_draw_cbuffer_instanced"
+            "setup_draw_structured_buffer_instanced"
         ],
         update: systems![
             "rotate_meshes",
             "batch_world_matrix_instances"
         ],
-        render_graph: "mesh_draw_cbuffer_instanced"
+        render_graph: "mesh_draw_structured_buffer_instanced"
     }
 }
 
 #[export_update_fn]
-pub fn setup_draw_cbuffer_instanced(
+pub fn setup_draw_structured_buffer_instanced(
     mut device: bevy_ecs::change_detection::ResMut<DeviceRes>,
     mut commands: bevy_ecs::system::Commands) -> Result<(), hotline_rs::Error> {
 
@@ -42,27 +42,29 @@ pub fn setup_draw_cbuffer_instanced(
     let mut rng = rand::thread_rng();
 
     let size = 2.0;
-    let num = 32; // max number of bytes in cbuffer is 65536
+    let num = 64;
     let instance_count = (num*num) as u32;
     let range = size * size * (num as f32);
 
     for mesh in meshes {
+        // Only one descriptor slot is needed: the per-batch instance buffer. instance_count is the
+        // element count inside that buffer, not the number of heap descriptors.
         let mut heap = device.create_heap(&gfx::HeapInfo {
             heap_type: gfx::HeapType::Shader,
-            num_descriptors: instance_count as usize,
+            num_descriptors: 1,
             debug_name: Some("instance_buffer_heap".to_string())
         });
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
-            pipeline: PipelineComponent("mesh_cbuffer_instanced".to_string()),
-            instance_buffer: InstanceBuffer { 
+            pipeline: PipelineComponent("mesh_structured_buffer_instanced".to_string()),
+            instance_buffer: InstanceBuffer {
                 buffer: device.create_buffer_with_heap(&gfx::BufferInfo{
-                    usage: gfx::BufferUsage::CONSTANT_BUFFER,
+                    usage: gfx::BufferUsage::SHADER_RESOURCE,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
                     format: gfx::Format::Unknown,
                     stride: std::mem::size_of::<Mat34f>(),
                     num_elements: instance_count as usize,
-                    initial_state: gfx::ResourceState::VertexConstantBuffer
+                    initial_state: gfx::ResourceState::ShaderResource
                 }, hotline_rs::data![], &mut heap).unwrap(),
                 instance_count,
                 heap: Some(heap)
@@ -70,7 +72,7 @@ pub fn setup_draw_cbuffer_instanced(
         }).id();
         for _ in 0..num {
             for _ in 0..num {
-                // spawn a bunch of entites with slightly randomised 
+                // spawn a bunch of entites with slightly randomised
                 let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
                 let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
                 commands.spawn(Instance {
@@ -87,30 +89,35 @@ pub fn setup_draw_cbuffer_instanced(
     Ok(())
 }
 
-/// Renders all scene instance batches with cbuffer instance buffer
+/// Renders all scene instance batches, sourcing per-instance world matrices from a StructuredBuffer SRV
 #[export_render_fn]
-pub fn draw_meshes_cbuffer_instanced(
+pub fn draw_meshes_structured_buffer_instanced(
     pmfx: &Res<PmfxRes>,
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     instance_draw_query: Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
 ) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let camera = pmfx.get_camera_constants(&view.camera)?;
-        
+
     for (instance_batch, mesh, pipeline) in &instance_draw_query {
         // set pipeline per batch
         let pipeline = pmfx.get_render_pipeline_for_format(&pipeline.0, fmt)?;
         cmd_buf.set_render_pipeline(pipeline);
         cmd_buf.push_render_constants(pipeline, 0, 0, 16, 0, gfx::as_u8_slice(&camera.view_projection_matrix));
 
-        // bind the constant buffer (cbv) on the slot for b1, space0 specified in the shader
+        // set_heap binds the heap's argument buffer and (on metal) calls use_resource_at over
+        // its buffer_slots so device-allocated buffers like our SRV are made resident on the encoder
+        let heap = instance_batch.heap.as_ref().unwrap();
+        cmd_buf.set_heap(pipeline, heap);
+
+        // bind the structured buffer as an SRV at t0, space0 specified in the shader
         cmd_buf.set_binding(
-            pipeline, 1, 0, gfx::DescriptorType::ConstantBuffer,
-            instance_batch.heap.as_ref().unwrap(),
-            instance_batch.buffer.get_cbv_index().unwrap()
+            pipeline, 0, 0, gfx::DescriptorType::ShaderResource,
+            heap,
+            instance_batch.buffer.get_srv_index().unwrap()
         );
 
         // bind vb, ib and draw instanced

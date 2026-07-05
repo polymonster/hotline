@@ -28,7 +28,7 @@ struct ps_output {
 };
 
 cbuffer view_push_constants : register(b0) {
-    float4x4 projection_matrix;
+    row_major float4x4 projection_matrix;
 };
 
 struct vs_input_mesh {
@@ -41,16 +41,16 @@ struct vs_input_mesh {
 
 vs_output vs_2d( vs_input_2d input ) {
     vs_output output;
-    
+
     output.position = mul(projection_matrix, float4(input.position.xy, 0.0, 1.0));
     output.colour = input.colour;
-    
+
     return output;
 }
 
 ps_output ps_main( vs_output input ) {
     ps_output output;
-    
+
     output.colour = input.colour;
 
     return output;
@@ -63,7 +63,7 @@ vs_output vs_3d( vs_input_3d input )
 	float4 pos = float4(input.position.xyz, 1.0);
     output.position = mul(projection_matrix, pos);
     output.colour = input.colour;
-    
+
     return output;
 }
 

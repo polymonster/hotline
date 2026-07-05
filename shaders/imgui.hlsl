@@ -1,6 +1,6 @@
 cbuffer proj_matrix : register(b0, space0)
 {
-    float4x4 ProjectionMatrix;
+    row_major float4x4 ProjectionMatrix;
 };
 
 struct VS_INPUT

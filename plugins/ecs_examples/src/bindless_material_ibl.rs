@@ -1,9 +1,6 @@
 ///
 /// Bindless Material IBL
 ///
-/// 10 PBR materials × 4 mesh types arranged in a curated 10×4 grid,
-/// lit by image-based lighting (cubemap + BRDF LUT) instead of point lights.
-///
 
 use crate::prelude::*;
 
@@ -104,7 +101,7 @@ pub fn setup_bindless_material_ibl(
 
         let x = -x_offset + col as f32 * cell;
         let z = -z_offset + row as f32 * cell;
-        
+
         let pos = vec3f(x, 0.0, z);
 
         commands.spawn((
