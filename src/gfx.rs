@@ -5,14 +5,16 @@ pub mod null;
 #[cfg(target_os = "windows")]
 pub mod d3d12;
 
+/// Implemets this interface with a metal backend.
+#[cfg(target_os = "macos")]
+pub mod mtl;
+
 use crate::os;
 use std::any::Any;
 use serde::{Deserialize, Serialize};
 use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 use maths_rs::max;
-
-use null::*;
 
 type Error = super::Error;
 
@@ -118,7 +120,7 @@ impl<R> DropList<R> {
         let to_drop: Vec<DropResource<R>> = {
             let mut drop_list = self.list.lock().unwrap();
             let initial_len = drop_list.len();
-            
+
             // Partition: extract items ready to drop, keep the rest
             let mut ready_to_drop = Vec::new();
             drop_list.retain_mut(|drop_res| {
@@ -144,12 +146,12 @@ impl<R> DropList<R> {
                     }
                 }
             });
-            
+
             if initial_len > 0 || ready_to_drop.len() > 0 {
-                println!("DropList cleanup: {} items, dropping {}, {} remaining", 
+                println!("DropList cleanup: {} items, dropping {}, {} remaining",
                     initial_len, ready_to_drop.len(), drop_list.len());
             }
-            
+
             ready_to_drop
         };
         // Resources drop here, OUTSIDE the mutex lock
@@ -387,7 +389,7 @@ pub struct PipelineStatistics {
 
 /// Information to pass to `Device::create_swap_chain`.
 pub struct SwapChainInfo {
-    /// Number of internal buffers to keep behind the scenes, which are swapped between each frame 
+    /// Number of internal buffers to keep behind the scenes, which are swapped between each frame
     /// to allow overlapped CPU/GPU command buffer producer / consumer
     pub num_buffers: u32,
     /// Must be BGRA8n, RGBA8n or RGBA16f.
@@ -434,7 +436,7 @@ pub struct ShaderCompileInfo {
 }
 
 /// The stage to which a shader will bind itself.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Eq, Hash)]
 pub enum ShaderType {
     Vertex,
     Fragment,
@@ -569,7 +571,7 @@ pub struct PipelineLayout {
     pub bindings: Option<Vec<DescriptorBinding>>,
     /// Small amounts of data that can be pushed into a command buffer and available as data in shaders
     pub push_constants: Option<Vec<PushConstantInfo>>,
-    /// Static samplers that come along with the pipeline, 
+    /// Static samplers that come along with the pipeline,
     pub static_samplers: Option<Vec<SamplerBinding>>,
 }
 
@@ -585,16 +587,19 @@ pub enum ResourceType {
     /// Cubemap texture (TextureCube)
     TextureCube,
     /// Multi-sampled 2D texture (Texture2DMS)
-    #[serde(rename = "Texture2DMS")]
     Texture2DMS,
     /// Read-write 2D texture (RWTexture2D)
     RWTexture2D,
-    /// Read-write 3D texture (RWTexture3D)  
+    /// Read-write 3D texture (RWTexture3D)
     RWTexture3D,
     /// Structured buffer (StructuredBuffer)
     StructuredBuffer,
     /// Read-write structured buffer (RWStructuredBuffer)
     RWStructuredBuffer,
+    /// Append structured buffer (AppendStructuredBuffer)
+    AppendStructuredBuffer,
+    /// Consume structured buffer (ConsumeStructuredBuffer)
+    ConsumeStructuredBuffer,
     /// Constant buffer (cbuffer/ConstantBuffer)
     #[serde(alias = "cbuffer")]
     ConstantBuffer,
@@ -627,7 +632,7 @@ pub struct DescriptorBinding {
 }
 
 /// Describes the type of descriptor binding to create.
-#[derive(Clone, Copy, Serialize, Deserialize, Hash)]
+#[derive(Clone, Copy, Serialize, Deserialize, Hash, PartialEq, Eq)]
 pub enum DescriptorType {
     /// Used for textures or structured buffers.
     ShaderResource,
@@ -667,7 +672,7 @@ pub struct ResourceViewInfo {
     pub num_elements: usize
 }
 
-/// Describes space in the shader to send data to via `CmdBuf::push_constants`. 
+/// Describes space in the shader to send data to via `CmdBuf::push_constants`.
 #[derive(Clone, Serialize, Deserialize)]
 pub struct PushConstantInfo {
     /// The shader stage the constants will be accessible to.
@@ -686,7 +691,7 @@ pub struct PipelineSlotInfo {
     /// The slot in the pipeline layout to bind to
     pub index: u32,
     /// The number of descriptors or the number of 32-bit push constant values, if `None` the table is unbounded
-    pub count: Option<u32>
+    pub count: Option<u32>,
 }
 
 /// Input layout describes the layout of vertex buffers bound to the input assembler.
@@ -870,7 +875,7 @@ pub struct DepthStencilInfo {
 }
 
 /// Write to the depth buffer, or omit writes and just perform depth testing
-#[derive(Clone, Copy, Serialize, Deserialize)]
+#[derive(Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DepthWriteMask {
     Zero,
     All,
@@ -1194,7 +1199,7 @@ pub enum ResourceState {
     CopyDst,
     /// Used as destination to read back data from buffers / queries
     GenericRead,
-    /// Used for argument buffer in `execute_indirect` calls 
+    /// Used for argument buffer in `execute_indirect` calls
     IndirectArgument,
     /// Used for destination acceleration structure buffers
     AccelerationStructure
@@ -1333,7 +1338,7 @@ pub struct IndirectArgument {
     pub arguments: Option<IndirectTypeArguments>
 }
 
-/// Structure of arguments which can be used to execute `draw_instanced` calls indirectly 
+/// Structure of arguments which can be used to execute `draw_instanced` calls indirectly
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct DrawArguments {
@@ -1343,7 +1348,7 @@ pub struct DrawArguments {
     pub start_instance_location: u32
 }
 
-/// Structure of arguments which can be used to execute `draw_indexed_instanced` calls indirectly 
+/// Structure of arguments which can be used to execute `draw_indexed_instanced` calls indirectly
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct DrawIndexedArguments {
@@ -1429,7 +1434,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         window: &A::Window,
     ) -> Result<Self::SwapChain, Error>;
     /// Create a new `CmdBuf` with `num_buffers` internal buffers, the buffers can be swapped and syncronised
-    /// with a new `SwapChain` to allow in-flight gpu/cpu overlapped prodicer consumers 
+    /// with a new `SwapChain` to allow in-flight gpu/cpu overlapped prodicer consumers
     fn create_cmd_buf(&self, num_buffers: u32) -> Self::CmdBuf;
     /// Create a new `Shader` from `ShaderInfo`
     fn create_shader<T: Sized>(&self, info: &ShaderInfo, src: &[T]) -> Result<Self::Shader, Error>;
@@ -1522,7 +1527,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     ) -> Result<Self::RaytracingTLAS, Error>;
     /// Create a command signature for `execute_indirect` commands associated on the `RenderPipeline`
     fn create_indirect_render_command<T: Sized>(
-        &mut self, 
+        &mut self,
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
@@ -1545,7 +1550,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     /// Read back u64 timestamp values as values in seconds, the vector will be empty if the buffer is yet to be written
     /// on the GPU
     fn read_timestamps(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, size_bytes: usize, frame_written_fence: u64) -> Vec<f64>;
-    /// Read back a single pipeline statistics query, assuming `buffer` was created with `create_read_back_buffer` 
+    /// Read back a single pipeline statistics query, assuming `buffer` was created with `create_read_back_buffer`
     /// and is of size `get_pipeline_statistics_size_bytes()`. None is returned if the buffer is not ready
     fn read_pipeline_statistics(&self, swap_chain: &Self::SwapChain, buffer: &Self::Buffer, frame_written_fence: u64) -> Option<PipelineStatistics>;
     /// Reorts internal graphics api backend resources
@@ -1591,7 +1596,7 @@ pub trait SwapChain<D: Device>: 'static + Sized + Any + Send + Sync + Clone {
     /// Call swap at the end of the frame to swap the back buffer, we rotate through n-buffers
     fn swap(&mut self, device: &mut D);
 }
-    
+
 /// Responsible for buffering graphics commands. Internally it will contain a platform specific
 /// command list for each buffer in the associated swap chain.
 /// At the start of each frame `reset` must be called with an associated swap chain to internally switch
@@ -1601,10 +1606,10 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Reset the `CmdBuf` for use on a new frame, it will be syncronised with the `SwapChain` so that
     /// in-flight command buffers are not overwritten
     fn reset(&mut self, swap_chain: &D::SwapChain);
-    /// Call close to the command buffer after all commands have been added and before passing to `Device::execute` 
+    /// Call close to the command buffer after all commands have been added and before passing to `Device::execute`
     fn close(&mut self) -> Result<(), Error>;
     /// Internally the `CmdBuf` contains a set of buffers which it rotates through to allow inflight operations
-    /// to complete, this value indicates the buffer number you should `write` to during the current frame 
+    /// to complete, this value indicates the buffer number you should `write` to during the current frame
     fn get_backbuffer_index(&self) -> u32;
     /// Begins a render pass, end must be called
     fn begin_render_pass(&mut self, render_pass: &D::RenderPass);
@@ -1621,7 +1626,7 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn timestamp_query(&mut self, heap: &mut D::QueryHeap, resolve_buffer: &mut D::Buffer);
     /// Begin a new query in the heap, it will allocate an index which is returned as `usize`
     fn begin_query(&mut self, heap: &mut D::QueryHeap, query_type: QueryType) -> usize;
-    /// End a query that was made on the heap results will be pushed into the `resolve_buffer` 
+    /// End a query that was made on the heap results will be pushed into the `resolve_buffer`
     /// the data can be read by `Device::read_buffer` or specialisations such as `read_pipeline_statistics`
     fn end_query(&mut self, heap: &mut D::QueryHeap, query_type: QueryType, index: usize, resolve_buffer: &mut D::Buffer);
     /// Add a transition barrier for resources to change states based on info supplied in `TransitionBarrier`
@@ -1679,9 +1684,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
         &mut self,
-        command: &D::CommandSignature, 
-        max_command_count: u32, 
-        argument_buffer: &D::Buffer, 
+        command: &D::CommandSignature,
+        max_command_count: u32,
+        argument_buffer: &D::Buffer,
         argument_buffer_offset: usize,
         counter_buffer: Option<&D::Buffer>,
         counter_buffer_offset: usize
@@ -1692,21 +1697,21 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn update_raytracing_tlas(&mut self, tlas: &D::RaytracingTLAS, instance_buffer: &D::Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode);
     /// Resolves the `subresource` (mip index, 3d texture slice or array slice)
     fn resolve_texture_subresource(&mut self, texture: &D::Texture, subresource: u32) -> Result<(), Error>;
-    /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on 
+    /// Generates a full mip chain for the specified `texture` where `heap` is the shader heap the texture was created on
     fn generate_mip_maps(&mut self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
     /// Copy from one buffer to another with offsets
     fn copy_buffer_region(
-        &mut self, 
-        dst_buffer: &D::Buffer, 
-        dst_offset: usize, 
-        src_buffer: &D::Buffer, 
+        &mut self,
+        dst_buffer: &D::Buffer,
+        dst_offset: usize,
+        src_buffer: &D::Buffer,
         src_offset: usize,
         num_bytes: usize
     );
     /// Copy from one texture to another with offsets, if `None` is specified for `src_region`
-    /// it will copy the full size of src 
+    /// it will copy the full size of src
     fn copy_texture_region(
         &mut self,
         dst_texture: &D::Texture,
@@ -1726,7 +1731,7 @@ pub trait Buffer<D: Device>: Send + Sync {
     /// this function internally will map and unmap
     fn update<T: Sized>(&mut self, offset: usize, data: &[T]) -> Result<(), Error>; // TODO: should be mut surely?
     // write data directly to the buffer, the buffer is required to be persistently mapped
-    fn write<T: Sized>(&mut self, offset: usize, data: &[T]) -> Result<(), Error>; 
+    fn write<T: Sized>(&mut self, offset: usize, data: &[T]) -> Result<(), Error>;
     /// maps the entire buffer for reading or writing... see MapInfo
     fn map(&mut self, info: &MapInfo) -> *mut u8;
     /// unmap buffer... see UnmapInfo

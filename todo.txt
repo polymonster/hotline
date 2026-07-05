@@ -1,4 +1,33 @@
-// TODO:
+macos
+x perf issues push constants
+x hot reload
+x window pos restore
+x shader errors don't properly display
+x majority shader compilation
+x dynamic cubemap
+x tangent space normal map is black
+x shadow map is black
+x omni shadow is black
+x compute pipeline
+x RW texture + better demo
+x MSAA
+x MRT
+x mip downsample
+x gpu timestamp
+x pmfx hotreload
+x material ibl
+x bindless material
+x sample cmp shadow
+x cbuffer instanced causes huge perf issues (should be structured tbh)
+
+- cleanup mem
+
+- pmbuild needs universal install into hotline-data
+- single shader compile, htwv
+
+- draw indirect
+- video player
+- resource tests
 
 // issues
 // - swap between dynamic cube and PBR causes inconsitency in the cubemap texture
@@ -14,36 +43,30 @@
 // - area light
 // - disney brdf
 
-// platforms
-// - bring across macos shader compilation
-// - integrate macos changes and fixup win32/d3d12
-// - try update windows-rs
-
 // engine
 // - reverse depth
 // - visibility buffer
 // - mesh shader
-// - hello triangle (ray tracing)
 // - HDR pipeline
 // - glft
 // - set name on resources
 // - lazy init print function
-// - example triangle culling via execute indirect
 
 // gfx
+// - cross platform append/consume buffer (buffer + atomic counter). metal has no
+//   AppendStructuredBuffer; currently mapped to a plain buffer so counter semantics are lost
 // - Alpha to coverage
 // - Stencil Ref / Buffer
 // - API for fence
 
 // ui / debug
-// - per demo settings
 // - thread stats
 // - view menu + saving state
 // - imgui not tracked within draw call stats
 
-// build
-
 // DONE:
+// x per demo settings
+// x hello triangle (ray tracing)
 // x create tlas with heap?
 // x raytraced triangle
 // x test shader compilation with mac changes
@@ -158,7 +181,7 @@
 // x fix issues with crash when a return happens between begin/end render pass
 // x gfx::buffer should need to be mut for update
 // x propagate sample mask??
-// x Draw Instanced 
+// x Draw Instanced
 // x draw instanced
 // x pmfx v2 docs (view)
 // x batch vertex instance buffer

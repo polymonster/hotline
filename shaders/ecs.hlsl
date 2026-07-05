@@ -2,7 +2,7 @@
 // contains core descriptor layout to be used among different / shared ecs systems
 //
 
-// generic (fat) + non-skinned mesh vertex layout 
+// generic (fat) + non-skinned mesh vertex layout
 struct vs_input_mesh {
     float3 position: POSITION;
     float2 texcoord: TEXCOORD0;
@@ -18,13 +18,13 @@ struct ps_output {
 
 // per view constants with basic camera transforms
 cbuffer view_push_constants : register(b0) {
-    float4x4 view_projection_matrix;
+    row_major float4x4 view_projection_matrix;
     float4   view_position;
 }
 
 // per entity draw constants used in CPU draw calls
 cbuffer draw_push_constants : register(b1) {
-    float3x4 world_matrix;
+    row_major float3x4 world_matrix;
     float4   material_colour;
     uint4    draw_indices;
 }
@@ -61,7 +61,7 @@ ConstantBuffer<resource_uses> resources: register(b0, space1);
 
 // bindless draw data for entites to look up by ID
 struct draw_data {
-    float3x4 world_matrix;
+    row_major float3x4 world_matrix;
 }
 
 // bindless material ID's which can be looked up into textures array
@@ -118,7 +118,7 @@ struct directional_light_data {
 
 // camera data
 struct camera_data {
-    float4x4 view_projection_matrix;
+    row_major float4x4 view_projection_matrix;
     float4   view_position;
     float4   planes[6];
 }
@@ -136,21 +136,21 @@ StructuredBuffer<material_data> materials[] : register(t0, space2);
 StructuredBuffer<point_light_data> point_lights[] : register(t0, space3);
 StructuredBuffer<spot_light_data> spot_lights[] : register(t0, space4);
 StructuredBuffer<directional_light_data> directional_lights[] : register(t0, space5);
-StructuredBuffer<float4x4> shadow_matrices[] : register(t0, space6);
+StructuredBuffer<row_major float4x4> shadow_matrices[] : register(t0, space6);
 
-// textures 
-Texture2D textures[] : register(t0, space7);
-Texture2DMS<float4, 8> msaa8x_textures[] : register(t0, space8);
-TextureCube cubemaps[] : register(t0, space9);
-Texture2DArray texture_arrays[] : register(t0, space10);
-Texture3D volume_textures[] : register(t0, space11);
+// textures
+Texture2D textures[] : register(t1, space7);
+Texture2DMS<float4, 8> msaa8x_textures[] : register(t1, space8);
+TextureCube cubemaps[] : register(t1, space9);
+Texture2DArray texture_arrays[] : register(t1, space10);
+Texture3D volume_textures[] : register(t1, space11);
 
 // tlas
 RaytracingAccelerationStructure scene_tlas[] : register(t0, space12);
 
 // uav textures
-RWTexture2D<float4> rw_textures[] : register(u0, space0);
-RWTexture3D<float4> rw_volume_textures[] : register(u0, space1);
+RWTexture2D<float4> rw_textures[] : register(u1, space0);
+RWTexture3D<float4> rw_volume_textures[] : register(u1, space1);
 
 // main constants to obtain the indices of the buffer types
 ConstantBuffer<world_buffer_info_data> world_buffer_info : register(b2);
@@ -185,6 +185,6 @@ camera_data get_camera_data() {
 }
 
 // utility to return a shadow matrix by index
-float4x4 get_shadow_matrix(uint shadow_index) {
+row_major float4x4 get_shadow_matrix(uint shadow_index) {
     return shadow_matrices[world_buffer_info.shadow_matrix.x][shadow_index];
 }

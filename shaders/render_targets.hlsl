@@ -12,7 +12,7 @@ vs_output vs_heightmap(vs_input_mesh input) {
     float height = 200.0;
 
     float3 p1 = pos.xyz;
-    
+
     float h = fbm(p1.xz + fbm(p1.xz + fbm(p1.xz, 6), 6), 6) * height;
     p1.y += h;
 
@@ -60,7 +60,7 @@ ps_output_mrt ps_heightmap_example_mrt(vs_output input) {
 void cs_heightmap_mrt_resolve(uint2 did: SV_DispatchThreadID, uint2 group_id: SV_GroupID) {
     // grab the output dimension from input0 (which we write to)
     uint2 half_dim = resources.input0.dimension.xy / 2;
-    
+
     // render into 4 quadrants
     float4 final = float4(0.0, 0.0, 0.0, 0.0);
     if(did.x < half_dim.x && did.y < half_dim.y) {

@@ -153,8 +153,6 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmdbuffer.set_scissor_rect(&scissor);
         cmdbuffer.set_render_pipeline(pso_pmfx);
 
-        cmdbuffer.set_heap(pso_pmfx, dev.get_shader_heap());
-
         let srv0 =  textures[0].get_srv_index().unwrap();
         let srv1 =  textures[1].get_srv_index().unwrap();
         let srv2 =  textures[2].get_srv_index().unwrap();

@@ -1,4 +1,4 @@
-#![allow(clippy::collapsible_if)] 
+#![allow(clippy::collapsible_if)]
 
 use crate::gfx::Buffer;
 use crate::gfx::PipelineStatistics;
@@ -36,7 +36,7 @@ use std::hash::{Hash, Hasher};
 pub struct ResourceUse {
     pub index: u32,
     pub dimension: Vec3u
-} 
+}
 
 /// Everything you need to render a world view; command buffers will be automatically reset and submitted for you.
 pub struct View<D: gfx::Device> {
@@ -121,7 +121,7 @@ struct TrackedTexture<D: gfx::Device>  {
     _tex_type: gfx::TextureType,
 }
 
-/// Information to track changes to 
+/// Information to track changes to
 struct PmfxTrackingInfo {
     /// Filepath to the data which the pmfx File was deserialised from
     filepath: std::path::PathBuf,
@@ -132,7 +132,7 @@ struct PmfxTrackingInfo {
 // pipelines (name) > permutation (mask : u32) which is tuple (build_hash, pipeline)
 type FormatPipelineMap<T> = HashMap<String, HashMap<u32, (PmfxHash, T)>>;
 
-// hash of the view in .0, the view itself in .1 the source view name which was used to generate the instance is stored in .2, 
+// hash of the view in .0, the view itself in .1 the source view name which was used to generate the instance is stored in .2,
 type TrackedView<D> = (PmfxHash, Arc<Mutex<View<D>>>, String);
 type TrackedComputePass<D> = (PmfxHash, Arc<Mutex<ComputePass<D>>>);
 
@@ -147,8 +147,8 @@ pub struct Pmfx<D: gfx::Device> {
     pmfx: File,
     /// Tracking info for check on data reloads, grouped by pmfx name
     pmfx_tracking: HashMap<String, PmfxTrackingInfo>,
-    /// Folder paths for 
-    pmfx_folders: HashMap<String, String>, 
+    /// Folder paths for
+    pmfx_folders: HashMap<String, String>,
     /// Updated by calling 'update_window' this will cause any tracked textures to check for resizes and rebuild textures if necessary
     window_sizes: HashMap<String, (f32, f32)>,
     /// Nested structure of: format (u64) > FormatPipelineMap
@@ -203,7 +203,7 @@ pub struct TotalStats {
     pub gpu_start: f64,
     /// Time of the final submission in seconds
     pub gpu_end: f64,
-    /// Total pipeline statistics 
+    /// Total pipeline statistics
     pub pipeline_stats: PipelineStatistics
 }
 
@@ -237,7 +237,7 @@ impl<D> PassStats<D> where D: gfx::Device {
     pub fn new_query_buffer(device: &mut D, elem_size: usize, num_elems: usize) -> D::Buffer {
         device.create_read_back_buffer(elem_size * num_elems).unwrap()
     }
-    
+
     pub fn new(device: &mut D, num_buffers: usize) -> Self {
         let mut timestamp_buffers = Vec::new();
         let mut fences = Vec::new();
@@ -291,7 +291,7 @@ struct File {
     dependencies: Vec<String>
 }
 
-/// pmfx File serialisation, 
+/// pmfx File serialisation,
 impl File {
     /// creates a new empty pmfx
     fn new() -> Self {
@@ -358,7 +358,7 @@ struct RaytracingShaderBindingTableInfo {
     callable_shaders: Vec<String>
 }
 
-/// Enum for possible pipeline types 
+/// Enum for possible pipeline types
 #[derive(Clone)]
 pub enum PipelineType {
     None,
@@ -462,6 +462,8 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
         }
     }
 
+    pub fn get_bb(&self) -> usize { self.bb }
+
     /// Swap buffers once a frame for safe CPU writes an GPU in flight reads
     pub fn swap(&mut self) {
         self.bb = (self.bb + 1) % self.num_buffers
@@ -561,7 +563,7 @@ impl<D, T> DynamicBuffer<D, T> where D: gfx::Device, T: Sized {
     pub fn get_lookup(&self) -> GpuBufferLookup {
         GpuBufferLookup {
             index: self.get_index() as u32,
-            count: self.len as u32
+            count: self.len as u32,
         }
     }
 }
@@ -588,14 +590,14 @@ pub struct DynamicWorldBuffers<D: gfx::Device> {
 impl<D> Default for DynamicWorldBuffers<D> where D: gfx::Device {
     fn default() -> Self {
         Self {
-            draw: DynamicBuffer::<D, DrawData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            extent: DynamicBuffer::<D, ExtentData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            material: DynamicBuffer::<D, MaterialData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            point_light: DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            spot_light: DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            draw:              DynamicBuffer::<D, DrawData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            extent:            DynamicBuffer::<D, ExtentData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            material:          DynamicBuffer::<D, MaterialData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            point_light:       DynamicBuffer::<D, PointLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            spot_light:        DynamicBuffer::<D, SpotLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
             directional_light: DynamicBuffer::<D, DirectionalLightData>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
-            camera: DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3),
-            shadow_matrix: DynamicBuffer::<D, Mat4f>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
+            camera:            DynamicBuffer::<D, CameraData>::new(gfx::BufferUsage::CONSTANT_BUFFER, 3),
+            shadow_matrix:     DynamicBuffer::<D, Mat4f>::new(gfx::BufferUsage::SHADER_RESOURCE, 3),
         }
     }
 }
@@ -627,7 +629,7 @@ pub struct CameraConstants {
 #[derive(Clone)]
 pub struct DrawData {
     /// World matrix for transforming entity
-    pub world_matrix: Mat34f, 
+    pub world_matrix: Mat34f,
 }
 
 /// GPU friendly struct containing single entity draw data
@@ -637,10 +639,10 @@ pub struct ExtentData {
     /// Centre pos of aabb
     pub pos: Vec3f,
     /// Half extent of aabb
-    pub extent: Vec3f 
+    pub extent: Vec3f
 }
 
-/// GPU friendly structure containing lookup id's for bindless materials 
+/// GPU friendly structure containing lookup id's for bindless materials
 #[repr(C)]
 #[derive(Clone)]
 pub struct MaterialData {
@@ -735,7 +737,7 @@ pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> Came
         vec3f(1.0, 0.0, 0.0),   //+x
         vec3f(-1.0, 0.0, 0.0),  //-x
         vec3f(0.0, 1.0, 0.0),   //+y
-        vec3f(0.0, -1.0, 0.0),  //-y        
+        vec3f(0.0, -1.0, 0.0),  //-y
         vec3f(0.0, 0.0, 1.0),   //+z
         vec3f(0.0, 0.0, -1.0)   //-z
     ];
@@ -779,7 +781,7 @@ pub fn cubemap_camera_face(face: usize, pos: Vec3f, near: f32, far: f32) -> Came
 fn create_shader_from_file<D: gfx::Device>(device: &D, folder: &Path, file: Option<String>) -> Result<Option<D::Shader>, super::Error> {
     if let Some(shader) = file {
         let shader_filepath = folder.join(shader);
-        let shader_data = fs::read(shader_filepath)?;                
+        let shader_data = fs::read(shader_filepath)?;
         let shader_info = gfx::ShaderInfo {
             shader_type: gfx::ShaderType::Vertex,
             compile_info: None
@@ -851,9 +853,9 @@ fn to_gfx_texture_info(pmfx_texture: &TextureInfo, ratio_size: (u64, u64)) -> gf
     let (width, height) = ratio_size;
 
     // infer texture type from dimensions
-    let tex_type = if pmfx_texture.cubemap { 
+    let tex_type = if pmfx_texture.cubemap {
         gfx::TextureType::TextureCube
-    } 
+    }
     else if pmfx_texture.depth > 1 {
         gfx::TextureType::Texture3D
     }
@@ -1047,24 +1049,23 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Retunrs a `WorldBufferInfo` that contains the serv index and count of the various world buffers used
     /// during rendering
     pub fn get_world_buffer_info(&self) -> WorldBufferInfo {
-        // construct on the fly
         WorldBufferInfo {
-            draw: self.world_buffers.draw.get_lookup(),
-            extent: self.world_buffers.extent.get_lookup(),
-            material: self.world_buffers.material.get_lookup(),
-            point_light: self.world_buffers.point_light.get_lookup(),
-            spot_light: self.world_buffers.spot_light.get_lookup(),
+            draw:              self.world_buffers.draw.get_lookup(),
+            extent:            self.world_buffers.extent.get_lookup(),
+            material:          self.world_buffers.material.get_lookup(),
+            point_light:       self.world_buffers.point_light.get_lookup(),
+            spot_light:        self.world_buffers.spot_light.get_lookup(),
             directional_light: self.world_buffers.directional_light.get_lookup(),
-            camera: self.world_buffers.camera.get_lookup(),
-            shadow_matrix: self.world_buffers.shadow_matrix.get_lookup(),
-            user_data: self.push_constant_user_data
+            camera:            self.world_buffers.camera.get_lookup(),
+            shadow_matrix:     self.world_buffers.shadow_matrix.get_lookup(),
+            user_data:         self.push_constant_user_data,
         }
     }
 
     /// Load a pmfx from a folder, where the folder contains a pmfx info.json and shader binaries in separate files within the directory
     /// You can load multiple pmfx files which will be merged together, shaders are grouped by pmfx_name/ps_main.psc
-    /// Render graphs and pipleines must have unique names, if multiple pmfx name a pipeline the same name  
-    pub fn load(&mut self, filepath: &str) -> Result<(), super::Error> {        
+    /// Render graphs and pipleines must have unique names, if multiple pmfx name a pipeline the same name
+    pub fn load(&mut self, filepath: &str) -> Result<(), super::Error> {
         // get the name for indexing by pmfx name/folder
         let folder = Path::new(filepath);
         let pmfx_name = if let Some(name) = folder.file_name() {
@@ -1081,19 +1082,19 @@ impl<D> Pmfx<D> where D: gfx::Device {
              let info_filepath = folder.join(format!("{}.json", pmfx_name));
              let pmfx_data = fs::read(&info_filepath)?;
              let file : File = serde_json::from_slice(&pmfx_data)?;
- 
+
              // create tracking info to check if the pmfx has been rebuilt
              let file_metadata = fs::metadata(&info_filepath)?;
              e.insert(PmfxTrackingInfo {
                  modified_time: file_metadata.modified()?,
                  filepath: info_filepath
              });
- 
+
              // add files from pmfx for tracking
              for dep in &file.dependencies {
                  self.reloader.add_file(dep);
              }
- 
+
              // merge into pmfx
              self.merge_pmfx(file, filepath);
          }
@@ -1314,7 +1315,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     /// Retruns a vector of resource use indices specified in `pmfx` pass and based on `ResourceUsage`
     /// creates resources that do not yet exist
     fn get_resource_use_indices(&mut self, device: &mut D, info: &GraphPassInfo) -> Result<Vec<ResourceUse>, super::Error> {
-        // create textures we may use        
+        // create textures we may use
         let mut use_indices = Vec::new();
         if let Some(uses) = &info.uses {
             for (resource, usage) in uses {
@@ -1371,15 +1372,15 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     fn create_view_pass_inner(
-        &mut self, device: 
-        &mut D, view_name: &str, 
-        graph_pass_name: &str, 
+        &mut self, device:
+        &mut D, view_name: &str,
+        graph_pass_name: &str,
         info: &GraphPassInfo,
         pmfx_view: &ViewInfo,
         array_slice: usize,
         cubemap: bool
     ) -> Result<(), super::Error> {
-        
+
         // make a custom name for multi pass
         let graph_pass_multi_name = if array_slice > 0 {
             format!("{}_{}", graph_pass_name, array_slice)
@@ -1515,7 +1516,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.pass_stats.insert(graph_pass_multi_name.to_string(), PassStats::new(device, 2));
 
         Ok(())
-    }   
+    }
 
     /// Create a view pass from information specified in pmfx file
     fn create_view_pass(&mut self, device: &mut D, view_name: &str, graph_pass_name: &str, info: &GraphPassInfo) -> Result<(), super::Error> {
@@ -1526,7 +1527,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             // create pass from targets
             let pmfx_view = self.pmfx.views[view_name].clone();
 
-            // create textures for view 
+            // create textures for view
             let mut cubemap = false;
             for name in &pmfx_view.render_target {
                 self.create_texture(device, name)?;
@@ -1635,7 +1636,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         let mut hash = DefaultHasher::new();
         graph_pass_name.hash(&mut hash);
         let colour_hash : u32 = hash.finish() as u32 | 0xff000000;
-        
+
         let pass = ComputePass {
             phantom_data: std::marker::PhantomData,
             pass_pipline: pass_pipeline,
@@ -1745,9 +1746,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
     fn create_resolve_transition(
         &mut self,
         device: &mut D,
-        texture_barriers: &mut HashMap<String, ResourceState>, 
-        view_name: &str, 
-        texture_name: &str, 
+        texture_barriers: &mut HashMap<String, ResourceState>,
+        view_name: &str,
+        texture_name: &str,
         target_state: ResourceState) -> Result<(), super::Error> {
         if texture_barriers.contains_key(texture_name) {
             let state = texture_barriers[texture_name];
@@ -1780,7 +1781,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     },
                     Subresource::ResolveResource
                 );
-                
+
                 // perform the resolve
                 cmd_buf.resolve_texture_subresource(tex, 0)?;
 
@@ -1814,21 +1815,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
     fn create_texture_transition_barrier(
         &mut self,
         device: &mut D,
-        texture_barriers: &mut HashMap<String, ResourceState>, 
-        view_name: &str, 
-        texture_name: &str, 
+        texture_barriers: &mut HashMap<String, ResourceState>,
+        view_name: &str,
+        texture_name: &str,
         target_state: ResourceState) -> Result<(), super::Error> {
         if texture_barriers.contains_key(texture_name) {
             let state = texture_barriers[texture_name];
             if state != target_state {
                 // add barrier placeholder in the command_queue
                 let barrier_name = format!("barrier_{}-{} ({:?})", view_name, texture_name, target_state);
-                self.command_queue.push(barrier_name.to_string());          
+                self.command_queue.push(barrier_name.to_string());
 
                 // create a command buffer
                 let mut cmd_buf = device.create_cmd_buf(1);
                 cmd_buf.begin_event(
-                    0xfff1b023, 
+                    0xfff1b023,
                     &format!("transition_barrier: {} ({} -> {})", &texture_name, state, target_state)
                 );
                 cmd_buf.transition_barrier(&gfx::TransitionBarrier {
@@ -1840,7 +1841,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 cmd_buf.end_event();
                 cmd_buf.close()?;
                 self.barriers.insert(barrier_name, cmd_buf);
-    
+
                 // update track state
                 texture_barriers.remove(texture_name);
                 texture_barriers.insert(texture_name.to_string(), target_state);
@@ -1857,8 +1858,8 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create a render graph wih automatic resource barrier generation from info specified insie .pmfx file
-    pub fn create_render_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {        
-        // go through the graph sequentially, as the command lists are executed in order but generated 
+    pub fn create_render_graph(&mut self, device: &mut D, graph_name: &str) -> Result<(), super::Error> {
+        // go through the graph sequentially, as the command lists are executed in order but generated
         if self.pmfx.render_graphs.contains_key(graph_name) {
 
             // create views for any nodes in the graph
@@ -1869,16 +1870,16 @@ impl<D> Pmfx<D> where D: gfx::Device {
             self.command_queue.clear();
 
             let mut barriers = self.pmfx.textures.iter().filter(|tex|{
-                tex.1.usage.contains(&ResourceState::ShaderResource) || 
+                tex.1.usage.contains(&ResourceState::ShaderResource) ||
                 tex.1.usage.contains(&ResourceState::RenderTarget) ||
                 tex.1.usage.contains(&ResourceState::DepthStencil)
             }).map(|tex|{
-              (tex.0.to_string(), ResourceState::ShaderResource)  
+              (tex.0.to_string(), ResourceState::ShaderResource)
             }).collect::<HashMap<String, ResourceState>>();
 
             // loop over the graph multiple times adding views in depends on order, until we add all the views
             let mut to_add = self.pmfx.render_graphs[graph_name].len();
-           
+
             let mut added = 0;
             let mut dependencies = HashSet::new();
             while added < to_add {
@@ -1893,12 +1894,12 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             continue;
                         }
                     }
-    
+
                     // already added this pass
                     if dependencies.contains(graph_pass_name) {
                         continue;
                     }
-    
+
                     // wait for dependencies
                     if let Some(depends_on) = &instance.depends_on {
                         let mut passes = false;
@@ -1906,7 +1907,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             for d in depends_on {
                                 if !pmfx_graph.contains_key(d) {
                                     passes = true;
-                                    println!("hotline_rs::pmfx:: [warning] graph pass {} missing dependency {}. ignoring", 
+                                    println!("hotline_rs::pmfx:: [warning] graph pass {} missing dependency {}. ignoring",
                                         graph_pass_name, d);
                                 }
                                 else if dependencies.contains(d) {
@@ -1962,21 +1963,21 @@ impl<D> Pmfx<D> where D: gfx::Device {
                             // resolve and generate mips
                             if resolve {
                                 self.create_resolve_transition(
-                                    device, 
-                                    &mut barriers, 
-                                    &graph_pass_name, 
+                                    device,
+                                    &mut barriers,
+                                    &graph_pass_name,
                                     &u.0,
                                     ResourceState::ShaderResource,
                                 )?;
                             }
-                            
+
                             // generate mips on non msaa resources
                             if gen_mips {
                                 // generate_mip_maps mips expects us to be in ShaderResource state
                                 self.create_texture_transition_barrier(
-                                    device, 
-                                    &mut barriers, 
-                                    &graph_pass_name, 
+                                    device,
+                                    &mut barriers,
+                                    &graph_pass_name,
                                     &u.0,
                                     ResourceState::ShaderResource)?;
 
@@ -1988,14 +1989,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
 
                             // transition to target state
                             self.create_texture_transition_barrier(
-                                device, 
-                                &mut barriers, 
-                                &graph_pass_name, 
+                                device,
+                                &mut barriers,
+                                &graph_pass_name,
                                 &u.0,
                                 res_state)?;
                         }
                     }
-                    
+
                     if let Some(view) = &instance.view {
                         // create transitions by inspecting view info
                         let pmfx_view = self.pmfx.views[view].clone();
@@ -2004,14 +2005,14 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         for rt_name in pmfx_view.render_target {
                             self.create_texture_transition_barrier(
                                 device, &mut barriers, view, &rt_name, ResourceState::RenderTarget)?;
-        
+
                         }
-        
+
                         // same for depth stencils
                         for ds_name in pmfx_view.depth_stencil {
                             self.create_texture_transition_barrier(
                                 device, &mut barriers, view, &ds_name, ResourceState::DepthStencil)?;
-        
+
                         }
 
                         // create pipelines requested for this view instance with the pass format
@@ -2052,7 +2053,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     dependencies.insert(graph_pass_name.to_string());
                 }
             }
-            
+
             // finally all targets which are in the 'barriers' array are transitioned to shader resources (for debug views)
             let srvs = barriers.keys().map(|k|{
                 k.to_string()
@@ -2061,7 +2062,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             for name in srvs {
                 let result = self.create_resolve_transition(
                     device, &mut barriers, "eof", &name, ResourceState::ShaderResource);
-               
+
                 if result.is_err() {
                     // TODO: tell user without spewing out errors
                 }
@@ -2109,7 +2110,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create a ComputePipeline instance for the combination of pmfx_pipeline settings
-    pub fn create_compute_pipeline(&mut self, device: &D, pipeline_name: &str) -> Result<(), super::Error> {              
+    pub fn create_compute_pipeline(&mut self, device: &D, pipeline_name: &str) -> Result<(), super::Error> {
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
@@ -2119,7 +2120,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 self.create_shader(device, Path::new(&folder), &pipeline.cs)?;
             }
 
-            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 let cs = self.get_shader(&pipeline.cs);
                 if let Some(cs) = cs {
                     let pso = device.create_compute_pipeline(&gfx::ComputePipelineInfo {
@@ -2131,7 +2132,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     // TODO: permutations
                     //let mask = permutation.parse().unwrap();
                     //permutations.insert(mask, (pipeline.hash, pso));
-                    
+
                     self.compute_pipelines.insert(pipeline_name.to_string(), (pipeline.hash, pso));
                 }
             }
@@ -2146,27 +2147,27 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Create a RenderPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
-    pub fn create_render_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {              
+    pub fn create_render_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {
         if self.pmfx.pipelines.contains_key(pipeline_name) {
             // first create shaders if necessary
             let folder = self.pmfx_folders.get(pipeline_name)
                 .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
-            
+
             for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 self.create_shader(device, Path::new(&folder), &pipeline.vs)?;
                 self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
             }
-            
+
             // create entry for this format if it does not exist
             let fmt = pass.get_format_hash();
             let format_pipeline = self.render_pipelines.entry(fmt).or_insert(HashMap::new());
-            
+
             // create entry for this pipeline permutation set if it does not exist
             if !format_pipeline.contains_key(pipeline_name) {
                 println!("hotline_rs::pmfx:: creating pipeline: {}", pipeline_name);
                 format_pipeline.insert(pipeline_name.to_string(), HashMap::new());
                 // we create a pipeline per-permutation
-                for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+                for (permutation, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                     let vertex_layout = pipeline.vertex_layout.as_ref().unwrap();
                     let pso = device.create_render_pipeline(&gfx::RenderPipelineInfo {
                         vs: self.get_shader(&pipeline.vs),
@@ -2182,10 +2183,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                         pass: Some(pass),
                         ..Default::default()
                     })?;
-                    
+
                     println!("hotline_rs::pmfx:: compiled render pipeline: {}", pipeline_name);
                     let format_pipeline = self.render_pipelines.get_mut(&fmt).unwrap();
-                    let permutations = format_pipeline.get_mut(pipeline_name).unwrap();  
+                    let permutations = format_pipeline.get_mut(pipeline_name).unwrap();
 
                     let mask = permutation.parse().unwrap();
                     permutations.insert(mask, (pipeline.hash, pso));
@@ -2215,9 +2216,9 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     self.create_shader(device, Path::new(&folder), &Some(shader))?;
                 }
             }
-            
+
             // for each permutation create a pipeline
-            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {    
+            for (_, pipeline) in self.pmfx.pipelines[pipeline_name].clone() {
                 let shaders = pipeline.lib.expect("hotline_rs::pmfx:: ray tracing pipeline expects a lib member with a set of raytacing shaders")
                     .iter()
                     .map(|x| gfx::RaytracingShader {
@@ -2262,7 +2263,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.get_render_pipeline_permutation_for_format(pipeline_name, 0, format_hash)
     }
 
-    /// Returns a pmfx pipline for a random / unknown render target format... prefer to use `get_render_pipeline_for_format` 
+    /// Returns a pmfx pipline for a random / unknown render target format... prefer to use `get_render_pipeline_for_format`
     /// if you know the format the target you are rendering in to.
     pub fn get_render_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Result<&'stack D::RenderPipeline, super::Error> {
         for format in self.render_pipelines.values() {
@@ -2305,7 +2306,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             })
         }
     }
- 
+
     /// Fetch a prebuilt RaytracingPipelineBinding which is contains a RaytracingPipeline and RaytracingShaderBindingTable
     pub fn get_raytracing_pipeline<'stack>(&'stack self, pipeline_name: &str) -> Result<&'stack RaytracingPipelineBinding<D>, super::Error> {
         if self.raytracing_pipelines.contains_key(pipeline_name) {
@@ -2336,7 +2337,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     if !timestamps.is_empty() {
                         stats.start_timestamp = timestamps[0];
                         min_frame_timestamp = min(stats.start_timestamp, min_frame_timestamp);
-    
+
                     }
                     // end timestamp
                     let timestamps = device.read_timestamps(
@@ -2387,7 +2388,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
     }
 
     /// Reload all active resources based on hashes
-    pub fn reload(&mut self, device: &mut D) -> Result<(), super::Error> {        
+    pub fn reload(&mut self, device: &mut D) -> Result<(), super::Error> {
         let reload_paths = self.pmfx_tracking.iter_mut().filter(|(_, tracking)| {
             fs::metadata(&tracking.filepath).unwrap().modified().unwrap() > tracking.modified_time
         }).map(|tracking| {
@@ -2399,7 +2400,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             if !reload_filepath.is_empty() {
                 println!("hotline_rs::pmfx:: reload from {}", reload_filepath);
                 let pmfx_data = fs::read(&reload_filepath).expect("hotline_rs::pmfx:: failed to read file");
-                
+
                 let file : File = serde_json::from_slice(&pmfx_data)?;
                 self.merge_pmfx(file, PathBuf::from(&reload_filepath).parent().unwrap().to_str().unwrap());
 
@@ -2474,11 +2475,11 @@ impl<D> Pmfx<D> where D: gfx::Device {
                     println!("hotline::pmfx:: reloading shader: {}", shader);
                     self.shaders.remove(shader);
                 }
-                
+
                 // reload pipelines tuple = (format_hash, pipeline_name, permutation_mask)
                 for pipeline in &reload_pipelines {
                     println!("hotline::pmfx:: reloading pipeline: {}", pipeline.1);
-                    
+
                     // TODO: here we could only remove affected permutations
                     let format_pipelines = self.render_pipelines.get_mut(&pipeline.0).unwrap();
                     format_pipelines.remove(&pipeline.1);
@@ -2507,7 +2508,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 });
             }
 
-            // 
+            //
             if rebuild_graph {
                 self.create_render_graph(device, &self.active_render_graph.to_string())?;
             }
@@ -2637,7 +2638,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         // view pipeline stats
         pass_stats.pipeline_stats_heap.reset();
         pass_stats.pipeline_query_index = cmd_buf.begin_query(
-            &mut pass_stats.pipeline_stats_heap, 
+            &mut pass_stats.pipeline_stats_heap,
             gfx::QueryType::PipelineStatistics
         );
     }
@@ -2651,7 +2652,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         if pass_stats.pipeline_query_index != usize::max_value() {
             let buf = &mut pass_stats.pipeline_stats_buffers[pass_stats.write_index];
             cmd_buf.end_query(
-                &mut pass_stats.pipeline_stats_heap, 
+                &mut pass_stats.pipeline_stats_heap,
                 gfx::QueryType::PipelineStatistics,
                 pass_stats.pipeline_query_index,
                 buf,
@@ -2668,9 +2669,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 cmd_buf.reset(swap_chain);
 
                 // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(name).unwrap();
-                Self::stats_start(cmd_buf, &mut stats);
-                self.pass_stats.insert(name.to_string(), stats);
+                if let Some(mut stats) = self.pass_stats.remove(name) {
+                    Self::stats_start(cmd_buf, &mut stats);
+                    self.pass_stats.insert(name.to_string(), stats);
+                }
             }
         }
     }
@@ -2728,9 +2730,10 @@ impl<D> Pmfx<D> where D: gfx::Device {
             }
             else if let Some(cmd_buf) = cmd_bufs.get_mut(node) {
                 // inserts markers for timing and tracking pipeline stats
-                let mut stats = self.pass_stats.remove(node).unwrap();
-                Self::stats_end(cmd_buf, &mut stats);
-                self.pass_stats.insert(node.to_string(), stats);
+                if let Some(mut stats) = self.pass_stats.remove(node) {
+                    Self::stats_end(cmd_buf, &mut stats);
+                    self.pass_stats.insert(node.to_string(), stats);
+                }
 
                 cmd_buf.close().unwrap();
                 device.execute(cmd_buf);
@@ -2758,7 +2761,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
             let mut imgui_open = open;
             if imgui.begin("textures", &mut imgui_open, imgui::WindowFlags::ALWAYS_HORIZONTAL_SCROLLBAR) {
                 for texture in self.textures.values() {
-                    
+
                     let thumb_size = 256.0;
                     let aspect = texture.1.size.0 as f32 / texture.1.size.1 as f32;
                     let w = thumb_size * aspect;
@@ -2818,7 +2821,7 @@ impl<D, A> imgui::UserInterface<D, A> for Pmfx<D> where D: gfx::Device, A: os::A
             imgui.end();
 
             imgui_open
-        } 
+        }
         else {
             false
         }
@@ -2842,7 +2845,7 @@ impl PmfxReloadResponder {
 impl ReloadResponder for PmfxReloadResponder {
     fn add_file(&mut self, filepath: &str) {
         self.files.push(filepath.to_string());
-    }  
+    }
 
     fn get_files(&self) -> Vec<String> {
         self.files.to_vec()
@@ -2853,21 +2856,23 @@ impl ReloadResponder for PmfxReloadResponder {
     }
 
     fn build(&mut self) -> std::process::ExitStatus {
+        // Shader/data compilation is hooked into the crate's build.rs (under the `build_data`
+        // feature), so reuse that single path here. `cargo build --lib` re-runs the build script -
+        // which recompiles the data - while skipping the example/bin targets; when only files under
+        // `shaders/` changed cargo leaves the crate artifacts untouched, so this rebuilds data only.
         let hotline_path = super::get_data_path("../..");
-        let pmbuild = super::get_data_path("../../hotline-data/pmbuild.cmd");
-        let output = std::process::Command::new(pmbuild)
+        let output = std::process::Command::new("cargo")
             .current_dir(hotline_path)
-            .arg("win32-data")
-            .arg("-pmfx")
+            .args(["build", "--lib"])
             .output()
             .expect("hotline::hot_lib:: hot pmfx failed to compile!");
 
         if !output.stdout.is_empty() {
-            println!("{}", String::from_utf8(output.stdout).unwrap());
+            println!("{}", String::from_utf8_lossy(&output.stdout));
         }
 
         if !output.stderr.is_empty() {
-            println!("{}", String::from_utf8(output.stderr).unwrap());
+            println!("{}", String::from_utf8_lossy(&output.stderr));
         }
 
         if output.status.success() {

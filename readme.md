@@ -7,7 +7,7 @@
 
 Hotline is a graphics engine and live coding tool that allows you to edit code, shaders, and render state without restating the application.
 
-<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom3.gif" width="100%"/>  
+<img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/geom3.gif" width="100%"/>
 
 Checkout a live [demo](https://www.youtube.com/watch?v=8a_qcqmpZlg)!.
 
@@ -34,17 +34,17 @@ Windows with Direct3D12 is the first fully supported platform, macOS with metal 
 
 For the time being it is recommended to use the repository from GitHub if you want to use the example `plugins` or standalone `examples`. If you just want to use the library then `crates.io` is suitable. There are some difficulties with publishing data and plugins which I hope to iron out in time.
 
-### Building / Fetching Data 
+### Building / Fetching Data
 
 The [hotline-data](https://github.com/polymonster/hotline-data) repository is required to build and serve data for the examples and the example plugins, it is included as a submodule of this repository, you can clone with submodules as so:
 
-```
+```text
 git clone https://github.com/polymonster/hotline.git --recursive
 ```
 
 You can add the submodule after cloning or update the submodule to keep it in-sync with the main repository as follows:
 
-```
+```text
 git submodule update --init --recursive
 ```
 
@@ -70,7 +70,7 @@ Any code changes made to the plugin libs will cause a rebuild and reload to happ
 
 ### Building from Visual Studio Code
 
-There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from vscode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.  
+There are included `tasks` and `launch` files for vscode including configurations for the client and the examples. Launching the `client` from vscode in debug or release will build the core hotline `lib`, `client`, `data` and `plugins`.
 
 ## Adding Plugins
 
@@ -100,7 +100,7 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
         }
     }
 
-    fn setup(&mut self, client: Client<gfx_platform::Device, os_platform::App>) 
+    fn setup(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
         -> Client<gfx_platform::Device, os_platform::App> {
         println!("plugin setup");
         client
@@ -159,7 +159,7 @@ You can then provide an initialisation function named after the demo this return
 pub fn primitives(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     // load resources we may need
     client.pmfx.load(&hotline_rs::get_data_path("shaders/debug").as_str()).unwrap();
-    
+
     // fill out info
     ScheduleInfo {
         setup: systems![
@@ -209,10 +209,10 @@ You can also supply your own `update` systems to animate and move your entities.
 ```rust
 #[export_update_fn]
 fn update_cameras(
-    app: Res<AppRes>, 
-    main_window: Res<MainWindowRes>, 
+    app: Res<AppRes>,
+    main_window: Res<MainWindowRes>,
     mut query: Query<(&mut Position, &mut Rotation, &mut ViewProjectionMatrix), With<Camera>>
-) -> Result<(), {    
+) -> Result<(), {
     let app = &app.0;
     for (mut position, mut rotation, mut view_proj) in &mut query {
         // ..
@@ -231,7 +231,7 @@ pub fn render_meshes(
     view: &pmfx::View<gfx_platform::Device>,
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     mesh_draw_query: Query<(&WorldMatrix, &MeshComponent)>) -> Result<(), hotline_rs::Error> {
-        
+
     let fmt = view.pass.get_format_hash();
     let mesh_debug = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
     let camera = pmfx.get_camera_constants(&view.camera)?;
@@ -282,7 +282,7 @@ pub fn dispatch_compute(
     }
 
     cmd_buf.set_heap(pipeline, &pmfx.shader_heap);
-    
+
     cmd_buf.dispatch(
         pass.group_count,
         pass.numthreads
@@ -360,7 +360,7 @@ A quick example of a basic application setup:
 // include prelude for convenience
 use hotline_rs::prelude::*;
 
-pub fn main() -> Result<(), hotline_rs::Error> { 
+pub fn main() -> Result<(), hotline_rs::Error> {
     // Create an Application
     let mut app = os_platform::App::create(os::AppInfo {
         name: String::from("triangle"),
@@ -391,7 +391,7 @@ pub fn main() -> Result<(), hotline_rs::Error> {
         ..Default::default()
     };
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
-    
+
     /// Create a command buffer
     let mut cmd = device.create_cmd_buf(num_buffers);
 
@@ -670,11 +670,11 @@ while app.run() {
     if player.is_ended() {
         // .. handle case where video is ended
     }
-    
+
     // get texture
     if let Some(video_tex) = &player.get_texture() {
         let size = player.get_size();
-        
+
         // .. render
     }
 }
@@ -844,7 +844,7 @@ This example provides instanced draws by updating entity world matrices on the C
 
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/draw_push_constants_texture.png" width="100%"/>
 
-Bindless texturing example - uses push constants to push a per draw call texture id for each entity. The texture id (shader resource view index) is used to lookup the texture inside an unbounded descriptor array in the fragment shader. 
+Bindless texturing example - uses push constants to push a per draw call texture id for each entity. The texture id (shader resource view index) is used to lookup the texture inside an unbounded descriptor array in the fragment shader.
 
 ### Tangent Space Normal Maps
 
@@ -968,7 +968,7 @@ Inline raytracing shadows with mixed raster and raytracing workload. Raster pipe
 
 ## Tests
 
-There are standalone tests and client/plugin tests to test graphics API features. This requires a test runner which has a GPU and is not headless, so I am using my home machine as a self-hosted actions runner. You can run the tests yourself but because of the requirement of a GPU device and plugin loading the tests need to be ran single threaded. 
+There are standalone tests and client/plugin tests to test graphics API features. This requires a test runner which has a GPU and is not headless, so I am using my home machine as a self-hosted actions runner. You can run the tests yourself but because of the requirement of a GPU device and plugin loading the tests need to be ran single threaded.
 
 ```text
 cargo test -- --test-threads=1
@@ -982,4 +982,4 @@ pmbuild test
 
 ## Contributing
 
-Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interested in being more involved in development I am happy to take on people to help with the project of all experience levels, especially people with more experience in Rust. You can contact me if interested via [Twitter](twitter.com/polymonster) or [Discord](https://discord.com/invite/3yjXwJ8wJC).  
+Contributions of all kinds are welcome, you can make a fork and send a PR if you want to submit small fixes or improvements. Anyone interested in being more involved in development I am happy to take on people to help with the project of all experience levels, especially people with more experience in Rust. You can contact me if interested via [Twitter](twitter.com/polymonster) or [Discord](https://discord.com/invite/3yjXwJ8wJC).

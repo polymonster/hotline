@@ -44,7 +44,7 @@ float sample_shadow_pcf_9(float3 sp, uint sm_index, float2 sm_size) {
     samples[6] = float2(1.0, -1.0) * inv_sm_size;
     samples[7] = float2(1.0, 0.0) * inv_sm_size;
     samples[8] = float2(1.0, 1.0) * inv_sm_size;
-    
+
     float shadow = 0.0;
 
     [unroll]
@@ -73,7 +73,7 @@ float sample_shadow_cube_pcf_9(float3 cv, float d, uint sm_index, float sm_size)
     samples[6] = (b2 *  1.0 + t * -1.0) * inv_sm_size;
     samples[7] = (b2 *  1.0 + t *  0.0) * inv_sm_size;
     samples[8] = (b2 *  1.0 + t * -1.0) * inv_sm_size;
-    
+
     float shadow = 0.0;
 
     [unroll]
@@ -82,7 +82,6 @@ float sample_shadow_cube_pcf_9(float3 cv, float d, uint sm_index, float sm_size)
     }
     shadow /= 9.0;
 
-    // shadow = cubemaps[shadow_map_index].SampleCmp(sampler_shadow_compare, cv, d).r;
     return shadow;
 }
 
@@ -104,7 +103,7 @@ float4 ps_single_directional_shadow(vs_output input) : SV_Target {
 
     int shadow_map_index = light.shadow_map.srv_index;
     float4x4 shadow_matrix = get_shadow_matrix(light.shadow_map.matrix_index);
-    
+
     // project shadow coord
     float4 offset_pos = float4(input.world_pos.xyz, 1.0);
 
@@ -113,10 +112,12 @@ float4 ps_single_directional_shadow(vs_output input) : SV_Target {
     sp.y *= -1.0;
     sp.xy = sp.xy * 0.5 + 0.5;
 
-    float shadow_sample = textures[shadow_map_index].Sample(sampler_clamp_point, sp.xy).r;
-    float shadow = sp.z >= shadow_sample ? 0.0 : 1.0;
+    // sample (non cmp)
+    //float shadow_sample = textures[shadow_map_index].Sample(sampler_clamp_point, sp.xy).r;
+    //float shadow = sp.z >= shadow_sample ? 0.0 : 1.0;
 
-    shadow = sample_shadow_pcf_9(sp, shadow_map_index, float2(4096.0, 4096.0));
+    float2 sm_size = float2(4096.0, 4096.0);
+    float shadow = sample_shadow_pcf_9(sp, shadow_map_index, sm_size);
 
     float3 l = light.dir.xyz;
     float diffuse = lambert(l, n);
@@ -128,12 +129,13 @@ float4 ps_single_directional_shadow(vs_output input) : SV_Target {
 
     float4 lit_colour = light.colour * diffuse + light.colour * specular;
     output = lit_colour * shadow + light.colour * 0.2;
+    output.a = 1.0;
 
     return output;
 }
 
 float4 ps_single_omni_shadow(vs_output input) : SV_Target {
-    
+
     int i = 0;
     float ks = 2.0;
     float roughness = 0.9;
@@ -158,7 +160,7 @@ float4 ps_single_omni_shadow(vs_output input) : SV_Target {
         light.radius,
         input.world_pos.xyz
     );
-    
+
     output += atteniuation * light.colour * diffuse;
     output += atteniuation * light.colour * specular;
 
@@ -196,7 +198,7 @@ float4 ps_single_omni_shadow(vs_output input) : SV_Target {
     samples[6] = (b2 *  1.0 + t * -1.0) * inv_sm_size;
     samples[7] = (b2 *  1.0 + t *  0.0) * inv_sm_size;
     samples[8] = (b2 *  1.0 + t * -1.0) * inv_sm_size;
-    
+
     float shadow = 0.0;
 
     [unroll]
@@ -208,6 +210,9 @@ float4 ps_single_omni_shadow(vs_output input) : SV_Target {
     if(dot(n, l) >= 0.0) {
         shadow = 0.0;
     }
-    
-    return output * shadow;
+
+    output.rgb *= shadow;
+    output.a = 1.0;
+
+    return output;
 }

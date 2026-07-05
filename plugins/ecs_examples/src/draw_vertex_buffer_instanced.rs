@@ -1,6 +1,6 @@
 ///
 /// Draw Vertex Buffer Instanced
-/// 
+///
 
 use crate::prelude::*;
 
@@ -46,7 +46,7 @@ pub fn setup_draw_vertex_buffer_instanced(
         let parent = commands.spawn(InstanceBatch {
             mesh: MeshComponent(mesh.clone()),
             pipeline: PipelineComponent("mesh_vertex_buffer_instanced".to_string()),
-            instance_buffer: InstanceBuffer { 
+            instance_buffer: InstanceBuffer {
                 buffer: device.create_buffer(&gfx::BufferInfo{
                     usage: gfx::BufferUsage::VERTEX,
                     cpu_access: gfx::CpuAccessFlags::WRITE,
@@ -61,7 +61,7 @@ pub fn setup_draw_vertex_buffer_instanced(
         }).id();
         for _ in 0..num {
             for _ in 0..num {
-                // spawn a bunch of entites with slightly randomised 
+                // spawn a bunch of entites with slightly randomised
                 let pos = vec3f(rng.gen(), rng.gen(), rng.gen()) * splat3f(range) * 2.0 - vec3f(range, 0.0, range);
                 let rot = vec3f(rng.gen(), rng.gen(), rng.gen()) * f32::pi() * 2.0;
                 commands.spawn(Instance {
@@ -86,7 +86,7 @@ pub fn draw_meshes_vertex_buffer_instanced(
     cmd_buf: &mut <gfx_platform::Device as Device>::CmdBuf,
     instance_draw_query: Query<(&InstanceBuffer, &MeshComponent, &PipelineComponent)>
 ) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let camera = pmfx.get_camera_constants(&view.camera)?;

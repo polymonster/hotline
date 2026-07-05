@@ -12,9 +12,23 @@ pub fn read_write_texture(client: &mut Client<gfx_platform::Device, os_platform:
         setup: systems![
             "setup_read_write_texture"
         ],
+        update: systems![
+            "animate_read_write_texture"
+        ],
         render_graph: "read_write_texture",
         ..Default::default()
     }
+}
+
+#[export_update_fn(in_set(SystemSets::Batch))]
+pub fn animate_read_write_texture(
+    time: Res<TimeRes>,
+    mut pmfx: ResMut<PmfxRes>) -> Result<(), hotline_rs::Error> {
+
+    // pack accumulated time into user_data so cs_write_texture3d can animate the volume
+    pmfx.push_constant_user_data[0] = time.accumulated.to_bits();
+
+    Ok(())
 }
 
 #[export_update_fn]

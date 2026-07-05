@@ -20,8 +20,8 @@
             raster_state: cull_back
             topology: "TriangleList"
         }
-        mesh_cbuffer_instanced: {
-            vs: vs_mesh_cbuffer_instanced
+        mesh_structured_buffer_instanced: {
+            vs: vs_mesh_structured_buffer_instanced
             ps: ps_checkerboard
             push_constants: [
                 "view_push_constants"
@@ -46,7 +46,7 @@
                 depends_on: ["debug"]
             }
         }
-        mesh_draw_cbuffer_instanced: {
+        mesh_draw_structured_buffer_instanced: {
             debug: {
                 view: "main_view"
                 pipelines: ["imdraw_3d"]
@@ -54,8 +54,8 @@
             }
             meshes: {
                 view: "main_view_no_clear"
-                pipelines: ["mesh_cbuffer_instanced"]
-                function: "draw_meshes_cbuffer_instanced"
+                pipelines: ["mesh_structured_buffer_instanced"]
+                function: "draw_meshes_structured_buffer_instanced"
                 depends_on: ["debug"]
             }
         }

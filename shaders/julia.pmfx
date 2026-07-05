@@ -1,0 +1,32 @@
+{
+    include: [
+        "julia.hlsl"
+    ]
+    sampler_states: {
+        linear_clamp: {
+            filter: "Linear",
+            address_u: "Clamp",
+            address_v: "Clamp",
+            address_w: "Clamp",
+        }
+    }
+    pipelines: {
+        julia: {
+            cs: cs_julia,
+            push_constants: [
+                "julia_constants"
+            ]
+        }
+        blit: {
+            vs: vs_blit,
+            ps: ps_blit,
+            push_constants: [
+                "blit_constants"
+            ]
+            static_samplers: {
+                blit_sampler: "linear_clamp"
+            }
+            topology: "TriangleList"
+        }
+    }
+}

@@ -3,21 +3,91 @@
 extern crate objc;
 
 use core::panic;
+use std::collections::HashMap;
 use std::time::Duration;
 use std::sync::Arc;
 use std::sync::RwLock;
 
 use winit::{
-    dpi::{LogicalPosition, LogicalSize}, event::{Event, WindowEvent}, event_loop::{self, ControlFlow}, platform::pump_events::{EventLoopExtPumpEvents, PumpStatus}, raw_window_handle::{HasWindowHandle, RawWindowHandle}
+    dpi::{PhysicalPosition, PhysicalSize},
+    event::{WindowEvent, ElementState},
+    event_loop::ActiveEventLoop,
+    keyboard::{Key, PhysicalKey, KeyCode},
+    raw_window_handle::{HasWindowHandle, RawWindowHandle},
 };
 
-use cocoa::{appkit::{NSEvent, NSLeftArrowFunctionKey, NSNextFunctionKey, NSView}, base::id as cocoa_id };
+use cocoa::base::id as cocoa_id;
 
 use crate::os::Rect;
 
+/// Input state tracking (similar to ProcData in win32.rs)
+#[derive(Clone)]
+struct InputState {
+    // Mouse state - screen coordinates
+    mouse_pos: super::Point<i32>,
+    mouse_pos_prev: super::Point<i32>,
+    // Mouse state - window-local coordinates (from CursorMoved)
+    mouse_client_pos: super::Point<i32>,
+    mouse_down: [bool; super::MouseButton::Count as usize],
+    mouse_wheel: f32,
+    mouse_hwheel: f32,
+    hovered_window_id: Option<winit::window::WindowId>,
+
+    // Keyboard state
+    key_down: [bool; 256],
+    key_press: [bool; 256],
+    key_debounce: [bool; 256],
+
+    // System keys (Ctrl, Shift, Alt)
+    sys_key_down: [bool; super::SysKey::Count as usize],
+    sys_key_press: [bool; super::SysKey::Count as usize],
+    sys_key_debounce: [bool; super::SysKey::Count as usize],
+
+    // Text input
+    utf16_inputs: Vec<u16>,
+
+    // Input enabled flags
+    keyboard_enabled: bool,
+    mouse_enabled: bool,
+}
+
+impl InputState {
+    fn new() -> Self {
+        InputState {
+            mouse_pos: super::Point { x: 0, y: 0 },
+            mouse_pos_prev: super::Point { x: 0, y: 0 },
+            mouse_client_pos: super::Point { x: 0, y: 0 },
+            mouse_down: [false; super::MouseButton::Count as usize],
+            mouse_wheel: 0.0,
+            mouse_hwheel: 0.0,
+            hovered_window_id: None,
+            key_down: [false; 256],
+            key_press: [false; 256],
+            key_debounce: [false; 256],
+            sys_key_down: [false; super::SysKey::Count as usize],
+            sys_key_press: [false; super::SysKey::Count as usize],
+            sys_key_debounce: [false; super::SysKey::Count as usize],
+            utf16_inputs: Vec::new(),
+            keyboard_enabled: true,
+            mouse_enabled: true,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct App {
-    event_loop: Arc<RwLock<winit::event_loop::EventLoop<()>>>
+    event_loop: Arc<RwLock<winit::event_loop::EventLoop<()>>>,
+    input_state: Arc<RwLock<InputState>>,
+    windows: Arc<RwLock<HashMap<winit::window::WindowId, Arc<winit::window::Window>>>>,
+    monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    // Per-window cells, mirrored on `Window`. We cache state that's normally read from winit
+    // (scale, size, position) because the equivalent winit calls dispatch objc messages
+    // (`backingScaleFactor`, `frame`) to the wrong receiver on macOS and panic.
+    window_scales: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<f64>>>>>,
+    window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+    window_positions: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>>>>,
+    /// When false, windows render at 1x (non-retina) for lower GPU cost (eg. with MSAA)
+    dpi_aware: bool,
 }
 
 unsafe impl Send for App {}
@@ -25,7 +95,15 @@ unsafe impl Sync for App {}
 
 #[derive(Clone)]
 pub struct Window {
-    winit_window: Arc<winit::window::Window>
+    winit_window: Arc<winit::window::Window>,
+    window_id: winit::window::WindowId,
+    input_state: Arc<RwLock<InputState>>,
+    events: Arc<RwLock<super::WindowEventFlags>>,
+    cached_scale: Arc<RwLock<f64>>,
+    cached_size: Arc<RwLock<winit::dpi::PhysicalSize<u32>>>,
+    cached_position: Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>,
+    /// Inherited from `AppInfo.dpi_aware`; false = render at 1x (logical pixels)
+    dpi_aware: bool,
 }
 
 unsafe impl Send for Window {}
@@ -56,6 +134,209 @@ pub fn isize_id_from_window(window: &Window) -> isize {
     }
 }
 
+impl InputState {
+    /// Debounce logic for keys - updates press and debounce based on current down state
+    fn debounce_keys(&mut self) {
+        for i in 0..256 {
+            if self.key_down[i] && !self.key_press[i] && !self.key_debounce[i] {
+                // First frame key down: trigger press
+                self.key_press[i] = true;
+                self.key_debounce[i] = true;
+            } else if self.key_press[i] {
+                // Subsequent frames: clear press
+                self.key_press[i] = false;
+            } else if !self.key_down[i] {
+                // Key released: clear debounce
+                self.key_debounce[i] = false;
+            }
+        }
+    }
+
+    /// Debounce logic for system keys
+    fn debounce_sys_keys(&mut self) {
+        for i in 0..super::SysKey::Count as usize {
+            if self.sys_key_down[i] && !self.sys_key_press[i] && !self.sys_key_debounce[i] {
+                self.sys_key_press[i] = true;
+                self.sys_key_debounce[i] = true;
+            } else if self.sys_key_press[i] {
+                self.sys_key_press[i] = false;
+            } else if !self.sys_key_down[i] {
+                self.sys_key_debounce[i] = false;
+            }
+        }
+    }
+}
+
+impl App {
+    /// Update input state at the start of each frame
+    fn update_input_state(&self) {
+        let mut state = self.input_state.write().unwrap();
+
+        // Reset per-frame values
+        state.mouse_wheel = 0.0;
+        state.mouse_hwheel = 0.0;
+        state.utf16_inputs.clear();
+
+        // Store previous mouse position for delta calculation
+        // Current mouse_pos is computed on-demand in get_mouse_pos()
+        state.mouse_pos_prev = state.mouse_pos;
+
+        // Compute current screen position from window + client pos.
+        // Cached position is physical; mouse_client_pos is already in render-coord units
+        // (logical when !dpi_aware), so scale position to match.
+        if let Some(window_id) = state.hovered_window_id {
+            if let Some(pos_cell) = self.window_positions.read().unwrap().get(&window_id) {
+                let pos = *pos_cell.read().unwrap();
+                let scale = if self.dpi_aware {
+                    1.0
+                } else {
+                    self.window_scales.read().unwrap()
+                        .get(&window_id)
+                        .map(|s| (*s.read().unwrap()).max(1.0))
+                        .unwrap_or(1.0)
+                };
+                state.mouse_pos = super::Point {
+                    x: (pos.x as f64 / scale).round() as i32 + state.mouse_client_pos.x,
+                    y: (pos.y as f64 / scale).round() as i32 + state.mouse_client_pos.y,
+                };
+            }
+        }
+
+        // Debounce keys
+        state.debounce_keys();
+        state.debounce_sys_keys();
+    }
+}
+
+struct FrameHandler<'a> {
+    resume: &'a mut bool,
+    input_state: Arc<RwLock<InputState>>,
+    monitors: Arc<RwLock<Vec<super::MonitorInfo>>>,
+    window_scales: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<f64>>>>>,
+    window_sizes: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalSize<u32>>>>>>,
+    window_positions: Arc<RwLock<HashMap<winit::window::WindowId, Arc<RwLock<winit::dpi::PhysicalPosition<i32>>>>>>,
+    dpi_aware: bool,
+}
+
+impl winit::application::ApplicationHandler for FrameHandler<'_> {
+    fn resumed(&mut self, elwt: &ActiveEventLoop) {
+        let primary = elwt.primary_monitor();
+        *self.monitors.write().unwrap() = elwt.available_monitors().map(|m| {
+            let winit::dpi::PhysicalSize { width, height } = m.size();
+            let winit::dpi::PhysicalPosition { x, y } = m.position();
+            super::MonitorInfo {
+                rect: Rect { x, y, width: width as i32, height: height as i32 },
+                client_rect: Rect { x, y, width: width as i32, height: height as i32 },
+                dpi_scale: m.scale_factor() as f32,
+                primary: primary.as_ref() == Some(&m),
+            }
+        }).collect();
+    }
+
+    fn window_event(&mut self, _elwt: &ActiveEventLoop, window_id: winit::window::WindowId, event: WindowEvent) {
+        if let WindowEvent::ScaleFactorChanged { scale_factor, .. } = event {
+            if let Some(scale) = self.window_scales.read().unwrap().get(&window_id) {
+                *scale.write().unwrap() = scale_factor;
+            }
+            return;
+        }
+        if let WindowEvent::Resized(new_size) = event {
+            if let Some(size) = self.window_sizes.read().unwrap().get(&window_id) {
+                *size.write().unwrap() = new_size;
+            }
+            return;
+        }
+        if let WindowEvent::Moved(new_pos) = event {
+            if let Some(pos) = self.window_positions.read().unwrap().get(&window_id) {
+                *pos.write().unwrap() = new_pos;
+            }
+            return;
+        }
+
+        let mut state = self.input_state.write().unwrap();
+        match event {
+            WindowEvent::CloseRequested => {
+                *self.resume = false;
+            }
+            WindowEvent::RedrawRequested => {}
+            WindowEvent::CursorMoved { position, .. } => {
+                // winit reports physical pixels; convert to logical (1x) when !dpi_aware
+                // so coords match the render size returned to clients.
+                let scale = if self.dpi_aware {
+                    1.0
+                } else {
+                    self.window_scales.read().unwrap()
+                        .get(&window_id)
+                        .map(|s| (*s.read().unwrap()).max(1.0))
+                        .unwrap_or(1.0)
+                };
+                state.mouse_client_pos = super::Point {
+                    x: (position.x / scale).round() as i32,
+                    y: (position.y / scale).round() as i32,
+                };
+                state.hovered_window_id = Some(window_id);
+            }
+            WindowEvent::CursorEntered { .. } => {
+                state.hovered_window_id = Some(window_id);
+            }
+            WindowEvent::CursorLeft { .. } => {
+                if state.hovered_window_id == Some(window_id) {
+                    state.hovered_window_id = None;
+                }
+            }
+            WindowEvent::MouseInput { state: element_state, button, .. } => {
+                let pressed = element_state == ElementState::Pressed;
+                let index = match button {
+                    winit::event::MouseButton::Left => Some(super::MouseButton::Left as usize),
+                    winit::event::MouseButton::Middle => Some(super::MouseButton::Middle as usize),
+                    winit::event::MouseButton::Right => Some(super::MouseButton::Right as usize),
+                    winit::event::MouseButton::Back => Some(super::MouseButton::X1 as usize),
+                    winit::event::MouseButton::Forward => Some(super::MouseButton::X2 as usize),
+                    winit::event::MouseButton::Other(_) => None,
+                };
+                if let Some(idx) = index {
+                    state.mouse_down[idx] = pressed;
+                }
+            }
+            WindowEvent::MouseWheel { delta, .. } => {
+                match delta {
+                    winit::event::MouseScrollDelta::LineDelta(h, v) => {
+                        state.mouse_wheel += v;
+                        state.mouse_hwheel += h;
+                    }
+                    winit::event::MouseScrollDelta::PixelDelta(pos) => {
+                        state.mouse_wheel += (pos.y / 20.0) as f32;
+                        state.mouse_hwheel += (pos.x / 20.0) as f32;
+                    }
+                }
+            }
+            WindowEvent::KeyboardInput { event, .. } => {
+                let pressed = event.state == ElementState::Pressed;
+                if let PhysicalKey::Code(key_code) = event.physical_key {
+                    let code = key_code as usize;
+                    if code < 256 {
+                        state.key_down[code] = pressed;
+                    }
+                }
+                if pressed {
+                    if let Key::Character(ref c) = event.logical_key {
+                        for ch in c.encode_utf16() {
+                            state.utf16_inputs.push(ch);
+                        }
+                    }
+                }
+            }
+            WindowEvent::ModifiersChanged(modifiers) => {
+                let mods = modifiers.state();
+                state.sys_key_down[super::SysKey::Ctrl as usize] = mods.control_key();
+                state.sys_key_down[super::SysKey::Shift as usize] = mods.shift_key();
+                state.sys_key_down[super::SysKey::Alt as usize] = mods.alt_key();
+            }
+            _ => {}
+        }
+    }
+}
+
 impl super::App for App {
     type Window = Window;
     type NativeHandle = NativeHandle;
@@ -63,20 +344,68 @@ impl super::App for App {
     /// Create an application instance
     fn create(info: super::AppInfo) -> Self {
         App {
-            event_loop: Arc::new(RwLock::new(winit::event_loop::EventLoop::new().unwrap()))
+            event_loop: Arc::new(RwLock::new(winit::event_loop::EventLoop::new().unwrap())),
+            input_state: Arc::new(RwLock::new(InputState::new())),
+            windows: Arc::new(RwLock::new(HashMap::new())),
+            monitors: Arc::new(RwLock::new(Vec::new())),
+            window_scales: Arc::new(RwLock::new(HashMap::new())),
+            window_sizes: Arc::new(RwLock::new(HashMap::new())),
+            window_positions: Arc::new(RwLock::new(HashMap::new())),
+            dpi_aware: info.dpi_aware,
         }
     }
 
     /// Create a new operating system window
     fn create_window(&mut self, info: super::WindowInfo<Self>) -> Self::Window {
-        let window = winit::window::WindowBuilder::new()
-            .with_inner_size(winit::dpi::LogicalSize::new(info.rect.width, info.rect.height))
-            .with_position(winit::dpi::LogicalPosition::new(info.rect.x, info.rect.y))
-            .with_title(info.title)
-            .build(&*self.event_loop.read().unwrap())
+        #[allow(deprecated)]
+        let window = self.event_loop.read().unwrap()
+            .create_window(
+                winit::window::Window::default_attributes()
+                    .with_inner_size(PhysicalSize::new(info.rect.width, info.rect.height))
+                    .with_position(PhysicalPosition::new(info.rect.x, info.rect.y))
+                    .with_title(info.title)
+            )
             .unwrap();
+        let window_id = window.id();
+        let winit_window = Arc::new(window);
+
+        // Register window for position lookups
+        self.windows.write().unwrap().insert(window_id, winit_window.clone());
+
+        // Seed scale from the primary monitor; updated by ScaleFactorChanged events.
+        // Avoid calling winit_window.scale_factor() here — on macOS it can dispatch
+        // backingScaleFactor to the application delegate and panic.
+        let initial_scale = self.monitors.read().unwrap()
+            .iter()
+            .find(|m| m.primary)
+            .map(|m| m.dpi_scale as f64)
+            .unwrap_or(1.0);
+        let cached_scale = Arc::new(RwLock::new(initial_scale));
+        self.window_scales.write().unwrap().insert(window_id, cached_scale.clone());
+
+        // Seed size/position from creation info; updated by Resized / Moved events.
+        // Avoid winit_window.inner_size()/outer_position() — both dispatch `frame`
+        // through paths that can panic on macOS for the same objc-receiver reason.
+        let cached_size = Arc::new(RwLock::new(PhysicalSize::new(
+            info.rect.width.max(0) as u32,
+            info.rect.height.max(0) as u32,
+        )));
+        self.window_sizes.write().unwrap().insert(window_id, cached_size.clone());
+
+        let cached_position = Arc::new(RwLock::new(PhysicalPosition::new(
+            info.rect.x, info.rect.y,
+        )));
+        self.window_positions.write().unwrap().insert(window_id, cached_position.clone());
+
         Window {
-            winit_window: Arc::new(window)
+            winit_window,
+            window_id,
+            input_state: self.input_state.clone(),
+            events: Arc::new(RwLock::new(super::WindowEventFlags::NONE)),
+            cached_scale,
+            cached_size,
+            cached_position,
+            dpi_aware: self.dpi_aware,
         }
     }
 
@@ -88,26 +417,22 @@ impl super::App for App {
     /// Call to update windows and os state each frame, when false is returned the app has been requested to close
     fn run(&mut self) -> bool {
         objc::rc::autoreleasepool(|| {
+            self.update_input_state();
+
             let mut resume = true;
+            let mut handler = FrameHandler {
+                resume: &mut resume,
+                input_state: self.input_state.clone(),
+                monitors: self.monitors.clone(),
+                window_scales: self.window_scales.clone(),
+                window_sizes: self.window_sizes.clone(),
+                window_positions: self.window_positions.clone(),
+                dpi_aware: self.dpi_aware,
+            };
+
             let _ = self.event_loop.write().and_then(|mut event_loop| {
-                let status = event_loop.pump_events(Some(Duration::ZERO), |event, elwt| {
-                    match event {
-                        Event::WindowEvent { event, .. } => match event {
-                            WindowEvent::CloseRequested => {
-                                resume = false;
-                            }
-                            WindowEvent::RedrawRequested => {
-                            }
-                            _ => {
-
-                            }
-                        }
-                        _ => {
-
-                        }
-                    }
-                });
-
+                use winit::platform::pump_events::EventLoopExtPumpEvents;
+                event_loop.pump_app_events(Some(Duration::ZERO), &mut handler);
                 Ok(())
             });
             resume
@@ -121,70 +446,57 @@ impl super::App for App {
 
     /// Retuns the mouse in screen coordinates
     fn get_mouse_pos(&self) -> super::Point<i32> {
-        // TODO:
-        super::Point {
-            x: 0,
-            y: 0
-        }
+        self.input_state.read().unwrap().mouse_pos
     }
 
     /// Retuns the mouse vertical wheel position
     fn get_mouse_wheel(&self) -> f32 {
-        //panic!();
-        // TODO:
-        0.0
+        self.input_state.read().unwrap().mouse_wheel
     }
 
     /// Retuns the mouse horizontal wheel positions
     fn get_mouse_hwheel(&self) -> f32 {
-        // panic!();
-        0.0
+        self.input_state.read().unwrap().mouse_hwheel
     }
 
     /// Retuns the mouse button states, up or down
     fn get_mouse_buttons(&self) -> [bool; super::MouseButton::Count as usize] {
-        // panic!();
-        [false; 5]
+        self.input_state.read().unwrap().mouse_down
     }
 
     /// Returns the distance the mouse has moved since the last frame
     fn get_mouse_pos_delta(&self) -> super::Size<i32> {
-        // panic!();
+        let state = self.input_state.read().unwrap();
         super::Size {
-            x: 0,
-            y: 0
+            x: state.mouse_pos.x - state.mouse_pos_prev.x,
+            y: state.mouse_pos.y - state.mouse_pos_prev.y,
         }
     }
 
     /// Returns a vector of utf-16 characters that have been input since the last frame
     fn get_utf16_input(&self) -> Vec<u16> {
-        // panic!();
-        vec![]
+        self.input_state.read().unwrap().utf16_inputs.clone()
     }
 
     /// Returns an array of bools containing 0-256 keys down (true) or up (false)
     fn get_keys_down(&self) -> [bool; 256] {
-        // panic!();
-        [false; 256]
+        self.input_state.read().unwrap().key_down
     }
 
     /// Returns an array of bools containing 0-256 of keys pressed, will trigger only once and then require debouce
     fn get_keys_pressed(&self) -> [bool; 256] {
-        // panic!();
-        [false; 256]
+        self.input_state.read().unwrap().key_press
     }
 
     /// Returns true if the sys key is down and false if the key is up
     fn is_sys_key_down(&self, key: super::SysKey) -> bool {
-        // panic!();
-        false
+        self.input_state.read().unwrap().sys_key_down[key as usize]
     }
 
     /// Returns true if the sys key is pressed this frame and
     /// requires debounce until it is pressed again
     fn is_sys_key_pressed(&self, key: super::SysKey) -> bool {
-        // panic!();
-        false
+        self.input_state.read().unwrap().sys_key_press[key as usize]
     }
 
     /// Get os system virtual key code from Key
@@ -211,36 +523,42 @@ impl super::App for App {
 
     /// Set's whethere input from keybpard or mouse is available or not
     fn set_input_enabled(&mut self, keyboard: bool, mouse: bool) {
-        panic!();
+        let mut state = self.input_state.write().unwrap();
+        state.keyboard_enabled = keyboard;
+        state.mouse_enabled = mouse;
     }
 
     /// Get value for whether (keyboard, mouse) input is enabled
     fn get_input_enabled(&self) -> (bool, bool) {
-        panic!();
-        (false, false)
+        let state = self.input_state.read().unwrap();
+        (state.keyboard_enabled, state.mouse_enabled)
     }
 
     fn enumerate_display_monitors(&self) -> Vec<super::MonitorInfo> {
-        let event_loop = &*self.event_loop.read().unwrap();
-        let primary_monitor = event_loop.primary_monitor();
-        event_loop.available_monitors().map(|monitor| {
-            let winit::dpi::PhysicalSize { width, height } = monitor.size();
-            let winit::dpi::PhysicalPosition { x, y } = monitor.position();
-            super::MonitorInfo {
-                rect: Rect {
-                    x, y,
-                    width: width as i32,
-                    height: height as i32
-                },
-                client_rect: Rect {
-                    x, y,
-                    width: width as i32,
-                    height: height as i32
-                },
-                dpi_scale: monitor.scale_factor() as f32,
-                primary: primary_monitor.as_ref() == Some(&monitor)
+        {
+            let cached = self.monitors.read().unwrap();
+            if !cached.is_empty() {
+                return cached.clone();
             }
-        }).collect()
+        }
+        // Monitors aren't populated until the first pump_app_events triggers `resumed`.
+        // Pump once here so the cache gets filled before the caller needs it.
+        let mut dummy_resume = true;
+        let mut handler = FrameHandler {
+            resume: &mut dummy_resume,
+            input_state: self.input_state.clone(),
+            monitors: self.monitors.clone(),
+            window_scales: self.window_scales.clone(),
+            window_sizes: self.window_sizes.clone(),
+            window_positions: self.window_positions.clone(),
+            dpi_aware: self.dpi_aware,
+        };
+        let _ = self.event_loop.write().and_then(|mut event_loop| {
+            use winit::platform::pump_events::EventLoopExtPumpEvents;
+            event_loop.pump_app_events(Some(Duration::ZERO), &mut handler);
+            Ok(())
+        });
+        self.monitors.read().unwrap().clone()
     }
 
     /// Sets the mouse cursor
@@ -266,7 +584,25 @@ impl super::App for App {
 
     /// Sets the console window rect that belongs to this app
     fn set_console_window_rect(&self, rect: super::Rect<i32>) {
-        panic!();
+        // stub
+
+    }
+}
+
+impl Window {
+    /// Render-target size for this window: physical pixels when dpi-aware, otherwise the logical
+    /// 1x size (physical / scale_factor) so retina + MSAA isn't allocated at full backing scale.
+    fn render_size(&self) -> super::Size<i32> {
+        let size = *self.cached_size.read().unwrap();
+        if self.dpi_aware {
+            super::Size { x: size.width as i32, y: size.height as i32 }
+        } else {
+            let scale = (*self.cached_scale.read().unwrap()).max(1.0);
+            super::Size {
+                x: ((size.width as f64 / scale).round() as i32).max(1),
+                y: ((size.height as f64 / scale).round() as i32).max(1),
+            }
+        }
     }
 }
 
@@ -322,8 +658,8 @@ impl super::Window<App> for Window {
 
     /// Returns true if the mouse if hovering this window
     fn is_mouse_hovered(&self) -> bool {
-        // TODO:
-        false
+        let state = self.input_state.read().unwrap();
+        state.hovered_window_id == Some(self.window_id)
     }
 
     /// Set the window display title that appears on the title bar
@@ -333,7 +669,7 @@ impl super::Window<App> for Window {
 
     /// Set window position in screen space
     fn set_pos(&self, pos: super::Point<i32>) {
-        self.winit_window.set_outer_position(LogicalPosition {
+        self.winit_window.set_outer_position(PhysicalPosition {
             x: pos.x,
             y: pos.y
         });
@@ -341,12 +677,12 @@ impl super::Window<App> for Window {
 
     /// Set window size in screen coordinates
     fn set_size(&self, size: super::Size<i32>) {
-        self.winit_window.request_inner_size(LogicalSize::new(size.x, size.y));
+        self.winit_window.request_inner_size(PhysicalSize::new(size.x, size.y));
     }
 
     /// Returns the screen position for the top-left corner of the window
     fn get_pos(&self) -> super::Point<i32> {
-        let pos = self.winit_window.outer_position().unwrap();
+        let pos = *self.cached_position.read().unwrap();
         super::Point {
             x: pos.x,
             y: pos.y
@@ -355,28 +691,24 @@ impl super::Window<App> for Window {
 
     /// Returns a gfx friendly full window rect to use as `gfx::Viewport` or `gfx::Scissor`
     fn get_viewport_rect(&self) -> super::Rect<i32> {
-        let size = self.winit_window.inner_size();
+        let size = self.render_size();
         super::Rect {
             x: 0,
             y: 0,
-            width: size.width as i32,
-            height: size.height as i32
+            width: size.x,
+            height: size.y
         }
     }
 
-    /// Returns the screen position for the top-left corner of the window
+    /// Returns the render size of the window (physical pixels, or logical 1x when !dpi_aware)
     fn get_size(&self) -> super::Size<i32> {
-        let size = self.winit_window.inner_size();
-        super::Size {
-            x: size.width as i32,
-            y: size.height as i32
-        }
+        self.render_size()
     }
 
     /// Returns the screen rect of the window screen pos x, y , size x, y.
     fn get_window_rect(&self) -> super::Rect<i32> {
-        let pos = self.winit_window.outer_position().unwrap();
-        let size = self.winit_window.inner_size();
+        let pos = *self.cached_position.read().unwrap();
+        let size = *self.cached_size.read().unwrap();
         super::Rect {
             x: pos.x,
             y: pos.y,
@@ -386,17 +718,16 @@ impl super::Window<App> for Window {
     }
 
     /// Return mouse position in relative coordinates from the top left corner of the window
-    fn get_mouse_client_pos(&self, mouse_pos: super::Point<i32>) -> super::Point<i32> {
-        // panic!();
-        super::Point {
-            x: 0,
-            y: 0
-        }
+    fn get_mouse_client_pos(&self, _mouse_pos: super::Point<i32>) -> super::Point<i32> {
+        // Use the tracked client position from CursorMoved events
+        // which is already in window-local coordinates
+        self.input_state.read().unwrap().mouse_client_pos
     }
 
-    /// Return the dpi scale for the current monitor the window is on
+    /// Return the dpi scale for the current monitor the window is on. When the app is not
+    /// dpi-aware the engine operates entirely in logical (1x) pixels, so the effective scale is 1.
     fn get_dpi_scale(&self) -> f32 {
-        self.winit_window.scale_factor() as f32
+        if self.dpi_aware { *self.cached_scale.read().unwrap() as f32 } else { 1.0 }
     }
 
     /// Gets the internal native handle
@@ -408,14 +739,12 @@ impl super::Window<App> for Window {
 
     /// Gets window events tracked from os update, to handle events inside external systems
     fn get_events(&self) -> super::WindowEventFlags {
-        panic!();
-        super::WindowEventFlags {
-            bits: 0
-        }
+        *self.events.read().unwrap()
     }
+
     /// Clears events after they have been responded to
     fn clear_events(&mut self) {
-        panic!();
+        *self.events.write().unwrap() = super::WindowEventFlags::NONE;
     }
 
     /// Const pointer

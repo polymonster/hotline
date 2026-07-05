@@ -1,13 +1,10 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
-/// 
+///
 /// Tangent Space Normal Maps
-/// 
+///
 
-use crate::prelude::*; 
+use crate::prelude::*;
 
-/// Init function for tangent space normal maps to debug tangents 
+/// Init function for tangent space normal maps to debug tangents
 #[no_mangle]
 pub fn tangent_space_normal_maps(client: &mut Client<gfx_platform::Device, os_platform::App>) -> ScheduleInfo {
     client.pmfx.load(hotline_rs::get_data_path("shaders/ecs_examples").as_str()).unwrap();
@@ -28,10 +25,10 @@ pub fn setup_tangent_space_normal_maps(
     mut device: ResMut<DeviceRes>,
     mut pmfx: ResMut<PmfxRes>,
     mut commands: Commands) -> Result<(), hotline_rs::Error> {
-    
+
     let textures = [
-        TextureComponent(image::load_texture_from_file(&mut device, 
-            &hotline_rs::get_data_path("textures/pbr/antique-grate1/antique-grate1_normal.dds"), 
+        TextureComponent(image::load_texture_from_file(&mut device,
+            &hotline_rs::get_data_path("textures/pbr/antique-grate1/antique-grate1_normal.dds"),
             Some(&mut pmfx.shader_heap)
         ).unwrap())
     ];
@@ -55,7 +52,7 @@ pub fn render_meshes_debug_tangent_space(
         Query<&TextureComponent>,
         Query<(&WorldMatrix, &MeshComponent)>
     )) -> Result<(), hotline_rs::Error> {
-        
+
     let pmfx = &pmfx;
     let fmt = view.pass.get_format_hash();
     let pipeline = pmfx.get_render_pipeline_for_format(&view.view_pipeline, fmt)?;
