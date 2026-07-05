@@ -415,8 +415,8 @@ fn pmfx() -> Result<(), hotline_rs::Error> {
     let texture_pipeline = ctx.pmfx.get_render_pipeline_for_format("texture2d_array", fmt)?;
     
     // texture array pipeline has 2 sets of push constants, so the resources bind onto 2
-    // t0, space9 is Texture2DArray
-    let slots = texture_pipeline.get_pipeline_slot(0, 10, gfx::DescriptorType::ShaderResource);
+    // t1, space10 is Texture2DArray
+    let slots = texture_pipeline.get_pipeline_slot(1, 10, gfx::DescriptorType::ShaderResource);
     assert!(slots.is_some());
 
     if let Some(slots) = slots {
