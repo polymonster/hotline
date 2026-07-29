@@ -38,9 +38,9 @@ const MIN_SEP_RADIUS: f32 = 8.0;
 const SEP_RADIUS_DECAY: f32 = 0.25;   // world units of radius lost per agent
 const SEPARATION_STRENGTH: f32 = 0.02;   // world units per frame at full push (flow dominates; sep spikes when critically close)
 const OPPOSING_PASS_STRENGTH: f32 = 1.0; // lateral left-of-facing bias when meeting an oncoming agent (blended into sep)
-const WANDER_DRIFT: f32 = 0.012;  // radians per frame
-const WANDER_STRENGTH: f32 = 0.08;   // fraction of agent speed
-const LANE_BIAS_STRENGTH: f32 = 0.5; // fraction of speed pushed toward the baked lane side (perp of flow)
+const LANE_FILL: f32 = 0.6;      // fraction of tile width agents fan out across (leaves edge margin)
+const LANE_GAIN: f32 = 0.5;      // how sharply lateral error saturates the correction (per world unit)
+const LANE_STRENGTH: f32 = 0.5;  // max lateral speed as a fraction of forward flow speed
 const WAIT_PULL_STRENGTH:  f32 = 0.1; // spring constant pulling waiting agents back to wait_pos
 const WAIT_DAMPING:        f32 = 0.4;   // velocity scale for waiting agents — dampens sep/pull jitter
 const WAIT_SLOTS_PER_TILE: u32 = 32;    // max distinct halton-sampled wait positions before wrap
@@ -459,7 +459,6 @@ pub(crate) struct AgentSoa {
     pub pos:      Vec<Vec3f>,
     pub sep:      Vec<Vec2f>,
     pub density:  Vec<f32>,
-    pub wander:   Vec<f32>,
     pub facing:   Vec<Quatf>,
     pub speed:    Vec<f32>,
     pub goal:     Vec<u8>,
@@ -487,10 +486,6 @@ pub(crate) struct AgentPos(Vec3f);
 /// Per-agent speed multiplier randomised at spawn [0.8, 1.2]
 #[derive(Component)]
 pub(crate) struct SpeedScale(f32);
-
-/// Slowly drifting random direction bias angle (radians), unique per agent
-#[derive(Component)]
-pub(crate) struct WanderAngle(f32);
 
 /// Accumulated separation force from nearby agents — cleared each frame
 #[derive(Component)]
@@ -1392,7 +1387,6 @@ pub fn update_entrance_spawn(
                 HumanAgent,
                 AgentPos(Vec3f::new(ax, 0.0, az)),
                 SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
-                WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
                 SepForce(Vec2f::zero()),
                 LocalDensity(0.0),
                 FacingRot(Quatf::identity()),
@@ -1454,7 +1448,6 @@ pub fn update_train_dropoff(
                 HumanAgent,
                 AgentPos(Vec3f::new(ax, 0.0, az)),
                 SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
-                WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
                 SepForce(Vec2f::zero()),
                 LocalDensity(0.0),
                 FacingRot(Quatf::identity()),
@@ -1508,7 +1501,7 @@ pub fn update_entrance_despawn(
 /// Moves agents along the flow field with per-cell peer-repulsion spreading
 #[export_update_fn]
 pub fn update_agents(
-    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut WanderAngle, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
+    mut agents: Query<(Entity, &mut AgentPos, &SpeedScale, &mut SepForce, &mut LocalDensity, &mut FacingRot, &Goal, &mut Flags), With<HumanAgent>>,
     mut map: ResMut<Map>,
     mut soa: ResMut<AgentSoa>,
     mut editor: ResMut<EditorState>,
@@ -1575,7 +1568,6 @@ pub fn update_agents(
     if soa.pos.len() <= max_idx { soa.pos.resize(max_idx + 1, Vec3f::zero()); }
     if soa.sep.len() <= max_idx { soa.sep.resize(max_idx + 1, Vec2f::zero()); }
     if soa.density.len() <= max_idx { soa.density.resize(max_idx + 1, 0.0); }
-    if soa.wander.len() <= max_idx { soa.wander.resize(max_idx + 1, 0.0); }
     if soa.facing.len() <= max_idx { soa.facing.resize(max_idx + 1, Quatf::identity()); }
     if soa.speed.len() <= max_idx { soa.speed.resize(max_idx + 1, 1.0); }
     if soa.goal.len() <= max_idx { soa.goal.resize(max_idx + 1, 0); }
@@ -1583,10 +1575,9 @@ pub fn update_agents(
     if soa.wait_pos.len() <= max_idx { soa.wait_pos.resize(max_idx + 1, Vec3f::zero()); }
     if soa.flow.len()      <= max_idx { soa.flow.resize(max_idx + 1, Vec2f::zero()); }
     if soa.debug_val.len() <= max_idx { soa.debug_val.resize(max_idx + 1, 0.0); }
-    for (e, pos, speed, wander, _, _, facing, goal, flags) in agents.iter() {
+    for (e, pos, speed, _, _, facing, goal, flags) in agents.iter() {
         let i = e.index() as usize;
         soa.pos[i]    = pos.0;
-        soa.wander[i] = wander.0;
         soa.facing[i] = facing.0;
         soa.speed[i]  = speed.0;
         soa.goal[i]   = goal.0;
@@ -1610,7 +1601,6 @@ pub fn update_agents(
     let n = cells.len();
     let mut baked_density   = vec![0.0f32;        n];
     let mut baked_flow      = vec![Vec2f::zero();  n];
-    let mut baked_wander    = vec![Vec2f::zero();  n]; // lateral wander constraint (per goal)
     let mut baked_flags     = vec![0u8;            n]; // FLAG_WAITING
     let mut nbr_start       = vec![0usize;     n + 1];
     let mut nbr_flat        = Vec::<usize>::new();
@@ -1623,7 +1613,6 @@ pub fn update_agents(
 
         baked_density[ci] = density;
         baked_flow[ci]    = flow_dir;
-        baked_wander[ci]  = if goal < chunk.wander_bias.len() { chunk.wander_bias[goal][idx] } else { Vec2f::zero() };
 
         // gather all neighbour agents (3x3 in XZ) into nbr_flat; also peak-density of surrounding tiles
         let tile = world_to_tile(pb[ia]);
@@ -1810,11 +1799,9 @@ pub fn update_agents(
     let t = std::time::Instant::now();
 
     let pp = soa.pos.as_mut_ptr() as usize;
-    let wp = soa.wander.as_mut_ptr() as usize;
     let fp = soa.facing.as_mut_ptr() as usize;
     let flp = soa.flow.as_mut_ptr() as usize;
     let sep = soa.sep.as_slice();
-    let wb = soa.wander.as_slice();
     let fb = soa.facing.as_slice();
     let spd = soa.speed.as_slice();
     let pb = soa.pos.as_slice();
@@ -1827,28 +1814,22 @@ pub fn update_agents(
         let flow = baked_flow[ci];
         let flow_norm = if length(flow) > 0.001 { normalize(flow) } else { flow };
         let fdir = vec3f(flow_norm.x, 0.0, flow_norm.y);
-        
-        // wander: small random lateral jitter only
-        let wander = wb[ia] + WANDER_DRIFT * (1.0 - (ia % 5) as f32 * 0.1);
-        let mut wander_vel = vec3f(wander.cos(), 0.0, wander.sin()) * AGENT_SPEED * spd[ia] * WANDER_STRENGTH * if waiting { 0.0 } else { 1.0 };
 
-        // forward-bias: strip any component opposing the flow so wander only jitters sideways/forward and
-        // can't push an agent back into the tile it just left (which reads as jittering against the crowd).
-        if !waiting && length(fdir) > 0.001 {
-            let back = dot(wander_vel, fdir);
-            if back < 0.0 { wander_vel = wander_vel - fdir * back; }
-        }
-
-        // lane bias: a decisive shove toward the baked lane side (perp of flow). Commits agents to one side
-        // — like a starting line — so they travel along their own tile flow instead of running the seam
-        // between two flow tiles that point 90° apart.
-        let lane = baked_wander[ci];
-        let lane_vel = if !waiting && length(lane) > 0.001 {
-            normalize(vec3f(lane.x, 0.0, lane.y)) * AGENT_SPEED * spd[ia] * LANE_BIAS_STRENGTH
+        // lane: each agent holds a fixed lateral offset within the flow corridor so the crowd fans
+        // out across the tile width instead of collapsing onto the centre seam (which drifts to the
+        // edge and oscillates when an agent slips into the neighbour tile). The offset is a per-agent
+        // halton sample keyed by agent index — stable for the agent's life — measured from the tile
+        // centre along the flow-perpendicular. A gentle, distance-saturating pull holds the lane.
+        let lane_vel = if !waiting && length(flow) > 0.001 {
+            let perp = vec3f(fdir.z, 0.0, -fdir.x);
+            let tile = world_to_tile(pos_a);
+            let center = vec3f((tile.x as f32 + 0.5) * TILE_SIZE, 0.0, (tile.z as f32 + 0.5) * TILE_SIZE);
+            let target_lat = dot(center, perp) + (halton_1d(ia as u32 + 1, 2) - 0.5) * TILE_SIZE * LANE_FILL;
+            let err = target_lat - dot(pos_a, perp);
+            perp * (err * LANE_GAIN).clamp(-1.0, 1.0) * AGENT_SPEED * spd[ia] * LANE_STRENGTH
         } else { Vec3f::zero() };
 
         // flow
-        let lane3 = vec3f(lane.x, 0.0, lane.y);
         let flow_vel = fdir * AGENT_SPEED * spd[ia] * if waiting { 0.0 } else { 1.0 };
         
         // pull velocity toward waiting places
@@ -1858,7 +1839,7 @@ pub fn update_agents(
             let d     = length(to_wp);
             if d > AGENT_RADIUS { to_wp / d * WAIT_PULL_STRENGTH } else { Vec3f::zero() }
         } else { Vec3f::zero() };
-        let total_vel = flow_vel + avoid + pull_vel + wander_vel + lane_vel;
+        let total_vel = flow_vel + avoid + pull_vel + lane_vel;
         let new_pos = if waiting { pos_a + total_vel * WAIT_DAMPING } else { pos_a + total_vel };
         let new_facing = if waiting {
             // freeze facing once waiting — sep/pull jitter would otherwise spin the agent
@@ -1873,7 +1854,6 @@ pub fn update_agents(
         // SAFETY: ia is unique per entity
         unsafe {
             *(pp  as *mut Vec3f).add(ia) = new_pos;
-            *(wp  as *mut f32).add(ia)   = wander;
             *(fp  as *mut Quatf).add(ia) = new_facing;
             *(flp as *mut Vec2f).add(ia) = baked_flow[ci];
         }
@@ -1987,10 +1967,9 @@ pub fn update_agents(
     }
 
     // single batch ECS write — all flat buffers are final after p5
-    for (entity, mut pos, _, mut wander, mut sf, mut ld, mut facing, _goal, mut fl) in agents.iter_mut() {
+    for (entity, mut pos, _, mut sf, mut ld, mut facing, _goal, mut fl) in agents.iter_mut() {
         let ia = entity.index() as usize;
         pos.0    = soa.pos[ia];
-        wander.0 = soa.wander[ia];
         sf.0     = soa.sep[ia];
         ld.0     = soa.density[ia];
         facing.0 = soa.facing[ia];
@@ -2566,7 +2545,6 @@ pub fn update_tile_editor(
                                                     HumanAgent,
                                                     AgentPos(Vec3f::new(ax, 0.0, az)),
                                                     SpeedScale(0.8 + pos_hash(ax, az) * 0.4),
-                                                    WanderAngle(pos_hash(az, ax) * std::f32::consts::TAU),
                                                     SepForce(Vec2f::zero()),
                                                     LocalDensity(0.0),
                                                     FacingRot(Quatf::identity()),

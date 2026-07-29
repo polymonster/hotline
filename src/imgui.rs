@@ -594,7 +594,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let io = &mut *igGetIO();
 
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            // multi-viewport is only wired up on the win32 backend; enabling it on macos leaves
+            // imgui windows in a single OS window. it also keeps imgui screen coords in the global
+            // desktop space so mouse picking (get_mouse_pos) lines up across monitors.
+            #[cfg(target_os = "windows")]
+            {
+                io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            }
 
             // construct path for ini to be along side the exe
             let exe_path = std::env::current_exe().ok().unwrap();
