@@ -1418,6 +1418,15 @@ pub struct RenderPipeline {
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
+#[derive(Clone)]
+pub struct MeshPipeline {
+}
+
+impl super::MeshPipeline<Device> for MeshPipeline {}
+
+unsafe impl Send for MeshPipeline {}
+unsafe impl Sync for MeshPipeline {}
+
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         self.slot_lookup.get(&(register, space, descriptor_type))
@@ -2090,6 +2099,7 @@ impl super::Device for Device {
     type Buffer = Buffer;
     type Shader = Shader;
     type RenderPipeline = RenderPipeline;
+    type MeshPipeline = MeshPipeline;
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
@@ -2504,6 +2514,13 @@ impl super::Device for Device {
                 raster_info: info.raster_info,
             })
         })
+    }
+
+    fn create_mesh_pipeline(
+        &self,
+        info: &super::MeshPipelineInfo<Device>,
+    ) -> std::result::Result<MeshPipeline, super::Error> {
+        unimplemented!();
     }
 
     fn create_shader<T: Sized>(

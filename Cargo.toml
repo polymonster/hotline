@@ -109,6 +109,10 @@ name = "imgui_demo"
 crate-type = ["bin"]
 
 [[example]]
+name = "mesh_shader_triangle"
+crate-type = ["bin"]
+
+[[example]]
 name = "play_video"
 crate-type = ["bin"]
 

@@ -827,6 +827,38 @@ pub enum Topology {
     PatchList,
 }
 
+/// Information to create a pipeline through `Device::create_mesh_pipeline`.
+pub struct MeshPipelineInfo<'stack, D: Device> {
+    /// Mesh Shader
+    pub ms: Option<&'stack D::Shader>,
+    /// Amplification Shader
+    pub amps: Option<&'stack D::Shader>,
+    /// Fragment Shader
+    pub fs: Option<&'stack D::Shader>,
+    /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
+    pub pipeline_layout: PipelineLayout,
+    /// Control rasterisation of primitives
+    pub raster_info: RasterInfo,
+    /// Control depth test and stencil oprations
+    pub depth_stencil_info: DepthStencilInfo,
+    /// Control blending settings for the output merge stage
+    pub blend_info: BlendInfo,
+    /// Primitive topology oof the input assembler
+    pub topology: PrimitiveTopology,
+    /// Sample mask for which MSAA samples to write
+    pub sample_mask: u32,
+    /// A valid render pass, you can share pipelines across passes providing the render target
+    /// formats and sample count are the same of the passes you wish to use the pipeline on
+    pub pass: Option<&'stack D::RenderPass>,
+}
+
+/// Primitive topology for mesh shader pipelines
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub enum PrimitiveTopology {
+    LineList,
+    TriangleList
+}
+
 /// Information to control the rasterisation mode of primitives when using a `RenderPipeline`
 #[derive(Clone, Copy, Serialize, Deserialize)]
 pub struct RasterInfo {
@@ -1247,6 +1279,9 @@ pub trait Shader<D: Device>: Send + Sync {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait RenderPipeline<D: Device>: Send + Sync  {}
 
+/// An opaque mesh pipeline type similar to render pipeline but with a mesh shader stage
+pub trait MeshPipeline<D: Device>: Send + Sync  {}
+
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: Send + Sync  {
     /// Returns a hash based on the render target format so that pipelines can be shared amonst compatible passes
@@ -1410,6 +1445,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Buffer: Buffer<Self>;
     type Shader: Shader<Self>;
     type RenderPipeline: RenderPipeline<Self>;
+    type MeshPipeline: MeshPipeline<Self>;
     type Texture: Texture<Self>;
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
@@ -1492,6 +1528,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &RenderPipelineInfo<Self>,
     ) -> Result<Self::RenderPipeline, Error>;
+    /// Create a new mesh pipeline state object from the supplied `MeshPipelineInfo`
+    /// this is similar to a render pipeline, but with a mesh shader stage for geometry
+    fn create_mesh_pipeline(
+        &self,
+        info: &MeshPipelineInfo<Self>,
+    ) -> Result<Self::MeshPipeline, Error>;
     /// Create a new render pass from `RenderPassInfo`
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error>;
     /// Create a new compute pipeline state object from `ComputePipelineInfo`
@@ -2016,6 +2058,16 @@ pub fn align(value: u64, align: u64) -> u64 {
         return (div + 1) * align;
     }
     value
+}
+
+/// Align vec data u8 buffer to desired align, padding elements align must be pow2
+pub fn pad_align_pow2(buf: &mut Vec<u8>, align: u64) {
+    buf.resize(align_pow2(buf.len() as u64, align) as usize, 0);
+}
+
+/// Align vec data u8 buffer to desired align, padding elements
+pub fn pad_align(buf: &mut Vec<u8>, align_val: u64) {
+    buf.resize(align(buf.len() as u64, align_val) as usize, 0);
 }
 
 /// For the supplied sized struct `&_` returns the number of 32bit constants required for use as `push_constants`

@@ -23,6 +23,7 @@ use super::ComputePipelineInfo;
 use super::RaytracingShaderBindingTableInfo;
 use super::RenderPassInfo;
 use super::RenderPipelineInfo;
+use super::MeshPipelineInfo;
 use super::BufferInfo;
 use super::ShaderInfo;
 use super::QueryType;
@@ -57,6 +58,7 @@ pub struct CmdBuf;
 
 pub struct Shader;
 pub struct RenderPipeline;
+pub struct MeshPipeline;
 pub struct Texture;
 pub struct Buffer;
 pub struct ReadBackRequest;
@@ -308,6 +310,7 @@ impl super::Device for Device {
     type CmdBuf = CmdBuf;
     type Shader = Shader;
     type RenderPipeline = RenderPipeline;
+    type MeshPipeline = MeshPipeline;
     type Texture = Texture;
     type Buffer = Buffer;
     type ReadBackRequest = ReadBackRequest;
@@ -394,6 +397,13 @@ impl super::Device for Device {
         &self,
         info: &RenderPipelineInfo<Self>,
     ) -> Result<Self::RenderPipeline, Error> {
+        unimplemented!()
+    }
+
+    fn create_mesh_pipeline(
+        &self,
+        info: &MeshPipelineInfo<Self>,
+    ) -> Result<Self::MeshPipeline, Error> {
         unimplemented!()
     }
 
@@ -702,6 +712,7 @@ impl super::Pipeline for RaytracingPipeline {
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
+impl super::MeshPipeline<Device> for MeshPipeline {}
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
