@@ -90,7 +90,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let vs = device.create_shader(&vsc_info, &vsc_data)?;
 
     let psc_info = gfx::ShaderInfo {
-        shader_type: gfx::ShaderType::Vertex,
+        shader_type: gfx::ShaderType::Fragment,
         compile_info: None
     };
     let fs = device.create_shader(&psc_info, &psc_data)?;

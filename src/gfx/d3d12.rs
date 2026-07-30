@@ -179,7 +179,6 @@ pub struct RenderPipeline {
 pub struct MeshPipeline {
     pso: ID3D12PipelineState,
     root_signature: ID3D12RootSignature,
-    topology: D3D_PRIMITIVE_TOPOLOGY,
     lookup: RootSignatureLookup
 }
 
@@ -865,7 +864,7 @@ fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStr
 fn push_subobject<T: Copy>(buf: &mut Vec<u8>, subtype: D3D12_PIPELINE_STATE_SUBOBJECT_TYPE, payload: T) {
     pad_align_pow2(buf, 8);
     buf.extend_from_slice(&(subtype.0 as u32).to_ne_bytes());
-    pad_align_pow2(buf, 8); // pad between tag and payload if payload alignment needs it
+    pad_align_pow2(buf, std::mem::align_of::<T>() as u64); // pad between tag and payload if payload alignment needs it
     let bytes = unsafe { std::slice::from_raw_parts(&payload as *const T as *const u8, size_of::<T>()) };
     buf.extend_from_slice(bytes);
 }
@@ -875,7 +874,7 @@ fn push_subobject_raw<T: windows::core::Interface>(buf: &mut Vec<u8>, subtype: D
     let ptr_bytes = (raw as usize).to_ne_bytes();
     pad_align_pow2(buf, 8);
     buf.extend_from_slice(&(subtype.0 as u32).to_ne_bytes());
-    pad_align_pow2(buf, 8);
+    pad_align_pow2(buf, std::mem::align_of::<T>() as u64);
     buf.extend_from_slice(&ptr_bytes);
 }
 
@@ -1362,6 +1361,7 @@ impl Device {
     fn create_root_signature_with_lookup(
         &self,
         layout: &super::PipelineLayout,
+        allow_input_assembler: bool,
     ) -> result::Result<RootSignatureLookup, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
 
@@ -1483,10 +1483,18 @@ impl Device {
             }
         }
 
+        // a mesh/amplification shader pipeline requires a root signature WITHOUT the input
+        // assembler flag; setting it makes the pso silently rasterize nothing on some drivers
+        let flags = if allow_input_assembler {
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+        } else {
+            D3D12_ROOT_SIGNATURE_FLAG_NONE
+        };
+
         // desc
         let desc = D3D12_ROOT_SIGNATURE_DESC {
             NumParameters: root_params.len() as u32,
-            Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+            Flags: flags,
             pParameters: root_params.as_mut_ptr(),
             NumStaticSamplers: static_samplers.len() as u32,
             pStaticSamplers: static_samplers.as_mut_ptr(),
@@ -2100,7 +2108,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
 
         let semantics = null_terminate_semantics(&info.input_layout);
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
@@ -2175,8 +2183,8 @@ impl super::Device for Device {
     {
         let device2 = self.device.cast::<ID3D12Device2>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device2 availability to create mesh pipeline");
 
-        // create root signature with lookup
-        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        // create root signature with lookup (no input assembler for mesh pipelines)
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, false)?;
 
         // we need to pack a byte stream of the pipeline components
         let mut stream : Vec<u8> = Vec::new();
@@ -2200,11 +2208,9 @@ impl super::Device for Device {
 
         // states
         push_subobject_raw(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, &sig_lookup.root_signature);
-
         push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, to_d3d12_rasterizer_desc(&info.raster_info, msaa));
         push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, to_d3d12_blend_desc(&info.blend_info));
         push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, to_d3d12_depth_stencil_desc(&info.depth_stencil_info));
-
         push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, pass.ds_format);
         push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, DXGI_SAMPLE_DESC {
                 Count: pass.sample_count,
@@ -2234,7 +2240,6 @@ impl super::Device for Device {
         Ok(MeshPipeline {
             pso,
             root_signature: sig_lookup.root_signature.clone(),
-            topology: to_d3d12_mesh_primitive_topology(info.topology),
             lookup: sig_lookup
         })
     }
@@ -3204,7 +3209,7 @@ impl super::Device for Device {
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
         let cs = &info.cs;
-        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
             CS: D3D12_SHADER_BYTECODE {
@@ -3274,7 +3279,7 @@ impl super::Device for Device {
         }
 
         // root signature, for now we use a global one per pipeline
-        let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
         let mut global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
             pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone()))
         };
@@ -4443,6 +4448,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
+        let cmd = self.cmd();
+        unsafe {
+            cmd.SetGraphicsRootSignature(&pipeline.root_signature);
+            cmd.SetPipelineState(&pipeline.pso);
+        }
+    }
+
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         let cmd = self.cmd();
         unsafe {
@@ -4573,6 +4586,14 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn dispatch(&mut self, group_count: Size3, _numthreads: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
+        }
+    }
+
+    fn dispatch_mesh(&mut self, group_count: Size3, _numthreads: Size3) {
+        unsafe {
+            let cmd6 = self.cmd().cast::<ID3D12GraphicsCommandList6>()
+                .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList6 availability to dispatch_mesh");
+            cmd6.DispatchMesh(group_count.x, group_count.y, group_count.z);
         }
     }
 

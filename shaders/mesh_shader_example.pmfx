@@ -1,0 +1,12 @@
+{
+    include: [
+        "mesh_shader_example.hlsl"
+    ]
+
+    pipelines: {
+        default: {
+            ms: ms_main,
+            ps: ps_main
+        }
+    }
+}

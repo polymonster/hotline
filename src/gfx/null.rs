@@ -199,6 +199,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
+    fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
+        unimplemented!()
+    }
+
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         unimplemented!()
     }
@@ -245,6 +249,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn dispatch(&mut self, group_count: Size3, numthreads: Size3) {
+        unimplemented!()
+    }
+
+    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3) {
         unimplemented!()
     }
 

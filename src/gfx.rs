@@ -446,7 +446,9 @@ pub enum ShaderType {
     ClosestHit,
     Miss,
     Intersection,
-    Callable
+    Callable,
+    Mesh,
+    Amplification
 }
 
 bitflags! {
@@ -843,7 +845,7 @@ pub struct MeshPipelineInfo<'stack, D: Device> {
     pub depth_stencil_info: DepthStencilInfo,
     /// Control blending settings for the output merge stage
     pub blend_info: BlendInfo,
-    /// Primitive topology oof the input assembler
+    /// Topology of the mesh shader primitive
     pub topology: PrimitiveTopology,
     /// Sample mask for which MSAA samples to write
     pub sample_mask: u32,
@@ -1687,6 +1689,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_vertex_buffer(&mut self, buffer: &D::Buffer, slot: u32);
     /// Set render pipeline for `draw` commands
     fn set_render_pipeline(&mut self, pipeline: &D::RenderPipeline);
+    /// Set mesh pipeline for `dispatch_mesh` commands
+    fn set_mesh_pipeline(&mut self, pipeline: &D::MeshPipeline);
     /// Set a compute pipeline for `dispatch`
     fn set_compute_pipeline(&mut self, pipeline: &D::ComputePipeline);
     /// Set a raytracing pipeline for `dispatch_rays`
@@ -1723,6 +1727,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&mut self, group_count: Size3, numthreads: Size3);
+    /// Dispatch for mesh shader pipeline
+    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3);
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
         &mut self,
@@ -2266,6 +2272,23 @@ impl<'stack, D> Default for RenderPipelineInfo<'stack, D> where D: Device {
             blend_info: BlendInfo::default(),
             topology: Topology::TriangleList,
             patch_index: 0,
+            sample_mask: u32::max_value(),
+            pass: None
+        }
+    }
+}
+
+impl<'stack, D> Default for MeshPipelineInfo<'stack, D> where D: Device {
+    fn default() -> Self {
+        Self {
+            ms: None,
+            amps: None,
+            fs: None,
+            pipeline_layout: PipelineLayout::default(),
+            raster_info: RasterInfo::default(),
+            depth_stencil_info: DepthStencilInfo::default(),
+            blend_info: BlendInfo::default(),
+            topology: PrimitiveTopology::TriangleList,
             sample_mask: u32::max_value(),
             pass: None
         }

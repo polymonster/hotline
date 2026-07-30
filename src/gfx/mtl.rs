@@ -927,6 +927,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
+    fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
+        unimplemented!()
+    }
+
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         objc::rc::autoreleasepool(|| {
             // open a compute encoder lazily; reused across dispatches until a render pass or close
@@ -1213,6 +1217,10 @@ impl super::CmdBuf<Device> for CmdBuf {
                 .expect("hotline_rs::gfx::metal expected a call to set_compute_pipeline before dispatch")
                 .dispatch_thread_groups(threadgroups, threads_per_group);
         });
+    }
+
+    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3) {
+        unimplemented!()
     }
 
     fn execute_indirect(
