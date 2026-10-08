@@ -28,6 +28,7 @@ struct GpuDbg_Counters
     uint m_commandPos; // must be first, it is used as the count buffer for execute_indirect
     uint m_vertexPos;
     uint m_dataPos;
+    uint m_printDataPos; // not reset each frame, wraps around the print ring
 };
 
 struct GpuDbg_Command
@@ -73,6 +74,7 @@ RWStructuredBuffer<GpuDbg_Vertex>           gpu_dbg_vertices : register(u1);
 RWStructuredBuffer<GpuDbg_DrawIndirectArgs> gpu_dbg_draw_indirect_args : register(u2);
 RWStructuredBuffer<GpuDbg_Counters>         gpu_dbg_counters : register(u3);
 RWStructuredBuffer<uint>                    gpu_dbg_data : register(u4); // 1 char per uint
+globallycoherent RWStructuredBuffer<uint>   gpu_dbg_print_data : register(u5); // ring of (lap << 8) | char, cpu mapped
 Texture2D                                   gpu_dbg_font_atlas : register(t0);
 SamplerState                                gpu_dbg_linear_sampler : register(s0);
 
@@ -358,8 +360,30 @@ int GpuDbgTextUtils_countFloatChars(float val)
 }
 
 // Description:
-//      Write the digits of 'val' into the data buffer at 'cp' and return the new write position
-int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros)
+//      Targets for formatted chars, the text data buffer for GpuDbg_text or the print ring for GpuDbg_printf
+uint GpuDbg_kTargetText() { return 0; }
+uint GpuDbg_kTargetPrint() { return 1; }
+
+// Description:
+//      Write char 'c' to position 'pos' in 'target'. print chars are tagged with the lap of the ring they were written
+//      in so the cpu can tell new chars from stale ones without syncing on the counter
+void GpuDbg_putChar(uint target, uint pos, uint c)
+{
+    if(target == GpuDbg_kTargetText())
+    {
+        gpu_dbg_data[pos] = c;
+    }
+    else
+    {
+        uint size, stride;
+        gpu_dbg_print_data.GetDimensions(size, stride);
+        gpu_dbg_print_data[pos % size] = (((pos / size) + 1) << 8) | c;
+    }
+}
+
+// Description:
+//      Write the digits of 'val' into 'target' at 'cp' and return the new write position
+int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros, uint target)
 {
     // count chars
     int charCount = GpuDbgTextUtils_countIntChars(val);
@@ -367,7 +391,7 @@ int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros)
     // add minus sign
     if(val < 0)
     {
-        gpu_dbg_data[cp++] = '-';
+        GpuDbg_putChar(target, cp++, '-');
         charCount--;
     }
 
@@ -392,7 +416,7 @@ int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros)
     {
         if(leadingZeros > 0)
         {
-            gpu_dbg_data[cp++] = '0';
+            GpuDbg_putChar(target, cp++, '0');
             leadingZeros--;
             continue;
         }
@@ -400,7 +424,7 @@ int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros)
         int denom = lutDigit[digitIter];
         int digit = numer / denom;
 
-        gpu_dbg_data[cp++] = '0' + digit;
+        GpuDbg_putChar(target, cp++, '0' + digit);
 
         numer -= (digit * denom);
         digitIter--;
@@ -409,19 +433,19 @@ int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros)
     return cp;
 }
 
-int GpuDbgTextUtils_ftocToData(float val, int cp)
+int GpuDbgTextUtils_ftocToData(float val, int cp, uint target)
 {
     // int part
-    cp = GpuDbgTextUtils_itocToData((int)val, cp, 0);
+    cp = GpuDbgTextUtils_itocToData((int)val, cp, 0, target);
 
     // decimal place
-    gpu_dbg_data[cp++] = '.';
+    GpuDbg_putChar(target, cp++, '.');
 
     // frac part
     int flen;
     int fzeros;
     int fint = GpuDbgTextUtils_fracToInt(val, flen, fzeros);
-    cp = GpuDbgTextUtils_itocToData(fint, cp, fzeros);
+    cp = GpuDbgTextUtils_itocToData(fint, cp, fzeros, target);
 
     return cp;
 }
@@ -483,22 +507,15 @@ void GpuDbg_quad2D(float2 pos, float2 size, float4 color)
 }
 
 // Description:
-//      Append text at the 3D point 'pos' with screen space char 'size'. 'text' is an array of char literals, %i and %f
-//      format specifiers take values from 'vars' in order (up to 4). 'flags' controls alignment (GpuDbg_kTextAlign*)
-//      and 'outlineColor' draws an outline around the glyphs
-//      uint label[] = { 'x', ' ', '=', ' ', '%', 'f' };
-//      GpuDbg_textf(label, pos, 50.0, color, float4(x, 0.0, 0.0, 0.0));
+//      Returns the number of chars 'text' formats to, %i and %f format specifiers take values from 'vars' in order
+//      char literals are not supported in dxc templates, so '%' = 37, 'i' = 105, 'f' = 102
 template<uint N>
-void GpuDbg_textfEx(uint text[N], float3 pos, float size, float4 color, float4 vars, uint flags, float4 outlineColor)
+uint GpuDbg_formatLength(uint text[N], float4 vars)
 {
-    // char literals are not supported in dxc templates, so '%' = 37, 'i' = 105, 'f' = 102
-
-    // get char count, accounting for variables
-    int varIndex = 0;
-    int charCount = 0;
+    uint varIndex = 0;
+    uint charCount = 0;
     for(uint i = 0; i < N; ++i)
     {
-        // check escape chars
         if(text[i] == 37 && i + 1 < N)
         {
             if(text[i + 1] == 105)
@@ -518,38 +535,80 @@ void GpuDbg_textfEx(uint text[N], float3 pos, float size, float4 color, float4 v
         charCount++;
     }
 
-    // allocate space
-    uint dp = 0;
-    InterlockedAdd(gpu_dbg_counters[0].m_dataPos, charCount, dp);
+    return charCount;
+}
 
-    // iterate and add chars
-    varIndex = 0;
-    int cp = dp;
-    for(uint j = 0; j < N; ++j)
+// Description:
+//      Write the formatted chars of 'text' into 'target' starting at 'cp', returns the next write position
+template<uint N>
+int GpuDbg_formatWrite(uint text[N], float4 vars, uint target, int cp)
+{
+    uint varIndex = 0;
+    for(uint i = 0; i < N; ++i)
     {
-        // check escape chars + add vars
-        if(text[j] == 37 && j + 1 < N)
+        if(text[i] == 37 && i + 1 < N)
         {
-            if(text[j + 1] == 105)
+            if(text[i + 1] == 105)
             {
-                cp = GpuDbgTextUtils_itocToData((int)vars[varIndex], cp, 0);
+                cp = GpuDbgTextUtils_itocToData((int)vars[varIndex], cp, 0, target);
             }
-            else if(text[j + 1] == 102)
+            else if(text[i + 1] == 102)
             {
-                cp = GpuDbgTextUtils_ftocToData(vars[varIndex], cp);
+                cp = GpuDbgTextUtils_ftocToData(vars[varIndex], cp, target);
             }
 
             varIndex++;
-            j += 1;
+            i += 1;
             continue;
         }
 
-        // add plain char
-        gpu_dbg_data[cp++] = text[j];
+        GpuDbg_putChar(target, cp++, text[i]);
     }
+
+    return cp;
+}
+
+// Description:
+//      Append text at the 3D point 'pos' with screen space char 'size'. 'text' is an array of char literals, %i and %f
+//      format specifiers take values from 'vars' in order (up to 4). 'flags' controls alignment (GpuDbg_kTextAlign*)
+//      and 'outlineColor' draws an outline around the glyphs
+//      uint label[] = { 'x', ' ', '=', ' ', '%', 'f' };
+//      GpuDbg_textf(label, pos, 50.0, color, float4(x, 0.0, 0.0, 0.0));
+template<uint N>
+void GpuDbg_textfEx(uint text[N], float3 pos, float size, float4 color, float4 vars, uint flags, float4 outlineColor)
+{
+    uint charCount = GpuDbg_formatLength(text, vars);
+
+    uint dp = 0;
+    InterlockedAdd(gpu_dbg_counters[0].m_dataPos, charCount, dp);
+    GpuDbg_formatWrite(text, vars, GpuDbg_kTargetText(), dp);
 
     // push the draw, 1 quad per char
     GpuDbg_pushCommand(GpuDbg_kText3D(), pos, float3(size, size, 1.0), color, outlineColor, flags, dp, charCount, charCount);
+}
+
+// Description:
+//      Print a line to the cpu console (stdout), with the same formatting as GpuDbg_textf. the cpu reads the print ring
+//      persistently mapped, so lines arrive without waiting on the gpu
+//      uint msg[] = { 'v', 'a', 'l', ' ', '%', 'i' };
+//      GpuDbg_printf(msg, float4(val, 0.0, 0.0, 0.0));
+template<uint N>
+void GpuDbg_printf(uint text[N], float4 vars)
+{
+    uint charCount = GpuDbg_formatLength(text, vars);
+
+    uint pp = 0;
+    InterlockedAdd(gpu_dbg_counters[0].m_printDataPos, charCount + 1, pp);
+    int cp = GpuDbg_formatWrite(text, vars, GpuDbg_kTargetPrint(), pp);
+
+    // terminate the line, '\n' = 10
+    GpuDbg_putChar(GpuDbg_kTargetPrint(), cp, 10);
+}
+
+template<uint N>
+void GpuDbg_print(uint text[N])
+{
+    GpuDbg_printf(text, (float4)0.0);
 }
 
 template<uint N>
@@ -1240,6 +1299,10 @@ void GpuDbg_demo()
 
     uint labelTextVars[] = { 'T', 'e', 'x', 't', ' ', 'V', 'a', 'r', 's' };
     GpuDbg_text(labelTextVars, pos - labelOffset, labelSize, white);
+
+    // print to the cpu console
+    uint msg[] = { 'g', 'p', 'u', '_', 'd', 'b', 'g', ' ', 'c', 'o', 'm', 'm', 'a', 'n', 'd', 's', ' ', '%', 'i', ' ', 'v', 'e', 'r', 't', 'i', 'c', 'e', 's', ' ', '%', 'i' };
+    GpuDbg_printf(msg, float4(gpu_dbg_counters[0].m_commandPos, gpu_dbg_counters[0].m_vertexPos, 0.0, 0.0));
 }
 
 //

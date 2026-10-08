@@ -12,6 +12,7 @@ use maths_rs::prelude::*;
 const MAX_COMMANDS: usize = 4096;
 const MAX_VERTICES: usize = 1 << 16;
 const MAX_CHARS: usize = 1 << 16;
+const PRINT_RING_SIZE: u32 = 1 << 16;
 
 // matches `GpuDbg_DrawIndirectArgs` in shaders/gpu_dbg.hlsl (root constant draw id + DispatchMesh args)
 // these are written by the gpu, only the size is used on the cpu
@@ -50,7 +51,41 @@ fn transition_buffer(cmd: &mut gfx_platform::CmdBuf, buffer: &gfx_platform::Buff
     });
 }
 
-// binds the gpu_dbg buffers to u0-u4, pipelines that do not use a buffer will skip it
+// reads chars written by `GpuDbg_printf` from the persistently mapped print ring, without syncing with the gpu.
+// each slot is (lap << 8) | char, so a slot holding the lap we expect for `pos` is a new char and anything else has
+// not been written yet, unless it is from a later lap, in which case the gpu has overrun the ring and we skip ahead
+struct GpuPrinter {
+    ring: *const u32,
+    pos: u32,
+    line: String
+}
+
+impl GpuPrinter {
+    fn read(&mut self) {
+        loop {
+            let slot = self.pos % PRINT_RING_SIZE;
+            let lap = (self.pos / PRINT_RING_SIZE).wrapping_add(1) & 0xffffff;
+            let value = unsafe { std::ptr::read_volatile(self.ring.add(slot as usize)) };
+            let value_lap = value >> 8;
+            if value_lap != lap {
+                if value_lap > lap {
+                    println!("gpu_dbg: print ring overrun, skipping ahead");
+                    self.line.clear();
+                    self.pos = (value_lap - 1).wrapping_mul(PRINT_RING_SIZE) + slot;
+                    continue;
+                }
+                break;
+            }
+            match (value & 0xff) as u8 {
+                b'\n' => println!("{}", std::mem::take(&mut self.line)),
+                c => self.line.push(c as char)
+            }
+            self.pos = self.pos.wrapping_add(1);
+        }
+    }
+}
+
+// binds the gpu_dbg buffers to u0-u5, pipelines that do not use a buffer will skip it
 fn bind_buffers<P: Pipeline>(cmd: &mut gfx_platform::CmdBuf, pipeline: &P, heap: &gfx_platform::Heap, buffers: &[&gfx_platform::Buffer]) {
     for (i, buffer) in buffers.iter().enumerate() {
         cmd.set_binding(pipeline, i as u32, 0, gfx::DescriptorType::UnorderedAccess, heap, buffer.get_uav_index().unwrap());
@@ -92,9 +127,25 @@ fn main() -> Result<(), hotline_rs::Error> {
     let commands = create_uav_buffer(&mut dev, 72, MAX_COMMANDS, gfx::BufferUsage::NONE)?;
     let vertices = create_uav_buffer(&mut dev, 28, MAX_VERTICES, gfx::BufferUsage::NONE)?;
     let args = create_uav_buffer(&mut dev, std::mem::size_of::<DrawIndirectArgs>(), MAX_COMMANDS, gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER)?;
-    let counters = create_uav_buffer(&mut dev, 12, 1, gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER)?;
+    let counters = create_uav_buffer(&mut dev, 16, 1, gfx::BufferUsage::INDIRECT_ARGUMENT_BUFFER)?;
     let data = create_uav_buffer(&mut dev, 4, MAX_CHARS, gfx::BufferUsage::NONE)?;
-    let buffers = [&commands, &vertices, &args, &counters, &data];
+
+    // print ring in cpu readable memory, persistently mapped so we can read gpu prints as they arrive
+    let mut print_data = dev.create_buffer::<u8>(&gfx::BufferInfo {
+        usage: gfx::BufferUsage::UNORDERED_ACCESS,
+        cpu_access: gfx::CpuAccessFlags::READ | gfx::CpuAccessFlags::PERSISTENTLY_MAPPED,
+        format: gfx::Format::Unknown,
+        stride: 4,
+        num_elements: PRINT_RING_SIZE as usize,
+        initial_state: gfx::ResourceState::UnorderedAccess
+    }, None)?;
+    let mut printer = GpuPrinter {
+        ring: print_data.map(&gfx::MapInfo { subresource: 0, read_start: 0, read_end: usize::MAX }) as *const u32,
+        pos: 0,
+        line: String::new()
+    };
+
+    let buffers = [&commands, &vertices, &args, &counters, &data, &print_data];
 
     // sdf font atlas, an 8x8 grid of ascii 32-95
     let font_atlas = image::load_texture_from_file(&mut dev, &hotline_rs::get_data_path("textures/gpu_dbg_atlas.dds"), None)?;
@@ -204,6 +255,9 @@ fn main() -> Result<(), hotline_rs::Error> {
         cmd.close()?;
         dev.execute(&cmd);
         swap_chain.swap(&mut dev);
+
+        // print anything the gpu has written so far
+        printer.read();
     }
 
     swap_chain.wait_for_last_frame();

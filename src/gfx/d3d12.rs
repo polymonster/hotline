@@ -2472,15 +2472,31 @@ impl super::Device for Device {
             }
 
             // create a buffer resource
-            self.device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
-                        D3D12_HEAP_TYPE_UPLOAD
-                    } else {
-                        D3D12_HEAP_TYPE_DEFAULT
-                    },
+            // cpu read buffers use a custom heap in system memory with write-back cpu pages, unlike a readback heap
+            // the gpu can write to it as a uav and it can be persistently mapped to read gpu writes without sync
+            let heap_props = if info.cpu_access.contains(super::CpuAccessFlags::READ) {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_CUSTOM,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_WRITE_BACK,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_L0,
                     ..Default::default()
-                },
+                }
+            }
+            else if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    ..Default::default()
+                }
+            }
+            else {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    ..Default::default()
+                }
+            };
+
+            self.device.CreateCommittedResource(
+                &heap_props,
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC {
                     Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
