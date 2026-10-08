@@ -1326,6 +1326,8 @@ pub enum IndirectArgumentType {
     DrawIndexed,
     /// Used to issue indirect compute `dispatch` calls
     Dispatch,
+    /// Used to issue indirect `dispatch_mesh` calls, arguments are laid out the same as `DispatchArguments`
+    DispatchMesh,
     /// Used to change a vertex buffer binding
     VertexBuffer,
     /// Used to change an index buffer binding
@@ -1574,6 +1576,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
+    ) -> Result<Self::CommandSignature, super::Error>;
+    /// Create a command signature for `execute_indirect` commands associated on the `MeshPipeline`
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<IndirectArgument>,
+        pipeline: Option<&Self::MeshPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
     /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&mut self, cmd: &Self::CmdBuf);

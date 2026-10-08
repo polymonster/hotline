@@ -1435,6 +1435,20 @@ impl super::MeshPipeline<Device> for MeshPipeline {}
 unsafe impl Send for MeshPipeline {}
 unsafe impl Sync for MeshPipeline {}
 
+impl super::Pipeline for MeshPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Render
+    }
+}
+
 impl super::Pipeline for RenderPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         self.slot_lookup.get(&(register, space, descriptor_type))
@@ -3039,6 +3053,12 @@ impl super::Device for Device {
         Ok(CommandSignature{
 
         })
+    }
+
+    fn create_indirect_mesh_command<T: Sized>(&mut self,
+        arguments: Vec<super::IndirectArgument>,
+        pipeline: Option<&MeshPipeline>) -> result::Result<CommandSignature, super::Error> {
+        unimplemented!()
     }
 
     fn execute(&mut self, cmd: &CmdBuf) {

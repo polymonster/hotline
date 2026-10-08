@@ -794,6 +794,7 @@ const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) ->
         IndirectArgumentType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
         IndirectArgumentType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
         IndirectArgumentType::Dispatch => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+        IndirectArgumentType::DispatchMesh => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH,
         IndirectArgumentType::PushConstants => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT,
         IndirectArgumentType::ConstantBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW,
         IndirectArgumentType::VertexBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW,
@@ -801,6 +802,76 @@ const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) ->
         IndirectArgumentType::UnorderedAccess => D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW,
         IndirectArgumentType::ShaderResource => D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW,
     }
+}
+
+fn create_command_signature<T: Sized>(
+    device: &D3D12DeviceVersion,
+    arguments: Vec<super::IndirectArgument>,
+    root_signature: Option<&ID3D12RootSignature>) -> result::Result<CommandSignature, super::Error> {
+
+    let descs = arguments.iter().map(|arg|
+        match arg.argument_type {
+            super::IndirectArgumentType::PushConstants => {
+                if let Some(args) = &arg.arguments {
+                    unsafe {
+                        D3D12_INDIRECT_ARGUMENT_DESC {
+                            Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                            Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
+                                    RootParameterIndex: args.push_constants.slot,
+                                    DestOffsetIn32BitValues: args.push_constants.offset,
+                                    Num32BitValuesToSet: args.push_constants.num_values
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    panic!("hotline_rs::gfx::d3d12:: indirect push constants must specify `push_constants` arguments");
+                }
+            },
+            super::IndirectArgumentType::VertexBuffer => {
+                if let Some(args) = &arg.arguments {
+                    unsafe {
+                        D3D12_INDIRECT_ARGUMENT_DESC {
+                            Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                            Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_5 {
+                                    Slot: args.buffer.slot,
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    panic!("hotline_rs::gfx::d3d12:: indirect vertex buffer must specify `buffer` arguments");
+                }
+            }
+            _ => {
+                D3D12_INDIRECT_ARGUMENT_DESC {
+                    Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                    ..Default::default()
+                }
+            }
+        }
+    ).collect::<Vec<D3D12_INDIRECT_ARGUMENT_DESC>>();
+
+    let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
+        pArgumentDescs: descs.as_ptr() as *const D3D12_INDIRECT_ARGUMENT_DESC,
+        NumArgumentDescs: descs.len() as u32,
+        ByteStride: std::mem::size_of::<T>() as u32,
+        NodeMask: 0
+    };
+
+    // If the number of args is just 1 and is draw, draw_indexed it is invalid to pass a pipeline
+    let mut sig : Option<ID3D12CommandSignature> = None;
+    unsafe {
+        device.CreateCommandSignature(&cmd_desc, root_signature, &mut sig)?;
+    }
+
+    Ok(CommandSignature {
+        command_signature: sig.unwrap()
+    })
 }
 
 const fn to_d3d12_hit_group_type(op: &super::RaytracingHitGeometry) -> D3D12_HIT_GROUP_TYPE {
@@ -2562,38 +2633,28 @@ impl super::Device for Device {
                     srv_index = Some(heap.get_handle_index(&h));
                 }
                 else if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+                    // append counter buffers are implictly added to the end of the buffer
+                    // different approches could be used with manually tracking and adding counters
+                    // but this approach creates a d3d friendly `AppendStructuredBuffer`
                     let h = heap.allocate();
-                    if let Some(offset) = counter_offset {
-                        // append counter buffers are implictly added to the end of the buffer
-                        // different approches could be used with manually tracking and adding counters
-                        // but this approach creates a d3d friendly `AppendStructuredBuffer`
-                        self.device.CreateUnorderedAccessView(
-                            &buf,
-                            &buf,
-                            Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
-                                Format: DXGI_FORMAT_UNKNOWN,
-                                ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
-                                Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
-                                    Buffer: D3D12_BUFFER_UAV {
-                                        FirstElement: 0,
-                                        NumElements: info.num_elements as u32,
-                                        StructureByteStride: info.stride as u32,
-                                        CounterOffsetInBytes: offset as u64,
-                                        Flags: D3D12_BUFFER_UAV_FLAG_NONE
-                                    }
+                    self.device.CreateUnorderedAccessView(
+                        &buf,
+                        counter_offset.map(|_| &buf),
+                        Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
+                            Format: DXGI_FORMAT_UNKNOWN,
+                            ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
+                            Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_UAV {
+                                    FirstElement: 0,
+                                    NumElements: info.num_elements as u32,
+                                    StructureByteStride: info.stride as u32,
+                                    CounterOffsetInBytes: counter_offset.unwrap_or(0) as u64,
+                                    Flags: D3D12_BUFFER_UAV_FLAG_NONE
                                 }
-                            }),
-                            h,
-                        );
-                    }
-                    else {
-                        self.device.CreateUnorderedAccessView(
-                            &buf,
-                            None,
-                            None,
-                            h,
-                        );
-                    }
+                            }
+                        }),
+                        h,
+                    );
 
                     uav_index = Some(heap.get_handle_index(&h));
                 }
@@ -3789,81 +3850,18 @@ impl super::Device for Device {
     }
 
     fn create_indirect_render_command<T: Sized>(
-        &mut self, 
+        &mut self,
         arguments: Vec<super::IndirectArgument>,
         pipeline: Option<&RenderPipeline>) -> result::Result<CommandSignature, super::Error> {
-        
-        let descs = arguments.iter().map(|arg|
-            match arg.argument_type {
-                super::IndirectArgumentType::PushConstants => {
-                    if let Some(args) = &arg.arguments {
-                        unsafe {
-                            D3D12_INDIRECT_ARGUMENT_DESC {
-                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
-                                    Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
-                                        RootParameterIndex: args.push_constants.slot,
-                                        DestOffsetIn32BitValues: args.push_constants.offset,
-                                        Num32BitValuesToSet: args.push_constants.num_values
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        panic!("hotline_rs::gfx::d3d12:: indirect push constants must specify `push_constants` arguments");
-                    }
-                },
-                super::IndirectArgumentType::VertexBuffer => {
-                    if let Some(args) = &arg.arguments {
-                        unsafe {
-                            D3D12_INDIRECT_ARGUMENT_DESC {
-                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
-                                    VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_5 {
-                                        Slot: args.buffer.slot,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        panic!("hotline_rs::gfx::d3d12:: indirect vertex buffer must specify `buffer` arguments");
-                    }
-                }
-                _ => {
-                    D3D12_INDIRECT_ARGUMENT_DESC {
-                        Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                        ..Default::default()
-                    }
-                }
-            }
-        ).collect::<Vec<D3D12_INDIRECT_ARGUMENT_DESC>>();
+        create_command_signature::<T>(&self.device, arguments, pipeline.map(|p| &p.root_signature))
+    }
 
-        let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
-            pArgumentDescs: descs.as_ptr() as *const D3D12_INDIRECT_ARGUMENT_DESC,
-            NumArgumentDescs: descs.len() as u32,
-            ByteStride: std::mem::size_of::<T>() as u32,
-            NodeMask: 0
-        };
-
-        // If the number of args is just 1 and is draw, draw_indexed it is invalid to pass a pipeline
-        let mut sig : Option<ID3D12CommandSignature> = None;
-        if let Some(pipeline) = pipeline {
-            unsafe {
-                self.device.CreateCommandSignature(&cmd_desc, &pipeline.root_signature, &mut sig)?;
-            }
-        }
-        else {
-            unsafe {
-                self.device.CreateCommandSignature(&cmd_desc, None, &mut sig)?;
-            }
-        };
-
-        Ok(CommandSignature {
-            command_signature: sig.unwrap()
-        })
-    }    
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<super::IndirectArgument>,
+        pipeline: Option<&MeshPipeline>) -> result::Result<CommandSignature, super::Error> {
+        create_command_signature::<T>(&self.device, arguments, pipeline.map(|p| &p.root_signature))
+    }
 
     fn execute(&mut self, cmd: &CmdBuf) {
         unsafe {
@@ -4017,6 +4015,7 @@ impl super::Device for Device {
             IndirectArgumentType::Draw => std::mem::size_of::<D3D12_DRAW_ARGUMENTS>(),
             IndirectArgumentType::DrawIndexed => std::mem::size_of::<D3D12_DRAW_INDEXED_ARGUMENTS>(),
             IndirectArgumentType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
+            IndirectArgumentType::DispatchMesh => std::mem::size_of::<D3D12_DISPATCH_MESH_ARGUMENTS>(),
             _ => panic!("hotline_rs::d3d12:: not implemented")
         }
     }
@@ -5123,6 +5122,21 @@ impl super::RaytracingTLAS<Device> for RaytracingTLAS {
 }
 
 impl super::Pipeline for RenderPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        let h = get_binding_descriptor_hash(register, space, descriptor_type);
+        self.lookup.slot_lookup.get(&h)
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.lookup.descriptor_slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Render
+    }
+}
+
+impl super::Pipeline for MeshPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         let h = get_binding_descriptor_hash(register, space, descriptor_type);
         self.lookup.slot_lookup.get(&h)

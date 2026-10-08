@@ -1,0 +1,52 @@
+{
+    include: [
+        "gpu_dbg.hlsl"
+    ]
+    sampler_states: {
+        gpu_dbg_linear_clamp: {
+            filter: "Linear",
+            address_u: "Clamp",
+            address_v: "Clamp",
+            address_w: "Clamp",
+        }
+    }
+    raster_states: {
+        gpu_dbg_no_cull: {
+            cull_mode: "None"
+        }
+    }
+    render_target_blend_states: {
+        gpu_dbg_alpha: {
+            blend_enabled: true
+            src_blend: SrcAlpha
+            dst_blend: InvSrcAlpha
+        }
+    }
+    blend_states: {
+        gpu_dbg_alpha: {
+            render_target: ["gpu_dbg_alpha"]
+        }
+    }
+    pipelines: {
+        gpu_dbg_reset: {
+            cs: cs_gpu_dbg_reset
+        }
+        gpu_dbg_demo: {
+            cs: cs_gpu_dbg_demo
+        }
+        gpu_dbg_draw: {
+            ms: ms_gpu_dbg
+            ps: ps_gpu_dbg
+            push_constants: [
+                "gpu_dbg_view"
+                "gpu_dbg_draw"
+            ]
+            static_samplers: {
+                gpu_dbg_linear_sampler: "gpu_dbg_linear_clamp"
+            }
+            raster_state: "gpu_dbg_no_cull"
+            blend_state: "gpu_dbg_alpha"
+            topology: "TriangleList"
+        }
+    }
+}

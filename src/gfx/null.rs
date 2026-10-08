@@ -493,6 +493,14 @@ impl super::Device for Device {
         unimplemented!()
     }
 
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<IndirectArgument>,
+        pipeline: Option<&Self::MeshPipeline>
+    ) -> Result<Self::CommandSignature, super::Error> {
+        unimplemented!()
+    }
+
     fn execute(&mut self, cmd: &Self::CmdBuf) {
         unimplemented!()
     }
@@ -691,6 +699,20 @@ impl super::Pipeline for RenderPipeline {
 }
 
 impl super::Pipeline for ComputePipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        unimplemented!()
+    }
+}
+
+impl super::Pipeline for MeshPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         unimplemented!()
     }

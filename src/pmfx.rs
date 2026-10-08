@@ -153,6 +153,8 @@ pub struct Pmfx<D: gfx::Device> {
     window_sizes: HashMap<String, (f32, f32)>,
     /// Nested structure of: format (u64) > FormatPipelineMap
     render_pipelines: HashMap<PmfxHash, FormatPipelineMap<D::RenderPipeline>>,
+    /// Mesh pipelines grouped by format (u64) then name as a tuple (build_hash, pipeline)
+    mesh_pipelines: HashMap<PmfxHash, HashMap<String, (PmfxHash, D::MeshPipeline)>>,
     /// Compute Pipelines grouped by name then as a tuple (build_hash, pipeline)
     compute_pipelines: HashMap<String, (PmfxHash, D::ComputePipeline)>,
     /// Raytracing pipeline and sbt binding pair
@@ -373,6 +375,9 @@ struct Pipeline {
     vs: Option<String>,
     ps: Option<String>,
     cs: Option<String>,
+    ms: Option<String>,
+    #[serde(rename = "as")]
+    amps: Option<String>,
     lib: Option<Vec<String>>,
     hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
     sbt: Option<RaytracingShaderBindingTableInfo>,
@@ -1003,6 +1008,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
             pmfx_tracking: HashMap::new(),
             pmfx_folders: HashMap::new(),
             render_pipelines: HashMap::new(),
+            mesh_pipelines: HashMap::new(),
             compute_pipelines: HashMap::new(),
             raytracing_pipelines: HashMap::new(),
             shaders: HashMap::new(),
@@ -2200,6 +2206,46 @@ impl<D> Pmfx<D> where D: gfx::Device {
                 msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
             })
         }
+    }
+
+    /// Create a MeshPipeline instance for the combination of pmfx_pipeline settings and an associated RenderPass
+    pub fn create_mesh_pipeline(&mut self, device: &D, pipeline_name: &str, pass: &D::RenderPass) -> Result<(), super::Error> {
+        let pipeline = self.pmfx.pipelines.get(pipeline_name).and_then(|p| p.get("0")).cloned().ok_or(super::Error {
+            msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+        })?;
+
+        let folder = self.pmfx_folders.get(pipeline_name)
+            .unwrap_or_else(|| panic!("hotline_rs::pmfx:: expected to find pipeline {} in pmfx_folders", pipeline_name)).to_string();
+
+        self.create_shader(device, Path::new(&folder), &pipeline.ms)?;
+        self.create_shader(device, Path::new(&folder), &pipeline.amps)?;
+        self.create_shader(device, Path::new(&folder), &pipeline.ps)?;
+
+        let pso = device.create_mesh_pipeline(&gfx::MeshPipelineInfo {
+            ms: self.get_shader(&pipeline.ms),
+            amps: self.get_shader(&pipeline.amps),
+            fs: self.get_shader(&pipeline.ps),
+            pipeline_layout: pipeline.pipeline_layout.clone(),
+            raster_info: info_from_state(&pipeline.raster_state, &self.pmfx.raster_states)?,
+            depth_stencil_info: info_from_state(&pipeline.depth_stencil_state, &self.pmfx.depth_stencil_states)?,
+            blend_info: blend_info_from_state(
+                &pipeline.blend_state, &self.pmfx.blend_states, &self.pmfx.render_target_blend_states)?,
+            sample_mask: pipeline.sample_mask,
+            pass: Some(pass),
+            ..Default::default()
+        })?;
+        println!("hotline_rs::pmfx:: compiled mesh pipeline: {}", pipeline_name);
+
+        self.mesh_pipelines.entry(pass.get_format_hash()).or_default()
+            .insert(pipeline_name.to_string(), (pipeline.hash, pso));
+        Ok(())
+    }
+
+    /// Returns a pmfx defined mesh pipeline compatible with the supplied format hash if it exists
+    pub fn get_mesh_pipeline_for_format<'stack>(&'stack self, pipeline_name: &str, format_hash: u64) -> Result<&'stack D::MeshPipeline, super::Error> {
+        self.mesh_pipelines.get(&format_hash).and_then(|f| f.get(pipeline_name)).map(|p| &p.1).ok_or(super::Error {
+            msg: format!("hotline_rs::pmfx:: could not find mesh pipeline for format: {} ({})", pipeline_name, format_hash),
+        })
     }
 
     // Create a raytracing pipeline define in pmfx, with rg, ch, ah or mi shader stages
