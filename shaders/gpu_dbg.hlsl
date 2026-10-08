@@ -1,78 +1,78 @@
 //
 // gpu_dbg: gpu driven debug rendering
-// call the GpuDbg_ functions from any shader to append debug draw commands, the commands are then rendered with
+// call the gpu_dbg_ functions from any shader to append debug draw commands, the commands are then rendered with
 // a single `execute_indirect` of `ms_gpu_dbg` / `ps_gpu_dbg` where each command dispatches 1 mesh group per quad
 //
 
 // command types
-uint GpuDbg_kPoint() { return 0; }
-uint GpuDbg_kLineStrip3D() { return 1; }
-uint GpuDbg_kLineList3D() { return 2; }
-uint GpuDbg_kLineLoop3D() { return 3; }
-uint GpuDbg_kLineStripNDC() { return 4; }
-uint GpuDbg_kLineListNDC() { return 5; }
-uint GpuDbg_kLineLoopNDC() { return 6; }
-uint GpuDbg_kQuad2D() { return 7; }
-uint GpuDbg_kText2D() { return 8; }
-uint GpuDbg_kText3D() { return 9; }
+uint gpu_dbg_cmd_point() { return 0; }
+uint gpu_dbg_cmd_line_strip_3d() { return 1; }
+uint gpu_dbg_cmd_line_list_3d() { return 2; }
+uint gpu_dbg_cmd_line_loop_3d() { return 3; }
+uint gpu_dbg_cmd_line_strip_ndc() { return 4; }
+uint gpu_dbg_cmd_line_list_ndc() { return 5; }
+uint gpu_dbg_cmd_line_loop_ndc() { return 6; }
+uint gpu_dbg_cmd_quad_2d() { return 7; }
+uint gpu_dbg_cmd_text_2d() { return 8; }
+uint gpu_dbg_cmd_text_3d() { return 9; }
 
 // text flags
-uint GpuDbg_kTextAlignCenter() { return 1<<0; }
-uint GpuDbg_kTextAlignLeft() { return 1<<1; }
-uint GpuDbg_kTextAlignRight() { return 1<<2; }
+uint gpu_dbg_text_align_center() { return 1<<0; }
+uint gpu_dbg_text_align_left() { return 1<<1; }
+uint gpu_dbg_text_align_right() { return 1<<2; }
 
-float GpuDbg_kPi() { return 3.14159265358979; }
+float gpu_dbg_pi() { return 3.14159265358979; }
 
-struct GpuDbg_Counters
+struct GpuDbgCounters
 {
-    uint m_commandPos; // must be first, it is used as the count buffer for execute_indirect
-    uint m_vertexPos;
-    uint m_dataPos;
-    uint m_printDataPos; // not reset each frame, wraps around the print ring
+    uint command_pos; // must be first, it is used as the count buffer for execute_indirect
+    uint vertex_pos;
+    uint data_pos;
+    uint print_data_pos; // not reset each frame, wraps around the print ring
 };
 
-struct GpuDbg_Command
+struct GpuDbgCommand
 {
-    uint    m_type;
-    float3  m_pos;
-    float3  m_size;
-    float4  m_color;
-    float4  m_altColor;
-    uint    m_flags;
-    uint    m_dataOffset;
-    uint    m_dataLength;
+    uint    type;
+    float3  pos;
+    float3  size;
+    float4  color;
+    float4  alt_color;
+    uint    flags;
+    uint    data_offset;
+    uint    data_length;
 };
 
 // root constant draw id + DispatchMesh args, consumed by execute_indirect
-struct GpuDbg_DrawIndirectArgs
+struct GpuDbgDrawIndirectArgs
 {
-    uint m_drawId;
-    uint m_groupCountX;
-    uint m_groupCountY;
-    uint m_groupCountZ;
+    uint draw_id;
+    uint group_count_x;
+    uint group_count_y;
+    uint group_count_z;
 };
 
-struct GpuDbg_Vertex
+struct GpuDbgVertex
 {
-    float3 m_pos;
-    float4 m_color;
+    float3 pos;
+    float4 color;
 };
 
 // Description:
-//      Generic vertex output structure for mesh shader to pixel shader for rendering GpuDbg primitives
-struct GpuDbg_VertexOutput
+//      Generic vertex output structure for mesh shader to pixel shader for rendering gpu_dbg primitives
+struct GpuDbgVertexOutput
 {
-    float4 m_position : SV_POSITION;
-    float2 m_uv : TEXCOORD0;
-    float4 m_color : TEXCOORD1;
-    float4 m_altColor : TEXCOORD2;
-    nointerpolation uint m_type : TEXCOORD3;
+    float4 position : SV_POSITION;
+    float2 uv : TEXCOORD0;
+    float4 color : TEXCOORD1;
+    float4 alt_color : TEXCOORD2;
+    nointerpolation uint type : TEXCOORD3;
 };
 
-RWStructuredBuffer<GpuDbg_Command>          gpu_dbg_commands : register(u0);
-RWStructuredBuffer<GpuDbg_Vertex>           gpu_dbg_vertices : register(u1);
-RWStructuredBuffer<GpuDbg_DrawIndirectArgs> gpu_dbg_draw_indirect_args : register(u2);
-RWStructuredBuffer<GpuDbg_Counters>         gpu_dbg_counters : register(u3);
+RWStructuredBuffer<GpuDbgCommand>          gpu_dbg_commands : register(u0);
+RWStructuredBuffer<GpuDbgVertex>           gpu_dbg_vertices : register(u1);
+RWStructuredBuffer<GpuDbgDrawIndirectArgs> gpu_dbg_draw_indirect_args : register(u2);
+RWStructuredBuffer<GpuDbgCounters>         gpu_dbg_counters : register(u3);
 RWStructuredBuffer<uint>                    gpu_dbg_data : register(u4); // 1 char per uint
 globallycoherent RWStructuredBuffer<uint>   gpu_dbg_print_data : register(u5); // ring of (lap << 8) | char, cpu mapped
 Texture2D                                   gpu_dbg_font_atlas : register(t0);
@@ -99,7 +99,7 @@ cbuffer gpu_dbg_draw : register(b1)
 // Arguments:
 //      axis - the axis to rotate about
 //      angle - radian angle to rotate about the axis
-float4x4 GpuDbgUtils_createMatrixRotation(float3 axis, float angle)
+float4x4 gpu_dbg_create_matrix_rotation(float3 axis, float angle)
 {
     axis = normalize(axis);
 
@@ -119,7 +119,7 @@ float4x4 GpuDbgUtils_createMatrixRotation(float3 axis, float angle)
 //      Construct a scale matrix
 // Arguments:
 //      scale - scale value for x, y and z axis
-float4x4 GpuDbgUtils_createMatrixScale(float3 scale)
+float4x4 gpu_dbg_create_matrix_scale(float3 scale)
 {
     return float4x4(
         scale.x, 0.0, 0.0, 0.0,
@@ -133,7 +133,7 @@ float4x4 GpuDbgUtils_createMatrixScale(float3 scale)
 //      Construct a translation matrix
 // Arguments:
 //      translation - translation value for x, y and z axis
-float4x4 GpuDbgUtils_createMatrixTranslation(float3 translation)
+float4x4 gpu_dbg_create_matrix_translation(float3 translation)
 {
     return float4x4(
         1.0, 0.0, 0.0, translation.x,
@@ -146,29 +146,29 @@ float4x4 GpuDbgUtils_createMatrixTranslation(float3 translation)
 // Description:
 //      Construct a perspective projection matrix
 // Arguments:
-//      fovY - field of view in radians
+//      fov_y - field of view in radians
 //      aspect - aspect ratio
-//      nearZ - near plane distance
-//      farZ - far plane distance
-float4x4 GpuDbgUtils_createMatrixPerspectiveProjection(float fovY, float aspect, float nearZ, float farZ)
+//      near_z - near plane distance
+//      far_z - far plane distance
+float4x4 gpu_dbg_create_matrix_perspective_projection(float fov_y, float aspect, float near_z, float far_z)
 {
-    float yScale = 1.0 / tan(fovY / 2.0);
-    float xScale = yScale / aspect;
-    float zRange = farZ - nearZ;
-    float zScale = -(farZ + nearZ) / zRange;
-    float wzScale = -2.0 * farZ * nearZ / zRange;
+    float y_scale = 1.0 / tan(fov_y / 2.0);
+    float x_scale = y_scale / aspect;
+    float z_range = far_z - near_z;
+    float z_scale = -(far_z + near_z) / z_range;
+    float wz_scale = -2.0 * far_z * near_z / z_range;
 
     return float4x4(
-        xScale, 0.0,    0.0,     0.0,
-        0.0,    yScale, 0.0,     0.0,
-        0.0,    0.0,    zScale, -1.0,
-        0.0,    0.0,    wzScale, 0.0
+        x_scale, 0.0,    0.0,     0.0,
+        0.0,    y_scale, 0.0,     0.0,
+        0.0,    0.0,    z_scale, -1.0,
+        0.0,    0.0,    wz_scale, 0.0
     );
 }
 
 // Description:
 //      Returns the inverse of a 4x4 matrix
-float4x4 GpuDbgUtils_inverse(float4x4 m)
+float4x4 gpu_dbg_inverse(float4x4 m)
 {
     float a00 = m[0][0], a01 = m[0][1], a02 = m[0][2], a03 = m[0][3];
     float a10 = m[1][0], a11 = m[1][1], a12 = m[1][2], a13 = m[1][3];
@@ -215,7 +215,7 @@ float4x4 GpuDbgUtils_inverse(float4x4 m)
 //      v - vector construct basis from (this is the at / forward vector)
 //      bt - output bitangent of the basis
 //      t - output tangent of the basis
-void GpuDbgUtils_orthoBasisFromVector(float3 v, out float3 bt, out float3 t)
+void gpu_dbg_ortho_basis_from_vector(float3 v, out float3 bt, out float3 t)
 {
     // choose a vector orthogonal to cv as the direction of b2.
     bt = float3(0.0, -v.z, v.y);
@@ -233,16 +233,16 @@ void GpuDbgUtils_orthoBasisFromVector(float3 v, out float3 bt, out float3 t)
 //      Perform chebyshev normalization, projecting onto the unit cube
 // Arguments:
 //      v - vector to normalize
-float3 GpuDbgUtils_chebyshevNormalize(float3 v)
+float3 gpu_dbg_chebyshev_normalize(float3 v)
 {
     return (v.xyz / max(max(abs(v.x), abs(v.y)), abs(v.z)));
 }
 
 // Description:
 //      Extracts the frustum corners groped as 4 near, 4 far where the winding order is the same for near and far
-void GpuDbgUtils_frustumCornersFromMatrix(float4x4 mat, float nearT, float farT, out float3 corners[8])
+void gpu_dbg_frustum_corners_from_matrix(float4x4 mat, float near_t, float far_t, out float3 corners[8])
 {
-    float4x4 inv = GpuDbgUtils_inverse(mat);
+    float4x4 inv = gpu_dbg_inverse(mat);
 
     float4 ndc[] = {
         float4(-1.0, -1.0, 0.0, 1.0),
@@ -262,14 +262,14 @@ void GpuDbgUtils_frustumCornersFromMatrix(float4x4 mat, float nearT, float farT,
         corners[i] = unproj.xyz / unproj.w;
     }
 
-    if(nearT != 0.0 || farT != 1.0)
+    if(near_t != 0.0 || far_t != 1.0)
     {
         // linearly interpolate with near and far to get a slice of frustum
         for(int j = 0; j < 4; ++j)
         {
             float3 v = corners[j + 4] - corners[j];
-            corners[j] = corners[j] + v * nearT;
-            corners[j + 4] = corners[j] + v * farT;
+            corners[j] = corners[j] + v * near_t;
+            corners[j + 4] = corners[j] + v * far_t;
         }
     }
 }
@@ -280,7 +280,7 @@ void GpuDbgUtils_frustumCornersFromMatrix(float4x4 mat, float nearT, float farT,
 
 // Description:
 //      Count the number of chars in 'val' and return the result, includes a '-' sign for negative numbers
-int GpuDbgTextUtils_countIntChars(int val)
+int gpu_dbg_count_int_chars(int val)
 {
     int minus = 0;
 
@@ -298,7 +298,7 @@ int GpuDbgTextUtils_countIntChars(int val)
 
 // Description:
 //      Extract the frac (decimal) part of a float and return the digits as an integer
-int GpuDbgTextUtils_fracToInt(float val, out int len, out int zeros)
+int gpu_dbg_frac_to_int(float val, out int len, out int zeros)
 {
     zeros = 0;
     len = 0;
@@ -341,35 +341,35 @@ int GpuDbgTextUtils_fracToInt(float val, out int len, out int zeros)
 
 // Description:
 //      Count the number of chars in 'val' and return the result, includes a '-' sign for negative numbers and '.' for decimal place
-int GpuDbgTextUtils_countFloatChars(float val)
+int gpu_dbg_count_float_chars(float val)
 {
     if(val == 0)
     {
         return 3;
     }
 
-    int ipart = GpuDbgTextUtils_countIntChars((int)val);
+    int ipart = gpu_dbg_count_int_chars((int)val);
     int fpart = 1; // '.'
 
     int flen = 0;
     int fzeros = 0;
-    GpuDbgTextUtils_fracToInt(val, flen, fzeros);
+    gpu_dbg_frac_to_int(val, flen, fzeros);
     fpart += flen;
 
     return ipart + fpart;
 }
 
 // Description:
-//      Targets for formatted chars, the text data buffer for GpuDbg_text or the print ring for GpuDbg_printf
-uint GpuDbg_kTargetText() { return 0; }
-uint GpuDbg_kTargetPrint() { return 1; }
+//      Targets for formatted chars, the text data buffer for gpu_dbg_text or the print ring for gpu_dbg_printf
+uint gpu_dbg_target_text() { return 0; }
+uint gpu_dbg_target_print() { return 1; }
 
 // Description:
 //      Write char 'c' to position 'pos' in 'target'. print chars are tagged with the lap of the ring they were written
 //      in so the cpu can tell new chars from stale ones without syncing on the counter
-void GpuDbg_putChar(uint target, uint pos, uint c)
+void gpu_dbg_put_char(uint target, uint pos, uint c)
 {
-    if(target == GpuDbg_kTargetText())
+    if(target == gpu_dbg_target_text())
     {
         gpu_dbg_data[pos] = c;
     }
@@ -383,20 +383,20 @@ void GpuDbg_putChar(uint target, uint pos, uint c)
 
 // Description:
 //      Write the digits of 'val' into 'target' at 'cp' and return the new write position
-int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros, uint target)
+int gpu_dbg_itoc_to_data(int val, int cp, int leading_zeros, uint target)
 {
     // count chars
-    int charCount = GpuDbgTextUtils_countIntChars(val);
+    int char_count = gpu_dbg_count_int_chars(val);
 
     // add minus sign
     if(val < 0)
     {
-        GpuDbg_putChar(target, cp++, '-');
-        charCount--;
+        gpu_dbg_put_char(target, cp++, '-');
+        char_count--;
     }
 
     // digit lookup
-    static const int lutDigit[] = {
+    static const int lut_digit[] = {
         1,
         10,
         100,
@@ -411,41 +411,41 @@ int GpuDbgTextUtils_itocToData(int val, int cp, int leadingZeros, uint target)
 
     // divide and iterate
     int numer = abs(val);
-    int digitIter = charCount-1;
-    while(digitIter >= 0)
+    int digit_iter = char_count-1;
+    while(digit_iter >= 0)
     {
-        if(leadingZeros > 0)
+        if(leading_zeros > 0)
         {
-            GpuDbg_putChar(target, cp++, '0');
-            leadingZeros--;
+            gpu_dbg_put_char(target, cp++, '0');
+            leading_zeros--;
             continue;
         }
 
-        int denom = lutDigit[digitIter];
+        int denom = lut_digit[digit_iter];
         int digit = numer / denom;
 
-        GpuDbg_putChar(target, cp++, '0' + digit);
+        gpu_dbg_put_char(target, cp++, '0' + digit);
 
         numer -= (digit * denom);
-        digitIter--;
+        digit_iter--;
     }
 
     return cp;
 }
 
-int GpuDbgTextUtils_ftocToData(float val, int cp, uint target)
+int gpu_dbg_ftoc_to_data(float val, int cp, uint target)
 {
     // int part
-    cp = GpuDbgTextUtils_itocToData((int)val, cp, 0, target);
+    cp = gpu_dbg_itoc_to_data((int)val, cp, 0, target);
 
     // decimal place
-    GpuDbg_putChar(target, cp++, '.');
+    gpu_dbg_put_char(target, cp++, '.');
 
     // frac part
     int flen;
     int fzeros;
-    int fint = GpuDbgTextUtils_fracToInt(val, flen, fzeros);
-    cp = GpuDbgTextUtils_itocToData(fint, cp, fzeros, target);
+    int fint = gpu_dbg_frac_to_int(val, flen, fzeros);
+    cp = gpu_dbg_itoc_to_data(fint, cp, fzeros, target);
 
     return cp;
 }
@@ -456,35 +456,35 @@ int GpuDbgTextUtils_ftocToData(float val, int cp, uint target)
 
 // Description:
 //      Allocate a command and its indirect args, `groups` is the number of mesh shader groups (quads) to dispatch
-void GpuDbg_pushCommand(uint type, float3 pos, float3 size, float4 color, float4 altColor, uint flags, uint dataOffset, uint dataLength, uint groups)
+void gpu_dbg_push_command(uint type, float3 pos, float3 size, float4 color, float4 alt_color, uint flags, uint data_offset, uint data_length, uint groups)
 {
     uint p = 0;
-    InterlockedAdd(gpu_dbg_counters[0].m_commandPos, 1, p);
+    InterlockedAdd(gpu_dbg_counters[0].command_pos, 1, p);
 
-    GpuDbg_Command cmd;
-    cmd.m_type = type;
-    cmd.m_pos = pos;
-    cmd.m_size = size;
-    cmd.m_color = color;
-    cmd.m_altColor = altColor;
-    cmd.m_flags = flags;
-    cmd.m_dataOffset = dataOffset;
-    cmd.m_dataLength = dataLength;
+    GpuDbgCommand cmd;
+    cmd.type = type;
+    cmd.pos = pos;
+    cmd.size = size;
+    cmd.color = color;
+    cmd.alt_color = alt_color;
+    cmd.flags = flags;
+    cmd.data_offset = data_offset;
+    cmd.data_length = data_length;
     gpu_dbg_commands[p] = cmd;
 
-    GpuDbg_DrawIndirectArgs args;
-    args.m_drawId = p;
-    args.m_groupCountX = groups;
-    args.m_groupCountY = 1;
-    args.m_groupCountZ = 1;
+    GpuDbgDrawIndirectArgs args;
+    args.draw_id = p;
+    args.group_count_x = groups;
+    args.group_count_y = 1;
+    args.group_count_z = 1;
     gpu_dbg_draw_indirect_args[p] = args;
 }
 
-void GpuDbg_setVertex(uint index, float3 pos, float4 color)
+void gpu_dbg_set_vertex(uint index, float3 pos, float4 color)
 {
-    GpuDbg_Vertex v;
-    v.m_pos = pos;
-    v.m_color = color;
+    GpuDbgVertex v;
+    v.pos = pos;
+    v.color = color;
     gpu_dbg_vertices[index] = v;
 }
 
@@ -494,75 +494,75 @@ void GpuDbg_setVertex(uint index, float3 pos, float4 color)
 //      pos - 3D position to project the point from
 //      size - 2D screen size
 //      color - RGBA color in 0-1 range
-void GpuDbg_point3D(float3 pos, float2 size, float4 color)
+void gpu_dbg_point_3d(float3 pos, float2 size, float4 color)
 {
-    GpuDbg_pushCommand(GpuDbg_kPoint(), pos, float3(size, 1.0), color, (float4)0.0, 0, 0, 0, 1);
+    gpu_dbg_push_command(gpu_dbg_cmd_point(), pos, float3(size, 1.0), color, (float4)0.0, 0, 0, 0, 1);
 }
 
 // Description:
 //      Append a screen space quad with 'pos' and 'size' in pixels
-void GpuDbg_quad2D(float2 pos, float2 size, float4 color)
+void gpu_dbg_quad_2d(float2 pos, float2 size, float4 color)
 {
-    GpuDbg_pushCommand(GpuDbg_kQuad2D(), float3(pos, 0.0), float3(size, 1.0), color, (float4)0.0, 0, 0, 0, 1);
+    gpu_dbg_push_command(gpu_dbg_cmd_quad_2d(), float3(pos, 0.0), float3(size, 1.0), color, (float4)0.0, 0, 0, 0, 1);
 }
 
 // Description:
 //      Returns the number of chars 'text' formats to, %i and %f format specifiers take values from 'vars' in order
 //      char literals are not supported in dxc templates, so '%' = 37, 'i' = 105, 'f' = 102
 template<uint N>
-uint GpuDbg_formatLength(uint text[N], float4 vars)
+uint gpu_dbg_format_length(uint text[N], float4 vars)
 {
-    uint varIndex = 0;
-    uint charCount = 0;
+    uint var_index = 0;
+    uint char_count = 0;
     for(uint i = 0; i < N; ++i)
     {
         if(text[i] == 37 && i + 1 < N)
         {
             if(text[i + 1] == 105)
             {
-                charCount += GpuDbgTextUtils_countIntChars((int)vars[varIndex]);
+                char_count += gpu_dbg_count_int_chars((int)vars[var_index]);
             }
             else if(text[i + 1] == 102)
             {
-                charCount += GpuDbgTextUtils_countFloatChars(vars[varIndex]);
+                char_count += gpu_dbg_count_float_chars(vars[var_index]);
             }
 
-            varIndex++;
+            var_index++;
             i += 1;
             continue;
         }
 
-        charCount++;
+        char_count++;
     }
 
-    return charCount;
+    return char_count;
 }
 
 // Description:
 //      Write the formatted chars of 'text' into 'target' starting at 'cp', returns the next write position
 template<uint N>
-int GpuDbg_formatWrite(uint text[N], float4 vars, uint target, int cp)
+int gpu_dbg_format_write(uint text[N], float4 vars, uint target, int cp)
 {
-    uint varIndex = 0;
+    uint var_index = 0;
     for(uint i = 0; i < N; ++i)
     {
         if(text[i] == 37 && i + 1 < N)
         {
             if(text[i + 1] == 105)
             {
-                cp = GpuDbgTextUtils_itocToData((int)vars[varIndex], cp, 0, target);
+                cp = gpu_dbg_itoc_to_data((int)vars[var_index], cp, 0, target);
             }
             else if(text[i + 1] == 102)
             {
-                cp = GpuDbgTextUtils_ftocToData(vars[varIndex], cp, target);
+                cp = gpu_dbg_ftoc_to_data(vars[var_index], cp, target);
             }
 
-            varIndex++;
+            var_index++;
             i += 1;
             continue;
         }
 
-        GpuDbg_putChar(target, cp++, text[i]);
+        gpu_dbg_put_char(target, cp++, text[i]);
     }
 
     return cp;
@@ -570,132 +570,132 @@ int GpuDbg_formatWrite(uint text[N], float4 vars, uint target, int cp)
 
 // Description:
 //      Append text at the 3D point 'pos' with screen space char 'size'. 'text' is an array of char literals, %i and %f
-//      format specifiers take values from 'vars' in order (up to 4). 'flags' controls alignment (GpuDbg_kTextAlign*)
-//      and 'outlineColor' draws an outline around the glyphs
+//      format specifiers take values from 'vars' in order (up to 4). 'flags' controls alignment (gpu_dbg_k_text_align*)
+//      and 'outline_color' draws an outline around the glyphs
 //      uint label[] = { 'x', ' ', '=', ' ', '%', 'f' };
-//      GpuDbg_textf(label, pos, 50.0, color, float4(x, 0.0, 0.0, 0.0));
+//      gpu_dbg_textf(label, pos, 50.0, color, float4(x, 0.0, 0.0, 0.0));
 template<uint N>
-void GpuDbg_textfEx(uint text[N], float3 pos, float size, float4 color, float4 vars, uint flags, float4 outlineColor)
+void gpu_dbg_textf_ex(uint text[N], float3 pos, float size, float4 color, float4 vars, uint flags, float4 outline_color)
 {
-    uint charCount = GpuDbg_formatLength(text, vars);
+    uint char_count = gpu_dbg_format_length(text, vars);
 
     uint dp = 0;
-    InterlockedAdd(gpu_dbg_counters[0].m_dataPos, charCount, dp);
-    GpuDbg_formatWrite(text, vars, GpuDbg_kTargetText(), dp);
+    InterlockedAdd(gpu_dbg_counters[0].data_pos, char_count, dp);
+    gpu_dbg_format_write(text, vars, gpu_dbg_target_text(), dp);
 
     // push the draw, 1 quad per char
-    GpuDbg_pushCommand(GpuDbg_kText3D(), pos, float3(size, size, 1.0), color, outlineColor, flags, dp, charCount, charCount);
+    gpu_dbg_push_command(gpu_dbg_cmd_text_3d(), pos, float3(size, size, 1.0), color, outline_color, flags, dp, char_count, char_count);
 }
 
 // Description:
-//      Print a line to the cpu console (stdout), with the same formatting as GpuDbg_textf. the cpu reads the print ring
+//      Print a line to the cpu console (stdout), with the same formatting as gpu_dbg_textf. the cpu reads the print ring
 //      persistently mapped, so lines arrive without waiting on the gpu
 //      uint msg[] = { 'v', 'a', 'l', ' ', '%', 'i' };
-//      GpuDbg_printf(msg, float4(val, 0.0, 0.0, 0.0));
+//      gpu_dbg_printf(msg, float4(val, 0.0, 0.0, 0.0));
 template<uint N>
-void GpuDbg_printf(uint text[N], float4 vars)
+void gpu_dbg_printf(uint text[N], float4 vars)
 {
-    uint charCount = GpuDbg_formatLength(text, vars);
+    uint char_count = gpu_dbg_format_length(text, vars);
 
     uint pp = 0;
-    InterlockedAdd(gpu_dbg_counters[0].m_printDataPos, charCount + 1, pp);
-    int cp = GpuDbg_formatWrite(text, vars, GpuDbg_kTargetPrint(), pp);
+    InterlockedAdd(gpu_dbg_counters[0].print_data_pos, char_count + 1, pp);
+    int cp = gpu_dbg_format_write(text, vars, gpu_dbg_target_print(), pp);
 
     // terminate the line, '\n' = 10
-    GpuDbg_putChar(GpuDbg_kTargetPrint(), cp, 10);
+    gpu_dbg_put_char(gpu_dbg_target_print(), cp, 10);
 }
 
 template<uint N>
-void GpuDbg_print(uint text[N])
+void gpu_dbg_print(uint text[N])
 {
-    GpuDbg_printf(text, (float4)0.0);
+    gpu_dbg_printf(text, (float4)0.0);
 }
 
 template<uint N>
-void GpuDbg_textf(uint text[N], float3 pos, float size, float4 color, float4 vars)
+void gpu_dbg_textf(uint text[N], float3 pos, float size, float4 color, float4 vars)
 {
-    GpuDbg_textfEx(text, pos, size, color, vars, 0, (float4)0.0);
+    gpu_dbg_textf_ex(text, pos, size, color, vars, 0, (float4)0.0);
 }
 
 template<uint N>
-void GpuDbg_textEx(uint text[N], float3 pos, float size, float4 color, uint flags, float4 outlineColor)
+void gpu_dbg_text_ex(uint text[N], float3 pos, float size, float4 color, uint flags, float4 outline_color)
 {
-    GpuDbg_textfEx(text, pos, size, color, (float4)0.0, flags, outlineColor);
+    gpu_dbg_textf_ex(text, pos, size, color, (float4)0.0, flags, outline_color);
 }
 
 template<uint N>
-void GpuDbg_text(uint text[N], float3 pos, float size, float4 color)
+void gpu_dbg_text(uint text[N], float3 pos, float size, float4 color)
 {
-    GpuDbg_textfEx(text, pos, size, color, (float4)0.0, 0, (float4)0.0);
+    gpu_dbg_textf_ex(text, pos, size, color, (float4)0.0, 0, (float4)0.0);
 }
 
 // Description:
-//      Allocate 'vertexCount' vertices for a line primitive of type 'prim' and return the offset to write them to
-uint GpuDbg_lines(uint prim, uint vertexCount, float thickness)
+//      Allocate 'vertex_count' vertices for a line primitive of type 'prim' and return the offset to write them to
+uint gpu_dbg_lines(uint prim, uint vertex_count, float thickness)
 {
     uint vp = 0;
-    InterlockedAdd(gpu_dbg_counters[0].m_vertexPos, vertexCount, vp);
+    InterlockedAdd(gpu_dbg_counters[0].vertex_pos, vertex_count, vp);
 
     // 1 quad per line segment
-    uint groups = vertexCount - 1;
-    if(prim == GpuDbg_kLineList3D() || prim == GpuDbg_kLineListNDC())
+    uint groups = vertex_count - 1;
+    if(prim == gpu_dbg_cmd_line_list_3d() || prim == gpu_dbg_cmd_line_list_ndc())
     {
-        groups = vertexCount / 2;
+        groups = vertex_count / 2;
     }
-    else if(prim == GpuDbg_kLineLoop3D() || prim == GpuDbg_kLineLoopNDC())
+    else if(prim == gpu_dbg_cmd_line_loop_3d() || prim == gpu_dbg_cmd_line_loop_ndc())
     {
-        groups = vertexCount;
+        groups = vertex_count;
     }
 
-    GpuDbg_pushCommand(prim, (float3)0.0, float3(thickness, thickness, 1.0), (float4)0.0, (float4)0.0, 0, vp, vertexCount, groups);
+    gpu_dbg_push_command(prim, (float3)0.0, float3(thickness, thickness, 1.0), (float4)0.0, (float4)0.0, 0, vp, vertex_count, groups);
     return vp;
 }
 
-void GpuDbg_line(float3 start, float3 end, float4 color, float thickness)
+void gpu_dbg_line(float3 start, float3 end, float4 color, float thickness)
 {
-    uint vp = GpuDbg_lines(GpuDbg_kLineStrip3D(), 2, thickness);
-    GpuDbg_setVertex(vp, start, color);
-    GpuDbg_setVertex(vp + 1, end, color);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_strip_3d(), 2, thickness);
+    gpu_dbg_set_vertex(vp, start, color);
+    gpu_dbg_set_vertex(vp + 1, end, color);
 }
 
-void GpuDbg_triangle(float3 p0, float3 p1, float3 p2, float4 color, float thickness)
+void gpu_dbg_triangle(float3 p0, float3 p1, float3 p2, float4 color, float thickness)
 {
-    uint vp = GpuDbg_lines(GpuDbg_kLineLoop3D(), 3, thickness);
-    GpuDbg_setVertex(vp, p0, color);
-    GpuDbg_setVertex(vp + 1, p1, color);
-    GpuDbg_setVertex(vp + 2, p2, color);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_loop_3d(), 3, thickness);
+    gpu_dbg_set_vertex(vp, p0, color);
+    gpu_dbg_set_vertex(vp + 1, p1, color);
+    gpu_dbg_set_vertex(vp + 2, p2, color);
 }
 
-void GpuDbg_disc(float3 pos, float3 radius, float3 axis, float4 color, float thickness, uint segments)
+void gpu_dbg_disc(float3 pos, float3 radius, float3 axis, float4 color, float thickness, uint segments)
 {
     axis = normalize(axis);
 
     // ortho basis for axis
     float3 right, up;
-    GpuDbgUtils_orthoBasisFromVector(axis, right, up);
+    gpu_dbg_ortho_basis_from_vector(axis, right, up);
 
     // make a circle in the plane where axis is the normal
-    float angle = -GpuDbg_kPi();
-    float angleStep = (GpuDbg_kPi() * 2.0) / (segments-1);
+    float angle = -gpu_dbg_pi();
+    float angle_step = (gpu_dbg_pi() * 2.0) / (segments-1);
 
-    uint vp = GpuDbg_lines(GpuDbg_kLineStrip3D(), segments, thickness);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_strip_3d(), segments, thickness);
 
     [loop]
     for(uint i = 0; i < segments; ++i)
     {
         float3 v1 = right * cos(angle) - up * sin(angle);
-        GpuDbg_setVertex(vp + i, pos + v1 * radius, color);
-        angle += angleStep;
+        gpu_dbg_set_vertex(vp + i, pos + v1 * radius, color);
+        angle += angle_step;
     }
 }
 
-void GpuDbg_sphere(float3 pos, float radius, float4 color, float thickness, uint segments)
+void gpu_dbg_sphere(float3 pos, float radius, float4 color, float thickness, uint segments)
 {
     // alloc space
-    uint vp = GpuDbg_lines(GpuDbg_kLineStrip3D(), segments * segments, thickness);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_strip_3d(), segments * segments, thickness);
 
-    float angleStep = (GpuDbg_kPi() * 2.0) / (segments-1);
-    float hangle = -GpuDbg_kPi();
+    float angle_step = (gpu_dbg_pi() * 2.0) / (segments-1);
+    float hangle = -gpu_dbg_pi();
 
     // series of discs
     [loop]
@@ -705,95 +705,95 @@ void GpuDbg_sphere(float3 pos, float radius, float4 color, float thickness, uint
 
         // vertical discs
         float3 vaxis = float3(cos(hangle), -sin(hangle), 0.0);
-        GpuDbgUtils_orthoBasisFromVector(vaxis, right, up);
+        gpu_dbg_ortho_basis_from_vector(vaxis, right, up);
 
-        float angle = -GpuDbg_kPi();
-        uint sliceOffset = j * segments;
+        float angle = -gpu_dbg_pi();
+        uint slice_offset = j * segments;
 
         [loop]
         for(uint i = 0; i < segments; ++i)
         {
             float3 v1 = right * cos(angle) - up * sin(angle);
-            GpuDbg_setVertex(vp + i + sliceOffset, pos + v1 * radius, color);
-            angle += angleStep;
+            gpu_dbg_set_vertex(vp + i + slice_offset, pos + v1 * radius, color);
+            angle += angle_step;
         }
 
-        hangle += angleStep;
+        hangle += angle_step;
     }
 }
 
-void GpuDbg_hemisphere(float3 pos, float3 axis, float radius, float4 color, float thickness, uint segments)
+void gpu_dbg_hemisphere(float3 pos, float3 axis, float radius, float4 color, float thickness, uint segments)
 {
     // ortho basis for axis
     float3 right, up;
-    GpuDbgUtils_orthoBasisFromVector(axis, right, up);
+    gpu_dbg_ortho_basis_from_vector(axis, right, up);
 
     // alloc space
-    uint quadSegments = max(segments / 4, 4);
-    uint vp = GpuDbg_lines(GpuDbg_kLineList3D(), segments * 2 + (segments * quadSegments * 2), thickness);
+    uint quad_segments = max(segments / 4, 4);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), segments * 2 + (segments * quad_segments * 2), thickness);
 
     // make a circle in the plane where axis is the normal
-    float angle = -GpuDbg_kPi();
-    float angleStep = (GpuDbg_kPi() * 2.0) / (segments-1);
-    float qangleStep = (GpuDbg_kPi() * 0.5) / quadSegments;
+    float angle = -gpu_dbg_pi();
+    float angle_step = (gpu_dbg_pi() * 2.0) / (segments-1);
+    float qangle_step = (gpu_dbg_pi() * 0.5) / quad_segments;
 
     [loop]
     for(uint i = 0; i < segments; ++i)
     {
         float3 v1 = right * cos(angle) - up * sin(angle);
-        float3 v2 = right * cos(angle + angleStep) - up * sin(angle + angleStep);
+        float3 v2 = right * cos(angle + angle_step) - up * sin(angle + angle_step);
 
         uint v = vp + (i * 2);
 
         // this forms the base
-        GpuDbg_setVertex(v, pos + v1 * radius, color);
-        GpuDbg_setVertex(v + 1, pos + v2 * radius, color);
+        gpu_dbg_set_vertex(v, pos + v1 * radius, color);
+        gpu_dbg_set_vertex(v + 1, pos + v2 * radius, color);
 
         // add a line quadant to form the hemisphere
         float qangle = 0.0;
 
-        for(uint j = 0; j < quadSegments; ++j)
+        for(uint j = 0; j < quad_segments; ++j)
         {
             float3 qv1 = v1 * cos(qangle) - axis * sin(qangle);
-            float3 qv2 = v1 * cos(qangle - qangleStep) - axis * sin(qangle - qangleStep);
+            float3 qv2 = v1 * cos(qangle - qangle_step) - axis * sin(qangle - qangle_step);
 
-            v = vp + (segments * 2) + (j * 2) + (i * quadSegments * 2);
+            v = vp + (segments * 2) + (j * 2) + (i * quad_segments * 2);
 
-            GpuDbg_setVertex(v, pos + qv1 * radius, color);
-            GpuDbg_setVertex(v + 1, pos + qv2 * radius, color);
+            gpu_dbg_set_vertex(v, pos + qv1 * radius, color);
+            gpu_dbg_set_vertex(v + 1, pos + qv2 * radius, color);
 
-            qangle -= qangleStep;
+            qangle -= qangle_step;
         }
 
-        angle += angleStep;
+        angle += angle_step;
     }
 }
 
 // Description:
 //      Write 12 box edges as a line list from 8 corners ordered as 4 bottom, 4 top with the same winding
-void GpuDbg_boxEdges(float3 corners[8], float4 color, float thickness)
+void gpu_dbg_box_edges(float3 corners[8], float4 color, float thickness)
 {
-    uint vp = GpuDbg_lines(GpuDbg_kLineList3D(), 24, thickness);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), 24, thickness);
 
     for(uint i = 0; i < 4; ++i)
     {
         uint n = (i + 1) % 4;
 
         // bottom
-        GpuDbg_setVertex(vp++, corners[i], color);
-        GpuDbg_setVertex(vp++, corners[n], color);
+        gpu_dbg_set_vertex(vp++, corners[i], color);
+        gpu_dbg_set_vertex(vp++, corners[n], color);
 
         // top
-        GpuDbg_setVertex(vp++, corners[i + 4], color);
-        GpuDbg_setVertex(vp++, corners[n + 4], color);
+        gpu_dbg_set_vertex(vp++, corners[i + 4], color);
+        gpu_dbg_set_vertex(vp++, corners[n + 4], color);
 
         // sides
-        GpuDbg_setVertex(vp++, corners[i], color);
-        GpuDbg_setVertex(vp++, corners[i + 4], color);
+        gpu_dbg_set_vertex(vp++, corners[i], color);
+        gpu_dbg_set_vertex(vp++, corners[i + 4], color);
     }
 }
 
-void GpuDbg_aabb(float3 aabbmin, float3 aabbmax, float4 color, float thickness)
+void gpu_dbg_aabb(float3 aabbmin, float3 aabbmax, float4 color, float thickness)
 {
     float3 corners[8] = {
         float3(aabbmin.x, aabbmin.y, aabbmin.z),
@@ -806,10 +806,10 @@ void GpuDbg_aabb(float3 aabbmin, float3 aabbmax, float4 color, float thickness)
         float3(aabbmin.x, aabbmax.y, aabbmax.z)
     };
 
-    GpuDbg_boxEdges(corners, color, thickness);
+    gpu_dbg_box_edges(corners, color, thickness);
 }
 
-void GpuDbg_obb(float4x4 worldMatrix, float4 color, float thickness)
+void gpu_dbg_obb(float4x4 world_matrix, float4 color, float thickness)
 {
     // unit aabb corners
     float3 corners[8] = {
@@ -826,47 +826,47 @@ void GpuDbg_obb(float4x4 worldMatrix, float4 color, float thickness)
     // transform corners
     for(uint i = 0; i < 8; ++i)
     {
-        corners[i] = mul(worldMatrix, float4(corners[i], 1.0)).xyz;
+        corners[i] = mul(world_matrix, float4(corners[i], 1.0)).xyz;
     }
 
-    GpuDbg_boxEdges(corners, color, thickness);
+    gpu_dbg_box_edges(corners, color, thickness);
 }
 
-void GpuDbg_grid(float3 center, float3 axis, float2 dimension, float2 divisions, float4 color, float thickness)
+void gpu_dbg_grid(float3 center, float3 axis, float2 dimension, float2 divisions, float4 color, float thickness)
 {
     float3 right, up;
-    GpuDbgUtils_orthoBasisFromVector(axis, right, up);
+    gpu_dbg_ortho_basis_from_vector(axis, right, up);
 
     float3 corner = center - (right * (float)(dimension.x / 2.0)) - (up * (float)(dimension.y / 2.0));
-    uint vp = GpuDbg_lines(GpuDbg_kLineList3D(), (uint)(divisions.x + 1 + divisions.y + 1) * 2, thickness);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), (uint)(divisions.x + 1 + divisions.y + 1) * 2, thickness);
 
-    float2 cellStep = dimension / divisions;
+    float2 cell_step = dimension / divisions;
 
     float3 pos = corner;
     for(int i = 0; i < (int)(divisions.x + 1); ++i)
     {
-        GpuDbg_setVertex(vp++, pos, color);
-        GpuDbg_setVertex(vp++, pos + dimension.x * right, color);
-        pos += up * cellStep.y;
+        gpu_dbg_set_vertex(vp++, pos, color);
+        gpu_dbg_set_vertex(vp++, pos + dimension.x * right, color);
+        pos += up * cell_step.y;
     }
 
     pos = corner;
     for(int j = 0; j < (int)(divisions.y + 1); ++j)
     {
-        GpuDbg_setVertex(vp++, pos, color);
-        GpuDbg_setVertex(vp++, pos + dimension.y * up, color);
-        pos += right * cellStep.x;
+        gpu_dbg_set_vertex(vp++, pos, color);
+        gpu_dbg_set_vertex(vp++, pos + dimension.y * up, color);
+        pos += right * cell_step.x;
     }
 }
 
-void GpuDbg_cone(float3 apex, float3 axis, float cutoff, float height, float4 color, float thickness, uint sides)
+void gpu_dbg_cone(float3 apex, float3 axis, float cutoff, float height, float4 color, float thickness, uint sides)
 {
     // axis must be normalized
     axis = normalize(axis);
 
     // ortho basis of cone from axis
     float3 bt, t;
-    GpuDbgUtils_orthoBasisFromVector(axis, bt, t);
+    gpu_dbg_ortho_basis_from_vector(axis, bt, t);
 
     // rotate a vector to the edge of the cos cutoff
     float x = cutoff;
@@ -874,23 +874,23 @@ void GpuDbg_cone(float3 apex, float3 axis, float cutoff, float height, float4 co
     float3 v1 = t * x + axis * y;
 
     // flatten the vector on to the base of the code and take the difference to the axis to get the unit radius
-    float rad = length(GpuDbgUtils_chebyshevNormalize(v1) - axis);
-    float len = length(GpuDbgUtils_chebyshevNormalize(v1));
+    float rad = length(gpu_dbg_chebyshev_normalize(v1) - axis);
+    float len = length(gpu_dbg_chebyshev_normalize(v1));
 
     // allocate space for lines
-    uint basevp = GpuDbg_lines(GpuDbg_kLineLoop3D(), sides, thickness);
-    uint corevp = GpuDbg_lines(GpuDbg_kLineList3D(), sides * 2 + 2, thickness);
+    uint basevp = gpu_dbg_lines(gpu_dbg_cmd_line_loop_3d(), sides, thickness);
+    uint corevp = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), sides * 2 + 2, thickness);
 
     // add a line for the axis
-    GpuDbg_setVertex(corevp + 0, apex, color);
-    GpuDbg_setVertex(corevp + 1, apex + axis * height, color);
+    gpu_dbg_set_vertex(corevp + 0, apex, color);
+    gpu_dbg_set_vertex(corevp + 1, apex + axis * height, color);
 
     // offset to put vertices for the sides
     uint sidesvp = corevp + 2;
 
     // iterate around the base adding lines
-    float angle = -GpuDbg_kPi();
-    float angleStep = (GpuDbg_kPi() * 2.0) / (float)sides;
+    float angle = -gpu_dbg_pi();
+    float angle_step = (gpu_dbg_pi() * 2.0) / (float)sides;
 
     [loop]
     for(uint i = 0; i < sides; ++i)
@@ -902,110 +902,110 @@ void GpuDbg_cone(float3 apex, float3 axis, float cutoff, float height, float4 co
         float3 edge = apex + (normalize(ve - apex)) * height * len;
 
         // side
-        GpuDbg_setVertex(sidesvp + i * 2, apex, color);
-        GpuDbg_setVertex(sidesvp + i * 2 + 1, edge, color);
+        gpu_dbg_set_vertex(sidesvp + i * 2, apex, color);
+        gpu_dbg_set_vertex(sidesvp + i * 2 + 1, edge, color);
 
         // base
-        GpuDbg_setVertex(basevp + i, edge, color);
+        gpu_dbg_set_vertex(basevp + i, edge, color);
 
-        angle += angleStep;
+        angle += angle_step;
     }
 }
 
 // Description:
-//      Cylinder with optional hemisphere caps (capsule), 'capSegments' is the number of segments in each cap quadrant or 0 for a cylinder
-void GpuDbg_cylinderInternal(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides, uint capSegments)
+//      Cylinder with optional hemisphere caps (capsule), 'cap_segments' is the number of segments in each cap quadrant or 0 for a cylinder
+void gpu_dbg_cylinder_internal(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides, uint cap_segments)
 {
     // axis must be normalized
     axis = normalize(axis);
 
     // ortho basis for axis
     float3 right, up;
-    GpuDbgUtils_orthoBasisFromVector(axis, right, up);
+    gpu_dbg_ortho_basis_from_vector(axis, right, up);
 
     // make a circle in the plane where axis is the normal
-    float angle = -GpuDbg_kPi();
-    float angleStep = (GpuDbg_kPi() * 2.0) / (sides-1);
-    float qangleStep = (GpuDbg_kPi() * 0.5) / max(capSegments, 1);
+    float angle = -gpu_dbg_pi();
+    float angle_step = (gpu_dbg_pi() * 2.0) / (sides-1);
+    float qangle_step = (gpu_dbg_pi() * 0.5) / max(cap_segments, 1);
 
     // add a line per side for the top and bottom circles and the joining sides, plus the caps
-    uint vp = GpuDbg_lines(GpuDbg_kLineList3D(), sides * 6 + (capSegments * sides * 4), thickness);
+    uint vp = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), sides * 6 + (cap_segments * sides * 4), thickness);
 
     // calc top and bottom pos of cylinder
-    float3 bottomPos = pos - axis * height * 0.5;
-    float3 topPos = pos + axis * height * 0.5;
+    float3 bottom_pos = pos - axis * height * 0.5;
+    float3 top_pos = pos + axis * height * 0.5;
 
     [loop]
     for(uint i = 0; i < sides; ++i)
     {
         float3 v1 = right * cos(angle) - up * sin(angle);
-        float3 v2 = right * cos(angle + angleStep) - up * sin(angle + angleStep);
+        float3 v2 = right * cos(angle + angle_step) - up * sin(angle + angle_step);
 
         uint v = vp + (i * 6);
 
         // bottom
-        GpuDbg_setVertex(v, bottomPos + v1 * radius, color);
-        GpuDbg_setVertex(v + 1, bottomPos + v2 * radius, color);
+        gpu_dbg_set_vertex(v, bottom_pos + v1 * radius, color);
+        gpu_dbg_set_vertex(v + 1, bottom_pos + v2 * radius, color);
 
         // top
-        GpuDbg_setVertex(v + 2, topPos + v1 * radius, color);
-        GpuDbg_setVertex(v + 3, topPos + v2 * radius, color);
+        gpu_dbg_set_vertex(v + 2, top_pos + v1 * radius, color);
+        gpu_dbg_set_vertex(v + 3, top_pos + v2 * radius, color);
 
         // join sides
-        GpuDbg_setVertex(v + 4, bottomPos + v1 * radius, color);
-        GpuDbg_setVertex(v + 5, topPos + v1 * radius, color);
+        gpu_dbg_set_vertex(v + 4, bottom_pos + v1 * radius, color);
+        gpu_dbg_set_vertex(v + 5, top_pos + v1 * radius, color);
 
         // add a line quadrant to form the hemispheres at the top and bottom
         float qangle = 0.0;
-        for(uint j = 0; j < capSegments; ++j)
+        for(uint j = 0; j < cap_segments; ++j)
         {
             float3 qv1 = v1 * cos(qangle) - axis * sin(qangle);
-            float3 qv2 = v1 * cos(qangle - qangleStep) - axis * sin(qangle - qangleStep);
+            float3 qv2 = v1 * cos(qangle - qangle_step) - axis * sin(qangle - qangle_step);
 
-            v = vp + (sides * 6) + (j * 2) + (i * capSegments * 2);
-            GpuDbg_setVertex(v, topPos + qv1 * radius, color);
-            GpuDbg_setVertex(v + 1, topPos + qv2 * radius, color);
+            v = vp + (sides * 6) + (j * 2) + (i * cap_segments * 2);
+            gpu_dbg_set_vertex(v, top_pos + qv1 * radius, color);
+            gpu_dbg_set_vertex(v + 1, top_pos + qv2 * radius, color);
 
             // mirror for the bottom
-            v += capSegments * 2 * sides;
-            GpuDbg_setVertex(v, bottomPos + (v1 * cos(qangle) + axis * sin(qangle)) * radius, color);
-            GpuDbg_setVertex(v + 1, bottomPos + (v1 * cos(qangle - qangleStep) + axis * sin(qangle - qangleStep)) * radius, color);
+            v += cap_segments * 2 * sides;
+            gpu_dbg_set_vertex(v, bottom_pos + (v1 * cos(qangle) + axis * sin(qangle)) * radius, color);
+            gpu_dbg_set_vertex(v + 1, bottom_pos + (v1 * cos(qangle - qangle_step) + axis * sin(qangle - qangle_step)) * radius, color);
 
-            qangle -= qangleStep;
+            qangle -= qangle_step;
         }
 
-        angle += angleStep;
+        angle += angle_step;
     }
 }
 
-void GpuDbg_cylinder(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides)
+void gpu_dbg_cylinder(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides)
 {
-    GpuDbg_cylinderInternal(pos, axis, radius, height, color, thickness, sides, 0);
+    gpu_dbg_cylinder_internal(pos, axis, radius, height, color, thickness, sides, 0);
 }
 
-void GpuDbg_capsule(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides)
+void gpu_dbg_capsule(float3 pos, float3 axis, float3 radius, float height, float4 color, float thickness, uint sides)
 {
-    GpuDbg_cylinderInternal(pos, axis, radius, height, color, thickness, sides, max(sides / 4, 4));
+    gpu_dbg_cylinder_internal(pos, axis, radius, height, color, thickness, sides, max(sides / 4, 4));
 }
 
-void GpuDbg_frustum(float4x4 viewProjectionMatrix, float nearT, float farT, float4 color, float thickness)
+void gpu_dbg_frustum(float4x4 view_projection_matrix, float near_t, float far_t, float4 color, float thickness)
 {
     float3 corners[8];
-    GpuDbgUtils_frustumCornersFromMatrix(viewProjectionMatrix, nearT, farT, corners);
-    GpuDbg_boxEdges(corners, color, thickness);
+    gpu_dbg_frustum_corners_from_matrix(view_projection_matrix, near_t, far_t, corners);
+    gpu_dbg_box_edges(corners, color, thickness);
 }
 
-void GpuDbg_demo()
+void gpu_dbg_demo()
 {
-    float sectionSize = 350.0f;
-    float labelSize = 55.0f;
-    float3 labelOffset = float3(0.0, 0.0, 150.0);
+    float section_size = 350.0f;
+    float label_size = 55.0f;
+    float3 label_offset = float3(0.0, 0.0, 150.0);
     float4 white = float4(1.0, 1.0, 1.0, 1.0);
     float types = 16;
     float3 pos = float3(0.0, 0.0, 0.0);
-    uint2 typeLoc = uint2(0, 0);
-    uint typePos = 0;
-    float kPi = GpuDbg_kPi();
+    uint2 type_loc = uint2(0, 0);
+    uint type_pos = 0;
+    float pi = gpu_dbg_pi();
 
     // colors
     float4 colors[] = {
@@ -1031,304 +1031,304 @@ void GpuDbg_demo()
     uint irc = (uint)ceil(sqrt(types));
 
     // grid
-    float3 gridOffset = float3(irc * sectionSize, irc * sectionSize, 0.0) * 0.5;
-    GpuDbg_grid(float3(0.0, 0.0, -250.0), float3(0.0, 0.0, 1.0), gridOffset.xy * 2.0, float2(10.0, 10.0), float4(1.0, 1.0, 1.0, 1.0), 1.0);
+    float3 grid_offset = float3(irc * section_size, irc * section_size, 0.0) * 0.5;
+    gpu_dbg_grid(float3(0.0, 0.0, -250.0), float3(0.0, 0.0, 1.0), grid_offset.xy * 2.0, float2(10.0, 10.0), float4(1.0, 1.0, 1.0, 1.0), 1.0);
 
     // offset primitives to the centre of the section
-    gridOffset.xy -= sectionSize * 0.5;
+    grid_offset.xy -= section_size * 0.5;
 
     // point
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_point3D(pos, float2(50.0, 50.0), colors[typePos]);
+    gpu_dbg_point_3d(pos, float2(50.0, 50.0), colors[type_pos]);
 
-    uint labelPoint[] = { 'P', 'o', 'i', 'n', 't' };
-    GpuDbg_text(labelPoint, pos - labelOffset, labelSize, white);
+    uint label_point[] = { 'P', 'o', 'i', 'n', 't' };
+    gpu_dbg_text(label_point, pos - label_offset, label_size, white);
 
     // line
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_line(pos - (float3)100.0, pos + (float3)100.0, colors[typePos], 3.0);
+    gpu_dbg_line(pos - (float3)100.0, pos + (float3)100.0, colors[type_pos], 3.0);
 
-    uint labelLine[] = { 'L', 'i', 'n', 'e' };
-    GpuDbg_text(labelLine, pos - labelOffset, labelSize, white);
+    uint label_line[] = { 'L', 'i', 'n', 'e' };
+    gpu_dbg_text(label_line, pos - label_offset, label_size, white);
 
     // triangle
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_triangle(
+    gpu_dbg_triangle(
         pos - float3(100.0, 100.0, 100.0),
         pos + float3(100.0, -100.0, 100.0),
         pos + float3(100.0, 100.0, -100.0),
-        colors[typePos],
+        colors[type_pos],
         1.0
     );
 
-    uint labelTriangle[] = { 'T', 'r', 'i', 'a', 'n', 'g', 'l', 'e' };
-    GpuDbg_text(labelTriangle, pos - labelOffset, labelSize, white);
+    uint label_triangle[] = { 'T', 'r', 'i', 'a', 'n', 'g', 'l', 'e' };
+    gpu_dbg_text(label_triangle, pos - label_offset, label_size, white);
 
     // disc
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_disc(pos, float3(100.0, 100.0, 100.0), float3(-1.0, 1.0, 0.0), colors[typePos], 1.0, 16);
+    gpu_dbg_disc(pos, float3(100.0, 100.0, 100.0), float3(-1.0, 1.0, 0.0), colors[type_pos], 1.0, 16);
 
-    uint labelDisc[] = { 'D', 'i', 's', 'c' };
-    GpuDbg_text(labelDisc, pos - labelOffset, labelSize, white);
+    uint label_disc[] = { 'D', 'i', 's', 'c' };
+    gpu_dbg_text(label_disc, pos - label_offset, label_size, white);
 
     // sphere
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_sphere(pos, 100.0, colors[typePos], 1.0, 16);
+    gpu_dbg_sphere(pos, 100.0, colors[type_pos], 1.0, 16);
 
-    uint labelSphere[] = { 'S', 'p', 'h', 'e', 'r', 'e' };
-    GpuDbg_text(labelSphere, pos - labelOffset, labelSize, white);
+    uint label_sphere[] = { 'S', 'p', 'h', 'e', 'r', 'e' };
+    gpu_dbg_text(label_sphere, pos - label_offset, label_size, white);
 
     // hemi-sphere
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_hemisphere(pos, float3(0.0, 0.0, 1.0), 100.0, colors[typePos], 1.0, 16);
+    gpu_dbg_hemisphere(pos, float3(0.0, 0.0, 1.0), 100.0, colors[type_pos], 1.0, 16);
 
-    uint labelHemisphere[] = { 'H', 'e', 'm', 'i', 's', 'p', 'h', 'e', 'r', 'e' };
-    GpuDbg_text(labelHemisphere, pos - labelOffset, labelSize, white);
+    uint label_hemisphere[] = { 'H', 'e', 'm', 'i', 's', 'p', 'h', 'e', 'r', 'e' };
+    gpu_dbg_text(label_hemisphere, pos - label_offset, label_size, white);
 
     // aabb
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_aabb(pos - float3(100.0, 100.0, 100.0), pos + float3(100.0, 100.0, 100.0), colors[typePos], 1.0);
+    gpu_dbg_aabb(pos - float3(100.0, 100.0, 100.0), pos + float3(100.0, 100.0, 100.0), colors[type_pos], 1.0);
 
-    uint labelAABB[] = { 'A', 'A', 'B', 'B' };
-    GpuDbg_text(labelAABB, pos - labelOffset, labelSize, white);
+    uint label_aabb[] = { 'A', 'A', 'B', 'B' };
+    gpu_dbg_text(label_aabb, pos - label_offset, label_size, white);
 
     // obb
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    float4x4 oobRot = GpuDbgUtils_createMatrixRotation(float3(1.0, 1.0, 1.0), kPi * 0.25);
-    float4x4 obbScale = GpuDbgUtils_createMatrixScale(float3(100.0, 100.0, 50.0));
-    float4x4 obbTranslate = GpuDbgUtils_createMatrixTranslation(pos);
-    float4x4 obbMat = mul(mul(obbTranslate, oobRot), obbScale);
+    float4x4 oob_rot = gpu_dbg_create_matrix_rotation(float3(1.0, 1.0, 1.0), pi * 0.25);
+    float4x4 obb_scale = gpu_dbg_create_matrix_scale(float3(100.0, 100.0, 50.0));
+    float4x4 obb_translate = gpu_dbg_create_matrix_translation(pos);
+    float4x4 obb_mat = mul(mul(obb_translate, oob_rot), obb_scale);
 
-    GpuDbg_obb(obbMat, colors[typePos], 1.0);
+    gpu_dbg_obb(obb_mat, colors[type_pos], 1.0);
 
-    uint labelOBB[] = { 'O', 'B', 'B' };
-    GpuDbg_text(labelOBB, pos - labelOffset, labelSize, white);
+    uint label_obb[] = { 'O', 'B', 'B' };
+    gpu_dbg_text(label_obb, pos - label_offset, label_size, white);
 
     // cone
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    float3 coneAxis = normalize(float3(1.0, 1.0, 1.0));
-    GpuDbg_cone(pos - coneAxis * 50.0, coneAxis, 0.8, 100.0, colors[typePos], 1.0, 16);
+    float3 cone_axis = normalize(float3(1.0, 1.0, 1.0));
+    gpu_dbg_cone(pos - cone_axis * 50.0, cone_axis, 0.8, 100.0, colors[type_pos], 1.0, 16);
 
-    uint labelCone[] = { 'C', 'o', 'n', 'e' };
-    GpuDbg_text(labelCone, pos - labelOffset, labelSize, white);
+    uint label_cone[] = { 'C', 'o', 'n', 'e' };
+    gpu_dbg_text(label_cone, pos - label_offset, label_size, white);
 
     // frustum
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    float4x4 projMat = GpuDbgUtils_createMatrixPerspectiveProjection(1.04, 1.0, 0.1, 10000.0);
+    float4x4 proj_mat = gpu_dbg_create_matrix_perspective_projection(1.04, 1.0, 0.1, 10000.0);
 
-    float4x4 viewTranslate = GpuDbgUtils_createMatrixTranslation(pos - normalize(float3(1.0, 0.0, 1.0)) * 100.0);
-    float4x4 viewRotate = GpuDbgUtils_createMatrixRotation(float3(0.0, 1.0, 0.0), -kPi * 0.75);
+    float4x4 view_translate = gpu_dbg_create_matrix_translation(pos - normalize(float3(1.0, 0.0, 1.0)) * 100.0);
+    float4x4 view_rotate = gpu_dbg_create_matrix_rotation(float3(0.0, 1.0, 0.0), -pi * 0.75);
 
-    float4x4 viewMat = transpose(GpuDbgUtils_inverse(mul(viewTranslate, viewRotate)));
-    float4x4 viewProjMat = mul(viewMat, projMat);
+    float4x4 view_mat = transpose(gpu_dbg_inverse(mul(view_translate, view_rotate)));
+    float4x4 view_proj_mat = mul(view_mat, proj_mat);
 
-    GpuDbg_frustum(viewProjMat, 0.001, 0.01, colors[typePos], 1.0);
+    gpu_dbg_frustum(view_proj_mat, 0.001, 0.01, colors[type_pos], 1.0);
 
-    uint labelFrustum[] = { 'F', 'r', 'u', 's', 't', 'u', 'm' };
-    GpuDbg_text(labelFrustum, pos - labelOffset, labelSize, white);
+    uint label_frustum[] = { 'F', 'r', 'u', 's', 't', 'u', 'm' };
+    gpu_dbg_text(label_frustum, pos - label_offset, label_size, white);
 
     // cylinder
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_cylinder(pos, float3(1.0, 1.0, 1.0), 50.0, 100.0, colors[typePos], 1.0, 16);
+    gpu_dbg_cylinder(pos, float3(1.0, 1.0, 1.0), 50.0, 100.0, colors[type_pos], 1.0, 16);
 
-    uint labelCylinder[] = { 'C', 'y', 'l', 'i', 'n', 'd', 'e', 'r' };
-    GpuDbg_text(labelCylinder, pos - labelOffset, labelSize, white);
+    uint label_cylinder[] = { 'C', 'y', 'l', 'i', 'n', 'd', 'e', 'r' };
+    gpu_dbg_text(label_cylinder, pos - label_offset, label_size, white);
 
     // capsule
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
-    GpuDbg_capsule(pos, float3(1.0, 1.0, 1.0), 75.0, 100.0, colors[typePos], 1.0, 16);
+    gpu_dbg_capsule(pos, float3(1.0, 1.0, 1.0), 75.0, 100.0, colors[type_pos], 1.0, 16);
 
-    uint labelCapsule[] = { 'C', 'a', 'p', 's', 'u', 'l', 'e' };
-    GpuDbg_text(labelCapsule, pos - labelOffset, labelSize, white);
+    uint label_capsule[] = { 'C', 'a', 'p', 's', 'u', 'l', 'e' };
+    gpu_dbg_text(label_capsule, pos - label_offset, label_size, white);
 
     // line list
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
     {
         // reserve space for a line list with segments
-        int lineSegments = 32;
-        uint lv = GpuDbg_lines(GpuDbg_kLineList3D(), lineSegments * 2, 5.0);
+        int line_segments = 32;
+        uint lv = gpu_dbg_lines(gpu_dbg_cmd_line_list_3d(), line_segments * 2, 5.0);
 
         // sample cosine
-        float listLength = 100.0;
-        float lineLength = 20.0;
-        float xstep = listLength / (float)lineSegments;
-        float tstep = 8.0 * kPi / (float)lineSegments;
+        float list_length = 100.0;
+        float line_length = 20.0;
+        float xstep = list_length / (float)line_segments;
+        float tstep = 8.0 * pi / (float)line_segments;
 
         float lx = 0.0;
         float lt = 0.0;
 
-        for(int i = 0; i < lineSegments; ++i)
+        for(int i = 0; i < line_segments; ++i)
         {
             // alternate vertex colour
             float4 col = i % 2 == 0 ? float4(1.0, 0.5, 0.0, 1.0) : float4(0.0, 0.5, 1.0, 1.0);
 
             // write the vertex pos and color
-            float3 mid = pos + float3(lx, lx, cos(lt) * 25.0) - float3(listLength, listLength, 0.0) * 0.5;
+            float3 mid = pos + float3(lx, lx, cos(lt) * 25.0) - float3(list_length, list_length, 0.0) * 0.5;
             float3 perp = float3(0.0, 0.0, 1.0);
 
-            GpuDbg_setVertex(lv++, mid + perp * lineLength, col);
-            GpuDbg_setVertex(lv++, mid - perp * lineLength, col);
+            gpu_dbg_set_vertex(lv++, mid + perp * line_length, col);
+            gpu_dbg_set_vertex(lv++, mid - perp * line_length, col);
 
             lx += xstep;
             lt += tstep;
         }
     }
 
-    uint labelLineList[] = { 'L', 'i', 'n', 'e', ' ', 'L', 'i', 's', 't' };
-    GpuDbg_text(labelLineList, pos - labelOffset, labelSize, white);
+    uint label_line_list[] = { 'L', 'i', 'n', 'e', ' ', 'L', 'i', 's', 't' };
+    gpu_dbg_text(label_line_list, pos - label_offset, label_size, white);
 
     // line strip
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
     {
         // reserve space for a line strip with segments
-        int lineStripSegments = 32;
-        uint lv = GpuDbg_lines(GpuDbg_kLineStrip3D(), lineStripSegments, 5.0);
+        int line_strip_segments = 32;
+        uint lv = gpu_dbg_lines(gpu_dbg_cmd_line_strip_3d(), line_strip_segments, 5.0);
 
         // sample cosine
-        float stripLength = 100.0;
-        float xstep = stripLength / (float)lineStripSegments;
-        float tstep = 8.0 * kPi / (float)lineStripSegments;
+        float strip_length = 100.0;
+        float xstep = strip_length / (float)line_strip_segments;
+        float tstep = 8.0 * pi / (float)line_strip_segments;
 
         float lx = 0.0;
         float lt = 0.0;
 
-        for(int i = 0; i < lineStripSegments; ++i)
+        for(int i = 0; i < line_strip_segments; ++i)
         {
             // alternate vertex colour
             float4 col = i % 2 == 0 ? float4(0.5, 1.0, 0.0, 1.0) : float4(0.5, 0.0, 1.0, 1.0);
 
             // write the vertex pos and color
-            GpuDbg_setVertex(lv++, pos + float3(lx, lx, cos(lt) * 25.0) - float3(stripLength, stripLength, 0.0) * 0.5, col);
+            gpu_dbg_set_vertex(lv++, pos + float3(lx, lx, cos(lt) * 25.0) - float3(strip_length, strip_length, 0.0) * 0.5, col);
 
             lx += xstep;
             lt += tstep;
         }
     }
 
-    uint labelLineStrip[] = { 'L', 'i', 'n', 'e', ' ', 'S', 't', 'r', 'i', 'p' };
-    GpuDbg_text(labelLineStrip, pos - labelOffset, labelSize, white);
+    uint label_line_strip[] = { 'L', 'i', 'n', 'e', ' ', 'S', 't', 'r', 'i', 'p' };
+    gpu_dbg_text(label_line_strip, pos - label_offset, label_size, white);
 
     // line loop
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
     {
         // reserve space for a line loop with segments
-        int lineSegments = 16;
-        uint lv = GpuDbg_lines(GpuDbg_kLineLoop3D(), lineSegments, 5.0);
+        int line_segments = 16;
+        uint lv = gpu_dbg_lines(gpu_dbg_cmd_line_loop_3d(), line_segments, 5.0);
 
         float angle = 0.0;
-        float angleStep = (kPi * 2.0) / (lineSegments-1);
+        float angle_step = (pi * 2.0) / (line_segments-1);
         float rad = 100.0;
 
-        for(int i = 0; i < lineSegments; ++i)
+        for(int i = 0; i < line_segments; ++i)
         {
-            float4 col = i == lineSegments - 1 ? float4(1.0, 0.0, 0.5, 1.0) : float4(0.0, 1.0, 1.0, 1.0);
+            float4 col = i == line_segments - 1 ? float4(1.0, 0.0, 0.5, 1.0) : float4(0.0, 1.0, 1.0, 1.0);
 
             float x = cos(angle);
             float y = -sin(angle);
 
-            GpuDbg_setVertex(lv++, pos + float3(x, y, 0.0) * rad, col);
+            gpu_dbg_set_vertex(lv++, pos + float3(x, y, 0.0) * rad, col);
 
-            angle += angleStep;
+            angle += angle_step;
         }
     }
 
-    uint labelLineLoop[] = { 'L', 'i', 'n', 'e', ' ', 'L', 'o', 'o', 'p' };
-    GpuDbg_text(labelLineLoop, pos - labelOffset, labelSize, white);
+    uint label_line_loop[] = { 'L', 'i', 'n', 'e', ' ', 'L', 'o', 'o', 'p' };
+    gpu_dbg_text(label_line_loop, pos - label_offset, label_size, white);
 
     // text vars
-    typeLoc = uint2(typePos / irc, typePos % irc);
-    pos = float3(typeLoc.xy * sectionSize, 0.0) - gridOffset;
-    typePos++;
+    type_loc = uint2(type_pos / irc, type_pos % irc);
+    pos = float3(type_loc.xy * section_size, 0.0) - grid_offset;
+    type_pos++;
 
     // currently only int or float are supported
-    float4 textCol = float4(0.5, 1.0, 1.0, 1.0);
+    float4 text_col = float4(0.5, 1.0, 1.0, 1.0);
 
     uint small[] = { 's', 'm', 'a', 'l', 'l', ' ', '=', ' ', '%', 'f' };
-    GpuDbg_textfEx(small, pos, labelSize * 1.25, textCol, float4(0.000001, 0.0, 0.0, 0.0), GpuDbg_kTextAlignLeft(), float4(1.0, 0.0, 0.0, 1.0));
+    gpu_dbg_textf_ex(small, pos, label_size * 1.25, text_col, float4(0.000001, 0.0, 0.0, 0.0), gpu_dbg_text_align_left(), float4(1.0, 0.0, 0.0, 1.0));
 
     uint flt[] = { 'f', 'l', 'o', 'a', 't', ' ', '=', ' ', '%', 'f' };
-    GpuDbg_textf(flt, pos - float3(0.0, 0.0, labelSize), labelSize * 1.25, textCol, float4(10.23, 0.0, 0.0, 0.0));
+    gpu_dbg_textf(flt, pos - float3(0.0, 0.0, label_size), label_size * 1.25, text_col, float4(10.23, 0.0, 0.0, 0.0));
 
     uint integer[] = { 'i', 'n', 't', ' ', '=', ' ', '%', 'i' };
-    GpuDbg_textf(integer, pos - float3(0.0, 0.0, labelSize * 2), labelSize * 1.25, textCol, float4(123.0, 0.0, 0.0, 0.0));
+    gpu_dbg_textf(integer, pos - float3(0.0, 0.0, label_size * 2), label_size * 1.25, text_col, float4(123.0, 0.0, 0.0, 0.0));
 
-    uint labelTextVars[] = { 'T', 'e', 'x', 't', ' ', 'V', 'a', 'r', 's' };
-    GpuDbg_text(labelTextVars, pos - labelOffset, labelSize, white);
+    uint label_text_vars[] = { 'T', 'e', 'x', 't', ' ', 'V', 'a', 'r', 's' };
+    gpu_dbg_text(label_text_vars, pos - label_offset, label_size, white);
 
     // print to the cpu console
     uint msg[] = { 'g', 'p', 'u', '_', 'd', 'b', 'g', ' ', 'c', 'o', 'm', 'm', 'a', 'n', 'd', 's', ' ', '%', 'i', ' ', 'v', 'e', 'r', 't', 'i', 'c', 'e', 's', ' ', '%', 'i' };
-    GpuDbg_printf(msg, float4(gpu_dbg_counters[0].m_commandPos, gpu_dbg_counters[0].m_vertexPos, 0.0, 0.0));
+    gpu_dbg_printf(msg, float4(gpu_dbg_counters[0].command_pos, gpu_dbg_counters[0].vertex_pos, 0.0, 0.0));
 }
 
 //
 // rendering
 //
 
-GpuDbg_VertexOutput GpuDbg_vertexOutputDefault()
+GpuDbgVertexOutput gpu_dbg_vertex_output_default()
 {
-    GpuDbg_VertexOutput output;
-    output.m_position = float4(0.0, 0.0, 0.0, 0.0);
-    output.m_uv = float2(0.0, 0.0);
-    output.m_color = float4(0.0, 0.0, 0.0, 0.0);
-    output.m_altColor = float4(0.0, 0.0, 0.0, 0.0);
-    output.m_type = 0;
+    GpuDbgVertexOutput output;
+    output.position = float4(0.0, 0.0, 0.0, 0.0);
+    output.uv = float2(0.0, 0.0);
+    output.color = float4(0.0, 0.0, 0.0, 0.0);
+    output.alt_color = float4(0.0, 0.0, 0.0, 0.0);
+    output.type = 0;
     return output;
 }
 
 // Description:
 //      Scale from a size in pixels relative to a 2160p screen height, to a half extent in ndc space
-float2 GpuDbg_pixelScale(float2 size)
+float2 gpu_dbg_pixel_scale(float2 size)
 {
     return size * (gpu_dbg_screen_size.y / 2160.0) / gpu_dbg_screen_size;
 }
 
 // unit quad corner for vertex 'i' (0-3)
-float2 GpuDbg_quadCorner(uint i)
+float2 gpu_dbg_quad_corner(uint i)
 {
     return float2(i&1, (i>>1)&1);
 }
@@ -1336,7 +1336,7 @@ float2 GpuDbg_quadCorner(uint i)
 // Description:
 //      Returns the font atlas uv for char 'c', the atlas is an 8x8 grid of ascii 32-95. lower case uses the upper case
 //      glyphs and unsupported chars map to '?'
-float2 GpuDbg_charToUv(uint c, float2 unitUv)
+float2 gpu_dbg_char_to_uv(uint c, float2 unit_uv)
 {
     if(c >= 'a' && c <= 'z')
     {
@@ -1344,34 +1344,34 @@ float2 GpuDbg_charToUv(uint c, float2 unitUv)
     }
 
     uint i = (c >= 32 && c <= 95) ? c - 32 : '?' - 32;
-    return (float2(i % 8, i / 8) + unitUv) / 8.0;
+    return (float2(i % 8, i / 8) + unit_uv) / 8.0;
 }
 
 // Description:
 //      Quad for char 'c' of a text command, projected from the command pos and aligned with the command flags
-GpuDbg_VertexOutput GpuDbg_textVertex3D(uint i, uint c, GpuDbg_Command cmd)
+GpuDbgVertexOutput gpu_dbg_text_vertex_3d(uint i, uint c, GpuDbgCommand cmd)
 {
     // project pos
-    float4 ndc = mul(gpu_dbg_view_projection_matrix, float4(cmd.m_pos, 1.0));
+    float4 ndc = mul(gpu_dbg_view_projection_matrix, float4(cmd.pos, 1.0));
     ndc /= ndc.w;
 
     // clip vertex behind the near plane
     if(ndc.z < 0.0)
     {
-        return GpuDbg_vertexOutputDefault();
+        return gpu_dbg_vertex_output_default();
     }
 
     // start centred
-    float2 scale = GpuDbg_pixelScale(cmd.m_size.xy);
+    float2 scale = gpu_dbg_pixel_scale(cmd.size.xy);
     float2 spos = ndc.xy;
-    float len = cmd.m_dataLength;
+    float len = cmd.data_length;
 
     // position char
-    if(cmd.m_flags & GpuDbg_kTextAlignLeft())
+    if(cmd.flags & gpu_dbg_text_align_left())
     {
         spos.x += (c * scale.x);                            // char pos
     }
-    else if(cmd.m_flags & GpuDbg_kTextAlignRight())
+    else if(cmd.flags & gpu_dbg_text_align_right())
     {
         spos.x -= ((scale.x * len) - scale.x) * 1.0;        // align right
         spos.x += (c * scale.x);                            // char pos
@@ -1383,30 +1383,30 @@ GpuDbg_VertexOutput GpuDbg_textVertex3D(uint i, uint c, GpuDbg_Command cmd)
     }
 
     // construct quad
-    float2 corner = GpuDbg_quadCorner(i);
+    float2 corner = gpu_dbg_quad_corner(i);
 
-    GpuDbg_VertexOutput output = GpuDbg_vertexOutputDefault();
-    output.m_position = float4(spos + (corner * 2.0 - 1.0) * scale, 0.0, 1.0);
+    GpuDbgVertexOutput output = gpu_dbg_vertex_output_default();
+    output.position = float4(spos + (corner * 2.0 - 1.0) * scale, 0.0, 1.0);
 
     // read char data
-    output.m_uv = GpuDbg_charToUv(gpu_dbg_data[cmd.m_dataOffset + c], float2(corner.x, 1.0 - corner.y));
-    output.m_color = cmd.m_color;
-    output.m_altColor = cmd.m_altColor;
+    output.uv = gpu_dbg_char_to_uv(gpu_dbg_data[cmd.data_offset + c], float2(corner.x, 1.0 - corner.y));
+    output.color = cmd.color;
+    output.alt_color = cmd.alt_color;
     return output;
 }
 
-GpuDbg_VertexOutput GpuDbg_quadVertex2D(uint i, float2 pos, float2 size)
+GpuDbgVertexOutput gpu_dbg_quad_vertex_2d(uint i, float2 pos, float2 size)
 {
     float2 spos = (pos / gpu_dbg_screen_size) * 2.0 - 1.0;
-    float2 scale = GpuDbg_pixelScale(size);
+    float2 scale = gpu_dbg_pixel_scale(size);
 
-    GpuDbg_VertexOutput output = GpuDbg_vertexOutputDefault();
-    float2 qpos = spos + (GpuDbg_quadCorner(i) * 2.0 - 1.0) * (scale * 2.0);
-    output.m_position = float4(qpos, 0.0, 1.0);
+    GpuDbgVertexOutput output = gpu_dbg_vertex_output_default();
+    float2 qpos = spos + (gpu_dbg_quad_corner(i) * 2.0 - 1.0) * (scale * 2.0);
+    output.position = float4(qpos, 0.0, 1.0);
     return output;
 }
 
-GpuDbg_VertexOutput GpuDbg_pointVertex3D(uint i, float3 pos, float2 size)
+GpuDbgVertexOutput gpu_dbg_point_vertex_3d(uint i, float3 pos, float2 size)
 {
     // project pos
     float4 ndc = mul(gpu_dbg_view_projection_matrix, float4(pos, 1.0));
@@ -1415,20 +1415,20 @@ GpuDbg_VertexOutput GpuDbg_pointVertex3D(uint i, float3 pos, float2 size)
     // clip vertex behind the near plane
     if(ndc.z < 0.0)
     {
-        return GpuDbg_vertexOutputDefault();
+        return gpu_dbg_vertex_output_default();
     }
 
-    float2 scale = GpuDbg_pixelScale(size);
+    float2 scale = gpu_dbg_pixel_scale(size);
 
-    GpuDbg_VertexOutput output = GpuDbg_vertexOutputDefault();
-    float2 qpos = ndc.xy + (GpuDbg_quadCorner(i) * 2.0 - 1.0) * scale;
-    output.m_position = float4(qpos, 0.0, 1.0);
+    GpuDbgVertexOutput output = gpu_dbg_vertex_output_default();
+    float2 qpos = ndc.xy + (gpu_dbg_quad_corner(i) * 2.0 - 1.0) * scale;
+    output.position = float4(qpos, 0.0, 1.0);
     return output;
 }
 
 // Description:
 //      Expand a line segment from 'v0' to 'v1' in ndc space into a quad 'thickness' pixels wide
-GpuDbg_VertexOutput GpuDbg_lineQuadVertex(uint i, float2 ndc0, float2 ndc1, float4 col0, float4 col1, float thickness)
+GpuDbgVertexOutput gpu_dbg_line_quad_vertex(uint i, float2 ndc0, float2 ndc1, float4 col0, float4 col1, float thickness)
 {
     // projected 2D line dir, normal and perp
     float2 ll = ndc1 - ndc0;
@@ -1436,28 +1436,28 @@ GpuDbg_VertexOutput GpuDbg_lineQuadVertex(uint i, float2 ndc0, float2 ndc1, floa
     float2 lp = float2(ln.y, -ln.x);
 
     // * 2.0 because it's applied in ndc space, clamped so lines stay at least 1 pixel wide at low resolution
-    float2 scale = max(GpuDbg_pixelScale(thickness * 2.0), 1.0 / gpu_dbg_screen_size);
-    float2 uv = GpuDbg_quadCorner(i);
+    float2 scale = max(gpu_dbg_pixel_scale(thickness * 2.0), 1.0 / gpu_dbg_screen_size);
+    float2 uv = gpu_dbg_quad_corner(i);
 
-    GpuDbg_VertexOutput output = GpuDbg_vertexOutputDefault();
+    GpuDbgVertexOutput output = gpu_dbg_vertex_output_default();
     float2 qpos = ndc0 + ((uv.x * 2.0 - 1.0) * lp * scale) + (ll * uv.y);
-    output.m_position = float4(qpos, 0.0, 1.0);
-    output.m_color = lerp(col0, col1, uv.y);
+    output.position = float4(qpos, 0.0, 1.0);
+    output.color = lerp(col0, col1, uv.y);
     return output;
 }
 
-GpuDbg_VertexOutput GpuDbg_lineVertex3D(uint i, GpuDbg_Command cmd, uint gid)
+GpuDbgVertexOutput gpu_dbg_line_vertex_3d(uint i, GpuDbgCommand cmd, uint gid)
 {
-    uint stride = cmd.m_type == GpuDbg_kLineList3D() ? 2 : 1;
-    uint offset = cmd.m_dataOffset + (gid * stride);
-    uint next = cmd.m_dataOffset + (((gid * stride) + 1) % cmd.m_dataLength);
+    uint stride = cmd.type == gpu_dbg_cmd_line_list_3d() ? 2 : 1;
+    uint offset = cmd.data_offset + (gid * stride);
+    uint next = cmd.data_offset + (((gid * stride) + 1) % cmd.data_length);
 
-    GpuDbg_Vertex v0 = gpu_dbg_vertices[offset];
-    GpuDbg_Vertex v1 = gpu_dbg_vertices[next];
+    GpuDbgVertex v0 = gpu_dbg_vertices[offset];
+    GpuDbgVertex v1 = gpu_dbg_vertices[next];
 
     // project positions
-    float4 clip0 = mul(gpu_dbg_view_projection_matrix, float4(v0.m_pos, 1.0));
-    float4 clip1 = mul(gpu_dbg_view_projection_matrix, float4(v1.m_pos, 1.0));
+    float4 clip0 = mul(gpu_dbg_view_projection_matrix, float4(v0.pos, 1.0));
+    float4 clip1 = mul(gpu_dbg_view_projection_matrix, float4(v1.pos, 1.0));
 
     // clip the line against the frustum planes in clip space, (w +/- x, w +/- y, z, w - z)
     float4 planes[6] = {
@@ -1477,7 +1477,7 @@ GpuDbg_VertexOutput GpuDbg_lineVertex3D(uint i, GpuDbg_Command cmd, uint gid)
 
         if(d0 <= 0.0 && d1 <= 0.0)
         {
-            return GpuDbg_vertexOutputDefault();
+            return gpu_dbg_vertex_output_default();
         }
 
         if(d0 <= 0.0)
@@ -1490,19 +1490,19 @@ GpuDbg_VertexOutput GpuDbg_lineVertex3D(uint i, GpuDbg_Command cmd, uint gid)
         }
     }
 
-    return GpuDbg_lineQuadVertex(i, clip0.xy / clip0.w, clip1.xy / clip1.w, v0.m_color, v1.m_color, cmd.m_size.x);
+    return gpu_dbg_line_quad_vertex(i, clip0.xy / clip0.w, clip1.xy / clip1.w, v0.color, v1.color, cmd.size.x);
 }
 
-GpuDbg_VertexOutput GpuDbg_lineVertex2D(uint i, GpuDbg_Command cmd, uint gid)
+GpuDbgVertexOutput gpu_dbg_line_vertex_2d(uint i, GpuDbgCommand cmd, uint gid)
 {
-    uint stride = cmd.m_type == GpuDbg_kLineListNDC() ? 2 : 1;
-    uint offset = cmd.m_dataOffset + (gid * stride);
-    uint next = cmd.m_dataOffset + (((gid * stride) + 1) % cmd.m_dataLength);
+    uint stride = cmd.type == gpu_dbg_cmd_line_list_ndc() ? 2 : 1;
+    uint offset = cmd.data_offset + (gid * stride);
+    uint next = cmd.data_offset + (((gid * stride) + 1) % cmd.data_length);
 
-    GpuDbg_Vertex v0 = gpu_dbg_vertices[offset];
-    GpuDbg_Vertex v1 = gpu_dbg_vertices[next];
+    GpuDbgVertex v0 = gpu_dbg_vertices[offset];
+    GpuDbgVertex v1 = gpu_dbg_vertices[next];
 
-    return GpuDbg_lineQuadVertex(i, v0.m_pos.xy, v1.m_pos.xy, v0.m_color, v1.m_color, cmd.m_size.x);
+    return gpu_dbg_line_quad_vertex(i, v0.pos.xy, v1.pos.xy, v0.color, v1.color, cmd.size.x);
 }
 
 // 1 group per quad (line segment or point), the command index is set per indirect dispatch in gpu_dbg_draw_id
@@ -1512,11 +1512,11 @@ void ms_gpu_dbg(
     uint gid : SV_GroupID,
     uint tid : SV_GroupThreadID,
     out indices uint3 tris[2],
-    out vertices GpuDbg_VertexOutput verts[4]
+    out vertices GpuDbgVertexOutput verts[4]
 )
 {
     // fetch associated debug draw command
-    GpuDbg_Command cmd = gpu_dbg_commands[gpu_dbg_draw_id];
+    GpuDbgCommand cmd = gpu_dbg_commands[gpu_dbg_draw_id];
 
     SetMeshOutputCounts(4, 2);
 
@@ -1525,49 +1525,49 @@ void ms_gpu_dbg(
         tris[tid] = tid == 0 ? uint3(0, 1, 2) : uint3(2, 1, 3);
     }
 
-    GpuDbg_VertexOutput v;
-    if(cmd.m_type == GpuDbg_kPoint())
+    GpuDbgVertexOutput v;
+    if(cmd.type == gpu_dbg_cmd_point())
     {
-        v = GpuDbg_pointVertex3D(tid, cmd.m_pos, cmd.m_size.xy);
-        v.m_color = cmd.m_color;
+        v = gpu_dbg_point_vertex_3d(tid, cmd.pos, cmd.size.xy);
+        v.color = cmd.color;
     }
-    else if(cmd.m_type == GpuDbg_kQuad2D())
+    else if(cmd.type == gpu_dbg_cmd_quad_2d())
     {
-        v = GpuDbg_quadVertex2D(tid, cmd.m_pos.xy, cmd.m_size.xy);
-        v.m_color = cmd.m_color;
+        v = gpu_dbg_quad_vertex_2d(tid, cmd.pos.xy, cmd.size.xy);
+        v.color = cmd.color;
     }
-    else if(cmd.m_type == GpuDbg_kText3D())
+    else if(cmd.type == gpu_dbg_cmd_text_3d())
     {
-        v = GpuDbg_textVertex3D(tid, gid, cmd);
+        v = gpu_dbg_text_vertex_3d(tid, gid, cmd);
     }
-    else if(cmd.m_type >= GpuDbg_kLineStripNDC())
+    else if(cmd.type >= gpu_dbg_cmd_line_strip_ndc())
     {
-        v = GpuDbg_lineVertex2D(tid, cmd, gid);
+        v = gpu_dbg_line_vertex_2d(tid, cmd, gid);
     }
     else
     {
-        v = GpuDbg_lineVertex3D(tid, cmd, gid);
+        v = gpu_dbg_line_vertex_3d(tid, cmd, gid);
     }
 
-    v.m_type = cmd.m_type;
+    v.type = cmd.type;
     verts[tid] = v;
 }
 
-float4 ps_gpu_dbg(GpuDbg_VertexOutput input) : SV_Target
+float4 ps_gpu_dbg(GpuDbgVertexOutput input) : SV_Target
 {
-    if(input.m_type == GpuDbg_kText3D())
+    if(input.type == gpu_dbg_cmd_text_3d())
     {
         // sdf font with optional outline
-        float edgeThreshold = 0.5;
-        float outlineThreshold = 0.4;
+        float edge_threshold = 0.5;
+        float outline_threshold = 0.4;
 
-        float text = gpu_dbg_font_atlas.Sample(gpu_dbg_linear_sampler, input.m_uv).r;
+        float text = gpu_dbg_font_atlas.Sample(gpu_dbg_linear_sampler, input.uv).r;
 
-        float alpha = smoothstep(outlineThreshold - 0.01, outlineThreshold + 0.01, text);
-        float innerAlpha = smoothstep(edgeThreshold - 0.01, edgeThreshold + 0.01, text);
+        float alpha = smoothstep(outline_threshold - 0.01, outline_threshold + 0.01, text);
+        float inner_alpha = smoothstep(edge_threshold - 0.01, edge_threshold + 0.01, text);
 
-        float4 color = lerp(input.m_altColor, input.m_color, innerAlpha);
-        color = lerp(float4(input.m_altColor.rgb, 0.0), color, alpha);
+        float4 color = lerp(input.alt_color, input.color, inner_alpha);
+        color = lerp(float4(input.alt_color.rgb, 0.0), color, alpha);
 
         if(color.a == 0.0)
         {
@@ -1577,19 +1577,19 @@ float4 ps_gpu_dbg(GpuDbg_VertexOutput input) : SV_Target
         return color;
     }
 
-    return input.m_color;
+    return input.color;
 }
 
 [numthreads(1, 1, 1)]
 void cs_gpu_dbg_reset()
 {
-    gpu_dbg_counters[0].m_commandPos = 0;
-    gpu_dbg_counters[0].m_vertexPos = 0;
-    gpu_dbg_counters[0].m_dataPos = 0;
+    gpu_dbg_counters[0].command_pos = 0;
+    gpu_dbg_counters[0].vertex_pos = 0;
+    gpu_dbg_counters[0].data_pos = 0;
 }
 
 [numthreads(1, 1, 1)]
 void cs_gpu_dbg_demo()
 {
-    GpuDbg_demo();
+    gpu_dbg_demo();
 }

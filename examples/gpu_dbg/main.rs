@@ -1,5 +1,5 @@
 // gpu driven debug rendering, shaders append debug draw commands which are drawn with a single `execute_indirect`
-// of a mesh shader pipeline. see shaders/gpu_dbg.hlsl for the api and `GpuDbg_demo`
+// of a mesh shader pipeline. see shaders/gpu_dbg.hlsl for the api and `gpu_dbg_demo`
 
 use hotline_rs::{*, prelude::*};
 
@@ -14,7 +14,7 @@ const MAX_VERTICES: usize = 1 << 16;
 const MAX_CHARS: usize = 1 << 16;
 const PRINT_RING_SIZE: u32 = 1 << 16;
 
-// matches `GpuDbg_DrawIndirectArgs` in shaders/gpu_dbg.hlsl (root constant draw id + DispatchMesh args)
+// matches `GpuDbgDrawIndirectArgs` in shaders/gpu_dbg.hlsl (root constant draw id + DispatchMesh args)
 // these are written by the gpu, only the size is used on the cpu
 #[allow(dead_code)]
 #[repr(C)]
@@ -51,7 +51,7 @@ fn transition_buffer(cmd: &mut gfx_platform::CmdBuf, buffer: &gfx_platform::Buff
     });
 }
 
-// reads chars written by `GpuDbg_printf` from the persistently mapped print ring, without syncing with the gpu.
+// reads chars written by `gpu_dbg_printf` from the persistently mapped print ring, without syncing with the gpu.
 // each slot is (lap << 8) | char, so a slot holding the lap we expect for `pos` is a new char and anything else has
 // not been written yet, unless it is from a later lap, in which case the gpu has overrun the ring and we skip ahead
 struct GpuPrinter {
