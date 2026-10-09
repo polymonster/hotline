@@ -252,7 +252,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
-    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3) {
+    fn dispatch_mesh(&mut self, group_count: Size3, ms_numthreads: Size3, as_numthreads: Option<Size3>) {
         unimplemented!()
     }
 

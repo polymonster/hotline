@@ -4604,7 +4604,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch_mesh(&mut self, group_count: Size3, _numthreads: Size3) {
+    fn dispatch_mesh(&mut self, group_count: Size3, _ms_numthreads: Size3, _as_numthreads: Option<Size3>) {
         unsafe {
             let cmd6 = self.cmd().cast::<ID3D12GraphicsCommandList6>()
                 .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList6 availability to dispatch_mesh");

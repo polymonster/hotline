@@ -252,6 +252,49 @@ fn to_mtl_index_type(stride: usize) -> metal::MTLIndexType {
     }
 }
 
+/// Setup colour attachments - one per MRT target from the pass (SV_Target0..N), with blend state from `blend_info`.
+/// With no pass (eg. depth-only / default) fall back to a single BGRA8 attachment.
+fn setup_colour_attachments(
+    attachments: &metal::RenderPipelineColorAttachmentDescriptorArrayRef,
+    blend_info: &super::BlendInfo,
+    pass: Option<&RenderPass>
+) {
+    let pixel_formats: Vec<metal::MTLPixelFormat> = pass
+        .map(|p| p.pixel_formats.clone())
+        .filter(|f| !f.is_empty())
+        .unwrap_or_else(|| vec![metal::MTLPixelFormat::BGRA8Unorm]);
+
+    for (i, &pixel_format) in pixel_formats.iter().enumerate() {
+        let attachment = attachments.object_at(i as u64).unwrap();
+        attachment.set_pixel_format(pixel_format);
+
+        if pixel_format == metal::MTLPixelFormat::Invalid {
+            continue;
+        }
+
+        // per-target blend state (falls back to the first / disabled)
+        let blend = blend_info.render_target.get(i)
+            .or_else(|| blend_info.render_target.first());
+        if let Some(b) = blend {
+            attachment.set_blending_enabled(b.blend_enabled);
+            attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
+            attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
+            attachment.set_source_rgb_blend_factor(to_mtl_blend_factor(&b.src_blend));
+            attachment.set_source_alpha_blend_factor(to_mtl_blend_factor(&b.src_blend_alpha));
+            attachment.set_destination_rgb_blend_factor(to_mtl_blend_factor(&b.dst_blend));
+            attachment.set_destination_alpha_blend_factor(to_mtl_blend_factor(&b.dst_blend_alpha));
+            attachment.set_write_mask(to_mtl_write_mask(&b.write_mask));
+        } else {
+            attachment.set_blending_enabled(false);
+            attachment.set_write_mask(metal::MTLColorWriteMask::all());
+        }
+    }
+}
+
+fn to_mtl_size(size: super::Size3) -> metal::MTLSize {
+    metal::MTLSize::new(size.x as u64, size.y as u64, size.z as u64)
+}
+
 fn to_mtl_pixel_format(format: super::Format) -> metal::MTLPixelFormat {
     match format {
         super::Format::Unknown => metal::MTLPixelFormat::Invalid,
@@ -457,6 +500,7 @@ pub struct CmdBuf {
     bound_index_buffer: Option<metal::Buffer>,
     bound_index_stride: usize,
     bound_render_pipeline: Option<*const RenderPipeline>,
+    bound_mesh_pipeline: Option<*const MeshPipeline>,
     bound_compute_pipeline: Option<*const ComputePipeline>,
     metal_device: metal::Device,
     transient_buffers: Vec<metal::Buffer>,
@@ -492,6 +536,7 @@ impl Clone for CmdBuf {
             bound_index_buffer: self.bound_index_buffer.clone(),
             bound_index_stride: self.bound_index_stride,
             bound_render_pipeline: self.bound_render_pipeline,
+            bound_mesh_pipeline: self.bound_mesh_pipeline,
             bound_compute_pipeline: self.bound_compute_pipeline,
             metal_device: self.metal_device.clone(),
             transient_buffers: self.transient_buffers.clone(),
@@ -920,6 +965,7 @@ impl super::CmdBuf<Device> for CmdBuf {
 
             // store pipeline pointer for push_render_constants
             self.bound_render_pipeline = Some(pipeline as *const RenderPipeline);
+            self.bound_mesh_pipeline = None;
 
             // Clone binder templates from pipeline to command buffer
             self.vertex_binder = pipeline.vertex_binder.clone();
@@ -928,7 +974,26 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
-        unimplemented!()
+        objc::rc::autoreleasepool(|| {
+            let encoder = self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands");
+
+            encoder.set_render_pipeline_state(&pipeline.pipeline_state);
+            encoder.set_depth_stencil_state(&pipeline.depth_stencil_state);
+
+            let raster = &pipeline.raster_info;
+            encoder.set_cull_mode(to_mtl_cull_mode(raster.cull_mode));
+            encoder.set_front_facing_winding(to_mtl_winding(raster.front_ccw));
+            encoder.set_triangle_fill_mode(to_mtl_triangle_fill_mode(raster.fill_mode));
+            encoder.set_depth_bias(raster.depth_bias as f32, raster.slope_scaled_depth_bias, raster.depth_bias_clamp);
+
+            // store pipeline pointer for dispatch_mesh, and clear the render pipeline binders so they are not flushed
+            self.bound_mesh_pipeline = Some(pipeline as *const MeshPipeline);
+            self.bound_render_pipeline = None;
+            self.vertex_binder.clear();
+            self.fragment_binder.clear();
+        });
     }
 
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
@@ -1219,8 +1284,15 @@ impl super::CmdBuf<Device> for CmdBuf {
         });
     }
 
-    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3) {
-        unimplemented!()
+    fn dispatch_mesh(&mut self, group_count: Size3, ms_numthreads: Size3, as_numthreads: Option<Size3>) {
+        objc::rc::autoreleasepool(|| {
+            // without an object (amplification) stage the object threadgroup size is unused
+            let as_numthreads = as_numthreads.unwrap_or(Size3 { x: 1, y: 1, z: 1 });
+            self.render_encoder
+                .as_ref()
+                .expect("hotline_rs::gfx::metal expected a call to begin render pass before using render commands")
+                .draw_mesh_threadgroups(to_mtl_size(group_count), to_mtl_size(as_numthreads), to_mtl_size(ms_numthreads));
+        });
     }
 
     fn execute_indirect(
@@ -1426,8 +1498,15 @@ pub struct RenderPipeline {
 
 impl super::RenderPipeline<Device> for RenderPipeline {}
 
-#[derive(Clone)]
 pub struct MeshPipeline {
+    pipeline_state: metal::RenderPipelineState,
+    slots: Vec<u32>,
+    /// Unified slot lookup by (register, space, descriptor_type)
+    slot_lookup: HashMap<SlotKey, PipelineSlotInfo>,
+    /// Depth stencil state
+    depth_stencil_state: metal::DepthStencilState,
+    /// Rasterizer state (applied dynamically on encoder in Metal)
+    raster_info: super::RasterInfo,
 }
 
 impl super::MeshPipeline<Device> for MeshPipeline {}
@@ -1437,11 +1516,11 @@ unsafe impl Sync for MeshPipeline {}
 
 impl super::Pipeline for MeshPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
-        unimplemented!()
+        self.slot_lookup.get(&(register, space, descriptor_type))
     }
 
     fn get_pipeline_slots(&self) -> &Vec<u32> {
-        unimplemented!()
+        &self.slots
     }
 
     fn get_pipeline_type() -> PipelineType {
@@ -1816,6 +1895,37 @@ impl Device {
             buffer_argument_encoder,
             buffer_argument_buffer,
         }
+    }
+
+    fn create_depth_stencil_state(&self, ds_info: &super::DepthStencilInfo) -> metal::DepthStencilState {
+        let ds_desc = metal::DepthStencilDescriptor::new();
+
+        ds_desc.set_depth_compare_function(to_mtl_compare_func(ds_info.depth_func));
+        ds_desc.set_depth_write_enabled(ds_info.depth_write_mask == super::DepthWriteMask::All);
+
+        if ds_info.stencil_enabled {
+            // Front face
+            let front = metal::StencilDescriptor::new();
+            front.set_stencil_compare_function(to_mtl_compare_func(ds_info.front_face.func));
+            front.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.front_face.fail));
+            front.set_depth_failure_operation(to_mtl_stencil_op(ds_info.front_face.depth_fail));
+            front.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.front_face.pass));
+            front.set_read_mask(ds_info.stencil_read_mask as u32);
+            front.set_write_mask(ds_info.stencil_write_mask as u32);
+            ds_desc.set_front_face_stencil(Some(&front));
+
+            // Back face
+            let back = metal::StencilDescriptor::new();
+            back.set_stencil_compare_function(to_mtl_compare_func(ds_info.back_face.func));
+            back.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.back_face.fail));
+            back.set_depth_failure_operation(to_mtl_stencil_op(ds_info.back_face.depth_fail));
+            back.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.back_face.pass));
+            back.set_read_mask(ds_info.stencil_read_mask as u32);
+            back.set_write_mask(ds_info.stencil_write_mask as u32);
+            ds_desc.set_back_face_stencil(Some(&back));
+        }
+
+        self.metal_device.new_depth_stencil_state(&ds_desc)
     }
 
     /// Build unified slot lookup
@@ -2277,6 +2387,7 @@ impl super::Device for Device {
                 bound_index_buffer: None,
                 bound_index_stride: 0,
                 bound_render_pipeline: None,
+                bound_mesh_pipeline: None,
                 bound_compute_pipeline: None,
                 metal_device: self.metal_device.clone(),
                 transient_buffers: Vec::new(),
@@ -2374,41 +2485,7 @@ impl super::Device for Device {
 
             pipeline_state_descriptor.set_vertex_descriptor(Some(&vertex_desc));
 
-            // colour attachments - one per MRT target from the pass (SV_Target0..N). With no pass
-            // (eg. depth-only / default) fall back to a single BGRA8 attachment.
-            let pixel_formats: Vec<metal::MTLPixelFormat> = info.pass
-                .map(|p| p.pixel_formats.clone())
-                .filter(|f| !f.is_empty())
-                .unwrap_or_else(|| vec![metal::MTLPixelFormat::BGRA8Unorm]);
-
-            for (i, &pixel_format) in pixel_formats.iter().enumerate() {
-                let attachment = pipeline_state_descriptor
-                    .color_attachments()
-                    .object_at(i as u64)
-                    .unwrap();
-                attachment.set_pixel_format(pixel_format);
-
-                if pixel_format == metal::MTLPixelFormat::Invalid {
-                    continue;
-                }
-
-                // per-target blend state (falls back to the first / disabled)
-                let blend = info.blend_info.render_target.get(i)
-                    .or_else(|| info.blend_info.render_target.first());
-                if let Some(b) = blend {
-                    attachment.set_blending_enabled(b.blend_enabled);
-                    attachment.set_rgb_blend_operation(to_mtl_blend_op(&b.blend_op));
-                    attachment.set_alpha_blend_operation(to_mtl_blend_op(&b.blend_op_alpha));
-                    attachment.set_source_rgb_blend_factor(to_mtl_blend_factor(&b.src_blend));
-                    attachment.set_source_alpha_blend_factor(to_mtl_blend_factor(&b.src_blend_alpha));
-                    attachment.set_destination_rgb_blend_factor(to_mtl_blend_factor(&b.dst_blend));
-                    attachment.set_destination_alpha_blend_factor(to_mtl_blend_factor(&b.dst_blend_alpha));
-                    attachment.set_write_mask(to_mtl_write_mask(&b.write_mask));
-                } else {
-                    attachment.set_blending_enabled(false);
-                    attachment.set_write_mask(metal::MTLColorWriteMask::all());
-                }
-            }
+            setup_colour_attachments(pipeline_state_descriptor.color_attachments(), &info.blend_info, info.pass);
 
             // Set depth format + MSAA sample count on pipeline descriptor to match the pass
             if let Some(pass) = &info.pass {
@@ -2422,37 +2499,7 @@ impl super::Device for Device {
             }
 
             // Create depth stencil state
-            let depth_stencil_state = {
-                let ds_info = &info.depth_stencil_info;
-                let ds_desc = metal::DepthStencilDescriptor::new();
-
-                ds_desc.set_depth_compare_function(to_mtl_compare_func(ds_info.depth_func));
-                ds_desc.set_depth_write_enabled(ds_info.depth_write_mask == super::DepthWriteMask::All);
-
-                if ds_info.stencil_enabled {
-                    // Front face
-                    let front = metal::StencilDescriptor::new();
-                    front.set_stencil_compare_function(to_mtl_compare_func(ds_info.front_face.func));
-                    front.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.front_face.fail));
-                    front.set_depth_failure_operation(to_mtl_stencil_op(ds_info.front_face.depth_fail));
-                    front.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.front_face.pass));
-                    front.set_read_mask(ds_info.stencil_read_mask as u32);
-                    front.set_write_mask(ds_info.stencil_write_mask as u32);
-                    ds_desc.set_front_face_stencil(Some(&front));
-
-                    // Back face
-                    let back = metal::StencilDescriptor::new();
-                    back.set_stencil_compare_function(to_mtl_compare_func(ds_info.back_face.func));
-                    back.set_stencil_failure_operation(to_mtl_stencil_op(ds_info.back_face.fail));
-                    back.set_depth_failure_operation(to_mtl_stencil_op(ds_info.back_face.depth_fail));
-                    back.set_depth_stencil_pass_operation(to_mtl_stencil_op(ds_info.back_face.pass));
-                    back.set_read_mask(ds_info.stencil_read_mask as u32);
-                    back.set_write_mask(ds_info.stencil_write_mask as u32);
-                    ds_desc.set_back_face_stencil(Some(&back));
-                }
-
-                self.metal_device.new_depth_stencil_state(&ds_desc)
-            };
+            let depth_stencil_state = self.create_depth_stencil_state(&info.depth_stencil_info);
 
             // Create static samplers and argument buffer (bound at fragment buffer(0))
             let mut pipeline_static_samplers = Vec::new();
@@ -2542,7 +2589,60 @@ impl super::Device for Device {
         &self,
         info: &super::MeshPipelineInfo<Device>,
     ) -> std::result::Result<MeshPipeline, super::Error> {
-        unimplemented!();
+        objc::rc::autoreleasepool(|| {
+            if !self.metal_device.supports_family(metal::MTLGPUFamily::Metal3) {
+                return Err(super::Error {
+                    msg: "hotline_rs::gfx::mtl: mesh pipelines require a Metal3 capable device".to_string()
+                });
+            }
+
+            let get_function = |shader: &Shader| -> result::Result<metal::Function, super::Error> {
+                let name = &shader.lib.function_names()[0];
+                Ok(shader.lib.get_function(name, None)?)
+            };
+
+            let desc = metal::MeshRenderPipelineDescriptor::new();
+
+            let ms = info.ms.ok_or(super::Error {
+                msg: "hotline_rs::gfx::mtl: mesh pipeline requires a mesh shader".to_string()
+            })?;
+            let ms_function = get_function(ms)?;
+            desc.set_mesh_function(Some(&ms_function));
+
+            if let Some(amps) = info.amps {
+                let as_function = get_function(amps)?;
+                desc.set_object_function(Some(&as_function));
+            }
+
+            if let Some(fs) = info.fs {
+                let fs_function = get_function(fs)?;
+                desc.set_fragment_function(Some(&fs_function));
+            }
+
+            setup_colour_attachments(desc.color_attachments(), &info.blend_info, info.pass);
+            desc.set_alpha_to_coverage_enabled(info.blend_info.alpha_to_coverage_enabled);
+
+            // depth format + MSAA sample count to match the pass
+            if let Some(pass) = &info.pass {
+                if let Some(depth_format) = pass.depth_format {
+                    desc.set_depth_attachment_pixel_format(depth_format);
+                    if has_stencil_component(depth_format) {
+                        desc.set_stencil_attachment_pixel_format(depth_format);
+                    }
+                }
+                desc.set_raster_sample_count(pass.sample_count as NSUInteger);
+            }
+
+            let pipeline_state = self.metal_device.new_mesh_render_pipeline_state(&desc)?;
+
+            Ok(MeshPipeline {
+                pipeline_state,
+                slots: Vec::new(),
+                slot_lookup: HashMap::new(),
+                depth_stencil_state: self.create_depth_stencil_state(&info.depth_stencil_info),
+                raster_info: info.raster_info,
+            })
+        })
     }
 
     fn create_shader<T: Sized>(
