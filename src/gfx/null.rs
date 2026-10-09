@@ -496,7 +496,9 @@ impl super::Device for Device {
     fn create_indirect_mesh_command<T: Sized>(
         &mut self,
         arguments: Vec<IndirectArgument>,
-        pipeline: Option<&Self::MeshPipeline>
+        pipeline: Option<&Self::MeshPipeline>,
+        ms_numthreads: Size3,
+        as_numthreads: Option<Size3>
     ) -> Result<Self::CommandSignature, super::Error> {
         unimplemented!()
     }

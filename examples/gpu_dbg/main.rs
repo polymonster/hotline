@@ -161,6 +161,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     let draw = pmfx.get_mesh_pipeline_for_format("gpu_dbg_draw", fmt)?;
 
     // each command sets the draw id root constant (b1) and dispatches mesh groups
+    let (ms_numthreads, as_numthreads) = pmfx.get_mesh_pipeline_numthreads("gpu_dbg_draw")?;
     let command_signature = dev.create_indirect_mesh_command::<DrawIndirectArgs>(
         vec![
             gfx::IndirectArgument {
@@ -178,7 +179,9 @@ fn main() -> Result<(), hotline_rs::Error> {
                 arguments: None
             }
         ],
-        Some(draw)
+        Some(draw),
+        ms_numthreads,
+        as_numthreads
     )?;
 
     // orbit camera, the demo is z-up
