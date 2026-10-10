@@ -534,7 +534,7 @@ fn boot_client_missing_plugin() -> Result<(), hotline_rs::Error> {
 }
 
 #[test]
-/// Boots the client with the ecs plugin and ecs_demos plugin but with no `PluginData`
+/// Boots the client with the ecs_examples plugin, which hosts the ecs, but with no `PluginData`
 fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
     let mut config = client::UserConfig {
         main_window_rect: HotlineInfo::default().window_rect,
@@ -545,9 +545,6 @@ fn boot_client_ecs_plugin() -> Result<(), hotline_rs::Error> {
 
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
-        plugins.insert("ecs".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../../plugins")
-        });
         plugins.insert("ecs_examples".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });
@@ -576,9 +573,6 @@ fn boot_client_ecs_plugin_demo(demo_name: &str) -> Result<(), hotline_rs::Error>
 
     // ecs plugin with no demo active
     if let Some(plugins) = &mut config.plugins {
-        plugins.insert("ecs".to_string(), PluginInfo {
-            path: hotline_rs::get_data_path("../../plugins")
-        });
         plugins.insert("ecs_examples".to_string(), PluginInfo {
             path: hotline_rs::get_data_path("../../plugins")
         });

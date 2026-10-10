@@ -12,9 +12,6 @@
     "height": 39
   },
   "plugins": {
-    "ecs": {
-      "path": "."
-    },
     "ecs_examples": {
       "path": "."
     }

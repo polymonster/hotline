@@ -57,7 +57,7 @@ You can run the binary `client` which allows code to be reloaded through `plugin
 cargo build
 
 // build plugins
-cargo build -p ecs -p ecs_examples
+cargo build -p ecs_examples
 
 // or the whole workspace
 cargo build --workspace

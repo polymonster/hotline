@@ -1,6 +1,14 @@
+/// Hosts the bevy ecs, it runs demos (schedules of setup, update and render systems) which are found by name inside
+/// plugin libs. The host is linked statically into a plugin with `hotline_ecs_plugin!` so the host and the systems it
+/// runs are compiled together and agree on bevy TypeIds, which is not the case across separately built libs
+
 use hotline_rs::pmfx::CameraConstants;
 use hotline_rs::prelude::*;
 use maths_rs::prelude::*;
+
+/// Shared components, resources and systems sets for use with bevy ecs
+mod ecs_base;
+pub use ecs_base::*;
 
 use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::SystemConfigs;
@@ -15,7 +23,10 @@ macro_rules! log_error {
     }
 }
 
-struct BevyPlugin {
+pub struct BevyPlugin {
+    /// Name of the plugin lib hosting the ecs, demos and systems are only looked up in this lib. When `None` all
+    /// loaded libs are searched
+    lib_name: Option<String>,
     world: World,
     main_camera: Option<Entity>,
     setup_schedule: Schedule,
@@ -342,10 +353,27 @@ fn update_cameras(
 }
 
 impl BevyPlugin {
+    /// Create an ecs host which only runs demos and systems from the plugin lib named `lib_name`
+    pub fn create_for_lib(lib_name: &str) -> Self {
+        BevyPlugin {
+            lib_name: Some(lib_name.to_string()),
+            ..Self::create()
+        }
+    }
+
+    /// Returns true if demos and systems should be searched for in the loaded lib `name`, only the hosting lib if
+    /// `lib_name` is set
+    fn searches_lib(&self, name: &str) -> bool {
+        self.lib_name.as_ref().map_or(true, |lib_name| name == lib_name)
+    }
+
     /// Finds get_system calls inside ecs compatible plugins, call the function `get_system_<lib_name>` to disambiguate
     fn get_system_function(&self, name: &str, view_name: &str, client: &PlatformClient) -> Option<SystemConfigs> {
         // find by export name
-        for (_, lib) in &client.libs {
+        for (lib_name, lib) in &client.libs {
+            if !self.searches_lib(lib_name) {
+                continue;
+            }
             unsafe {
                 let exported_function_name = format!("export_{}", name);
                 if view_name.is_empty() {
@@ -367,6 +395,9 @@ impl BevyPlugin {
 
         // deprecated using get_system function
         for (lib_name, lib) in &client.libs {
+            if !self.searches_lib(lib_name) {
+                continue;
+            }
             unsafe {
                 let function_name = format!("get_system_{}", lib_name).to_string();
                 let hook = lib.get_symbol::<unsafe extern "C" fn(String, String) -> Option<SystemConfigs>>(function_name.as_bytes());
@@ -385,6 +416,9 @@ impl BevyPlugin {
     fn get_demo_list(&self, client: &PlatformClient) -> Vec<String> {
         let mut demos = Vec::new();
         for (lib_name, lib) in &client.libs {
+            if !self.searches_lib(lib_name) {
+                continue;
+            }
             unsafe {
                 let function_name = format!("get_demos_{}", lib_name).to_string();
                 let list = lib.get_symbol::<unsafe extern "C" fn() ->  Vec<String>>(function_name.as_bytes());
@@ -409,7 +443,10 @@ impl BevyPlugin {
     fn get_demo_schedule_info(&self, client: &mut PlatformClient) -> Option<ScheduleInfo> {
         // Get schedule info from the chosen demo
         if !self.session_info.active_demo.is_empty() {
-            for (_, lib) in &client.libs {
+            for (lib_name, lib) in &client.libs {
+                if !self.searches_lib(lib_name) {
+                    continue;
+                }
                 unsafe {
                     let function_name = format!("{}", self.session_info.active_demo).to_string();
                     let demo = lib.get_symbol::<unsafe extern "C" fn(&mut PlatformClient) -> ScheduleInfo>(function_name.as_bytes());
@@ -587,6 +624,7 @@ impl BevyPlugin {
 impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     fn create() -> Self {
         BevyPlugin {
+            lib_name: None,
             world: World::new(),
             main_camera: None,
             setup_schedule: Schedule::default(),
@@ -915,8 +953,45 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
     }
 }
 
-//
-// Plugin
-//
+/// Host the ecs inside the calling plugin lib, so it is compiled together with the systems it runs. The host only runs
+/// demos and systems found inside this lib. Use once in a plugin's `lib.rs`:
+/// ```ignore
+/// ecs::hotline_ecs_plugin!();
+/// ```
+#[macro_export]
+macro_rules! hotline_ecs_plugin {
+    () => {
+        /// The ecs host for this plugin lib
+        pub struct EcsHost($crate::BevyPlugin);
 
-hotline_plugin![BevyPlugin];
+        impl hotline_rs::plugin::Plugin<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App> for EcsHost {
+            fn create() -> Self {
+                EcsHost($crate::BevyPlugin::create_for_lib(env!("CARGO_CRATE_NAME")))
+            }
+
+            fn setup(&mut self, client: &mut hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App>) {
+                self.0.setup(client)
+            }
+
+            fn update(&mut self, client: hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App>)
+                -> hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App> {
+                self.0.update(client)
+            }
+
+            fn ui(&mut self, client: &mut hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App>) {
+                self.0.ui(client)
+            }
+
+            fn unload(&mut self, client: &mut hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App>) {
+                self.0.unload(client)
+            }
+        }
+
+        mod ecs_host_exports {
+            use hotline_rs::{client, gfx_platform, os_platform};
+            use hotline_rs::plugin::Plugin;
+            use super::EcsHost;
+            hotline_rs::hotline_plugin![EcsHost];
+        }
+    }
+}

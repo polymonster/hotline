@@ -9,6 +9,7 @@ crate-type = ["cdylib"]
 [dependencies]
 hotline-rs.workspace = true
 export_macros = { path = "../export_macros" }
+ecs = { path = "../ecs" }
 maths-rs.workspace = true
 bevy_ecs.workspace = true
 rand = "0.8.5"

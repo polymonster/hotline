@@ -44,7 +44,7 @@
         client: {
             type: shell
             commands: [
-                "cargo build -p empty -p ecs -p ecs_examples ${config_flags}"
+                "cargo build -p empty -p ecs_examples ${config_flags}"
             ]
         }
         plugins: {

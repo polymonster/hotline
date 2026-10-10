@@ -31,6 +31,9 @@ mod raytraced_shadows;
 mod claude;
 
 use prelude::*;
+
+// host the ecs inside this plugin, so it is compiled together with the systems it runs
+ecs::hotline_ecs_plugin!();
 use hotline_rs::gfx::{RaytracingTLAS};
 
 pub fn load_material(
@@ -673,6 +676,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
 pub mod prelude {
     #[doc(hidden)]
     pub use hotline_rs::prelude::*;
+    pub use ecs::*;
     pub use maths_rs::prelude::*;
     pub use rand::prelude::*;
     pub use bevy_ecs::prelude::*;

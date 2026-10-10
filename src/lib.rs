@@ -32,9 +32,6 @@ pub mod plugin;
 /// Module to aid data / code file watching, rebuilding and reloading
 pub mod reloader;
 
-/// Shared types and resources for use with bevy ecs
-pub mod ecs_base;
-
 /// Use bitmask for flags
 #[macro_use]
 extern crate bitflags;
@@ -216,7 +213,6 @@ pub mod prelude {
         av_platform,
 
         // traits
-        ecs_base::*,
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
         pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData, WorldBufferReserveInfo, WorldBufferInfo},
         os::{App, Window},
@@ -228,10 +224,7 @@ pub mod prelude {
         av::{VideoPlayer},
 
         // macros
-        hotline_plugin,
-        system_func,
-        demos,
-        systems
+        hotline_plugin
     };
 }
 
@@ -253,7 +246,6 @@ pub mod prelude {
         os_platform,
 
         // traits
-        ecs_base::*,
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
         pmfx::{DrawData, MaterialData, PointLightData, SpotLightData, DirectionalLightData, WorldBufferReserveInfo, WorldBufferInfo},
         os::{App, Window},
@@ -265,10 +257,7 @@ pub mod prelude {
         av::{VideoPlayer},
 
         // macros
-        hotline_plugin,
-        system_func,
-        demos,
-        systems
+        hotline_plugin
     };
 }
 

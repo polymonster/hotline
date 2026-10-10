@@ -6,7 +6,6 @@
 use crate::os_platform;
 use crate::os::Window;
 
-use bevy_ecs::system::lifetimeless::Read;
 use cocoa::foundation::NSUInteger;
 use metal::MTLScissorRect;
 use metal::MTLStepFunction;

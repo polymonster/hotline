@@ -41,7 +41,6 @@ serde.workspace = true
 serde_json.workspace = true
 hot-lib-reloader = "0.6.4"
 libloading = "0.7.4"
-bevy_ecs.workspace = true
 ddsfile = "0.5.1"
 
 [build-dependencies]

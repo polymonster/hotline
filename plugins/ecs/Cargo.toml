@@ -3,8 +3,10 @@ name = "ecs"
 version = "0.1.0"
 edition = "2021"
 
+# the ecs host is linked statically into each plugin which runs it with `hotline_ecs_plugin!`, so the host and the
+# systems it runs are compiled together and agree on bevy TypeIds
 [lib]
-crate-type = ["cdylib"]
+crate-type = ["rlib"]
 
 [dependencies]
 hotline-rs.workspace = true

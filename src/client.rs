@@ -520,31 +520,69 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         self.swap_chain.swap(&mut self.device);
     }
 
-    /// This assumes you pass the path to a `Cargo.toml` for a `dylib` which you want to load dynamically
+    /// Load a plugin `dylib` dynamically from the cargo package at `<path>/<name>`, `path` can be absolute or relative
+    /// to the hotline directory, an empty path or "." is `hotline/plugins`. The plugin is rebuilt in its own cargo
+    /// workspace when its source changes, so plugins can live outside of the hotline repository
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
-    pub fn add_plugin_lib(&mut self, name: &str, _path: &str) {
-        let abs_path = super::get_data_path("../..");
+    pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
+        let hotline_path = PathBuf::from(super::get_data_path("../.."));
 
-        let lib_path = PathBuf::from(abs_path.to_string())
-            .join("target")
+        let plugin_parent = if path.is_empty() || path == "." {
+            hotline_path.join("plugins")
+        }
+        else if PathBuf::from(path).is_absolute() {
+            PathBuf::from(path)
+        }
+        else {
+            hotline_path.join(path)
+        };
+        let plugin_dir = plugin_parent.join(name);
+        let manifest = plugin_dir.join("Cargo.toml");
+
+        // forget plugins which no longer exist so they are not loaded from stale libs
+        if !manifest.exists() {
+            println!("hotline_rs::client:: plugin not found: {}", manifest.to_string_lossy());
+            if let Some(plugin_info) = &mut self.user_config.plugins {
+                plugin_info.remove(name);
+            }
+            return;
+        }
+
+        // find the cargo workspace the plugin is built in and where it outputs the lib
+        let package = match plugin::get_cargo_package_info(&manifest, name) {
+            Some(package) => package,
+            None => {
+                println!("hotline_rs::client:: failed to find cargo package for plugin: {}", manifest.to_string_lossy());
+                return;
+            }
+        };
+
+        // only dynamic libs can be loaded, crates which are linked statically into plugins are not plugins themselves
+        if !package.is_dylib {
+            println!("hotline_rs::client:: {} is not a dynamic lib, it cannot be loaded as a plugin", name);
+            if let Some(plugin_info) = &mut self.user_config.plugins {
+                plugin_info.remove(name);
+            }
+            return;
+        }
+        let workspace_root = package.workspace_root;
+        let target_dir = package.target_dir;
+
+        let lib_path = target_dir
             .join(crate::get_config_name())
             .to_str().unwrap().to_string();
 
-        let src_path = PathBuf::from(abs_path.to_string())
-            .join("plugins")
-            .join(name)
-            .join("src")
-            .join("lib.rs")
-            .to_str().unwrap().to_string();
+        let src_path = plugin_dir.join("src");
 
         let plugin = PluginReloadResponder {
             name: name.to_string(),
-            path: abs_path.to_string(),
+            path: workspace_root.to_str().unwrap().to_string(),
             output_filepath: lib_path.to_string(),
             files: vec![
-                src_path
+                src_path.join("lib.rs").to_str().unwrap().to_string()
             ],
+            src_path: src_path.to_str().unwrap().to_string(),
         };
 
         #[cfg(target_os = "windows")]
@@ -589,9 +627,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.user_config.plugins = Some(HashMap::new());
         }
 
-        // plugins inside the main repro can have the abs path truncated so they are portable
-        let hotline_path = super::get_data_path("../..").replace('\\', "/");
-        let path = abs_path.replace(&hotline_path, "").replace('\\', "/");
+        // plugins inside the hotline repo are stored as "." so they are portable, others by absolute path
+        let path = if plugin_parent == hotline_path.join("plugins") {
+            ".".to_string()
+        }
+        else {
+            plugin_parent.to_str().unwrap().replace('\\', "/")
+        };
 
         if let Some(plugin_info) = &mut self.user_config.plugins {
             if plugin_info.contains_key(name) {
@@ -794,9 +836,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             if plugin.state != PluginState::None {
                 unsafe {
                     let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                    let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
+                    let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance, *mut core::ffi::c_void)>("unload".as_bytes());
                     if let Ok(unload_fn) = unload {
-                        unload_fn(&mut self, plugin.instance);
+                        let imgui_ctx = self.imgui.get_current_context();
+                        unload_fn(&mut self, plugin.instance, imgui_ctx);
                     }
                 }
             }
@@ -858,9 +901,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
             unsafe {
                 if plugin.state == PluginState::Setup {
-                    let setup = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("setup".as_bytes());
+                    let setup = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void, *mut core::ffi::c_void)>("setup".as_bytes());
                     if let Ok(setup_fn) = setup {
-                        setup_fn(&mut self, plugin.instance);
+                        let imgui_ctx = self.imgui.get_current_context();
+                        setup_fn(&mut self, plugin.instance, imgui_ctx);
                     }
                 }
             }
@@ -871,9 +915,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             for plugin in &mut plugins {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
                 unsafe {
-                    let update = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void)>("update".as_bytes());
+                    let update = lib.get_symbol::<unsafe extern "C" fn(*mut Self, *mut core::ffi::c_void, *mut core::ffi::c_void)>("update".as_bytes());
                     if let Ok(update_fn) = update {
-                        update_fn(&mut self, plugin.instance);
+                        let imgui_ctx = self.imgui.get_current_context();
+                        update_fn(&mut self, plugin.instance, imgui_ctx);
                     }
                 }
                 plugin.state = PluginState::None;
@@ -891,9 +936,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         for plugin in &plugins {
             unsafe {
                 let lib = self.libs.get(&plugin.name).expect("hotline::client: lib missing for plugin");
-                let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance)>("unload".as_bytes());
+                let unload = lib.get_symbol::<unsafe extern "C" fn(*mut Self, PluginInstance, *mut core::ffi::c_void)>("unload".as_bytes());
                 if let Ok(unload_fn) = unload {
-                    unload_fn(&mut self, plugin.instance);
+                    let imgui_ctx = self.imgui.get_current_context();
+                    unload_fn(&mut self, plugin.instance, imgui_ctx);
                 }
             }
         }
