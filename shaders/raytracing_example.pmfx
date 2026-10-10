@@ -2,6 +2,14 @@
     include: [
         "raytracing_example.hlsl"
     ]
+    sampler_states: {
+        linear_clamp: {
+            filter: "Linear",
+            address_u: "Clamp",
+            address_v: "Clamp",
+            address_w: "Clamp",
+        }
+    }
 
     pipelines: {
         raytracing: {
@@ -21,6 +29,23 @@
                 miss_shaders: ["miss_shader"],
                 hit_groups: ["hit_group"],
             }
+        }
+        raytracing_inline: {
+            cs: cs_raytrace_inline,
+            push_constants: [
+                "raygen_constants"
+            ]
+        }
+        blit: {
+            vs: vs_blit,
+            ps: ps_blit,
+            push_constants: [
+                "blit_constants"
+            ]
+            static_samplers: {
+                blit_sampler: "linear_clamp"
+            }
+            topology: "TriangleList"
         }
     }
 }

@@ -5,6 +5,7 @@ use gfx::RaytracingInstanceInfo;
 use gfx::RaytracingTLASInfo;
 use hotline_rs::gfx::RaytracingTLAS;
 use hotline_rs::gfx::Texture;
+use hotline_rs::gfx::RenderPass;
 use hotline_rs::*;
 
 use gfx::CmdBuf;
@@ -13,6 +14,17 @@ use gfx::SwapChain;
 
 use os::App;
 use os::Window;
+
+/// Trace rays inline with RayQuery from a compute shader, instead of with a raytracing pipeline and `dispatch_rays`.
+/// Metal only supports inline raytracing, d3d12 supports both and defaults to the pipeline, set this to true to
+/// take the inline path on d3d12
+const INLINE_RAYTRACING: bool = cfg!(target_os = "macos");
+
+#[repr(C)]
+struct Vertex {
+    position: [f32; 2],
+    texcoord: [f32; 2],
+}
 
 /// Create an rw texture output for raytracing to write into
 fn create_raytracing_output(device: &mut gfx_platform::Device, window_rect: &os::Rect<i32>) -> gfx_platform::Texture {
@@ -49,6 +61,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     });
     println!("{}", device.get_adapter_info());
     println!("features: {:?}", device.get_feature_flags());
+    println!("raytracing: {}", if INLINE_RAYTRACING { "inline" } else { "pipeline" });
 
     // setup window and attach swapchain
     let mut window = app.create_window(os::WindowInfo {
@@ -71,10 +84,43 @@ fn main() -> Result<(), hotline_rs::Error> {
     let mut swap_chain = device.create_swap_chain::<os_platform::App>(&swap_chain_info, &window)?;
     let mut cmd = device.create_cmd_buf(num_buffers);
 
-    // pmfx for easier piepline loading, pipeline from raytracing_example.pmfx
+    // pmfx for easier piepline loading, pipelines from raytracing_example.pmfx
     let mut pmfx : pmfx::Pmfx<gfx_platform::Device> = pmfx::Pmfx::create(&mut device, 0);
     pmfx.load(&hotline_rs::get_data_path("shaders/raytracing_example"))?;
-    pmfx.create_raytracing_pipeline(&device, "raytracing")?;
+    if INLINE_RAYTRACING {
+        pmfx.create_compute_pipeline(&device, "raytracing_inline")?;
+    }
+    else {
+        pmfx.create_raytracing_pipeline(&device, "raytracing")?;
+    }
+    pmfx.create_render_pipeline(&device, "blit", swap_chain.get_backbuffer_pass())?;
+    let blit_fmt = swap_chain.get_backbuffer_pass().get_format_hash();
+
+    // fullscreen quad (NDC) to blit the output, texcoords flipped so (0,0) is top-left of the image
+    let quad_vertices = [
+        Vertex { position: [-1.0, -1.0], texcoord: [0.0, 1.0] },
+        Vertex { position: [-1.0,  1.0], texcoord: [0.0, 0.0] },
+        Vertex { position: [ 1.0,  1.0], texcoord: [1.0, 0.0] },
+        Vertex { position: [ 1.0, -1.0], texcoord: [1.0, 1.0] },
+    ];
+    let quad_vertex_buffer = device.create_buffer(&gfx::BufferInfo {
+        usage: BufferUsage::VERTEX,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::Unknown,
+        stride: std::mem::size_of::<Vertex>(),
+        num_elements: 4,
+        initial_state: gfx::ResourceState::VertexConstantBuffer
+    }, Some(gfx::as_u8_slice(&quad_vertices)))?;
+
+    let quad_indices: [u16; 6] = [0, 1, 2, 0, 2, 3];
+    let quad_index_buffer = device.create_buffer(&gfx::BufferInfo {
+        usage: BufferUsage::INDEX,
+        cpu_access: gfx::CpuAccessFlags::NONE,
+        format: gfx::Format::R16u,
+        stride: std::mem::size_of::<u16>(),
+        num_elements: 6,
+        initial_state: gfx::ResourceState::IndexBuffer
+    }, Some(gfx::as_u8_slice(&quad_indices)))?;
 
     // create geometry for the BLAS
     let index_buffer = device.create_buffer(&gfx::BufferInfo {
@@ -156,68 +202,107 @@ fn main() -> Result<(), hotline_rs::Error> {
         // build command buffer and make draw calls
         cmd.reset(&swap_chain);
 
-        let raytracing_pipeline = pmfx.get_raytracing_pipeline("raytracing")?;
-        cmd.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
-
-        // bind rw tex on u0
-        let uav0 =  raytracing_output.get_uav_index().expect("expect raytracing_output to have a uav");
-        cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::UnorderedAccess, device.get_shader_heap(), uav0);
-
-        // set push constants on b0
+        // viewport and stencil in screen space, shared by both paths
         let border = 0.1;
         let aspect = window_rect.width as f32 / window_rect.height as f32;
-        cmd.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 8, 0, gfx::as_u8_slice(&[
+        let raygen_constants = [
             // viewport
             -1.0 + border,
             -1.0 + border * aspect,
              1.0 - border,
              1.0 - border * aspect,
-            // scissor
+            // stencil
             -1.0 + border / aspect,
             -1.0 + border,
              1.0 - border / aspect,
              1.0 - border
-        ]));
+        ];
 
-        // bind tlas on t0
-        let srv0 =  tlas.get_srv_index().expect("expect tlas to have an srv");
-        cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv0);
+        let uav0 = raytracing_output.get_uav_index().expect("expect raytracing_output to have a uav");
+        let srv0 = tlas.get_srv_index().expect("expect tlas to have an srv");
 
-        cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
-            x: window_rect.width as u32,
-            y: window_rect.height as u32,
-            z: 1
+        cmd.begin_event(0xff00ff00, "Raytrace");
+        if INLINE_RAYTRACING {
+            // trace rays from a compute shader with RayQuery
+            let raytracing = pmfx.get_compute_pipeline("raytracing_inline")?;
+            cmd.set_compute_pipeline(raytracing);
+
+            // bind rw tex on u0, tlas on t0 and push constants on b0
+            cmd.set_binding(raytracing, 0, 0, gfx::DescriptorType::UnorderedAccess, device.get_shader_heap(), uav0);
+            cmd.set_binding(raytracing, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv0);
+            cmd.push_compute_constants(raytracing, 0, 0, 8, 0, gfx::as_u8_slice(&raygen_constants));
+
+            cmd.dispatch(gfx::Size3 {
+                x: (window_rect.width as u32 + 7) / 8,
+                y: (window_rect.height as u32 + 7) / 8,
+                z: 1
+            }, gfx::Size3 {
+                x: 8,
+                y: 8,
+                z: 1
+            });
+        }
+        else {
+            // trace rays with a raytracing pipeline
+            let raytracing_pipeline = pmfx.get_raytracing_pipeline("raytracing")?;
+            cmd.set_raytracing_pipeline(&raytracing_pipeline.pipeline);
+
+            // bind rw tex on u0, tlas on t0 and push constants on b0
+            cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::UnorderedAccess, device.get_shader_heap(), uav0);
+            cmd.set_binding(&raytracing_pipeline.pipeline, 0, 0, gfx::DescriptorType::ShaderResource, device.get_shader_heap(), srv0);
+            cmd.push_compute_constants(&raytracing_pipeline.pipeline, 0, 0, 8, 0, gfx::as_u8_slice(&raygen_constants));
+
+            cmd.dispatch_rays(&raytracing_pipeline.sbt, gfx::Size3 {
+                x: window_rect.width as u32,
+                y: window_rect.height as u32,
+                z: 1
+            });
+        }
+        cmd.end_event();
+
+        // blit the output to the back buffer
+        cmd.begin_event(0xff0000ff, "Blit");
+        cmd.transition_barrier(&gfx::TransitionBarrier {
+            texture: Some(&raytracing_output),
+            buffer: None,
+            state_before: gfx::ResourceState::UnorderedAccess,
+            state_after: gfx::ResourceState::ShaderResource,
         });
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
             state_before: gfx::ResourceState::Present,
-            state_after: gfx::ResourceState::CopyDst,
+            state_after: gfx::ResourceState::RenderTarget,
         });
 
-        cmd.transition_barrier(&gfx::TransitionBarrier {
-            texture: Some(&raytracing_output),
-            buffer: None,
-            state_before: gfx::ResourceState::UnorderedAccess,
-            state_after: gfx::ResourceState::CopySrc,
-        });
-
-        cmd.copy_texture_region(&swap_chain.get_backbuffer_texture(), 0, 0, 0, 0, &raytracing_output, None);
+        let blit = pmfx.get_render_pipeline_for_format("blit", blit_fmt)?;
+        cmd.begin_render_pass(swap_chain.get_backbuffer_pass_mut());
+        cmd.set_viewport(&gfx::Viewport::from(window_rect));
+        cmd.set_scissor_rect(&gfx::ScissorRect::from(window_rect));
+        cmd.set_render_pipeline(blit);
+        cmd.set_heap(blit, device.get_shader_heap());
+        cmd.set_index_buffer(&quad_index_buffer);
+        cmd.set_vertex_buffer(&quad_vertex_buffer, 0);
+        let blit_srv = [raytracing_output.get_srv_index().expect("expect raytracing_output to have an srv") as u32, 0, 0, 0];
+        cmd.push_render_constants(blit, 0, 0, 4, 0, gfx::as_u8_slice(&blit_srv));
+        cmd.draw_indexed_instanced(6, 1, 0, 0, 0);
+        cmd.end_render_pass();
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(swap_chain.get_backbuffer_texture()),
             buffer: None,
-            state_before: gfx::ResourceState::CopyDst,
+            state_before: gfx::ResourceState::RenderTarget,
             state_after: gfx::ResourceState::Present,
         });
 
         cmd.transition_barrier(&gfx::TransitionBarrier {
             texture: Some(&raytracing_output),
             buffer: None,
-            state_before: gfx::ResourceState::CopySrc,
+            state_before: gfx::ResourceState::ShaderResource,
             state_after: gfx::ResourceState::UnorderedAccess,
         });
+        cmd.end_event();
 
         cmd.close()?;
 

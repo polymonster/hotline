@@ -354,6 +354,104 @@ fn to_mtl_render_stage(stage: super::ShaderType) -> metal::MTLRenderStages {
     }
 }
 
+fn to_mtl_acceleration_structure_vertex_format(format: super::Format) -> result::Result<metal::MTLAttributeFormat, super::Error> {
+    match format {
+        super::Format::RG32f => Ok(metal::MTLAttributeFormat::Float2),
+        super::Format::RGB32f => Ok(metal::MTLAttributeFormat::Float3),
+        super::Format::RGBA32f => Ok(metal::MTLAttributeFormat::Float4),
+        _ => Err(super::Error {
+            msg: "hotline_rs::gfx::mtl: unsupported acceleration structure vertex format".to_string()
+        })
+    }
+}
+
+fn to_mtl_acceleration_structure_index_type(format: super::Format) -> result::Result<metal::MTLIndexType, super::Error> {
+    match format {
+        super::Format::R16u => Ok(metal::MTLIndexType::UInt16),
+        super::Format::R32u => Ok(metal::MTLIndexType::UInt32),
+        _ => Err(super::Error {
+            msg: "hotline_rs::gfx::mtl: unsupported acceleration structure index format".to_string()
+        })
+    }
+}
+
+/// metal-rs `descriptor()` constructors wrap an autoreleased object as owned, so the owned release on drop and the
+/// autorelease pool drain both release it. Retain it once so the owned wrapper is balanced
+fn retain_descriptor<T: metal::foreign_types::ForeignType>(descriptor: T) -> T {
+    unsafe {
+        let _: *mut objc::runtime::Object = msg_send![descriptor.as_ptr() as *mut objc::runtime::Object, retain];
+    }
+    descriptor
+}
+
+/// MTLAccelerationStructureUsage, which metal-rs does not define
+const MTL_ACCELERATION_STRUCTURE_USAGE_REFIT: NSUInteger = 1 << 0;
+const MTL_ACCELERATION_STRUCTURE_USAGE_PREFER_FAST_BUILD: NSUInteger = 1 << 1;
+
+fn to_mtl_acceleration_structure_usage(flags: super::AccelerationStructureBuildFlags) -> NSUInteger {
+    let mut usage = 0;
+    if flags.contains(super::AccelerationStructureBuildFlags::ALLOW_UPDATE) {
+        usage |= MTL_ACCELERATION_STRUCTURE_USAGE_REFIT;
+    }
+    if flags.contains(super::AccelerationStructureBuildFlags::PREFER_FAST_BUILD) {
+        usage |= MTL_ACCELERATION_STRUCTURE_USAGE_PREFER_FAST_BUILD;
+    }
+    usage
+}
+
+/// Convert hotline instances to metal instance descriptors, metal instances reference their BLAS by index into an
+/// array of acceleration structures (returned alongside), where d3d12 uses the BLAS address
+fn to_mtl_instance_descriptors(
+    instances: &[super::RaytracingInstanceInfo<Device>]
+) -> (Vec<metal::MTLAccelerationStructureUserIDInstanceDescriptor>, Vec<metal::AccelerationStructure>) {
+    let mut blases: Vec<metal::AccelerationStructure> = Vec::new();
+    let descriptors = instances.iter().map(|instance| {
+        let blas = &instance.blas.acceleration_structure;
+        let index = blases.iter().position(|b| std::ptr::eq::<metal::AccelerationStructureRef>(&**b, &**blas)).unwrap_or_else(|| {
+            blases.push(blas.clone());
+            blases.len() - 1
+        });
+
+        // hotline transforms are row-major 3x4, metal is column-major 4x3
+        let m = &instance.transform;
+        let mut transformation_matrix = [[0.0; 3]; 4];
+        for (c, column) in transformation_matrix.iter_mut().enumerate() {
+            for (r, value) in column.iter_mut().enumerate() {
+                *value = m[r * 4 + c];
+            }
+        }
+
+        metal::MTLAccelerationStructureUserIDInstanceDescriptor {
+            transformation_matrix,
+            // d3d12 instance flags (cull disable, front ccw, force opaque, force non opaque) share the metal bits
+            options: metal::MTLAccelerationStructureInstanceOptions::from_bits_truncate(instance.instance_flags),
+            mask: instance.instance_mask,
+            intersection_function_table_offset: instance.hit_group_index,
+            acceleration_structure_index: index as u32,
+            user_id: instance.instance_id,
+        }
+    }).collect();
+    (descriptors, blases)
+}
+
+/// Create an instance acceleration structure descriptor for `instance_count` instances in `instance_buffer`
+fn instance_acceleration_structure_descriptor(
+    instance_buffer: &metal::BufferRef,
+    instance_count: usize,
+    blases: &[metal::AccelerationStructure],
+    usage: NSUInteger
+) -> metal::InstanceAccelerationStructureDescriptor {
+    let desc = retain_descriptor(metal::InstanceAccelerationStructureDescriptor::descriptor());
+    let blas_refs: Vec<&metal::AccelerationStructureRef> = blases.iter().map(|b| b.as_ref()).collect();
+    desc.set_instanced_acceleration_structures(metal::Array::from_slice(&blas_refs));
+    desc.set_instance_descriptor_type(metal::MTLAccelerationStructureInstanceDescriptorType::UserID);
+    desc.set_instance_descriptor_buffer(instance_buffer);
+    desc.set_instance_descriptor_stride(std::mem::size_of::<metal::MTLAccelerationStructureUserIDInstanceDescriptor>() as NSUInteger);
+    desc.set_instance_count(instance_count as NSUInteger);
+    unsafe { let _: () = msg_send![&*desc, setUsage: usage]; }
+    desc
+}
+
 fn to_mtl_size(size: super::Size3) -> metal::MTLSize {
     metal::MTLSize::new(size.x as u64, size.y as u64, size.z as u64)
 }
@@ -416,6 +514,8 @@ fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
         super::ResourceType::ByteAddressBuffer |
         super::ResourceType::RWByteAddressBuffer |
         super::ResourceType::Buffer => metal::MTLDataType::Pointer,
+        // acceleration structures are bound from the heap's table of resource ids, see `ResourceBinder`
+        super::ResourceType::RaytracingAccelerationStructure => metal::MTLDataType::Pointer,
         _ => metal::MTLDataType::Texture, // Texture2D, RWTexture2D, etc.
     }
 }
@@ -444,6 +544,7 @@ pub struct Device {
     supports_stage_boundary_timestamps: bool,
     /// Built in kernel which translates indirect arguments, see `INDIRECT_CLAMP_MSL`
     indirect_clamp_pipeline: metal::ComputePipelineState,
+    feature_flags: DeviceFeatureFlags,
 }
 
 /// MTLCounterSamplingPoint::atStageBoundary — sampling at the boundary between encoder stages.
@@ -576,8 +677,10 @@ impl super::SwapChain<Device> for SwapChain {
     fn update<A: os::App>(&mut self, device: &mut Device, window: &A::Window, cmd: &mut CmdBuf) -> bool {
         objc::rc::autoreleasepool(|| {
             let draw_size = window.get_size();
+            let prev_size = self.layer.drawable_size();
             self.layer.set_contents_scale(window.get_dpi_scale() as f64);
             self.layer.set_drawable_size(CGSize::new(draw_size.x as f64, draw_size.y as f64));
+            let resized = prev_size.width != draw_size.x as f64 || prev_size.height != draw_size.y as f64;
 
             let drawable = self.layer.next_drawable()
                 .expect("hotline_rs::gfx::mtl failed to get next drawable to create swap chain!");
@@ -596,10 +699,9 @@ impl super::SwapChain<Device> for SwapChain {
 
             self.backbuffer_pass = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, self.backbuffer_clear);
             self.backbuffer_pass_no_clear = device.create_render_pass_for_swap_chain(&self.backbuffer_texture, None);
-        });
 
-        // TODO: check usage
-        true
+            resized
+        })
     }
 
     fn get_backbuffer_index(&self) -> u32 {
@@ -794,10 +896,14 @@ impl CmdBuf {
                 );
             }
             encoder.use_heap_at(&heap.mtl_heap, render_stage);
+            for acceleration_structure in heap.acceleration_structure_slots.iter().flatten() {
+                acceleration_structure.use_resources(|r| encoder.use_resource_at(r, metal::MTLResourceUsage::Read, render_stage));
+            }
 
             for slot in binder.values() {
                 if let PipelineStageBinder::Resource(res) = slot {
                     let arg_buffer = match res.data_type {
+                        _ if res.acceleration_structure => &heap.acceleration_structure_argument_buffer,
                         metal::MTLDataType::Texture => heap.get_texture_argument_buffer(),
                         metal::MTLDataType::Pointer => heap.get_buffer_argument_buffer(),
                         _ => continue,
@@ -918,17 +1024,40 @@ impl CmdBuf {
             }
         }
 
-        // Group resource bindings by buffer_index, skipping groups where nothing is dirty
-        let mut groups: HashMap<u32, Vec<&ResourceBinder>> = HashMap::new();
+        let render_stage = to_mtl_render_stage(stage);
+
+        // acceleration structures bind the heap's table of resource ids at the slot's offset, which has the same
+        // layout as an argument buffer holding a single acceleration structure
         for b in binder.values() {
             if let PipelineStageBinder::Resource(rb) = b {
-                if rb.bound_resource.is_some() && rb.dirty {
-                    groups.entry(rb.buffer_index).or_default().push(rb);
+                if let (true, true, Some(binding)) = (rb.acceleration_structure, rb.dirty, rb.bound_resource) {
+                    let heap = unsafe { &*binding.heap_ptr };
+                    if let Some(Some(slot)) = heap.acceleration_structure_slots.get(binding.offset) {
+                        slot.use_resources(|r| encoder.use_resource_at(r, metal::MTLResourceUsage::Read, render_stage));
+                    }
+                    let index = rb.buffer_index as u64;
+                    let buffer = Some(heap.acceleration_structure_argument_buffer.as_ref());
+                    let offset = (binding.offset * std::mem::size_of::<metal::MTLResourceID>()) as u64;
+                    match stage {
+                        super::ShaderType::Vertex => encoder.set_vertex_buffer(index, buffer, offset),
+                        super::ShaderType::Fragment => encoder.set_fragment_buffer(index, buffer, offset),
+                        super::ShaderType::Mesh => encoder.set_mesh_buffer(index, buffer, offset),
+                        super::ShaderType::Amplification => encoder.set_object_buffer(index, buffer, offset),
+                        _ => unimplemented!(),
+                    }
                 }
             }
         }
 
-        let render_stage = to_mtl_render_stage(stage);
+        // Group resource bindings by buffer_index, skipping groups where nothing is dirty
+        let mut groups: HashMap<u32, Vec<&ResourceBinder>> = HashMap::new();
+        for b in binder.values() {
+            if let PipelineStageBinder::Resource(rb) = b {
+                if rb.bound_resource.is_some() && rb.dirty && !rb.acceleration_structure {
+                    groups.entry(rb.buffer_index).or_default().push(rb);
+                }
+            }
+        }
 
         // Allocate resource bindings (grouped by buffer_index)
         for (buffer_index, mut binders) in groups {
@@ -1033,11 +1162,29 @@ impl CmdBuf {
             }
         }
 
+        // acceleration structures bind the heap's table of resource ids at the slot's offset, which has the same
+        // layout as an argument buffer holding a single acceleration structure
+        for b in binder.values() {
+            if let PipelineStageBinder::Resource(rb) = b {
+                if let (true, true, Some(binding)) = (rb.acceleration_structure, rb.dirty, rb.bound_resource) {
+                    let heap = unsafe { &*binding.heap_ptr };
+                    if let Some(Some(slot)) = heap.acceleration_structure_slots.get(binding.offset) {
+                        slot.use_resources(|r| encoder.use_resource(r, metal::MTLResourceUsage::Read));
+                    }
+                    encoder.set_buffer(
+                        rb.buffer_index as u64,
+                        Some(&heap.acceleration_structure_argument_buffer),
+                        (binding.offset * std::mem::size_of::<metal::MTLResourceID>()) as u64
+                    );
+                }
+            }
+        }
+
         // explicitly bound resources, grouped by buffer_index
         let mut groups: HashMap<u32, Vec<&ResourceBinder>> = HashMap::new();
         for b in binder.values() {
             if let PipelineStageBinder::Resource(rb) = b {
-                if rb.bound_resource.is_some() && rb.dirty {
+                if rb.bound_resource.is_some() && rb.dirty && !rb.acceleration_structure {
                     groups.entry(rb.buffer_index).or_default().push(rb);
                 }
             }
@@ -1380,9 +1527,13 @@ impl super::CmdBuf<Device> for CmdBuf {
             for buffer in heap.buffer_slots.iter().flatten() {
                 encoder.use_resource(buffer, metal::MTLResourceUsage::Read | metal::MTLResourceUsage::Write);
             }
+            for acceleration_structure in heap.acceleration_structure_slots.iter().flatten() {
+                acceleration_structure.use_resources(|r| encoder.use_resource(r, metal::MTLResourceUsage::Read));
+            }
             for (_key, slot) in &cp.compute_binder {
                 if let PipelineStageBinder::Resource(res) = slot {
                     let arg_buffer = match res.data_type {
+                        _ if res.acceleration_structure => &heap.acceleration_structure_argument_buffer,
                         metal::MTLDataType::Texture => heap.get_texture_argument_buffer(),
                         metal::MTLDataType::Pointer => heap.get_buffer_argument_buffer(),
                         _ => continue,
@@ -1734,7 +1885,44 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn update_raytracing_tlas(&mut self, tlas: &RaytracingTLAS, instance_buffer: &Buffer, instance_count: usize, mode: AccelerationStructureRebuildMode) {
-        unimplemented!()
+        objc::rc::autoreleasepool(|| {
+            assert!(self.render_encoder.is_none(),
+                "hotline_rs::gfx::mtl update_raytracing_tlas cannot be called inside a render pass");
+
+            // close any open compute encoder - Metal forbids two live encoders on one cmd buffer
+            if let Some(enc) = self.compute_encoder.take() {
+                enc.end_encoding();
+            }
+
+            let blases = instance_buffer.instance_acceleration_structures.clone();
+            let desc = instance_acceleration_structure_descriptor(
+                &instance_buffer.metal_buffer, instance_count, &blases, tlas.usage);
+
+            let encoder = self.cmd.as_ref()
+                .expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before update_raytracing_tlas")
+                .new_acceleration_structure_command_encoder();
+
+            // refit in place when the tlas was built to allow it, otherwise rebuild
+            let refit = matches!(mode, AccelerationStructureRebuildMode::Refit)
+                && tlas.usage & MTL_ACCELERATION_STRUCTURE_USAGE_REFIT != 0;
+            if refit {
+                let destination: *const metal::AccelerationStructureRef = std::ptr::null();
+                unsafe {
+                    let _: () = msg_send![encoder,
+                        refitAccelerationStructure: &*tlas.acceleration_structure
+                        descriptor: &*desc
+                        destination: destination
+                        scratchBuffer: &*tlas.scratch_buffer
+                        scratchBufferOffset: 0 as NSUInteger];
+                }
+            }
+            else {
+                encoder.build_acceleration_structure(&tlas.acceleration_structure, &desc, &tlas.scratch_buffer, 0);
+            }
+            encoder.end_encoding();
+
+            *tlas.blases.lock().unwrap() = blases;
+        });
     }
 }
 
@@ -1749,6 +1937,8 @@ pub struct Buffer {
     counter_sample_index: usize,
     // Metal substitute for a D3D12 GPU fence: wait_until_completed before resolving counter data
     counter_cmd: Option<metal::CommandBuffer>,
+    /// For instance buffers from `create_raytracing_instance_buffer`, the BLASes the instances index
+    instance_acceleration_structures: Vec<metal::AccelerationStructure>,
 }
 
 impl super::Buffer<Device> for Buffer {
@@ -1832,6 +2022,9 @@ struct ResourceBinder {
     pub buffer_index: u32,
     pub binding_index: u32,
     pub data_type: metal::MTLDataType,
+    /// Acceleration structures are not encoded into an argument buffer, they are bound from the heap's table of
+    /// acceleration structure resource ids, see `Heap::acceleration_structure_argument_buffer`
+    pub acceleration_structure: bool,
     pub array_length: u64,
     pub bound_resource: Option<ResourceBinding>,
     pub dirty: bool,
@@ -2041,6 +2234,28 @@ impl super::Pipeline for ComputePipeline {
     }
 }
 
+/// The BLASes instanced by a TLAS. metal does not follow the references inside an acceleration structure, so they
+/// must be made resident wherever the TLAS is used. Shared between the TLAS and its heap slot so
+/// `update_raytracing_tlas` can change them
+type SharedAccelerationStructures = std::sync::Arc<std::sync::Mutex<Vec<metal::AccelerationStructure>>>;
+
+/// A TLAS allocated in a heap with the BLASes it instances
+#[derive(Clone)]
+struct HeapAccelerationStructure {
+    tlas: metal::AccelerationStructure,
+    blases: SharedAccelerationStructures,
+}
+
+impl HeapAccelerationStructure {
+    /// Call `use_resource` with the TLAS and each of its BLASes to make them resident
+    fn use_resources<F: Fn(&metal::ResourceRef)>(&self, use_resource: F) {
+        use_resource(&self.tlas);
+        for blas in self.blases.lock().unwrap().iter() {
+            use_resource(blas);
+        }
+    }
+}
+
 #[derive(Clone)]
 enum HeapResourceType {
     None,
@@ -2064,6 +2279,11 @@ pub struct Heap {
     buffer_argument_encoder: metal::ArgumentEncoder,
     /// Pre-encoded argument buffer containing all buffer references
     buffer_argument_buffer: metal::Buffer,
+    /// TLASes allocated in the heap
+    acceleration_structure_slots: Vec<Option<HeapAccelerationStructure>>,
+    /// gpuResourceIDs of the TLASes in the heap, which is the layout of an argument buffer array of acceleration
+    /// structures. Bound whole for bindless access, or at an offset of `slot * 8` for a single acceleration structure
+    acceleration_structure_argument_buffer: metal::Buffer,
 }
 
 impl Heap {
@@ -2074,6 +2294,7 @@ impl Heap {
             self.texture_slots.resize(self.offset, None);
             self.buffer_slots.resize(self.offset, None);
         }
+        self.acceleration_structure_slots.resize(self.offset, None);
         self.resource_type.resize(self.offset, HeapResourceType::None);
         srv
     }
@@ -2088,6 +2309,18 @@ impl Heap {
     fn encode_buffer(&self, index: usize, buffer: &metal::Buffer) {
         self.buffer_argument_encoder.set_argument_buffer(&self.buffer_argument_buffer, 0);
         self.buffer_argument_encoder.set_buffer(index as u64, buffer, 0);
+    }
+
+    /// Store a TLAS at the given index and write its gpuResourceID into the acceleration structure argument buffer
+    fn encode_acceleration_structure(&mut self, index: usize, acceleration_structure: HeapAccelerationStructure) {
+        let capacity = self.acceleration_structure_argument_buffer.length() as usize / std::mem::size_of::<metal::MTLResourceID>();
+        assert!(index < capacity, "hotline_rs::gfx::mtl: heap is full, cannot allocate acceleration structure at index {}", index);
+        let id: metal::MTLResourceID = unsafe { msg_send![&*acceleration_structure.tlas, gpuResourceID] };
+        unsafe {
+            let ids = self.acceleration_structure_argument_buffer.contents() as *mut metal::MTLResourceID;
+            *ids.add(index) = id;
+        }
+        self.acceleration_structure_slots[index] = Some(acceleration_structure);
     }
 
     /// Get the pre-encoded texture argument buffer for binding
@@ -2145,8 +2378,23 @@ pub struct CommandSignature {
     push_constants: Vec<IndirectPushConstants>,
 }
 
+/// Raytracing pipelines are not supported on metal, which only has inline raytracing, see `create_raytracing_pipeline`
 pub struct RaytracingPipeline {
+    slots: Vec<u32>,
+}
 
+impl super::Pipeline for RaytracingPipeline {
+    fn get_pipeline_slot(&self, _register: u32, _space: u32, _descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        None
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Compute
+    }
 }
 
 pub struct RaytracingShaderBindingTable {
@@ -2154,11 +2402,18 @@ pub struct RaytracingShaderBindingTable {
 }
 
 pub struct RaytracingBLAS {
-
+    acceleration_structure: metal::AccelerationStructure,
 }
 
 pub struct RaytracingTLAS {
-
+    acceleration_structure: metal::AccelerationStructure,
+    blases: SharedAccelerationStructures,
+    /// Scratch buffer for rebuilding or refitting in `update_raytracing_tlas`
+    scratch_buffer: metal::Buffer,
+    /// MTLAccelerationStructureUsage the TLAS was built with
+    usage: NSUInteger,
+    srv_index: Option<usize>,
+    heap_id: Option<u16>,
 }
 
 impl Device {
@@ -2278,6 +2533,12 @@ impl Device {
                 metal::MTLResourceOptions::StorageModeShared
             );
 
+            // table of acceleration structure gpuResourceIDs for bindless access
+            let acceleration_structure_argument_buffer = mtl_device.new_buffer(
+                max_resources * std::mem::size_of::<metal::MTLResourceID>() as u64,
+                metal::MTLResourceOptions::StorageModeShared
+            );
+
         Heap {
             mtl_heap: heap,
             texture_slots: Vec::new(),
@@ -2289,6 +2550,8 @@ impl Device {
             texture_argument_buffer,
             buffer_argument_encoder,
             buffer_argument_buffer,
+            acceleration_structure_slots: Vec::new(),
+            acceleration_structure_argument_buffer,
         }
     }
 
@@ -2346,6 +2609,7 @@ impl Device {
             };
 
             Ok(Buffer{
+                instance_acceleration_structures: Vec::new(),
                 metal_buffer: buf,
                 element_stride: info.stride,
                 srv_index,
@@ -2354,6 +2618,68 @@ impl Device {
                 counter_sample_buffer: None,
                 counter_sample_index: 0,
                 counter_cmd: None,
+            })
+        })
+    }
+
+    /// Build an acceleration structure on the device queue and wait for it to complete. Returns the acceleration
+    /// structure and a scratch buffer big enough to rebuild or refit it later
+    fn build_acceleration_structure_mtl(
+        metal_device: &metal::Device,
+        command_queue: &metal::CommandQueue,
+        desc: &metal::AccelerationStructureDescriptorRef
+    ) -> (metal::AccelerationStructure, metal::Buffer) {
+        let sizes = metal_device.acceleration_structure_sizes_with_descriptor(desc);
+        let acceleration_structure = metal_device.new_acceleration_structure_with_size(sizes.acceleration_structure_size);
+        let scratch_buffer = metal_device.new_buffer(
+            sizes.build_scratch_buffer_size.max(sizes.refit_scratch_buffer_size).max(1),
+            metal::MTLResourceOptions::StorageModePrivate
+        );
+
+        let cmd = command_queue.new_command_buffer();
+        let encoder = cmd.new_acceleration_structure_command_encoder();
+        encoder.build_acceleration_structure(&acceleration_structure, desc, &scratch_buffer, 0);
+        encoder.end_encoding();
+        cmd.commit();
+        cmd.wait_until_completed();
+
+        (acceleration_structure, scratch_buffer)
+    }
+
+    /// Create a TLAS and allocate it in `heap`. Takes the metal device and queue rather than self so
+    /// `create_raytracing_tlas` can pass the device shader heap
+    fn create_raytracing_tlas_mtl(
+        metal_device: &metal::Device,
+        command_queue: &metal::CommandQueue,
+        info: &RaytracingTLASInfo<Device>,
+        heap: &mut Heap
+    ) -> result::Result<RaytracingTLAS, super::Error> {
+        objc::rc::autoreleasepool(|| {
+            let (descriptors, blases) = to_mtl_instance_descriptors(info.instances);
+            let instance_buffer = metal_device.new_buffer_with_data(
+                descriptors.as_ptr() as *const std::ffi::c_void,
+                (descriptors.len().max(1) * std::mem::size_of::<metal::MTLAccelerationStructureUserIDInstanceDescriptor>()) as u64,
+                metal::MTLResourceOptions::StorageModeShared
+            );
+
+            let usage = to_mtl_acceleration_structure_usage(info.build_flags);
+            let desc = instance_acceleration_structure_descriptor(&instance_buffer, descriptors.len(), &blases, usage);
+            let (acceleration_structure, scratch_buffer) = Self::build_acceleration_structure_mtl(metal_device, command_queue, &desc);
+
+            let blases = std::sync::Arc::new(std::sync::Mutex::new(blases));
+            let srv_index = heap.allocate();
+            heap.encode_acceleration_structure(srv_index, HeapAccelerationStructure {
+                tlas: acceleration_structure.clone(),
+                blases: blases.clone(),
+            });
+
+            Ok(RaytracingTLAS {
+                acceleration_structure,
+                blases,
+                scratch_buffer,
+                usage,
+                srv_index: Some(srv_index),
+                heap_id: Some(heap.id),
             })
         })
     }
@@ -2493,12 +2819,12 @@ impl Device {
                     binding_offset += 1;
                     idx
                 });
+                let resource_type = binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding");
                 binder.insert(key, PipelineStageBinder::Resource(ResourceBinder {
                     buffer_index,
                     binding_index: 0,
-                    data_type: to_mtl_data_type(
-                        binding.resource_type.expect("hotline_rs::gfx::mtl: requires resource type for binding")
-                    ),
+                    data_type: to_mtl_data_type(resource_type),
+                    acceleration_structure: matches!(resource_type, super::ResourceType::RaytracingAccelerationStructure),
                     array_length: binding.num_descriptors.map(|n| n as u64).unwrap_or(MAX_BINDLESS_TEXTURES),
                     bound_resource: None,
                     dirty: true,
@@ -2570,9 +2896,18 @@ impl super::Device for Device {
                     .expect("hotline_rs::gfx::mtl: failed to create indirect clamp pipeline")
             };
 
+            let mut feature_flags = DeviceFeatureFlags::NONE;
+            if device.supports_raytracing() {
+                feature_flags |= DeviceFeatureFlags::RAYTRACING;
+            }
+            if device.supports_family(metal::MTLGPUFamily::Metal3) {
+                feature_flags |= DeviceFeatureFlags::MESH_SAHDER;
+            }
+
             Device {
                 command_queue: command_queue,
                 indirect_clamp_pipeline,
+                feature_flags,
                 shader_heap: Self::create_heap_mtl(&device, &HeapInfo{
                     heap_type: HeapType::Shader,
                     num_descriptors: info.shader_heap_size,
@@ -2587,7 +2922,7 @@ impl super::Device for Device {
     }
 
     fn get_feature_flags(&self) -> &DeviceFeatureFlags {
-        unimplemented!()
+        &self.feature_flags
     }
 
     fn create_heap(&mut self, info: &HeapInfo) -> Heap {
@@ -2993,6 +3328,7 @@ impl super::Device for Device {
             let buf = self.metal_device.new_buffer(byte_len, opt);
 
             Ok(Buffer{
+                instance_acceleration_structures: Vec::new(),
                 metal_buffer: buf,
                 element_stride: size,
                 srv_index: None,
@@ -3303,7 +3639,51 @@ impl super::Device for Device {
         &mut self,
         info: &RaytracingBLASInfo<Self>
     ) -> result::Result<RaytracingBLAS, super::Error> {
-        unimplemented!()
+        objc::rc::autoreleasepool(|| {
+            let geometry: metal::AccelerationStructureGeometryDescriptor = match &info.geometry {
+                super::RaytracingGeometryInfo::Triangles(tris) => {
+                    if tris.transform3x4.is_some() {
+                        return Err(super::Error {
+                            msg: "hotline_rs::gfx::mtl: blas transform3x4 is not yet supported".to_string()
+                        });
+                    }
+                    let desc = retain_descriptor(metal::AccelerationStructureTriangleGeometryDescriptor::descriptor());
+                    desc.set_vertex_buffer(Some(&tris.vertex_buffer.metal_buffer));
+                    desc.set_vertex_stride(tris.vertex_stride as NSUInteger);
+                    desc.set_vertex_format(to_mtl_acceleration_structure_vertex_format(tris.vertex_format)?);
+                    desc.set_index_buffer(Some(&tris.index_buffer.metal_buffer));
+                    desc.set_index_type(to_mtl_acceleration_structure_index_type(tris.index_format)?);
+                    desc.set_triangle_count((tris.index_count / 3) as NSUInteger);
+                    desc.set_opaque(info.geometry_flags.contains(super::RaytracingGeometryFlags::OPAQUE));
+                    let parent: &metal::AccelerationStructureGeometryDescriptorRef = &desc;
+                    parent.to_owned()
+                }
+                super::RaytracingGeometryInfo::AABBs(aabbs) => {
+                    let buffer = aabbs.aabbs.ok_or(super::Error {
+                        msg: "hotline_rs::gfx::mtl: blas aabbs requires an aabb buffer".to_string()
+                    })?;
+                    // d3d12 and metal aabbs are both 6 floats (min xyz, max xyz)
+                    let desc = retain_descriptor(metal::AccelerationStructureBoundingBoxGeometryDescriptor::descriptor());
+                    desc.set_bounding_box_buffer(Some(&buffer.metal_buffer));
+                    desc.set_bounding_box_count(aabbs.aabb_count as NSUInteger);
+                    desc.set_opaque(info.geometry_flags.contains(super::RaytracingGeometryFlags::OPAQUE));
+                    let parent: &metal::AccelerationStructureGeometryDescriptorRef = &desc;
+                    parent.to_owned()
+                }
+            };
+
+            let desc = retain_descriptor(metal::PrimitiveAccelerationStructureDescriptor::descriptor());
+            desc.set_geometry_descriptors(metal::Array::from_slice(&[geometry.as_ref()]));
+            let usage = to_mtl_acceleration_structure_usage(info.build_flags);
+            unsafe { let _: () = msg_send![&*desc, setUsage: usage]; }
+
+            let (acceleration_structure, _) = Self::build_acceleration_structure_mtl(
+                &self.metal_device, &self.command_queue, &desc);
+
+            Ok(RaytracingBLAS {
+                acceleration_structure
+            })
+        })
     }
 
     fn create_raytracing_shader_binding_table(
@@ -3577,14 +3957,24 @@ impl super::Device for Device {
         &mut self,
         instances: &Vec<RaytracingInstanceInfo<Self>>
     ) -> Result<Buffer, Error> {
-        unimplemented!()
+        let (descriptors, blases) = to_mtl_instance_descriptors(instances);
+        let mut buffer = self.create_buffer::<metal::MTLAccelerationStructureUserIDInstanceDescriptor>(&BufferInfo {
+            usage: BufferUsage::NONE,
+            cpu_access: CpuAccessFlags::WRITE,
+            format: super::Format::Unknown,
+            stride: std::mem::size_of::<metal::MTLAccelerationStructureUserIDInstanceDescriptor>(),
+            num_elements: descriptors.len().max(1),
+            initial_state: ResourceState::GenericRead,
+        }, Some(&descriptors))?;
+        buffer.instance_acceleration_structures = blases;
+        Ok(buffer)
     }
 
     fn create_raytracing_tlas(
         &mut self,
         info: &RaytracingTLASInfo<Self>
     ) -> Result<Self::RaytracingTLAS, Error> {
-        unimplemented!()
+        Self::create_raytracing_tlas_mtl(&self.metal_device, &self.command_queue, info, &mut self.shader_heap)
     }
 
     fn create_resource_view(
@@ -3601,7 +3991,7 @@ impl super::Device for Device {
         info: &RaytracingTLASInfo<Self>,
         heap: &mut Heap
     ) -> Result<RaytracingTLAS, Error> {
-        unimplemented!()
+        Self::create_raytracing_tlas_mtl(&self.metal_device, &self.command_queue, info, heap)
     }
 
 }
@@ -3640,10 +4030,10 @@ impl super::RaytracingBLAS<Device> for RaytracingBLAS {}
 
 impl super::RaytracingTLAS<Device> for RaytracingTLAS {
     fn get_srv_index(&self) -> Option<usize> {
-        unimplemented!()
+        self.srv_index
     }
 
     fn get_shader_heap_id(&self) -> u16 {
-        unimplemented!()
+        self.heap_id.expect("hotline_rs::gfx::mtl: expected tlas to be allocated in a heap")
     }
 }
