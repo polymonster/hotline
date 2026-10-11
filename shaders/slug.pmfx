@@ -1,0 +1,34 @@
+{
+    include: [
+        "slug.hlsl"
+    ]
+    render_target_blend_states: {
+        premultiplied_alpha: {
+            blend_enabled: true
+            src_blend: One
+            dst_blend: InvSrcAlpha
+        }
+    }
+    blend_states: {
+        premultiplied_alpha: {
+            render_target: ["premultiplied_alpha"]
+        }
+    }
+    raster_states: {
+        cull_none: {
+            cull_mode: None
+        }
+    }
+    pipelines: {
+        slug_text: {
+            vs: vs_slug,
+            ps: ps_slug,
+            push_constants: [
+                "slug_params"
+            ]
+            blend_state: "premultiplied_alpha"
+            raster_state: "cull_none"
+            topology: "TriangleList"
+        }
+    }
+}

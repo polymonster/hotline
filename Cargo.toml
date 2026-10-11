@@ -42,6 +42,7 @@ serde_json.workspace = true
 hot-lib-reloader = "0.6.4"
 libloading = "0.7.4"
 ddsfile = "0.5.1"
+ttf-parser = "0.25.1"
 
 [build-dependencies]
 htwv = { path = "hotline-data/htwv" }
@@ -117,6 +118,10 @@ crate-type = ["bin"]
 
 [[example]]
 name = "play_video"
+crate-type = ["bin"]
+
+[[example]]
+name = "slug_text"
 crate-type = ["bin"]
 
 [[example]]

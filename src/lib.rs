@@ -22,6 +22,9 @@ pub mod pmfx;
 /// Primitive geometry meshes (quad, cube, sphere, etc).
 pub mod primitives;
 
+/// Gpu text rendering directly from glyph outlines with the Slug algorithm.
+pub mod slug;
+
 /// Hotline clinet context contains an `App`, `Device`, `SwapChain` and main `Window` automatically setup
 /// It can load code dynamically from other `dylibs` or `dlls` abnd provides a very thin run loop for you to hook your own plugins into.
 pub mod client;
