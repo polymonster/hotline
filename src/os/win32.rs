@@ -193,6 +193,7 @@ const fn to_win32_key_code(key: super::Key) -> i32 {
         super::Key::Enter => VK_RETURN.0 as i32,
         super::Key::Escape => VK_ESCAPE.0 as i32,
         super::Key::KeyPadEnter => VK_RETURN.0 as i32,
+        super::Key::F => VK_F.0 as i32,
     }
 }
 

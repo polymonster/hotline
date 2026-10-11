@@ -62,6 +62,7 @@ pub enum Key {
     Enter,
     Escape,
     KeyPadEnter,
+    F,
 }
 
 /// Enums for different mouse cursors

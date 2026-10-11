@@ -76,6 +76,13 @@ There are included `tasks` and `launch` files for vscode including configuration
 
 Plugins are loaded by passing a directory to [add_plugin_lib](https://docs.rs/hotline-rs/latest/hotline_rs/client/struct.Client.html#method.add_plugin_lib) which contains a `Cargo.toml` and is a dynamic library. They can be opened interactively in the client using the `File > Open` from the main menu bar by selecting the `Cargo.toml`.
 
+Plugins can also be passed to the client on the command line with `--plugin <path>`, where path is the plugin directory or its `Cargo.toml`. Plugins passed this way replace the plugins from the previous session. This allows plugins to live outside of the hotline repository and be built in their own cargo workspace, for example from a sibling project. `--demo <name>` boots straight into an `ecs` demo:
+
+```text
+cargo build
+cargo run --manifest-path ../hotline/Cargo.toml --bin client -- --plugin . --demo my_demo
+```
+
 The basic `Cargo.toml` setup looks like this:
 
 ```toml

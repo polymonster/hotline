@@ -518,6 +518,7 @@ impl super::App for App {
             super::Key::Enter => winit::keyboard::KeyCode::Enter as i32,
             super::Key::Escape => winit::keyboard::KeyCode::Escape as i32,
             super::Key::KeyPadEnter => winit::keyboard::KeyCode::NumpadEnter as i32,
+            super::Key::F => winit::keyboard::KeyCode::KeyF as i32,
         }
     }
 

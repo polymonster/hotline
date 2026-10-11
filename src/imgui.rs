@@ -1070,6 +1070,43 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         }
     }
 
+    /// Ends the frame without rendering, use instead of `render` when the ui is hidden
+    pub fn end_frame(&mut self) {
+        unsafe {
+            igEndFrame();
+        }
+    }
+
+    /// Returns the screen space position and size of the main viewport (the main window's client area) in points
+    pub fn get_main_viewport_rect(&self) -> ((f32, f32), (f32, f32)) {
+        unsafe {
+            let viewport = &*igGetMainViewport();
+            ((viewport.Pos.x, viewport.Pos.y), (viewport.Size.x, viewport.Size.y))
+        }
+    }
+
+    /// Ends the frame rendering only the main viewport's foreground draw list (`draw_text`, `draw_rect` etc), no
+    /// windows. Use in place of `render` when the ui is hidden but huds drawn over the main view should still show
+    pub fn render_foreground(&mut self, device: &mut D, cmd: &mut D::CmdBuf, image_heaps: &Vec<&D::Heap>) {
+        unsafe {
+            igRender();
+            let viewport = &*igGetMainViewport();
+            let mut list = igGetForegroundDrawListViewportPtr(igGetMainViewport());
+            let draw_data = ImDrawData {
+                Valid: true,
+                CmdListsCount: 1,
+                TotalIdxCount: (*list).IdxBuffer.Size,
+                TotalVtxCount: (*list).VtxBuffer.Size,
+                CmdLists: &mut list,
+                DisplayPos: viewport.Pos,
+                DisplaySize: viewport.Size,
+                FramebufferScale: (*igGetDrawData()).FramebufferScale,
+                OwnerViewport: igGetMainViewport()
+            };
+            render_draw_data::<D>(&draw_data, device, cmd, image_heaps, &mut self.buffers, &self.pipeline).unwrap();
+        }
+    }
+
     /// This is the native `ImGui` demo window which showcases all features present in `ImGui`
     pub fn demo(&self) {
         unsafe {
@@ -1444,6 +1481,73 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 ImVec4 {x: 0.0, y: 0.0, z: 0.0, w: 0.0},
             );
         }
+    }
+
+    /// Fills a rect from `min` to `max` in screen space, on the foreground draw list over all windows. For game huds
+    pub fn draw_rect_filled(&mut self, min: (f32, f32), max: (f32, f32), col: Vec4f, rounding: f32) {
+        unsafe {
+            ImDrawList_AddRectFilled(
+                igGetForegroundDrawListViewportPtr(igGetMainViewport()),
+                ImVec2 { x: min.0, y: min.1 },
+                ImVec2 { x: max.0, y: max.1 },
+                igGetColorU32Vec4(to_im_vec4(col)),
+                rounding,
+                0
+            );
+        }
+    }
+
+    /// Outlines a rect from `min` to `max` in screen space, on the foreground draw list over all windows
+    pub fn draw_rect(&mut self, min: (f32, f32), max: (f32, f32), col: Vec4f, rounding: f32, thickness: f32) {
+        unsafe {
+            ImDrawList_AddRect(
+                igGetForegroundDrawListViewportPtr(igGetMainViewport()),
+                ImVec2 { x: min.0, y: min.1 },
+                ImVec2 { x: max.0, y: max.1 },
+                igGetColorU32Vec4(to_im_vec4(col)),
+                rounding,
+                0,
+                thickness
+            );
+        }
+    }
+
+    /// Draws `text` with its top-left at `pos` in screen space, `size` pixels high, on the foreground draw list over
+    /// all windows. The current font is scaled to `size`
+    pub fn draw_text(&mut self, pos: (f32, f32), size: f32, col: Vec4f, text: &str) {
+        let null_text = CString::new(text).unwrap();
+        unsafe {
+            ImDrawList_AddTextFontPtr(
+                igGetForegroundDrawListViewportPtr(igGetMainViewport()),
+                igGetFont(),
+                size,
+                ImVec2 { x: pos.0, y: pos.1 },
+                igGetColorU32Vec4(to_im_vec4(col)),
+                null_text.as_ptr() as *const i8,
+                std::ptr::null(),
+                0.0,
+                std::ptr::null()
+            );
+        }
+    }
+
+    /// Size of `text` drawn with `draw_text` at `size` pixels high
+    pub fn calc_draw_text_size(&self, size: f32, text: &str) -> (f32, f32) {
+        let null_text = CString::new(text).unwrap();
+        let mut out = IMVEC2_ZERO;
+        unsafe {
+            ImFont_CalcTextSizeA(
+                &mut out,
+                igGetFont(),
+                size,
+                f32::MAX,
+                0.0,
+                null_text.as_ptr() as *const i8,
+                std::ptr::null(),
+                std::ptr::null_mut()
+            );
+        }
+        (out.x, out.y)
     }
 
     /// Calculates the `x`, `y` size of the given text string, it can be used to aid layouts.

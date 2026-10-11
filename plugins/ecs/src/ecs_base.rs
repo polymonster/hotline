@@ -81,6 +81,7 @@ bitflags! {
 
 /// Seriablisable user info for maintaining state between reloads and sessions
 #[derive(Serialize, Deserialize, Default, Resource, Clone)]
+#[serde(default)]
 pub struct SessionInfo {
     /// The active running demo will be saved between sessions
     pub active_demo: String,

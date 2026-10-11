@@ -48,7 +48,12 @@ pub struct HotlineInfo {
     /// Size of the default device heap for depth stencil targets
     pub depth_stencil_heap_size: usize,
     /// Optional user config, the default will be automatically located in the file system, this allows to override the launch configuration
-    pub user_config: Option<UserConfig>
+    pub user_config: Option<UserConfig>,
+    /// Load the plugins from the previous session in the user config. When false the previous session's plugins are
+    /// cleared, so only plugins added with `add_plugin_lib` are loaded and saved
+    pub load_session_plugins: bool,
+    /// Start in fullscreen mode, where the main view is drawn straight to the window without the imgui ui
+    pub fullscreen: bool
 }
 
 /// Time structure to pass around to plugins and systems
@@ -119,7 +124,9 @@ impl Default for HotlineInfo {
             shader_heap_size: 1024,
             render_target_heap_size: 128,
             depth_stencil_heap_size: 64,
-            user_config: None
+            user_config: None,
+            load_session_plugins: true,
+            fullscreen: false
         }
     }
 }
@@ -142,7 +149,8 @@ pub struct Client<D: gfx::Device, A: os::App> {
     plugins: Vec<PluginCollection>,
     delta_history: VecDeque<f32>,
     instance_name: String,
-    status_bar_height: f32
+    status_bar_height: f32,
+    fullscreen: bool
 }
 
 /// Serialisable plugin
@@ -312,14 +320,20 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             time: Time::new(),
             delta_history: VecDeque::new(),
             instance_name: info.name,
-            status_bar_height: STATUS_BAR_HEIGHT
+            status_bar_height: STATUS_BAR_HEIGHT,
+            fullscreen: info.fullscreen
         };
 
         // automatically load plugins from prev session
-        if let Some(plugin_info) = &user_config.plugins {
-            for (name, info) in plugin_info {
-                client.add_plugin_lib(name, &info.path)
+        if info.load_session_plugins {
+            if let Some(plugin_info) = &user_config.plugins {
+                for (name, info) in plugin_info {
+                    client.add_plugin_lib(name, &info.path)
+                }
             }
+        }
+        else {
+            client.user_config.plugins = Some(HashMap::new());
         }
 
         Ok(client)
@@ -372,21 +386,34 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // reset main command buffer
         self.cmd_buf.reset(&self.swap_chain);
 
-        // start imgui new frame
-        self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
-        self.imgui.add_main_dock(self.status_bar_height);
-        self.status_bar_height = self.imgui.add_status_bar(self.status_bar_height);
+        // toggle fullscreen with ctrl+shift+f
+        if self.app.get_keys_pressed()[A::get_key_code(os::Key::F) as usize]
+            && self.app.is_sys_key_down(os::SysKey::Ctrl)
+            && self.app.is_sys_key_down(os::SysKey::Shift) {
+            self.fullscreen = !self.fullscreen;
+        }
 
-        // check for focus on the dock
-        let dock_input = self.imgui.main_dock_hovered();
-        self.app.set_input_enabled(
-            !self.imgui.want_capture_keyboard() || dock_input,
-            !self.imgui.want_capture_mouse() || dock_input);
+        // start imgui new frame, the ui still runs in fullscreen so plugins can make imgui calls but it is not drawn
+        self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
+        if !self.fullscreen {
+            self.imgui.add_main_dock(self.status_bar_height);
+            self.status_bar_height = self.imgui.add_status_bar(self.status_bar_height);
+
+            // check for focus on the dock
+            let dock_input = self.imgui.main_dock_hovered();
+            self.app.set_input_enabled(
+                !self.imgui.want_capture_keyboard() || dock_input,
+                !self.imgui.want_capture_mouse() || dock_input);
+        }
+        else {
+            self.app.set_input_enabled(true, true);
+        }
 
         let size = self.main_window.get_size();
         self.pmfx.update_window(&mut self.device, (size.x as f32, size.y as f32), "main_window")?;
 
-        let size = self.imgui.get_main_dock_size();
+        // the main view fills the window in fullscreen, otherwise the main dock
+        let size = self.get_main_view_rect().1;
         self.pmfx.update_window(&mut self.device, size, "main_dock")?;
 
         // start new pmfx frame
@@ -474,12 +501,14 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let fmt = self.swap_chain.get_backbuffer_pass_mut().get_format_hash();
 
             let pipeline = self.pmfx.get_render_pipeline_for_format("imdraw_blit", fmt).unwrap();
-            let heap = self.device.get_shader_heap();
+            // pmfx textures are allocated in the pmfx shader heap
+            let heap = &self.pmfx.shader_heap;
 
             self.cmd_buf.set_render_pipeline(pipeline);
             self.cmd_buf.push_render_constants(pipeline, 0, 0, 2, 0, &[vp_rect.width as f32, vp_rect.height as f32]);
 
-            self.cmd_buf.set_binding(pipeline, 0, 0, gfx::DescriptorType::ShaderResource, heap, srv);
+            // blit_texture is t1 in imdraw.hlsl
+            self.cmd_buf.set_binding(pipeline, 1, 0, gfx::DescriptorType::ShaderResource, heap, srv);
 
             self.cmd_buf.set_index_buffer(&self.unit_quad_mesh.ib);
             self.cmd_buf.set_vertex_buffer(&self.unit_quad_mesh.vb, 0);
@@ -491,18 +520,25 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             &self.pmfx.shader_heap
         ];
 
-        // render imgui
-        self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
+        // render imgui, or only the foreground draw list (huds drawn over the main view) when it is hidden in fullscreen
+        if !self.fullscreen {
+            self.cmd_buf.begin_event(0xff1fb6c4, "imgui");
 
-        self.imgui.render(
-            &mut self.app,
-            &mut self.main_window,
-            &mut self.device,
-            &mut self.cmd_buf,
-            &image_heaps
-        );
+            self.imgui.render(
+                &mut self.app,
+                &mut self.main_window,
+                &mut self.device,
+                &mut self.cmd_buf,
+                &image_heaps
+            );
 
-        self.cmd_buf.end_event();
+            self.cmd_buf.end_event();
+        }
+        else {
+            self.cmd_buf.begin_event(0xff1fb6c4, "imgui_foreground");
+            self.imgui.render_foreground(&mut self.device, &mut self.cmd_buf, &image_heaps);
+            self.cmd_buf.end_event();
+        }
 
         self.cmd_buf.end_render_pass();
 
@@ -520,12 +556,40 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         self.swap_chain.swap(&mut self.device);
     }
 
+    /// Returns true if in fullscreen mode, where the main view is drawn straight to the window without the imgui ui
+    pub fn is_fullscreen(&self) -> bool {
+        self.fullscreen
+    }
+
+    /// Enter or leave fullscreen mode, this can also be toggled with ctrl+shift+f
+    pub fn set_fullscreen(&mut self, fullscreen: bool) {
+        self.fullscreen = fullscreen;
+    }
+
+    /// Returns the screen space ((x, y), (width, height)) of the main view, which is the main dock content region or
+    /// the whole window in fullscreen mode
+    pub fn get_main_view_rect(&self) -> ((f32, f32), (f32, f32)) {
+        if self.fullscreen {
+            let pos = self.main_window.get_pos();
+            let size = self.main_window.get_size();
+            ((pos.x as f32, pos.y as f32), (size.x as f32, size.y as f32))
+        }
+        else {
+            (self.imgui.get_main_dock_pos(), self.imgui.get_main_dock_size())
+        }
+    }
+
     /// Load a plugin `dylib` dynamically from the cargo package at `<path>/<name>`, `path` can be absolute or relative
     /// to the hotline directory, an empty path or "." is `hotline/plugins`. The plugin is rebuilt in its own cargo
     /// workspace when its source changes, so plugins can live outside of the hotline repository
     /// The lib can implement the `hotline_plugin!` and `Plugin` trait, but that is not required
     /// You can also just load libs and use `lib.get_symbol` to find custom callable code for other plugins.
     pub fn add_plugin_lib(&mut self, name: &str, path: &str) {
+        if self.libs.contains_key(name) {
+            println!("hotline_rs::client:: plugin already loaded: {}", name);
+            return;
+        }
+
         let hotline_path = PathBuf::from(super::get_data_path("../.."));
 
         let plugin_parent = if path.is_empty() || path == "." {
@@ -695,6 +759,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                         }
                         self.imgui.end_menu();
                     }
+                }
+                self.imgui.end_menu();
+            }
+
+            if self.imgui.begin_menu("View") {
+                if self.imgui.menu_item("Fullscreen (Ctrl+Shift+F)") {
+                    self.fullscreen = true;
                 }
                 self.imgui.end_menu();
             }
@@ -993,8 +1064,11 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
             self = self.update_plugins();
 
-            if let Some(tex) = self.pmfx.get_texture("main_colour") {
-                self.imgui.image_window("main_dock", tex);
+            // the main view is shown in the main dock, or blitted straight to the window in fullscreen
+            if !self.fullscreen {
+                if let Some(tex) = self.pmfx.get_texture("main_colour") {
+                    self.imgui.image_window("main_dock", tex);
+                }
             }
 
             // record time before we do gpu stuff
@@ -1002,7 +1076,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 self.time.update_delta = elapsed.as_secs_f32();
             }
 
-            self.present("");
+            self.present(if self.fullscreen { "main_colour" } else { "" });
 
             // print d3d debug info messages to the console
             let info_queue = self.device.get_info_queue_messages()?;

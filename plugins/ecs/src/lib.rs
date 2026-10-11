@@ -735,10 +735,17 @@ impl Plugin<gfx_platform::Device, os_platform::App> for BevyPlugin {
         // clear pmfx view errors before we render
         client.pmfx.view_errors.lock().unwrap().clear();
 
-        // capture viewport info from imgui dock before moving resources
+        // capture viewport info in imgui screen space (points) before moving resources: the dock content, or the whole
+        // window in fullscreen (`get_main_view_rect` is in pixels in fullscreen, for sizing render targets)
+        let (pos, size) = if client.is_fullscreen() {
+            client.imgui.get_main_viewport_rect()
+        }
+        else {
+            client.get_main_view_rect()
+        };
         let viewport_info = ViewportInfo {
-            pos: client.imgui.get_main_dock_pos(),
-            size: client.imgui.get_main_dock_size(),
+            pos,
+            size,
         };
 
         // move hotline resource into world
