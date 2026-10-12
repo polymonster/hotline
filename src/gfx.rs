@@ -446,7 +446,9 @@ pub enum ShaderType {
     ClosestHit,
     Miss,
     Intersection,
-    Callable
+    Callable,
+    Mesh,
+    Amplification
 }
 
 bitflags! {
@@ -654,6 +656,8 @@ pub enum ShaderVisibility {
     Vertex,
     Fragment,
     Compute,
+    Mesh,
+    Amplification,
 }
 
 /// View types for creating secondary views for resources
@@ -825,6 +829,38 @@ pub enum Topology {
     TriangleListAdj,
     TriangleStripAdj,
     PatchList,
+}
+
+/// Information to create a pipeline through `Device::create_mesh_pipeline`.
+pub struct MeshPipelineInfo<'stack, D: Device> {
+    /// Mesh Shader
+    pub ms: Option<&'stack D::Shader>,
+    /// Amplification Shader
+    pub amps: Option<&'stack D::Shader>,
+    /// Fragment Shader
+    pub fs: Option<&'stack D::Shader>,
+    /// Layout of shader resources (constant buffers, structured buffers, textures, etc)
+    pub pipeline_layout: PipelineLayout,
+    /// Control rasterisation of primitives
+    pub raster_info: RasterInfo,
+    /// Control depth test and stencil oprations
+    pub depth_stencil_info: DepthStencilInfo,
+    /// Control blending settings for the output merge stage
+    pub blend_info: BlendInfo,
+    /// Topology of the mesh shader primitive
+    pub topology: PrimitiveTopology,
+    /// Sample mask for which MSAA samples to write
+    pub sample_mask: u32,
+    /// A valid render pass, you can share pipelines across passes providing the render target
+    /// formats and sample count are the same of the passes you wish to use the pipeline on
+    pub pass: Option<&'stack D::RenderPass>,
+}
+
+/// Primitive topology for mesh shader pipelines
+#[derive(Copy, Clone, Serialize, Deserialize)]
+pub enum PrimitiveTopology {
+    LineList,
+    TriangleList
 }
 
 /// Information to control the rasterisation mode of primitives when using a `RenderPipeline`
@@ -1247,6 +1283,9 @@ pub trait Shader<D: Device>: Send + Sync {}
 /// An opaque render pipeline type set blend, depth stencil, raster states on a pipeline, and bind with `CmdBuf::set_pipeline_state`
 pub trait RenderPipeline<D: Device>: Send + Sync  {}
 
+/// An opaque mesh pipeline type similar to render pipeline but with a mesh shader stage
+pub trait MeshPipeline<D: Device>: Send + Sync  {}
+
 /// An opaque RenderPass containing an optional set of colour render targets and an optional depth stencil target
 pub trait RenderPass<D: Device>: Send + Sync  {
     /// Returns a hash based on the render target format so that pipelines can be shared amonst compatible passes
@@ -1289,6 +1328,8 @@ pub enum IndirectArgumentType {
     DrawIndexed,
     /// Used to issue indirect compute `dispatch` calls
     Dispatch,
+    /// Used to issue indirect `dispatch_mesh` calls, arguments are laid out the same as `DispatchArguments`
+    DispatchMesh,
     /// Used to change a vertex buffer binding
     VertexBuffer,
     /// Used to change an index buffer binding
@@ -1410,6 +1451,7 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
     type Buffer: Buffer<Self>;
     type Shader: Shader<Self>;
     type RenderPipeline: RenderPipeline<Self>;
+    type MeshPipeline: MeshPipeline<Self>;
     type Texture: Texture<Self>;
     type ReadBackRequest: ReadBackRequest<Self>;
     type RenderPass: RenderPass<Self>;
@@ -1492,6 +1534,12 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &self,
         info: &RenderPipelineInfo<Self>,
     ) -> Result<Self::RenderPipeline, Error>;
+    /// Create a new mesh pipeline state object from the supplied `MeshPipelineInfo`
+    /// this is similar to a render pipeline, but with a mesh shader stage for geometry
+    fn create_mesh_pipeline(
+        &self,
+        info: &MeshPipelineInfo<Self>,
+    ) -> Result<Self::MeshPipeline, Error>;
     /// Create a new render pass from `RenderPassInfo`
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error>;
     /// Create a new compute pipeline state object from `ComputePipelineInfo`
@@ -1530,6 +1578,15 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         &mut self,
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
+    ) -> Result<Self::CommandSignature, super::Error>;
+    /// Create a command signature for `execute_indirect` commands associated on the `MeshPipeline`.
+    /// Thread counts are required for metal, in hlsl they are specified in the shader, same as `dispatch_mesh`
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<IndirectArgument>,
+        pipeline: Option<&Self::MeshPipeline>,
+        ms_numthreads: Size3,
+        as_numthreads: Option<Size3>
     ) -> Result<Self::CommandSignature, super::Error>;
     /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&mut self, cmd: &Self::CmdBuf);
@@ -1645,6 +1702,8 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn set_vertex_buffer(&mut self, buffer: &D::Buffer, slot: u32);
     /// Set render pipeline for `draw` commands
     fn set_render_pipeline(&mut self, pipeline: &D::RenderPipeline);
+    /// Set mesh pipeline for `dispatch_mesh` commands
+    fn set_mesh_pipeline(&mut self, pipeline: &D::MeshPipeline);
     /// Set a compute pipeline for `dispatch`
     fn set_compute_pipeline(&mut self, pipeline: &D::ComputePipeline);
     /// Set a raytracing pipeline for `dispatch_rays`
@@ -1681,6 +1740,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&mut self, group_count: Size3, numthreads: Size3);
+    /// Dispatch for mesh shader pipeline. Thread counts are required for metal, in hlsl they are specified in the shader.
+    /// `as_numthreads` is required when the pipeline has an amplification shader
+    fn dispatch_mesh(&mut self, group_count: Size3, ms_numthreads: Size3, as_numthreads: Option<Size3>);
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
         &mut self,
@@ -2018,6 +2080,16 @@ pub fn align(value: u64, align: u64) -> u64 {
     value
 }
 
+/// Align vec data u8 buffer to desired align, padding elements align must be pow2
+pub fn pad_align_pow2(buf: &mut Vec<u8>, align: u64) {
+    buf.resize(align_pow2(buf.len() as u64, align) as usize, 0);
+}
+
+/// Align vec data u8 buffer to desired align, padding elements
+pub fn pad_align(buf: &mut Vec<u8>, align_val: u64) {
+    buf.resize(align(buf.len() as u64, align_val) as usize, 0);
+}
+
 /// For the supplied sized struct `&_` returns the number of 32bit constants required for use as `push_constants`
 pub const fn num_32bit_constants<T: Sized>(_: &T) -> u32 {
     (std::mem::size_of::<T>() / 4) as u32
@@ -2214,6 +2286,23 @@ impl<'stack, D> Default for RenderPipelineInfo<'stack, D> where D: Device {
             blend_info: BlendInfo::default(),
             topology: Topology::TriangleList,
             patch_index: 0,
+            sample_mask: u32::max_value(),
+            pass: None
+        }
+    }
+}
+
+impl<'stack, D> Default for MeshPipelineInfo<'stack, D> where D: Device {
+    fn default() -> Self {
+        Self {
+            ms: None,
+            amps: None,
+            fs: None,
+            pipeline_layout: PipelineLayout::default(),
+            raster_info: RasterInfo::default(),
+            depth_stencil_info: DepthStencilInfo::default(),
+            blend_info: BlendInfo::default(),
+            topology: PrimitiveTopology::TriangleList,
             sample_mask: u32::max_value(),
             pass: None
         }

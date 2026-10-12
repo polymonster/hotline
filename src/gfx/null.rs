@@ -23,6 +23,7 @@ use super::ComputePipelineInfo;
 use super::RaytracingShaderBindingTableInfo;
 use super::RenderPassInfo;
 use super::RenderPipelineInfo;
+use super::MeshPipelineInfo;
 use super::BufferInfo;
 use super::ShaderInfo;
 use super::QueryType;
@@ -57,6 +58,7 @@ pub struct CmdBuf;
 
 pub struct Shader;
 pub struct RenderPipeline;
+pub struct MeshPipeline;
 pub struct Texture;
 pub struct Buffer;
 pub struct ReadBackRequest;
@@ -197,6 +199,10 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
+    fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
+        unimplemented!()
+    }
+
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         unimplemented!()
     }
@@ -243,6 +249,10 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn dispatch(&mut self, group_count: Size3, numthreads: Size3) {
+        unimplemented!()
+    }
+
+    fn dispatch_mesh(&mut self, group_count: Size3, ms_numthreads: Size3, as_numthreads: Option<Size3>) {
         unimplemented!()
     }
 
@@ -308,6 +318,7 @@ impl super::Device for Device {
     type CmdBuf = CmdBuf;
     type Shader = Shader;
     type RenderPipeline = RenderPipeline;
+    type MeshPipeline = MeshPipeline;
     type Texture = Texture;
     type Buffer = Buffer;
     type ReadBackRequest = ReadBackRequest;
@@ -397,6 +408,13 @@ impl super::Device for Device {
         unimplemented!()
     }
 
+    fn create_mesh_pipeline(
+        &self,
+        info: &MeshPipelineInfo<Self>,
+    ) -> Result<Self::MeshPipeline, Error> {
+        unimplemented!()
+    }
+
     fn create_render_pass(&self, info: &RenderPassInfo<Self>) -> Result<Self::RenderPass, Error> {
         unimplemented!()
     }
@@ -471,6 +489,16 @@ impl super::Device for Device {
         &mut self,
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
+    ) -> Result<Self::CommandSignature, super::Error> {
+        unimplemented!()
+    }
+
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<IndirectArgument>,
+        pipeline: Option<&Self::MeshPipeline>,
+        ms_numthreads: Size3,
+        as_numthreads: Option<Size3>
     ) -> Result<Self::CommandSignature, super::Error> {
         unimplemented!()
     }
@@ -686,6 +714,20 @@ impl super::Pipeline for ComputePipeline {
     }
 }
 
+impl super::Pipeline for MeshPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        unimplemented!()
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        unimplemented!()
+    }
+}
+
 impl super::Pipeline for RaytracingPipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         unimplemented!()
@@ -702,6 +744,7 @@ impl super::Pipeline for RaytracingPipeline {
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
+impl super::MeshPipeline<Device> for MeshPipeline {}
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}

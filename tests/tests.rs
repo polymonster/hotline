@@ -366,6 +366,27 @@ fn align_tests() {
     assert_eq!(val % 21, 0);
 }
 
+
+#[test]
+fn pad_align_tests() {
+
+    let mut vv = vec![0, 1, 2];
+    gfx::pad_align_pow2(&mut vv, 4);
+    assert_eq!(vv.len(), 4);
+    gfx::pad_align_pow2(&mut vv, 256);
+    assert_eq!(vv.len(), 256);
+    gfx::pad_align_pow2(&mut vv, 1024);
+    assert_eq!(vv.len(), 1024);
+
+    let mut xx = vec![0, 1];
+    gfx::pad_align(&mut xx, 3);
+    assert_eq!(xx.len(), 3);
+    gfx::pad_align(&mut xx, 111);
+    assert_eq!(xx.len(), 111);
+    gfx::pad_align(&mut xx, 222);
+    assert_eq!(xx.len(), 222);
+}
+
 #[test]
 fn image_size_tests() {
     assert_eq!(gfx::mip_levels_for_dimension(1024, 1024), 11);

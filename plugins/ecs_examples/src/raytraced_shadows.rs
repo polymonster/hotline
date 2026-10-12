@@ -1,9 +1,6 @@
-// currently windows only because here we need a concrete gfx and os implementation
-#![cfg(target_os = "windows")]
-
 ///
 /// Raytraced Shadows
-/// 
+///
 
 use crate::prelude::*;
 
@@ -37,7 +34,7 @@ pub fn setup_raytraced_shadows_scene(
     let teapot_mesh = hotline_rs::primitives::create_teapot_mesh(&mut device.0, 32);
     let tube_mesh = hotline_rs::primitives::create_tube_prism_mesh(&mut device.0, 5, 0, 4, false, true, 0.33, 0.33, 1.0);
     let triangle_mesh = hotline_rs::primitives::create_pyramid_mesh(&mut device.0, 4, false, true);
-    
+
     let bounds = 100.0;
 
     // point light
@@ -166,7 +163,7 @@ pub fn setup_raytraced_shadows_scene(
             instance_geometry_buffer: None
         }
     );
-    
+
     Ok(())
 }
 

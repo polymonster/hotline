@@ -175,6 +175,13 @@ pub struct RenderPipeline {
     lookup: RootSignatureLookup
 }
 
+#[derive(Clone)]
+pub struct MeshPipeline {
+    pso: ID3D12PipelineState,
+    root_signature: ID3D12RootSignature,
+    lookup: RootSignatureLookup
+}
+
 #[derive(Clone, Default)]
 pub struct CmdBuf {
     bb_index: usize,
@@ -376,6 +383,8 @@ const fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D
         super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
         super::ShaderVisibility::Fragment => D3D12_SHADER_VISIBILITY_PIXEL,
         super::ShaderVisibility::Compute => D3D12_SHADER_VISIBILITY_ALL,
+        super::ShaderVisibility::Mesh => D3D12_SHADER_VISIBILITY_MESH,
+        super::ShaderVisibility::Amplification => D3D12_SHADER_VISIBILITY_AMPLIFICATION,
     }
 }
 
@@ -567,6 +576,27 @@ const fn to_d3d12_primitive_topology_type(topology: super::Topology) -> D3D12_PR
     }
 }
 
+fn to_d3d12_shader_bytecode(shader: &Shader) -> D3D12_SHADER_BYTECODE {
+    D3D12_SHADER_BYTECODE {
+        pShaderBytecode: shader.get_buffer_pointer(),
+        BytecodeLength: shader.get_buffer_size(),
+    }
+}
+
+const fn to_d3d12_mesh_primitive_topology(topology: super::PrimitiveTopology) -> D3D_PRIMITIVE_TOPOLOGY {
+    match topology {
+        super::PrimitiveTopology::LineList => D3D_PRIMITIVE_TOPOLOGY_LINELIST,
+        super::PrimitiveTopology::TriangleList => D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
+    }
+}
+
+const fn to_d3d12_mesh_primitive_topology_type(topology: super::PrimitiveTopology) -> D3D12_PRIMITIVE_TOPOLOGY_TYPE {
+    match topology {
+        super::PrimitiveTopology::LineList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_LINE,
+        super::PrimitiveTopology::TriangleList => D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE,
+    }
+}
+
 const fn to_d3d12_fill_mode(fill_mode: &super::FillMode) -> D3D12_FILL_MODE {
     match fill_mode {
         super::FillMode::Wireframe => D3D12_FILL_MODE_WIREFRAME,
@@ -677,6 +707,57 @@ const fn to_d3d12_logic_op(op: &super::LogicOp) -> D3D12_LOGIC_OP {
     }
 }
 
+fn to_d3d12_rasterizer_desc(raster: &super::RasterInfo, msaa: bool) -> D3D12_RASTERIZER_DESC {
+    D3D12_RASTERIZER_DESC {
+        FillMode: to_d3d12_fill_mode(&raster.fill_mode),
+        CullMode: to_d3d12_cull_mode(&raster.cull_mode),
+        FrontCounterClockwise: BOOL::from(raster.front_ccw),
+        DepthBias: raster.depth_bias,
+        DepthBiasClamp: raster.depth_bias_clamp,
+        SlopeScaledDepthBias: raster.slope_scaled_depth_bias,
+        DepthClipEnable: BOOL::from(raster.front_ccw),
+        MultisampleEnable: BOOL::from(msaa),
+        AntialiasedLineEnable: BOOL::from(msaa),
+        ForcedSampleCount: raster.forced_sample_count,
+        ConservativeRaster: if raster.conservative_raster_mode {
+            D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON
+        } else {
+            D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
+        },
+    }
+}
+
+fn to_d3d12_blend_desc(blend: &super::BlendInfo) -> D3D12_BLEND_DESC {
+    D3D12_BLEND_DESC {
+        AlphaToCoverageEnable: BOOL::from(blend.alpha_to_coverage_enabled),
+        IndependentBlendEnable: BOOL::from(blend.independent_blend_enabled),
+        RenderTarget: to_d3d12_render_target_blend(&blend.render_target),
+    }
+}
+
+fn to_d3d12_depth_stencil_desc(depth_stencil: &super::DepthStencilInfo) -> D3D12_DEPTH_STENCIL_DESC {
+    D3D12_DEPTH_STENCIL_DESC {
+        DepthEnable: BOOL::from(depth_stencil.depth_enabled),
+        DepthWriteMask: to_d3d12_write_mask(&depth_stencil.depth_write_mask),
+        DepthFunc: to_d3d12_comparison_func(depth_stencil.depth_func),
+        StencilEnable: BOOL::from(depth_stencil.stencil_enabled),
+        StencilReadMask: depth_stencil.stencil_read_mask,
+        StencilWriteMask: depth_stencil.stencil_write_mask,
+        FrontFace: D3D12_DEPTH_STENCILOP_DESC {
+            StencilFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.fail),
+            StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.depth_fail),
+            StencilPassOp: to_d3d12_stencil_op(&depth_stencil.front_face.pass),
+            StencilFunc: to_d3d12_comparison_func(depth_stencil.front_face.func),
+        },
+        BackFace: D3D12_DEPTH_STENCILOP_DESC {
+            StencilFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.fail),
+            StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.depth_fail),
+            StencilPassOp: to_d3d12_stencil_op(&depth_stencil.back_face.pass),
+            StencilFunc: to_d3d12_comparison_func(depth_stencil.back_face.func),
+        },
+    }
+}
+
 const fn to_d3d12_texture_srv_dimension(tex_type: super::TextureType, samples: u32) -> D3D12_SRV_DIMENSION {
     if samples > 1 {
         match tex_type {
@@ -715,6 +796,7 @@ const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) ->
         IndirectArgumentType::Draw => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW,
         IndirectArgumentType::DrawIndexed => D3D12_INDIRECT_ARGUMENT_TYPE_DRAW_INDEXED,
         IndirectArgumentType::Dispatch => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH,
+        IndirectArgumentType::DispatchMesh => D3D12_INDIRECT_ARGUMENT_TYPE_DISPATCH_MESH,
         IndirectArgumentType::PushConstants => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT,
         IndirectArgumentType::ConstantBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_CONSTANT_BUFFER_VIEW,
         IndirectArgumentType::VertexBuffer => D3D12_INDIRECT_ARGUMENT_TYPE_VERTEX_BUFFER_VIEW,
@@ -722,6 +804,76 @@ const fn to_d3d12_indirect_argument_type(indirect_type: IndirectArgumentType) ->
         IndirectArgumentType::UnorderedAccess => D3D12_INDIRECT_ARGUMENT_TYPE_UNORDERED_ACCESS_VIEW,
         IndirectArgumentType::ShaderResource => D3D12_INDIRECT_ARGUMENT_TYPE_SHADER_RESOURCE_VIEW,
     }
+}
+
+fn create_command_signature<T: Sized>(
+    device: &D3D12DeviceVersion,
+    arguments: Vec<super::IndirectArgument>,
+    root_signature: Option<&ID3D12RootSignature>) -> result::Result<CommandSignature, super::Error> {
+
+    let descs = arguments.iter().map(|arg|
+        match arg.argument_type {
+            super::IndirectArgumentType::PushConstants => {
+                if let Some(args) = &arg.arguments {
+                    unsafe {
+                        D3D12_INDIRECT_ARGUMENT_DESC {
+                            Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                            Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
+                                    RootParameterIndex: args.push_constants.slot,
+                                    DestOffsetIn32BitValues: args.push_constants.offset,
+                                    Num32BitValuesToSet: args.push_constants.num_values
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    panic!("hotline_rs::gfx::d3d12:: indirect push constants must specify `push_constants` arguments");
+                }
+            },
+            super::IndirectArgumentType::VertexBuffer => {
+                if let Some(args) = &arg.arguments {
+                    unsafe {
+                        D3D12_INDIRECT_ARGUMENT_DESC {
+                            Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                            Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
+                                VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_5 {
+                                    Slot: args.buffer.slot,
+                                }
+                            }
+                        }
+                    }
+                }
+                else {
+                    panic!("hotline_rs::gfx::d3d12:: indirect vertex buffer must specify `buffer` arguments");
+                }
+            }
+            _ => {
+                D3D12_INDIRECT_ARGUMENT_DESC {
+                    Type: to_d3d12_indirect_argument_type(arg.argument_type),
+                    ..Default::default()
+                }
+            }
+        }
+    ).collect::<Vec<D3D12_INDIRECT_ARGUMENT_DESC>>();
+
+    let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
+        pArgumentDescs: descs.as_ptr() as *const D3D12_INDIRECT_ARGUMENT_DESC,
+        NumArgumentDescs: descs.len() as u32,
+        ByteStride: std::mem::size_of::<T>() as u32,
+        NodeMask: 0
+    };
+
+    // If the number of args is just 1 and is draw, draw_indexed it is invalid to pass a pipeline
+    let mut sig : Option<ID3D12CommandSignature> = None;
+    unsafe {
+        device.CreateCommandSignature(&cmd_desc, root_signature, &mut sig)?;
+    }
+
+    Ok(CommandSignature {
+        command_signature: sig.unwrap()
+    })
 }
 
 const fn to_d3d12_hit_group_type(op: &super::RaytracingHitGeometry) -> D3D12_HIT_GROUP_TYPE {
@@ -780,6 +932,23 @@ fn to_d3d12_raytracing_acceleration_structure_update_flags(mode: AccelerationStr
         AccelerationStructureRebuildMode::Refit => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PERFORM_UPDATE | D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_ALLOW_UPDATE,
         AccelerationStructureRebuildMode::Full => D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_NONE
     }
+}
+
+fn push_subobject<T: Copy>(buf: &mut Vec<u8>, subtype: D3D12_PIPELINE_STATE_SUBOBJECT_TYPE, payload: T) {
+    pad_align_pow2(buf, 8);
+    buf.extend_from_slice(&(subtype.0 as u32).to_ne_bytes());
+    pad_align_pow2(buf, std::mem::align_of::<T>() as u64); // pad between tag and payload if payload alignment needs it
+    let bytes = unsafe { std::slice::from_raw_parts(&payload as *const T as *const u8, size_of::<T>()) };
+    buf.extend_from_slice(bytes);
+}
+
+fn push_subobject_raw<T: windows::core::Interface>(buf: &mut Vec<u8>, subtype: D3D12_PIPELINE_STATE_SUBOBJECT_TYPE, payload: &T) {
+    let raw = payload.as_raw(); // or windows::core::Interface::as_raw(root_sig) — raw *mut c_void
+    let ptr_bytes = (raw as usize).to_ne_bytes();
+    pad_align_pow2(buf, 8);
+    buf.extend_from_slice(&(subtype.0 as u32).to_ne_bytes());
+    pad_align_pow2(buf, std::mem::align_of::<T>() as u64);
+    buf.extend_from_slice(&ptr_bytes);
 }
 
 fn get_d3d12_error_blob_string(blob: &ID3DBlob) -> String {
@@ -1265,6 +1434,7 @@ impl Device {
     fn create_root_signature_with_lookup(
         &self,
         layout: &super::PipelineLayout,
+        allow_input_assembler: bool,
     ) -> result::Result<RootSignatureLookup, super::Error> {
         let mut root_params: Vec<D3D12_ROOT_PARAMETER> = Vec::new();
 
@@ -1386,10 +1556,18 @@ impl Device {
             }
         }
 
+        // a mesh/amplification shader pipeline requires a root signature WITHOUT the input
+        // assembler flag; setting it makes the pso silently rasterize nothing on some drivers
+        let flags = if allow_input_assembler {
+            D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT
+        } else {
+            D3D12_ROOT_SIGNATURE_FLAG_NONE
+        };
+
         // desc
         let desc = D3D12_ROOT_SIGNATURE_DESC {
             NumParameters: root_params.len() as u32,
-            Flags: D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT,
+            Flags: flags,
             pParameters: root_params.as_mut_ptr(),
             NumStaticSamplers: static_samplers.len() as u32,
             pStaticSamplers: static_samplers.as_mut_ptr(),
@@ -1702,6 +1880,7 @@ impl super::Device for Device {
     type Buffer = Buffer;
     type Shader = Shader;
     type RenderPipeline = RenderPipeline;
+    type MeshPipeline = MeshPipeline;
     type Texture = Texture;
     type ReadBackRequest = ReadBackRequest;
     type RenderPass = RenderPass;
@@ -2002,7 +2181,7 @@ impl super::Device for Device {
         &self,
         info: &super::RenderPipelineInfo<Device>,
     ) -> result::Result<RenderPipeline, super::Error> {
-        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
 
         let semantics = null_terminate_semantics(&info.input_layout);
         let mut elems = Device::create_d3d12_input_element_desc(&info.input_layout, &semantics);
@@ -2022,7 +2201,7 @@ impl super::Device for Device {
 
         // unwrap pass
         let pass = info.pass.expect("hotline::gfx::d3d12:: a pass is required when creating a render pipline");
-        let msaa_format = pass.sample_count > 1;
+        let msaa = pass.sample_count > 1;
 
         let mut desc = D3D12_GRAPHICS_PIPELINE_STATE_DESC {
             InputLayout: input_layout,
@@ -2043,48 +2222,9 @@ impl super::Device for Device {
             } else {
                 null_bytecode
             },
-            RasterizerState: D3D12_RASTERIZER_DESC {
-                FillMode: to_d3d12_fill_mode(&raster.fill_mode),
-                CullMode: to_d3d12_cull_mode(&raster.cull_mode),
-                FrontCounterClockwise: BOOL::from(raster.front_ccw),
-                DepthBias: raster.depth_bias,
-                DepthBiasClamp: raster.depth_bias_clamp,
-                SlopeScaledDepthBias: raster.slope_scaled_depth_bias,
-                DepthClipEnable: BOOL::from(raster.front_ccw),
-                MultisampleEnable: BOOL::from(msaa_format),
-                AntialiasedLineEnable: BOOL::from(msaa_format),
-                ForcedSampleCount: raster.forced_sample_count,
-                ConservativeRaster: if raster.conservative_raster_mode {
-                    D3D12_CONSERVATIVE_RASTERIZATION_MODE_ON
-                } else {
-                    D3D12_CONSERVATIVE_RASTERIZATION_MODE_OFF
-                },
-            },
-            BlendState: D3D12_BLEND_DESC {
-                AlphaToCoverageEnable: BOOL::from(blend.alpha_to_coverage_enabled),
-                IndependentBlendEnable: BOOL::from(blend.independent_blend_enabled),
-                RenderTarget: to_d3d12_render_target_blend(&blend.render_target),
-            },
-            DepthStencilState: D3D12_DEPTH_STENCIL_DESC {
-                DepthEnable: BOOL::from(depth_stencil.depth_enabled),
-                DepthWriteMask: to_d3d12_write_mask(&depth_stencil.depth_write_mask),
-                DepthFunc: to_d3d12_comparison_func(depth_stencil.depth_func),
-                StencilEnable: BOOL::from(depth_stencil.stencil_enabled),
-                StencilReadMask: depth_stencil.stencil_read_mask,
-                StencilWriteMask: depth_stencil.stencil_write_mask,
-                FrontFace: D3D12_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.fail),
-                    StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.front_face.depth_fail),
-                    StencilPassOp: to_d3d12_stencil_op(&depth_stencil.front_face.pass),
-                    StencilFunc: to_d3d12_comparison_func(depth_stencil.front_face.func),
-                },
-                BackFace: D3D12_DEPTH_STENCILOP_DESC {
-                    StencilFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.fail),
-                    StencilDepthFailOp: to_d3d12_stencil_op(&depth_stencil.back_face.depth_fail),
-                    StencilPassOp: to_d3d12_stencil_op(&depth_stencil.back_face.pass),
-                    StencilFunc: to_d3d12_comparison_func(depth_stencil.back_face.func),
-                },
-            },
+            RasterizerState: to_d3d12_rasterizer_desc(raster, msaa),
+            BlendState: to_d3d12_blend_desc(blend),
+            DepthStencilState: to_d3d12_depth_stencil_desc(depth_stencil),
             SampleMask: u32::max_value(), // TODO: supply sample mask
             PrimitiveTopologyType: to_d3d12_primitive_topology_type(info.topology),
             NumRenderTargets: pass.rt_formats.len() as u32,
@@ -2105,6 +2245,74 @@ impl super::Device for Device {
             pso: unsafe { self.device.CreateGraphicsPipelineState(&desc)? },
             root_signature: sig_lookup.root_signature.clone(),
             topology: to_d3d12_primitive_topology(info.topology, info.patch_index),
+            lookup: sig_lookup
+        })
+    }
+
+    fn create_mesh_pipeline(
+        &self,
+        info: &super::MeshPipelineInfo<Device>,
+    ) -> std::result::Result<MeshPipeline, super::Error>
+    {
+        let device2 = self.device.cast::<ID3D12Device2>().expect("hotline_rs::gfx::d3d12: expected ID3D12Device2 availability to create mesh pipeline");
+
+        // create root signature with lookup (no input assembler for mesh pipelines)
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, false)?;
+
+        // we need to pack a byte stream of the pipeline components
+        let mut stream : Vec<u8> = Vec::new();
+
+        // unwrap pass
+        let pass = info.pass.expect("hotline::gfx::d3d12:: a pass is required when creating a render pipline");
+        let msaa = pass.sample_count > 1;
+
+        // shaders
+        if let Some(ms) = info.ms {
+            push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_MS, to_d3d12_shader_bytecode(ms));
+        }
+
+        if let Some(amps) = info.amps {
+            push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_AS, to_d3d12_shader_bytecode(amps));
+        }
+
+        if let Some(fs) = info.fs {
+            push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PS, to_d3d12_shader_bytecode(fs));
+        }
+
+        // states
+        push_subobject_raw(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_ROOT_SIGNATURE, &sig_lookup.root_signature);
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RASTERIZER, to_d3d12_rasterizer_desc(&info.raster_info, msaa));
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_BLEND, to_d3d12_blend_desc(&info.blend_info));
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL, to_d3d12_depth_stencil_desc(&info.depth_stencil_info));
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_DEPTH_STENCIL_FORMAT, pass.ds_format);
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_DESC, DXGI_SAMPLE_DESC {
+                Count: pass.sample_count,
+                Quality: 0,
+            }
+        );
+
+        let mut rt_formats : D3D12_RT_FORMAT_ARRAY = unsafe{ std::mem::zeroed() };
+        for i in 0..pass.rt_formats.len() {
+            rt_formats.RTFormats[i] = pass.rt_formats[i];
+        }
+        rt_formats.NumRenderTargets = pass.rt_formats.len() as u32;
+
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_RENDER_TARGET_FORMATS, rt_formats);
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_SAMPLE_MASK, u32::max_value());
+        push_subobject(&mut stream, D3D12_PIPELINE_STATE_SUBOBJECT_TYPE_PRIMITIVE_TOPOLOGY, to_d3d12_mesh_primitive_topology_type(info.topology));
+
+        let stream_desc = D3D12_PIPELINE_STATE_STREAM_DESC {
+            SizeInBytes: stream.len(),
+            pPipelineStateSubobjectStream: stream.as_mut_ptr() as *mut _
+        };
+
+        let pso : ID3D12PipelineState = unsafe { 
+            device2.CreatePipelineState(&stream_desc)?
+        };
+
+        Ok(MeshPipeline {
+            pso,
+            root_signature: sig_lookup.root_signature.clone(),
             lookup: sig_lookup
         })
     }
@@ -2266,15 +2474,31 @@ impl super::Device for Device {
             }
 
             // create a buffer resource
-            self.device.CreateCommittedResource(
-                &D3D12_HEAP_PROPERTIES {
-                    Type: if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
-                        D3D12_HEAP_TYPE_UPLOAD
-                    } else {
-                        D3D12_HEAP_TYPE_DEFAULT
-                    },
+            // cpu read buffers use a custom heap in system memory with write-back cpu pages, unlike a readback heap
+            // the gpu can write to it as a uav and it can be persistently mapped to read gpu writes without sync
+            let heap_props = if info.cpu_access.contains(super::CpuAccessFlags::READ) {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_CUSTOM,
+                    CPUPageProperty: D3D12_CPU_PAGE_PROPERTY_WRITE_BACK,
+                    MemoryPoolPreference: D3D12_MEMORY_POOL_L0,
                     ..Default::default()
-                },
+                }
+            }
+            else if info.cpu_access.contains(super::CpuAccessFlags::WRITE) {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_UPLOAD,
+                    ..Default::default()
+                }
+            }
+            else {
+                D3D12_HEAP_PROPERTIES {
+                    Type: D3D12_HEAP_TYPE_DEFAULT,
+                    ..Default::default()
+                }
+            };
+
+            self.device.CreateCommittedResource(
+                &heap_props,
                 D3D12_HEAP_FLAG_NONE,
                 &D3D12_RESOURCE_DESC {
                     Dimension: D3D12_RESOURCE_DIMENSION_BUFFER,
@@ -2427,38 +2651,28 @@ impl super::Device for Device {
                     srv_index = Some(heap.get_handle_index(&h));
                 }
                 else if info.usage.contains(super::BufferUsage::UNORDERED_ACCESS) {
+                    // append counter buffers are implictly added to the end of the buffer
+                    // different approches could be used with manually tracking and adding counters
+                    // but this approach creates a d3d friendly `AppendStructuredBuffer`
                     let h = heap.allocate();
-                    if let Some(offset) = counter_offset {
-                        // append counter buffers are implictly added to the end of the buffer
-                        // different approches could be used with manually tracking and adding counters
-                        // but this approach creates a d3d friendly `AppendStructuredBuffer`
-                        self.device.CreateUnorderedAccessView(
-                            &buf,
-                            &buf,
-                            Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
-                                Format: DXGI_FORMAT_UNKNOWN,
-                                ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
-                                Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
-                                    Buffer: D3D12_BUFFER_UAV {
-                                        FirstElement: 0,
-                                        NumElements: info.num_elements as u32,
-                                        StructureByteStride: info.stride as u32,
-                                        CounterOffsetInBytes: offset as u64,
-                                        Flags: D3D12_BUFFER_UAV_FLAG_NONE
-                                    }
+                    self.device.CreateUnorderedAccessView(
+                        &buf,
+                        counter_offset.map(|_| &buf),
+                        Some(&D3D12_UNORDERED_ACCESS_VIEW_DESC{
+                            Format: DXGI_FORMAT_UNKNOWN,
+                            ViewDimension: D3D12_UAV_DIMENSION_BUFFER,
+                            Anonymous: D3D12_UNORDERED_ACCESS_VIEW_DESC_0 {
+                                Buffer: D3D12_BUFFER_UAV {
+                                    FirstElement: 0,
+                                    NumElements: info.num_elements as u32,
+                                    StructureByteStride: info.stride as u32,
+                                    CounterOffsetInBytes: counter_offset.unwrap_or(0) as u64,
+                                    Flags: D3D12_BUFFER_UAV_FLAG_NONE
                                 }
-                            }),
-                            h,
-                        );
-                    }
-                    else {
-                        self.device.CreateUnorderedAccessView(
-                            &buf,
-                            None,
-                            None,
-                            h,
-                        );
-                    }
+                            }
+                        }),
+                        h,
+                    );
 
                     uav_index = Some(heap.get_handle_index(&h));
                 }
@@ -3074,7 +3288,7 @@ impl super::Device for Device {
         info: &super::ComputePipelineInfo<Self>,
     ) -> result::Result<ComputePipeline, super::Error> {
         let cs = &info.cs;
-        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let sig_lookup = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
 
         let desc = D3D12_COMPUTE_PIPELINE_STATE_DESC {
             CS: D3D12_SHADER_BYTECODE {
@@ -3144,7 +3358,7 @@ impl super::Device for Device {
         }
 
         // root signature, for now we use a global one per pipeline
-        let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout)?;
+        let root_signature = self.create_root_signature_with_lookup(&info.pipeline_layout, true)?;
         let mut global_root_signature = D3D12_GLOBAL_ROOT_SIGNATURE {
             pGlobalRootSignature: std::mem::ManuallyDrop::new(Some(root_signature.root_signature.clone()))
         };
@@ -3654,81 +3868,20 @@ impl super::Device for Device {
     }
 
     fn create_indirect_render_command<T: Sized>(
-        &mut self, 
+        &mut self,
         arguments: Vec<super::IndirectArgument>,
         pipeline: Option<&RenderPipeline>) -> result::Result<CommandSignature, super::Error> {
-        
-        let descs = arguments.iter().map(|arg|
-            match arg.argument_type {
-                super::IndirectArgumentType::PushConstants => {
-                    if let Some(args) = &arg.arguments {
-                        unsafe {
-                            D3D12_INDIRECT_ARGUMENT_DESC {
-                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
-                                    Constant: D3D12_INDIRECT_ARGUMENT_DESC_0_1 {
-                                        RootParameterIndex: args.push_constants.slot,
-                                        DestOffsetIn32BitValues: args.push_constants.offset,
-                                        Num32BitValuesToSet: args.push_constants.num_values
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        panic!("hotline_rs::gfx::d3d12:: indirect push constants must specify `push_constants` arguments");
-                    }
-                },
-                super::IndirectArgumentType::VertexBuffer => {
-                    if let Some(args) = &arg.arguments {
-                        unsafe {
-                            D3D12_INDIRECT_ARGUMENT_DESC {
-                                Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                                Anonymous: D3D12_INDIRECT_ARGUMENT_DESC_0 {
-                                    VertexBuffer: D3D12_INDIRECT_ARGUMENT_DESC_0_5 {
-                                        Slot: args.buffer.slot,
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    else {
-                        panic!("hotline_rs::gfx::d3d12:: indirect vertex buffer must specify `buffer` arguments");
-                    }
-                }
-                _ => {
-                    D3D12_INDIRECT_ARGUMENT_DESC {
-                        Type: to_d3d12_indirect_argument_type(arg.argument_type),
-                        ..Default::default()
-                    }
-                }
-            }
-        ).collect::<Vec<D3D12_INDIRECT_ARGUMENT_DESC>>();
+        create_command_signature::<T>(&self.device, arguments, pipeline.map(|p| &p.root_signature))
+    }
 
-        let cmd_desc = D3D12_COMMAND_SIGNATURE_DESC {
-            pArgumentDescs: descs.as_ptr() as *const D3D12_INDIRECT_ARGUMENT_DESC,
-            NumArgumentDescs: descs.len() as u32,
-            ByteStride: std::mem::size_of::<T>() as u32,
-            NodeMask: 0
-        };
-
-        // If the number of args is just 1 and is draw, draw_indexed it is invalid to pass a pipeline
-        let mut sig : Option<ID3D12CommandSignature> = None;
-        if let Some(pipeline) = pipeline {
-            unsafe {
-                self.device.CreateCommandSignature(&cmd_desc, &pipeline.root_signature, &mut sig)?;
-            }
-        }
-        else {
-            unsafe {
-                self.device.CreateCommandSignature(&cmd_desc, None, &mut sig)?;
-            }
-        };
-
-        Ok(CommandSignature {
-            command_signature: sig.unwrap()
-        })
-    }    
+    fn create_indirect_mesh_command<T: Sized>(
+        &mut self,
+        arguments: Vec<super::IndirectArgument>,
+        pipeline: Option<&MeshPipeline>,
+        _ms_numthreads: Size3,
+        _as_numthreads: Option<Size3>) -> result::Result<CommandSignature, super::Error> {
+        create_command_signature::<T>(&self.device, arguments, pipeline.map(|p| &p.root_signature))
+    }
 
     fn execute(&mut self, cmd: &CmdBuf) {
         unsafe {
@@ -3882,6 +4035,7 @@ impl super::Device for Device {
             IndirectArgumentType::Draw => std::mem::size_of::<D3D12_DRAW_ARGUMENTS>(),
             IndirectArgumentType::DrawIndexed => std::mem::size_of::<D3D12_DRAW_INDEXED_ARGUMENTS>(),
             IndirectArgumentType::Dispatch => std::mem::size_of::<D3D12_DISPATCH_ARGUMENTS>(),
+            IndirectArgumentType::DispatchMesh => std::mem::size_of::<D3D12_DISPATCH_MESH_ARGUMENTS>(),
             _ => panic!("hotline_rs::d3d12:: not implemented")
         }
     }
@@ -4313,6 +4467,14 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn set_mesh_pipeline(&mut self, pipeline: &MeshPipeline) {
+        let cmd = self.cmd();
+        unsafe {
+            cmd.SetGraphicsRootSignature(&pipeline.root_signature);
+            cmd.SetPipelineState(&pipeline.pso);
+        }
+    }
+
     fn set_compute_pipeline(&mut self, pipeline: &ComputePipeline) {
         let cmd = self.cmd();
         unsafe {
@@ -4443,6 +4605,14 @@ impl super::CmdBuf<Device> for CmdBuf {
     fn dispatch(&mut self, group_count: Size3, _numthreads: Size3) {
         unsafe {
             self.cmd().Dispatch(group_count.x, group_count.y, group_count.z);
+        }
+    }
+
+    fn dispatch_mesh(&mut self, group_count: Size3, _ms_numthreads: Size3, _as_numthreads: Option<Size3>) {
+        unsafe {
+            let cmd6 = self.cmd().cast::<ID3D12GraphicsCommandList6>()
+                .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList6 availability to dispatch_mesh");
+            cmd6.DispatchMesh(group_count.x, group_count.y, group_count.z);
         }
     }
 
@@ -4986,6 +5156,21 @@ impl super::Pipeline for RenderPipeline {
     }
 }
 
+impl super::Pipeline for MeshPipeline {
+    fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
+        let h = get_binding_descriptor_hash(register, space, descriptor_type);
+        self.lookup.slot_lookup.get(&h)
+    }
+
+    fn get_pipeline_slots(&self) -> &Vec<u32> {
+        &self.lookup.descriptor_slots
+    }
+
+    fn get_pipeline_type() -> PipelineType {
+        super::PipelineType::Render
+    }
+}
+
 impl super::Pipeline for ComputePipeline {
     fn get_pipeline_slot(&self, register: u32, space: u32, descriptor_type: DescriptorType) -> Option<&super::PipelineSlotInfo> {
         let h = get_binding_descriptor_hash(register, space, descriptor_type);
@@ -5201,6 +5386,7 @@ unsafe impl Sync for CommandSignature {}
 
 impl super::Shader<Device> for Shader {}
 impl super::RenderPipeline<Device> for RenderPipeline {}
+impl super::MeshPipeline<Device> for MeshPipeline {}
 impl super::ComputePipeline<Device> for ComputePipeline {}
 impl super::RaytracingPipeline<Device> for RaytracingPipeline {}
 impl super::CommandSignature<Device> for CommandSignature {}
