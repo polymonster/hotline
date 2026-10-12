@@ -383,6 +383,8 @@ const fn to_d3d12_shader_visibility(visibility: &super::ShaderVisibility) -> D3D
         super::ShaderVisibility::Vertex => D3D12_SHADER_VISIBILITY_VERTEX,
         super::ShaderVisibility::Fragment => D3D12_SHADER_VISIBILITY_PIXEL,
         super::ShaderVisibility::Compute => D3D12_SHADER_VISIBILITY_ALL,
+        super::ShaderVisibility::Mesh => D3D12_SHADER_VISIBILITY_MESH,
+        super::ShaderVisibility::Amplification => D3D12_SHADER_VISIBILITY_AMPLIFICATION,
     }
 }
 
@@ -3875,7 +3877,9 @@ impl super::Device for Device {
     fn create_indirect_mesh_command<T: Sized>(
         &mut self,
         arguments: Vec<super::IndirectArgument>,
-        pipeline: Option<&MeshPipeline>) -> result::Result<CommandSignature, super::Error> {
+        pipeline: Option<&MeshPipeline>,
+        _ms_numthreads: Size3,
+        _as_numthreads: Option<Size3>) -> result::Result<CommandSignature, super::Error> {
         create_command_signature::<T>(&self.device, arguments, pipeline.map(|p| &p.root_signature))
     }
 
@@ -4604,7 +4608,7 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
-    fn dispatch_mesh(&mut self, group_count: Size3, _numthreads: Size3) {
+    fn dispatch_mesh(&mut self, group_count: Size3, _ms_numthreads: Size3, _as_numthreads: Option<Size3>) {
         unsafe {
             let cmd6 = self.cmd().cast::<ID3D12GraphicsCommandList6>()
                 .expect("hotline_rs::gfx::d3d12: expected ID3D12GraphicsCommandList6 availability to dispatch_mesh");

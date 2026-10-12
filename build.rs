@@ -40,7 +40,16 @@ fn main() {
         }
 
         println!("cargo:warning=Compiling shaders...");
-        match htwv::compile_dir("shaders", "target/data/shaders") {
+        // pipelines which cannot compile for metal
+        let ignores = [
+            // metal has no raytracing pipelines, only inline raytracing
+            "raytracing",           // raytracing_example.pmfx
+            "mesh_lit_rt_shadow",   // material.jsn
+            // dxc -spirv does not support arrays of RW structured buffers
+            "compute_frustum_cull", // gpu_frustum_culling.jsn
+        ];
+
+        match htwv::compile_dir("shaders", "target/data/shaders", &ignores) {
             Ok(_) => println!("cargo:warning=Shader compilation succeeded"),
             Err(e) => println!("cargo:warning=Shader compilation errors:\n{e}"),
         }

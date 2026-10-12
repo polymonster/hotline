@@ -656,6 +656,8 @@ pub enum ShaderVisibility {
     Vertex,
     Fragment,
     Compute,
+    Mesh,
+    Amplification,
 }
 
 /// View types for creating secondary views for resources
@@ -1577,11 +1579,14 @@ pub trait Device: 'static + Send + Sync + Sized + Any + Clone {
         arguments: Vec<IndirectArgument>,
         pipeline: Option<&Self::RenderPipeline>
     ) -> Result<Self::CommandSignature, super::Error>;
-    /// Create a command signature for `execute_indirect` commands associated on the `MeshPipeline`
+    /// Create a command signature for `execute_indirect` commands associated on the `MeshPipeline`.
+    /// Thread counts are required for metal, in hlsl they are specified in the shader, same as `dispatch_mesh`
     fn create_indirect_mesh_command<T: Sized>(
         &mut self,
         arguments: Vec<IndirectArgument>,
-        pipeline: Option<&Self::MeshPipeline>
+        pipeline: Option<&Self::MeshPipeline>,
+        ms_numthreads: Size3,
+        as_numthreads: Option<Size3>
     ) -> Result<Self::CommandSignature, super::Error>;
     /// Execute a command buffer on the internal device command queue which still hold references
     fn execute(&mut self, cmd: &Self::CmdBuf);
@@ -1735,8 +1740,9 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     );
     /// Thread count is required for metal, in hlsl it is specified in the shader
     fn dispatch(&mut self, group_count: Size3, numthreads: Size3);
-    /// Dispatch for mesh shader pipeline
-    fn dispatch_mesh(&mut self, group_count: Size3, numthreads: Size3);
+    /// Dispatch for mesh shader pipeline. Thread counts are required for metal, in hlsl they are specified in the shader.
+    /// `as_numthreads` is required when the pipeline has an amplification shader
+    fn dispatch_mesh(&mut self, group_count: Size3, ms_numthreads: Size3, as_numthreads: Option<Size3>);
     /// Issue indirect commands with signature created from `create_indirect_render_command`
     fn execute_indirect(
         &mut self,

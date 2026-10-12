@@ -369,6 +369,15 @@ pub enum PipelineType {
     Raytracing
 }
 
+/// Threadgroup sizes extracted from the `numthreads` attribute of each shader stage in a pipeline
+#[derive(Serialize, Deserialize, Clone)]
+struct PipelineNumThreads {
+    cs: Option<(u32, u32, u32)>,
+    ms: Option<(u32, u32, u32)>,
+    #[serde(rename = "as")]
+    amps: Option<(u32, u32, u32)>,
+}
+
 /// Pmfx pipeline serialisation layout, this data is emitted from pmfx-shader compiler
 #[derive(Serialize, Deserialize, Clone)]
 struct Pipeline {
@@ -381,7 +390,7 @@ struct Pipeline {
     lib: Option<Vec<String>>,
     hit_groups: Option<Vec<gfx::RaytracingHitGroup>>,
     sbt: Option<RaytracingShaderBindingTableInfo>,
-    numthreads: Option<(u32, u32, u32)>,
+    numthreads: Option<PipelineNumThreads>,
     vertex_layout: Option<gfx::InputLayout>,
     pipeline_layout: gfx::PipelineLayout,
     depth_stencil_state: Option<String>,
@@ -1621,7 +1630,7 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
         else {
             if let Some(pipeline) = self.pmfx.pipelines.get(&pass_pipeline) {
-                if let Some(num_threads) = pipeline["0"].numthreads {
+                if let Some(num_threads) = pipeline["0"].numthreads.as_ref().and_then(|n| n.cs) {
                     num_threads
                 }
                 else {
@@ -2246,6 +2255,20 @@ impl<D> Pmfx<D> where D: gfx::Device {
         self.mesh_pipelines.get(&format_hash).and_then(|f| f.get(pipeline_name)).map(|p| &p.1).ok_or(super::Error {
             msg: format!("hotline_rs::pmfx:: could not find mesh pipeline for format: {} ({})", pipeline_name, format_hash),
         })
+    }
+
+    /// Returns the (mesh, amplification) shader threadgroup sizes of a pmfx defined mesh pipeline, to pass to `dispatch_mesh`.
+    /// The mesh size defaults to 1x1x1 and the amplification size is None when the pipeline has no amplification shader
+    pub fn get_mesh_pipeline_numthreads(&self, pipeline_name: &str) -> Result<(gfx::Size3, Option<gfx::Size3>), super::Error> {
+        let pipeline = self.pmfx.pipelines.get(pipeline_name).and_then(|p| p.get("0")).ok_or(super::Error {
+            msg: format!("hotline_rs::pmfx:: could not find pipeline: {}", pipeline_name),
+        })?;
+        let to_size3 = |(x, y, z): (u32, u32, u32)| gfx::Size3 { x, y, z };
+        let numthreads = pipeline.numthreads.as_ref();
+        Ok((
+            numthreads.and_then(|n| n.ms).map(to_size3).unwrap_or(gfx::Size3 { x: 1, y: 1, z: 1 }),
+            numthreads.and_then(|n| n.amps).map(to_size3)
+        ))
     }
 
     // Create a raytracing pipeline define in pmfx, with rg, ch, ah or mi shader stages

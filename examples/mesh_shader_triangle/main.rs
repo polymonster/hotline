@@ -115,7 +115,7 @@ fn main() -> Result<(), hotline_rs::Error> {
             x: 1,
             y: 1,
             z: 1
-        });
+        }, None);
 
         cmd.end_render_pass();
 

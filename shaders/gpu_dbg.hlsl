@@ -80,7 +80,7 @@ SamplerState                                gpu_dbg_linear_sampler : register(s0
 
 cbuffer gpu_dbg_view : register(b0)
 {
-    float4x4 gpu_dbg_view_projection_matrix;
+    row_major float4x4 gpu_dbg_view_projection_matrix;
     float2   gpu_dbg_screen_size;
 };
 
@@ -365,6 +365,10 @@ uint gpu_dbg_target_text() { return 0; }
 uint gpu_dbg_target_print() { return 1; }
 
 // Description:
+//      Number of chars in the print ring, must match PRINT_RING_SIZE in examples/gpu_dbg/main.rs which reads it back
+uint gpu_dbg_print_ring_size() { return 1 << 16; }
+
+// Description:
 //      Write char 'c' to position 'pos' in 'target'. print chars are tagged with the lap of the ring they were written
 //      in so the cpu can tell new chars from stale ones without syncing on the counter
 void gpu_dbg_put_char(uint target, uint pos, uint c)
@@ -375,8 +379,7 @@ void gpu_dbg_put_char(uint target, uint pos, uint c)
     }
     else
     {
-        uint size, stride;
-        gpu_dbg_print_data.GetDimensions(size, stride);
+        uint size = gpu_dbg_print_ring_size();
         gpu_dbg_print_data[pos % size] = (((pos / size) + 1) << 8) | c;
     }
 }
