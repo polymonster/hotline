@@ -2769,11 +2769,15 @@ impl<D> Pmfx<D> where D: gfx::Device {
         }
     }
 
-    /// Returns the build hash for the render graph so you can compare if the graph has rebuilt and needs reloading
+    /// Returns the build hash for the render graph so you can compare if the graph has rebuilt and needs reloading.
+    /// The pass names are sorted first: `HashMap` iteration order differs per instance, so hashing them in map order
+    /// gave a different hash for an identical graph every time the pmfx was reloaded, which made it look changed
     pub fn get_render_graph_hash(&self, render_graph: &str) -> PmfxHash {
         // this could be calculated at build time
         if self.pmfx.render_graphs.contains_key(render_graph) {
-            self.pmfx.render_graphs[render_graph].keys().fold(DefaultHasher::new(), |mut hasher, name|{
+            let mut names: Vec<&String> = self.pmfx.render_graphs[render_graph].keys().collect();
+            names.sort();
+            names.iter().fold(DefaultHasher::new(), |mut hasher, name|{
                 name.hash(&mut hasher);
                 hasher
             }).finish()

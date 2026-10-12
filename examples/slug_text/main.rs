@@ -57,7 +57,7 @@ fn main() -> Result<(), hotline_rs::Error> {
     // compile printable ascii from the font into curve and band textures
     let font_data = std::fs::read(hotline_rs::get_data_path("fonts/roboto_medium.ttf"))?;
     let font = SlugFont::from_ttf(&font_data, ' '..='~')?;
-    let (curve_texture, band_texture) = font.create_textures(&mut dev)?;
+    let (curve_texture, band_texture) = font.create_textures(&mut dev, None)?;
     let (curve_rows, band_rows) = font.texture_rows();
     println!("slug_text: {} glyphs, curve texture 4096x{curve_rows}, band texture 4096x{band_rows}", font.glyphs.len());
 

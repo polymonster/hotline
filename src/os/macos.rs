@@ -518,7 +518,19 @@ impl super::App for App {
             super::Key::Enter => winit::keyboard::KeyCode::Enter as i32,
             super::Key::Escape => winit::keyboard::KeyCode::Escape as i32,
             super::Key::KeyPadEnter => winit::keyboard::KeyCode::NumpadEnter as i32,
+            super::Key::C => winit::keyboard::KeyCode::KeyC as i32,
             super::Key::F => winit::keyboard::KeyCode::KeyF as i32,
+            super::Key::M => winit::keyboard::KeyCode::KeyM as i32,
+            super::Key::Digit0 => winit::keyboard::KeyCode::Digit0 as i32,
+            super::Key::Digit1 => winit::keyboard::KeyCode::Digit1 as i32,
+            super::Key::Digit2 => winit::keyboard::KeyCode::Digit2 as i32,
+            super::Key::Digit3 => winit::keyboard::KeyCode::Digit3 as i32,
+            super::Key::Digit4 => winit::keyboard::KeyCode::Digit4 as i32,
+            super::Key::Digit5 => winit::keyboard::KeyCode::Digit5 as i32,
+            super::Key::Digit6 => winit::keyboard::KeyCode::Digit6 as i32,
+            super::Key::Digit7 => winit::keyboard::KeyCode::Digit7 as i32,
+            super::Key::Digit8 => winit::keyboard::KeyCode::Digit8 as i32,
+            super::Key::Digit9 => winit::keyboard::KeyCode::Digit9 as i32,
         }
     }
 

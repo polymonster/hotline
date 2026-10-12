@@ -404,8 +404,10 @@ impl SlugFont {
         (self.curve_texels.len().div_ceil(TEXTURE_WIDTH).max(1), self.band_texels.len().div_ceil(TEXTURE_WIDTH).max(1))
     }
 
-    /// Creates the curve (RGBA16f) and band (RG16u) textures
-    pub fn create_textures<D: gfx::Device>(&self, device: &mut D) -> Result<(D::Texture, D::Texture), crate::Error> {
+    /// Creates the curve (RGBA16f) and band (RG16u) textures, with their shader resource views in `heap` or the
+    /// device's shader heap when `None`
+    pub fn create_textures<D: gfx::Device>(&self, device: &mut D, mut heap: Option<&mut D::Heap>)
+        -> Result<(D::Texture, D::Texture), crate::Error> {
         let (curve_rows, band_rows) = self.texture_rows();
         let info = |format, rows: usize| gfx::TextureInfo {
             tex_type: gfx::TextureType::Texture2D,
@@ -423,9 +425,36 @@ impl SlugFont {
         curves.resize(curve_rows * TEXTURE_WIDTH, [0; 4]);
         let mut bands = self.band_texels.clone();
         bands.resize(band_rows * TEXTURE_WIDTH, [0; 2]);
-        let curve_texture = device.create_texture(&info(gfx::Format::RGBA16f, curve_rows), Some(curves.as_slice()))?;
-        let band_texture = device.create_texture(&info(gfx::Format::RG16u, band_rows), Some(bands.as_slice()))?;
+        let curve_texture = device.create_texture_with_heaps(
+            &info(gfx::Format::RGBA16f, curve_rows),
+            gfx::TextureHeapInfo { shader: heap.as_deref_mut(), ..Default::default() },
+            Some(curves.as_slice())
+        )?;
+        let band_texture = device.create_texture_with_heaps(
+            &info(gfx::Format::RG16u, band_rows),
+            gfx::TextureHeapInfo { shader: heap, ..Default::default() },
+            Some(bands.as_slice())
+        )?;
         Ok((curve_texture, band_texture))
+    }
+
+    /// Width of the widest line of `text` at em `size`, in the same units as `size`
+    pub fn measure(&self, text: &str, size: f32) -> f32 {
+        let mut widest = 0.0f32;
+        for line in text.split('\n') {
+            let mut width = 0.0;
+            let mut prev: Option<ttf_parser::GlyphId> = None;
+            for c in line.chars() {
+                let Some(glyph) = self.glyphs.get(&c) else { continue };
+                if let Some(prev) = prev {
+                    width += self.kerning.get(&(prev.0, glyph.id.0)).copied().unwrap_or(0.0);
+                }
+                width += glyph.advance;
+                prev = Some(glyph.id);
+            }
+            widest = widest.max(width);
+        }
+        widest * size
     }
 
     /// Appends a quad per glyph for `text` to `vertices` and `indices`. `origin` is the left of the first line's
@@ -588,7 +617,9 @@ mod tests {
         assert!(o.max[1] > o.min[1] && o.max[0] > o.min[0]);
         let mut vertices = Vec::new();
         let mut indices = Vec::new();
-        font.layout("Hello\nworld", [0.0, 0.0], 32.0, [1.0; 4], &mut vertices, &mut indices);
+        let pen = font.layout("Hello", [0.0, 0.0], 32.0, [1.0; 4], &mut vertices, &mut indices);
+        assert!((font.measure("Hello\nHi", 32.0) - pen[0]).abs() < 1e-4);
+        font.layout("\nworld", [0.0, 0.0], 32.0, [1.0; 4], &mut vertices, &mut indices);
         assert_eq!(vertices.len(), 40);
         assert_eq!(indices.len(), 60);
     }
