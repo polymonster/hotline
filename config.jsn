@@ -91,6 +91,9 @@
 
                 // copy prebuilt dds-textures
                 ["${src_data_dir}/textures/**.dds", "${data_dir}/textures"]
+
+                // copy gltf models as they are, images are embedded and loaded at runtime
+                ["${src_data_dir}/models/**.glb", "${data_dir}/models"]
             ]
         }
 

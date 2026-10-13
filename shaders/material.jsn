@@ -128,6 +128,21 @@
             raster_state: cull_back
             topology: "TriangleList"
         }
+        mesh_gltf_pbr: {
+            vs: "vs_mesh_lit",
+            ps: "ps_mesh_gltf_pbr"
+            push_constants: [
+                "view_push_constants"
+                "draw_push_constants"
+                "world_buffer_info"
+            ]
+            static_samplers: {
+                sampler_wrap_linear: wrap_linear
+            }
+            depth_stencil_state: depth_test_less
+            raster_state: cull_back
+            topology: "TriangleList"
+        }
     }
 
     render_graphs: {
@@ -260,6 +275,20 @@
                 view: "main_view_no_clear"
                 pipelines: ["mesh_material_instanced_ibl"]
                 function: "render_meshes_bindless_ibl"
+                depends_on: ["clear_cubemap_skybox"]
+            }
+        }
+        mesh_gltf_pbr: {
+            clear_cubemap_skybox: {
+                view: "main_view"
+                function: "cubemap_clear"
+                pipelines: ["cubemap_clear"]
+                uses: [["static_cubemap", "Read"]]
+            }
+            meshes: {
+                view: "main_view_no_clear"
+                pipelines: ["mesh_gltf_pbr"]
+                function: "render_meshes_gltf"
                 depends_on: ["clear_cubemap_skybox"]
             }
         }

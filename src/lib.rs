@@ -22,6 +22,9 @@ pub mod pmfx;
 /// Primitive geometry meshes (quad, cube, sphere, etc).
 pub mod primitives;
 
+/// glTF model loading into data oriented node, submesh and pbr material arrays, with gpu buffers and bindless textures.
+pub mod model;
+
 /// Gpu text rendering directly from glyph outlines with the Slug algorithm.
 pub mod slug;
 
@@ -209,6 +212,7 @@ pub mod prelude {
         pmfx,
         imgui,
         image,
+        model,
 
         // platform specific
         gfx_platform,
@@ -243,6 +247,7 @@ pub mod prelude {
         pmfx,
         imgui,
         image,
+        model,
 
         // platform specific
         gfx_platform,

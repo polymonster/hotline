@@ -43,6 +43,7 @@ hot-lib-reloader = "0.6.4"
 libloading = "0.7.4"
 ddsfile = "0.5.1"
 ttf-parser = "0.25.1"
+gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }
 
 [build-dependencies]
 htwv = { path = "hotline-data/htwv" }

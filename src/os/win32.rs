@@ -193,19 +193,6 @@ const fn to_win32_key_code(key: super::Key) -> i32 {
         super::Key::Enter => VK_RETURN.0 as i32,
         super::Key::Escape => VK_ESCAPE.0 as i32,
         super::Key::KeyPadEnter => VK_RETURN.0 as i32,
-        super::Key::C => VK_C.0 as i32,
-        super::Key::F => VK_F.0 as i32,
-        super::Key::M => VK_M.0 as i32,
-        super::Key::Digit0 => VK_0.0 as i32,
-        super::Key::Digit1 => VK_1.0 as i32,
-        super::Key::Digit2 => VK_2.0 as i32,
-        super::Key::Digit3 => VK_3.0 as i32,
-        super::Key::Digit4 => VK_4.0 as i32,
-        super::Key::Digit5 => VK_5.0 as i32,
-        super::Key::Digit6 => VK_6.0 as i32,
-        super::Key::Digit7 => VK_7.0 as i32,
-        super::Key::Digit8 => VK_8.0 as i32,
-        super::Key::Digit9 => VK_9.0 as i32,
     }
 }
 

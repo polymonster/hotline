@@ -20,6 +20,35 @@ use cocoa::base::id as cocoa_id;
 
 use crate::os::Rect;
 
+/// Key arrays are indexed by windows virtual key code on every platform: letters and digits are their uppercase ascii
+/// char and named keys use the win32 VK_ values. winit declares KeyA..KeyZ and Digit0..Digit9 contiguously
+fn virtual_key_code(code: KeyCode) -> Option<usize> {
+    let letter = (code as usize).wrapping_sub(KeyCode::KeyA as usize);
+    let digit = (code as usize).wrapping_sub(KeyCode::Digit0 as usize);
+    match code {
+        _ if letter < 26 => Some(b'A' as usize + letter),
+        _ if digit < 10 => Some(b'0' as usize + digit),
+        KeyCode::Backspace => Some(0x08),
+        KeyCode::Tab => Some(0x09),
+        KeyCode::Enter | KeyCode::NumpadEnter => Some(0x0d),
+        KeyCode::Escape => Some(0x1b),
+        KeyCode::Space => Some(0x20),
+        KeyCode::PageUp => Some(0x21),
+        KeyCode::PageDown => Some(0x22),
+        KeyCode::End => Some(0x23),
+        KeyCode::Home => Some(0x24),
+        KeyCode::ArrowLeft => Some(0x25),
+        KeyCode::ArrowUp => Some(0x26),
+        KeyCode::ArrowRight => Some(0x27),
+        KeyCode::ArrowDown => Some(0x28),
+        KeyCode::Insert => Some(0x2d),
+        KeyCode::Delete => Some(0x2e),
+        KeyCode::Equal => Some(0xbb),
+        KeyCode::Minus => Some(0xbd),
+        _ => None
+    }
+}
+
 /// Input state tracking (similar to ProcData in win32.rs)
 #[derive(Clone)]
 struct InputState {
@@ -313,8 +342,7 @@ impl winit::application::ApplicationHandler for FrameHandler<'_> {
             WindowEvent::KeyboardInput { event, .. } => {
                 let pressed = event.state == ElementState::Pressed;
                 if let PhysicalKey::Code(key_code) = event.physical_key {
-                    let code = key_code as usize;
-                    if code < 256 {
+                    if let Some(code) = virtual_key_code(key_code) {
                         state.key_down[code] = pressed;
                     }
                 }
@@ -499,39 +527,27 @@ impl super::App for App {
         self.input_state.read().unwrap().sys_key_press[key as usize]
     }
 
-    /// Get os system virtual key code from Key
+    /// Get os system virtual key code from Key, the same code `virtual_key_code` stores key state under
     fn get_key_code(key: super::Key) -> i32 {
-        match key {
-            super::Key::Tab => winit::keyboard::KeyCode::Tab as i32,
-            super::Key::Left => winit::keyboard::KeyCode::ArrowLeft as i32,
-            super::Key::Right => winit::keyboard::KeyCode::ArrowRight as i32,
-            super::Key::Up => winit::keyboard::KeyCode::ArrowUp as i32,
-            super::Key::Down => winit::keyboard::KeyCode::ArrowDown as i32,
-            super::Key::PageUp => winit::keyboard::KeyCode::PageUp as i32,
-            super::Key::PageDown => winit::keyboard::KeyCode::PageDown as i32,
-            super::Key::Home => winit::keyboard::KeyCode::Home as i32,
-            super::Key::End => winit::keyboard::KeyCode::End as i32,
-            super::Key::Insert => winit::keyboard::KeyCode::Insert as i32,
-            super::Key::Delete => winit::keyboard::KeyCode::Delete as i32,
-            super::Key::Backspace => winit::keyboard::KeyCode::Backspace as i32,
-            super::Key::Space => winit::keyboard::KeyCode::Space as i32,
-            super::Key::Enter => winit::keyboard::KeyCode::Enter as i32,
-            super::Key::Escape => winit::keyboard::KeyCode::Escape as i32,
-            super::Key::KeyPadEnter => winit::keyboard::KeyCode::NumpadEnter as i32,
-            super::Key::C => winit::keyboard::KeyCode::KeyC as i32,
-            super::Key::F => winit::keyboard::KeyCode::KeyF as i32,
-            super::Key::M => winit::keyboard::KeyCode::KeyM as i32,
-            super::Key::Digit0 => winit::keyboard::KeyCode::Digit0 as i32,
-            super::Key::Digit1 => winit::keyboard::KeyCode::Digit1 as i32,
-            super::Key::Digit2 => winit::keyboard::KeyCode::Digit2 as i32,
-            super::Key::Digit3 => winit::keyboard::KeyCode::Digit3 as i32,
-            super::Key::Digit4 => winit::keyboard::KeyCode::Digit4 as i32,
-            super::Key::Digit5 => winit::keyboard::KeyCode::Digit5 as i32,
-            super::Key::Digit6 => winit::keyboard::KeyCode::Digit6 as i32,
-            super::Key::Digit7 => winit::keyboard::KeyCode::Digit7 as i32,
-            super::Key::Digit8 => winit::keyboard::KeyCode::Digit8 as i32,
-            super::Key::Digit9 => winit::keyboard::KeyCode::Digit9 as i32,
-        }
+        let code = match key {
+            super::Key::Tab => KeyCode::Tab,
+            super::Key::Left => KeyCode::ArrowLeft,
+            super::Key::Right => KeyCode::ArrowRight,
+            super::Key::Up => KeyCode::ArrowUp,
+            super::Key::Down => KeyCode::ArrowDown,
+            super::Key::PageUp => KeyCode::PageUp,
+            super::Key::PageDown => KeyCode::PageDown,
+            super::Key::Home => KeyCode::Home,
+            super::Key::End => KeyCode::End,
+            super::Key::Insert => KeyCode::Insert,
+            super::Key::Delete => KeyCode::Delete,
+            super::Key::Backspace => KeyCode::Backspace,
+            super::Key::Space => KeyCode::Space,
+            super::Key::Enter => KeyCode::Enter,
+            super::Key::Escape => KeyCode::Escape,
+            super::Key::KeyPadEnter => KeyCode::NumpadEnter,
+        };
+        virtual_key_code(code).unwrap() as i32
     }
 
     /// Set's whethere input from keybpard or mouse is available or not

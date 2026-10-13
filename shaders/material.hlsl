@@ -161,6 +161,25 @@ ps_output ps_mesh_material(vs_output_material input) {
     return output;
 }
 
+// image based lighting from a prefiltered cubemap (mips by roughness) and a brdf lut, v points from the eye to the surface
+float3 ibl(float3 albedo, float3 n, float3 v, float roughness, float metalness, uint cubemap_idx, uint lut_idx) {
+    float n_dot_v = saturate(dot(n, -v));
+    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metalness);
+    float3 f = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+    float3 r = reflect(v, n);
+
+    // irradiance / diffuse
+    float3 irradiance = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, n, 8.0).rgb;
+    float3 kd = (1.0 - f) * (1.0 - metalness);
+
+    // specular / reflection
+    float3 prefilter = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, r, roughness * 16.0).rgb;
+    float2 brdf = textures[lut_idx].Sample(sampler_wrap_linear, float2(n_dot_v, roughness)).rg;
+    float3 specular = prefilter * (f * brdf.x + brdf.y);
+
+    return kd * max(irradiance * albedo, 0.0) + max(specular, 0.0);
+}
+
 float4 ps_mesh_material_instanced_ibl(vs_output_material input) : SV_TARGET {
 
     float2 tc = input.texcoord.xy;
@@ -182,35 +201,73 @@ float4 ps_mesh_material_instanced_ibl(vs_output_material input) : SV_TARGET {
     float roughness = rm.r;
     float metalness = rm.g;
 
-    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
-    float3 albedo_rgb = albedo.rgb;
-
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo_rgb, metalness);
-    float3 f = fresnel_schlick_roughness(max(dot(n, -v), 0.0), f0, roughness);
-
-    float3 rd = normalize(input.world_pos.xyz - view_position.xyz) * float3(1.0, 1.0, -1.0);
-    float3 nd = normalize(n * float3(1.0, 1.0, -1.0));
-    float3 r = reflect(rd, nd);
-    r.z *= -1.0;
-
     // IBL indices from world_buffer_info user_data
-    uint cubemap_idx = world_buffer_info.user_data.x;
-    uint lut_idx = world_buffer_info.user_data.y;
+    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
+    return float4(ibl(albedo.rgb, n, v, roughness, metalness, world_buffer_info.user_data.x, world_buffer_info.user_data.y), 1.0);
+}
 
-    // irradiance / diffuse
-    float irradiance_lod = 8.0;
-    float3 irradiance = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, n.xyz, irradiance_lod).rgb;
-    float3 diffuse = irradiance * albedo_rgb;
+// glTF pbr metallic roughness material, matches `hotline_rs::model::PbrMaterialData`. texture ids are bindless srv
+// indices into `textures`, 0xffffffff when the material has no texture for that slot
+struct pbr_material_data {
+    float4 base_colour_factor;
+    float3 emissive_factor;
+    float  metallic_factor;
+    float  roughness_factor;
+    float  alpha_cutoff;
+    uint   flags;
+    uint   padding0;
+    uint   base_colour_id;
+    uint   normal_id;
+    uint   metallic_roughness_id;
+    uint   occlusion_id;
+    uint   emissive_id;
+    uint3  padding1;
+}
 
-    // specular / reflection
-    float spec_lod = 16.0;
-    float3 ks = f;
-    float3 kd = (1.0 - ks) * (1.0 - metalness);
-    float3 prefilter = cubemaps[cubemap_idx].SampleLevel(sampler_wrap_linear, r.xyz, roughness * spec_lod).rgb;
-    float2 brdf = textures[lut_idx].Sample(sampler_wrap_linear, float2(saturate(dot(n, v)), roughness)).rg;
-    float3 specular = prefilter * (f * brdf.x + brdf.y);
+StructuredBuffer<pbr_material_data> pbr_materials[] : register(t0, space15);
 
-    return float4(kd * max(diffuse, 0.0) + max(specular, 0.0), 1.0);
+// samples texture `id`, or returns `fallback` when there is no texture
+float4 sample_or(uint id, float2 tc, float4 fallback) {
+    if(id == 0xffffffff) {
+        return fallback;
+    }
+    return textures[id].Sample(sampler_wrap_linear, tc);
+}
+
+// lit with ibl, user_data.x = cubemap, user_data.y = brdf lut, user_data.z = pbr_materials buffer, draw_indices.x = material
+float4 ps_mesh_gltf_pbr(vs_output_material input) : SV_TARGET {
+    pbr_material_data mat = pbr_materials[world_buffer_info.user_data.z][draw_indices.x];
+    float2 tc = input.texcoord.xy;
+
+    // base colour, discarding alpha masked pixels (material_flags::ALPHA_MASK)
+    float4 albedo = mat.base_colour_factor * sample_or(mat.base_colour_id, tc, float4(1.0, 1.0, 1.0, 1.0));
+    if((mat.flags & 1) && albedo.a < mat.alpha_cutoff) {
+        discard;
+    }
+
+    // normal map - tangent space to world space
+    float3 n = normalize(input.normal);
+    if(mat.normal_id != 0xffffffff) {
+        float3 ts_normal = textures[mat.normal_id].Sample(sampler_wrap_linear, tc).xyz * 2.0 - 1.0;
+        float3x3 tbn;
+        tbn[0] = input.tangent.xyz;
+        tbn[1] = input.bitangent.xyz;
+        tbn[2] = n;
+        n = normalize(mul(ts_normal, tbn));
+    }
+
+    // glTF packs roughness in g and metalness in b, occlusion in r
+    float4 mr = sample_or(mat.metallic_roughness_id, tc, float4(1.0, 1.0, 1.0, 1.0));
+    float roughness = mat.roughness_factor * mr.g;
+    float metalness = mat.metallic_factor * mr.b;
+    float occlusion = sample_or(mat.occlusion_id, tc, float4(1.0, 1.0, 1.0, 1.0)).r;
+    float3 emissive = mat.emissive_factor * sample_or(mat.emissive_id, tc, float4(1.0, 1.0, 1.0, 1.0)).rgb;
+
+    float3 v = normalize(input.world_pos.xyz - view_position.xyz);
+    float3 lit = ibl(albedo.rgb, n, v, roughness, metalness, world_buffer_info.user_data.x, world_buffer_info.user_data.y);
+
+    // srgb textures sample as linear, gamma encode for the unorm target
+    return float4(pow(lit * occlusion + emissive, 1.0 / 2.2), 1.0);
 }
 
 ps_output ps_mesh_lit(vs_output input) {
@@ -296,30 +353,7 @@ float4 ps_mesh_pbr_ibl(vs_output input) : SV_TARGET {
     float3 n = input.normal;
 
     float3 albedo = float3(1.0, 0.5, 0.0);
-
-    float3 f0 = lerp(float3(0.04, 0.04, 0.04), albedo, metalness);
-    float3 f = fresnel_schlick_roughness(max(dot(n, -v), 0.0), f0, roughness);
-
-    float3 rd = normalize(input.world_pos.xyz - view_position.xyz) * float3(1.0, 1.0, -1.0);
-    float3 nd = normalize(input.normal.xyz * float3(1.0, 1.0, -1.0));
-    float3 r = reflect(rd, nd);
-    r.z *= -1.0;
-
-    // irradiance / diffuse
-    float irradiance_lod = 8.0;
-    float3 irradiance = cubemaps[draw_indices.x].SampleLevel(sampler_wrap_linear, n.xyz, irradiance_lod).rgb;
-    float3 diffuse = irradiance * albedo;
-
-    // specular / reflection
-    float spec_lod = 16.0;
-
-    float3 ks = f;
-    float3 kd = (1.0 - ks) * (1.0 - metalness);
-    float3 prefilter = cubemaps[draw_indices.x].SampleLevel(sampler_wrap_linear, r.xyz, roughness * spec_lod).rgb;
-    float2 brdf = textures[draw_indices.y].Sample(sampler_wrap_linear, float2(saturate(dot(n, v)), roughness)).rg;
-    float3 specular = prefilter * (f * brdf.x + brdf.y);
-
-    return float4(((kd * max(diffuse, 0.0) + max(specular, 0.0))), 1.0);
+    return float4(ibl(albedo, n, v, roughness, metalness, draw_indices.x, draw_indices.y), 1.0);
 }
 
 struct RayPayload

@@ -790,3 +790,50 @@ fn pbr() -> Result<(), hotline_rs::Error> {
 fn omni_shadow_maps() -> Result<(), hotline_rs::Error> {
     boot_client_ecs_plugin_demo("omni_shadow_map")
 }
+
+#[test]
+fn gltf_model() -> Result<(), hotline_rs::Error> {
+    boot_client_ecs_plugin_demo("gltf_model")
+}
+
+/// Loads the chess set used by the `gltf_model` demo, checks the node / submesh / material links and the gpu upload
+#[test]
+fn gltf_load() -> Result<(), hotline_rs::Error> {
+    let data = model::load_gltf(
+        &hotline_rs::get_data_path("models/ABeautifulGame.glb"), &model::GltfLoadInfo::default())?;
+    assert_eq!(data.nodes.len(), 49);
+    assert_eq!(data.submeshes.len(), 15);
+    assert_eq!(data.materials.len(), 15);
+    assert_eq!(data.images.len(), 33);
+
+    // parents come first, pawn tops are children of pawn bodies
+    for (i, parent) in data.nodes.parent.iter().enumerate() {
+        assert!(*parent == model::NONE || (*parent as usize) < i);
+    }
+    let top = data.nodes.find("Pawn_Top_W1").unwrap();
+    assert_eq!(data.nodes.parent[top] as usize, data.nodes.find("Pawn_Body_W1").unwrap());
+
+    // node submesh ranges and submesh materials are in bounds
+    for i in 0..data.nodes.len() {
+        assert!((data.nodes.submesh_first[i] + data.nodes.submesh_count[i]) as usize <= data.submeshes.len());
+    }
+    for i in 0..data.submeshes.len() {
+        assert!((data.submeshes.material[i] as usize) < data.materials.len());
+        assert_eq!(data.submeshes.indices[i].len() % 3, 0);
+    }
+
+    let mut device = gfx_platform::Device::create(&gfx::DeviceInfo {
+        adapter_name: None,
+        shader_heap_size: 64,
+        render_target_heap_size: 1,
+        depth_stencil_heap_size: 1,
+    });
+    let gpu = model::Model::create(&mut device, &data, None)?;
+    assert_eq!(gpu.meshes.len(), 15);
+    assert_eq!(gpu.textures.len(), 33);
+    assert_eq!(gpu.materials.len(), 16); // + default
+    for i in 0..data.materials.len() {
+        assert_eq!(gpu.materials[i].base_colour_id == model::NONE, data.materials.base_colour_image[i] == model::NONE);
+    }
+    Ok(())
+}

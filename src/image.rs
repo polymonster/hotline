@@ -29,70 +29,87 @@ pub fn load_from_file(filename: &str) -> Result<ImageData, super::Error> {
     let mut f = fs::File::open(path).expect("hotline_rs::image:: File not found");
     // dds file
     if filename.ends_with(".dds") {
-        let dds = DDS::read(f)?;
-        Ok(ImageData {
-            info: TextureInfo {
-                tex_type: to_gfx_texture_type(&dds),
-                format: to_gfx_format(&dds),
-                width: dds.get_width() as u64,
-                height: dds.get_height() as u64,
-                depth: dds.get_depth(),
-                array_layers: dds.get_num_array_layers(),
-                mip_levels: dds.get_num_mipmap_levels(),
-                samples: 1,
-                usage: gfx::TextureUsage::SHADER_RESOURCE,
-                initial_state: gfx::ResourceState::ShaderResource
-            },
-            data: dds.data.to_vec(),
-        })
+        load_dds(DDS::read(f)?)
     }
     else {
         // stb image
         let mut contents = vec![];
         f.read_to_end(&mut contents)?;
+        load_from_memory(&contents).map_err(|err| super::Error {
+            msg: format!("{}: {}", err.msg, filename)
+        })
+    }
+}
 
-        let mut x = 0;
-        let mut y = 0;
-        let mut comp = 0;
-        let mut data_out: Vec<u8> = Vec::new();
+/// Loads an image from an in-memory file (for example an image embedded in a .glb), returning information in the
+/// ImageData struct. supported formats are (png, tga, bmp, jpg, gif, dds), dds is detected by its magic number
+pub fn load_from_memory(bytes: &[u8]) -> Result<ImageData, super::Error> {
+    if bytes.starts_with(b"DDS ") {
+        return load_dds(DDS::read(bytes)?);
+    }
 
-        unsafe {
-            // load image
-            let img = stb_image_rust::stbi_load_from_memory(
-                contents.as_mut_ptr(),
-                contents.len() as i32,
-                &mut x,
-                &mut y,
-                &mut comp,
-                stb_image_rust::STBI_rgb_alpha,
-            );
+    // stb takes a mutable pointer
+    let mut contents = bytes.to_vec();
+    let mut x = 0;
+    let mut y = 0;
+    let mut comp = 0;
+    let mut data_out: Vec<u8> = Vec::new();
 
-            if !img.is_null() {
-                // copy data
-                let data_size_bytes = x * y * 4;
-                data_out.resize(data_size_bytes as usize, 0);
-                std::ptr::copy_nonoverlapping(img, data_out.as_mut_ptr(), data_size_bytes as usize);
+    unsafe {
+        // load image
+        let img = stb_image_rust::stbi_load_from_memory(
+            contents.as_mut_ptr(),
+            contents.len() as i32,
+            &mut x,
+            &mut y,
+            &mut comp,
+            stb_image_rust::STBI_rgb_alpha,
+        );
 
-                // cleanup
-                stb_image_rust::c_runtime::free(img);
+        if !img.is_null() {
+            // copy data
+            let data_size_bytes = x * y * 4;
+            data_out.resize(data_size_bytes as usize, 0);
+            std::ptr::copy_nonoverlapping(img, data_out.as_mut_ptr(), data_size_bytes as usize);
 
-                Ok(ImageData {
-                    info: TextureInfo {
-                        format: gfx::Format::RGBA8n,
-                        width: x as u64,
-                        height: y as u64,
-                        ..Default::default()
-                    },
-                    data: data_out,
-                })
-            }
-            else {
-                Err(super::Error {
-                    msg: format!("hotline_rs::image:: failed to load image via stb_image: {}", filename)
-                })
-            }
+            // cleanup
+            stb_image_rust::c_runtime::free(img);
+
+            Ok(ImageData {
+                info: TextureInfo {
+                    format: gfx::Format::RGBA8n,
+                    width: x as u64,
+                    height: y as u64,
+                    ..Default::default()
+                },
+                data: data_out,
+            })
+        }
+        else {
+            Err(super::Error {
+                msg: "hotline_rs::image:: failed to load image via stb_image".to_string()
+            })
         }
     }
+}
+
+/// Fill ImageData from a parsed dds
+fn load_dds(dds: DDS) -> Result<ImageData, super::Error> {
+    Ok(ImageData {
+        info: TextureInfo {
+            tex_type: to_gfx_texture_type(&dds),
+            format: to_gfx_format(&dds),
+            width: dds.get_width() as u64,
+            height: dds.get_height() as u64,
+            depth: dds.get_depth(),
+            array_layers: dds.get_num_array_layers(),
+            mip_levels: dds.get_num_mipmap_levels(),
+            samples: 1,
+            usage: gfx::TextureUsage::SHADER_RESOURCE,
+            initial_state: gfx::ResourceState::ShaderResource
+        },
+        data: dds.data.to_vec(),
+    })
 }
 
 /// Loads an image from file and creates a shader resource on the specified heap, or on the device heap if `heap.is_none()`

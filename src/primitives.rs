@@ -120,30 +120,27 @@ pub fn subdivide_triangle(t0: &Vertex3D, t1: &Vertex3D, t2: &Vertex3D, order: u3
 
 /// Utility to create faceted meshes with varying index sizes depending on the index requirements
 pub fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indices: Vec<usize>) -> pmfx::Mesh<D> {
+    let indices32 : Vec<u32> = indices.iter().map(|i| *i as u32).collect();
+    try_create_mesh_3d(dev, &vertices, &indices32).unwrap()
+}
+
+/// Creates a mesh from `vertices` and `indices`, using 16 bit indices when the vertex count allows it
+pub fn try_create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: &[Vertex3D], indices: &[u32]) -> Result<pmfx::Mesh<D>, crate::Error> {
     let max_index = vertices.len();
     let index_buffer = if max_index > 65535 {
-        let mut indices32 : Vec<u32> = Vec::new();
-        for i in &indices {
-            indices32.push(*i as u32);
-        }
-
         dev.create_buffer(&gfx::BufferInfo {
             usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
-            num_elements: indices32.len(),
+            num_elements: indices.len(),
             format: gfx::Format::R32u,
             stride: 4,
             initial_state: gfx::ResourceState::IndexBuffer
             },
-            Some(indices32.as_slice())
-        ).unwrap()
+            Some(indices)
+        )?
     }
     else {
-        let mut indices16 : Vec<u16> = Vec::new();
-        for i in &indices {
-            indices16.push(*i as u16);
-        }
-
+        let indices16 : Vec<u16> = indices.iter().map(|i| *i as u16).collect();
         dev.create_buffer(&gfx::BufferInfo {
             usage: gfx::BufferUsage::INDEX,
             cpu_access: gfx::CpuAccessFlags::NONE,
@@ -153,13 +150,13 @@ pub fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indi
             initial_state: gfx::ResourceState::IndexBuffer
             },
             Some(indices16.as_slice())
-        ).unwrap()
+        )?
     };
 
     let (aabb_min, aabb_max) =
-        indices.iter().fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, i| min_max(vertices[*i].position, acc));
+        indices.iter().fold((Vec3f::max_value(), -Vec3f::max_value()), |acc, i| min_max(vertices[*i as usize].position, acc));
 
-    pmfx::Mesh {
+    Ok(pmfx::Mesh {
         vb: dev.create_buffer(&gfx::BufferInfo {
                 usage: gfx::BufferUsage::VERTEX,
                 cpu_access: gfx::CpuAccessFlags::NONE,
@@ -167,16 +164,16 @@ pub fn create_mesh_3d<D: gfx::Device>(dev: &mut D, vertices: Vec<Vertex3D>, indi
                 format: gfx::Format::Unknown,
                 stride: std::mem::size_of::<Vertex3D>(),
                 initial_state: gfx::ResourceState::VertexConstantBuffer
-            }, 
-            Some(vertices.as_slice())
-        ).unwrap(),
+            },
+            Some(vertices)
+        )?,
         ib: index_buffer,
         num_indices: indices.len() as u32,
         num_vertices: vertices.len() as u32,
         index_size_bytes: if max_index > 65535 { 4 } else { 2 },
         aabb_min,
         aabb_max
-    }
+    })
 }
 
 /// Utility to create a facent mesh which will have hard edged normals and automatically generate and index buffer from vertices

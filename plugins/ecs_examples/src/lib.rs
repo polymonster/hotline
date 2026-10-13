@@ -26,6 +26,7 @@ mod shadow_map;
 mod omni_shadow_map;
 mod dynamic_cubemap;
 mod bindless_material_ibl;
+mod gltf_model;
 mod raytracing_pipeline;
 mod raytraced_shadows;
 mod claude;
@@ -667,6 +668,7 @@ pub fn get_demos_ecs_examples() -> Vec<String> {
         "dynamic_cubemap",
         "omni_shadow_map",
         "bindless_material_ibl",
+        "gltf_model",
         "raytracing_pipeline",
         "raytraced_shadows",
         "claude"

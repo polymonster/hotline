@@ -62,19 +62,31 @@ pub enum Key {
     Enter,
     Escape,
     KeyPadEnter,
-    C,
-    F,
-    M,
-    Digit0,
-    Digit1,
-    Digit2,
-    Digit3,
-    Digit4,
-    Digit5,
-    Digit6,
-    Digit7,
-    Digit8,
-    Digit9,
+}
+
+/// A key to query with `App::is_key_down` and `App::is_key_pressed`: a char or byte for letters and digits, either
+/// case (`'m'`, `b'1'`), or a named `Key`
+pub trait KeyId {
+    /// Index into the key arrays, the windows virtual key code
+    fn code<A: App>(self) -> usize;
+}
+
+impl KeyId for char {
+    fn code<A: App>(self) -> usize {
+        self.to_ascii_uppercase() as usize
+    }
+}
+
+impl KeyId for u8 {
+    fn code<A: App>(self) -> usize {
+        self.to_ascii_uppercase() as usize
+    }
+}
+
+impl KeyId for Key {
+    fn code<A: App>(self) -> usize {
+        A::get_key_code(self) as usize
+    }
 }
 
 /// Enums for different mouse cursors
@@ -219,10 +231,21 @@ pub trait App: 'static + Any + Sized + Send + Sync + Clone {
     fn get_mouse_pos_delta(&self) -> Size<i32>;
     /// Returns a vector of utf-16 characters that have been input since the last frame
     fn get_utf16_input(&self) -> Vec<u16>;
-    /// Returns an array of bools containing 0-256 keys down (true) or up (false)
+    /// Returns an array of bools containing 0-256 keys down (true) or up (false). Indexed by windows virtual key code
+    /// on every platform: letters and digits are their uppercase ascii char (`keys[b'C' as usize]`), use
+    /// `get_key_code` for named keys
     fn get_keys_down(&self) -> [bool; 256];
-    /// Returns an array of bools containing 0-256 of keys pressed, will trigger only once and then require debouce
+    /// Returns an array of bools containing 0-256 of keys pressed, will trigger only once and then require debouce.
+    /// Indexed the same as `get_keys_down`
     fn get_keys_pressed(&self) -> [bool; 256];
+    /// Returns true if `key` is down: `app.is_key_down('w')` or `app.is_key_down(os::Key::Space)`
+    fn is_key_down(&self, key: impl KeyId) -> bool {
+        self.get_keys_down().get(key.code::<Self>()).copied().unwrap_or(false)
+    }
+    /// Returns true if `key` was pressed this frame, then requires debounce: `app.is_key_pressed('m')`
+    fn is_key_pressed(&self, key: impl KeyId) -> bool {
+        self.get_keys_pressed().get(key.code::<Self>()).copied().unwrap_or(false)
+    }
     /// Returns true if the sys key is down and false if the key is up
     fn is_sys_key_down(&self, key: SysKey) -> bool;
     /// Returns true if the sys key is pressed this frame and requires debounce until it is pressed again

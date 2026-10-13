@@ -6,8 +6,28 @@ use crate::prelude::*;
 
 #[derive(Resource)]
 pub struct IblData {
-    cubemap_srv: u32,
-    lut_srv: u32,
+    pub cubemap_srv: u32,
+    pub lut_srv: u32,
+}
+
+/// Loads the ibl cubemap and brdf lut, spawning them as entities to keep them alive
+pub fn load_ibl_data(
+    device: &mut gfx_platform::Device,
+    pmfx: &mut Pmfx<gfx_platform::Device>,
+    commands: &mut Commands) -> Result<IblData, hotline_rs::Error> {
+    let cubemap = hotline_rs::image::load_texture_from_file(
+        device, &hotline_rs::get_data_path("textures/cubemap.dds"), Some(&mut pmfx.shader_heap))?;
+    let lut = hotline_rs::image::load_texture_from_file(
+        device, &hotline_rs::get_data_path("textures/luts/ibl_brdf_lut.dds"), Some(&mut pmfx.shader_heap))?;
+
+    let ibl = IblData {
+        cubemap_srv: cubemap.get_srv_index().unwrap() as u32,
+        lut_srv: lut.get_srv_index().unwrap() as u32
+    };
+
+    commands.spawn(TextureComponent(cubemap));
+    commands.spawn(TextureComponent(lut));
+    Ok(ibl)
 }
 
 #[no_mangle]
@@ -47,20 +67,7 @@ pub fn setup_bindless_material_ibl(
         load_material(&mut device, &mut pmfx.0, &hotline_rs::get_data_path("textures/pbr/worn-painted-cement"))?,
     ];
 
-    // load IBL textures
-    let cubemap_filepath = hotline_rs::get_data_path("textures/cubemap.dds");
-    let cubemap = hotline_rs::image::load_texture_from_file(
-        &mut device.0, &cubemap_filepath, Some(&mut pmfx.shader_heap)).unwrap();
-
-    let lut_filepath = hotline_rs::get_data_path("textures/luts/ibl_brdf_lut.dds");
-    let lut = hotline_rs::image::load_texture_from_file(
-        &mut device.0, &lut_filepath, Some(&mut pmfx.shader_heap)).unwrap();
-
-    let cubemap_srv = cubemap.get_srv_index().unwrap() as u32;
-    let lut_srv = lut.get_srv_index().unwrap() as u32;
-
-    commands.spawn(TextureComponent(cubemap));
-    commands.spawn(TextureComponent(lut));
+    let ibl_data = load_ibl_data(&mut device, &mut pmfx, &mut commands)?;
 
     // grid layout: 3x3 columns
     let num_materials = materials.len();
@@ -149,7 +156,7 @@ pub fn setup_bindless_material_ibl(
         commands.spawn(material);
     }
 
-    commands.insert_resource(IblData { cubemap_srv, lut_srv });
+    commands.insert_resource(ibl_data);
 
     Ok(())
 }

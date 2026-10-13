@@ -387,7 +387,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         self.cmd_buf.reset(&self.swap_chain);
 
         // toggle fullscreen with ctrl+shift+f
-        if self.app.get_keys_pressed()[A::get_key_code(os::Key::F) as usize]
+        if self.app.is_key_pressed('f')
             && self.app.is_sys_key_down(os::SysKey::Ctrl)
             && self.app.is_sys_key_down(os::SysKey::Shift) {
             self.fullscreen = !self.fullscreen;
