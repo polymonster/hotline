@@ -15,6 +15,9 @@ use metal::foreign_types::ForeignTypeRef;
 
 // High level AVPlayer playback, frames are pulled from an AVPlayerItemVideoOutput as BGRA CVPixelBuffers,
 // wrapped zero copy as metal textures via a CVMetalTextureCache and then blitted into a hotline texture.
+//
+// Recording writes frames read back to the cpu into BGRA CVPixelBuffers from an AVAssetWriterInputPixelBufferAdaptor
+// pool, which an AVAssetWriter encodes to h264.
 
 type CFTypeRef = *const std::ffi::c_void;
 type CVReturn = i32;
@@ -48,12 +51,28 @@ struct CGSize {
     height: f64
 }
 
+/// AVAssetWriterStatus
+const AV_ASSET_WRITER_STATUS_WRITING: isize = 1;
+const AV_ASSET_WRITER_STATUS_FAILED: isize = 3;
+
 #[link(name = "AVFoundation", kind = "framework")]
-extern "C" {}
+extern "C" {
+    static AVMediaTypeVideo: id;
+    static AVFileTypeMPEG4: id;
+    static AVFileTypeQuickTimeMovie: id;
+    static AVVideoCodecKey: id;
+    static AVVideoCodecTypeH264: id;
+    static AVVideoWidthKey: id;
+    static AVVideoHeightKey: id;
+    static AVVideoCompressionPropertiesKey: id;
+    static AVVideoAverageBitRateKey: id;
+    static AVVideoExpectedSourceFrameRateKey: id;
+}
 
 #[link(name = "CoreMedia", kind = "framework")]
 extern "C" {
     fn CMTimeGetSeconds(time: CMTime) -> f64;
+    fn CMTimeMakeWithSeconds(seconds: f64, preferred_timescale: i32) -> CMTime;
     static kCMTimeZero: CMTime;
 }
 
@@ -71,7 +90,18 @@ extern "C" {
 extern "C" {
     static kCVPixelBufferPixelFormatTypeKey: id;
     static kCVPixelBufferMetalCompatibilityKey: id;
+    static kCVPixelBufferWidthKey: id;
+    static kCVPixelBufferHeightKey: id;
     fn CVPixelBufferGetWidth(pixel_buffer: CVPixelBufferRef) -> usize;
+    fn CVPixelBufferGetBytesPerRow(pixel_buffer: CVPixelBufferRef) -> usize;
+    fn CVPixelBufferGetBaseAddress(pixel_buffer: CVPixelBufferRef) -> *mut std::ffi::c_void;
+    fn CVPixelBufferLockBaseAddress(pixel_buffer: CVPixelBufferRef, flags: u64) -> CVReturn;
+    fn CVPixelBufferUnlockBaseAddress(pixel_buffer: CVPixelBufferRef, flags: u64) -> CVReturn;
+    fn CVPixelBufferPoolCreatePixelBuffer(
+        allocator: CFTypeRef,
+        pixel_buffer_pool: CFTypeRef,
+        pixel_buffer_out: *mut CVPixelBufferRef
+    ) -> CVReturn;
     fn CVPixelBufferGetHeight(pixel_buffer: CVPixelBufferRef) -> usize;
     fn CVMetalTextureCacheCreate(
         allocator: CFTypeRef,
@@ -128,6 +158,30 @@ pub struct VideoPlayer {
     height: u32
 }
 
+/// Creates an autoreleased NSDictionary from parallel key / value arrays
+unsafe fn ns_dictionary(keys: &[id], values: &[id]) -> id {
+    msg_send![class!(NSDictionary),
+        dictionaryWithObjects: values.as_ptr()
+        forKeys: keys.as_ptr()
+        count: keys.len() as NSUInteger]
+}
+
+/// Creates an autoreleased NSNumber
+unsafe fn ns_number(value: f64) -> id {
+    msg_send![class!(NSNumber), numberWithDouble: value]
+}
+
+/// Returns the localized description of an NSError or "unknown error" if `err` is nil
+fn error_description(err: id) -> String {
+    if err == nil {
+        return "unknown error".to_string();
+    }
+    unsafe {
+        let desc: id = msg_send![err, localizedDescription];
+        nsstring_to_string(desc)
+    }
+}
+
 fn nsstring_to_string(ns: id) -> String {
     unsafe {
         if ns == nil {
@@ -147,15 +201,8 @@ impl VideoPlayer {
             let status: isize = msg_send![self.item, status];
             if status == AV_PLAYER_ITEM_STATUS_FAILED {
                 let err: id = msg_send![self.item, error];
-                let desc = if err != nil {
-                    let desc: id = msg_send![err, localizedDescription];
-                    nsstring_to_string(desc)
-                }
-                else {
-                    "unknown error".to_string()
-                };
                 return Err(super::Error {
-                    msg: format!("hotline_rs::av::avf: {}", desc)
+                    msg: format!("hotline_rs::av::avf: {}", error_description(err))
                 });
             }
             Ok(())
@@ -247,12 +294,10 @@ impl super::VideoPlayer<mtl::Device> for VideoPlayer {
             // request bgra frames that can be wrapped as metal textures
             let format: id = msg_send![class!(NSNumber), numberWithUnsignedInt: K_CV_PIXEL_FORMAT_TYPE_32_BGRA];
             let metal_compat: id = msg_send![class!(NSNumber), numberWithBool: YES];
-            let keys = [kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferMetalCompatibilityKey];
-            let values = [format, metal_compat];
-            let attributes: id = msg_send![class!(NSDictionary),
-                dictionaryWithObjects: values.as_ptr()
-                forKeys: keys.as_ptr()
-                count: keys.len() as NSUInteger];
+            let attributes = ns_dictionary(
+                &[kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferMetalCompatibilityKey],
+                &[format, metal_compat]
+            );
 
             let output: id = msg_send![class!(AVPlayerItemVideoOutput), alloc];
             let output: id = msg_send![output, initWithPixelBufferAttributes: attributes];
@@ -439,5 +484,271 @@ impl Drop for VideoPlayer {
             let _: () = msg_send![self.player, release];
             CFRelease(self.texture_cache);
         }
+    }
+}
+
+pub struct VideoRecorder {
+    writer: id,
+    input: id,
+    adaptor: id,
+    width: u32,
+    height: u32
+}
+
+impl VideoRecorder {
+    fn writer_error(&self) -> super::Error {
+        let err: id = unsafe { msg_send![self.writer, error] };
+        super::Error {
+            msg: format!("hotline_rs::av::avf: video recorder: {}", error_description(err))
+        }
+    }
+
+    fn writer_status(&self) -> isize {
+        unsafe { msg_send![self.writer, status] }
+    }
+
+    /// Flushes the encoder and closes the file, called once from finish or drop
+    fn finalise(&mut self) -> result::Result<(), super::Error> {
+        if self.writer == nil {
+            return Ok(());
+        }
+
+        let result = if self.writer_status() == AV_ASSET_WRITER_STATUS_WRITING {
+            unsafe {
+                let _: () = msg_send![self.input, markAsFinished];
+                let handler = block::ConcreteBlock::new(|| {}).copy();
+                let _: () = msg_send![self.writer, finishWritingWithCompletionHandler: &*handler];
+            }
+
+            // completion is signalled on a background queue, wait for the status to change
+            let timeout = std::time::Instant::now();
+            while self.writer_status() == AV_ASSET_WRITER_STATUS_WRITING && timeout.elapsed().as_secs() < 10 {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+
+            match self.writer_status() {
+                AV_ASSET_WRITER_STATUS_FAILED => Err(self.writer_error()),
+                AV_ASSET_WRITER_STATUS_WRITING => Err(super::Error {
+                    msg: "hotline_rs::av::avf: timed out finishing video".to_string()
+                }),
+                _ => Ok(())
+            }
+        }
+        else if self.writer_status() == AV_ASSET_WRITER_STATUS_FAILED {
+            Err(self.writer_error())
+        }
+        else {
+            Ok(())
+        };
+
+        unsafe {
+            for obj in [&mut self.adaptor, &mut self.input, &mut self.writer] {
+                if *obj != nil {
+                    let _: () = msg_send![*obj, release];
+                    *obj = nil;
+                }
+            }
+        }
+        result
+    }
+}
+
+impl super::VideoRecorder for VideoRecorder {
+    fn create(filepath: &str, width: u32, height: u32, fps: u32) -> result::Result<VideoRecorder, super::Error> {
+        let (width, height) = (width & !1, height & !1);
+        objc::rc::autoreleasepool(|| unsafe {
+            // the asset writer fails if the file already exists
+            let _ = std::fs::remove_file(filepath);
+
+            let path = NSString::alloc(nil).init_str(filepath);
+            let url: id = msg_send![class!(NSURL), fileURLWithPath: path];
+            let _: () = msg_send![path, release];
+
+            let file_type = if filepath.to_lowercase().ends_with(".mov") {
+                AVFileTypeQuickTimeMovie
+            }
+            else {
+                AVFileTypeMPEG4
+            };
+
+            let mut err: id = nil;
+            let writer: id = msg_send![class!(AVAssetWriter), alloc];
+            let writer: id = msg_send![writer, initWithURL: url fileType: file_type error: &mut err];
+            if writer == nil {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::av::avf: failed to create video {}: {}", filepath, error_description(err))
+                });
+            }
+
+            // the recorder owns the writer from here so it gets released on any early return
+            let mut recorder = VideoRecorder {
+                writer,
+                input: nil,
+                adaptor: nil,
+                width,
+                height
+            };
+
+            // encoded h264 output, roughly 0.1 bits per pixel per frame
+            let compression = ns_dictionary(
+                &[AVVideoAverageBitRateKey, AVVideoExpectedSourceFrameRateKey],
+                &[ns_number(width as f64 * height as f64 * fps as f64 * 0.1), ns_number(fps as f64)]
+            );
+            let output_settings = ns_dictionary(
+                &[AVVideoCodecKey, AVVideoWidthKey, AVVideoHeightKey, AVVideoCompressionPropertiesKey],
+                &[AVVideoCodecTypeH264, ns_number(width as f64), ns_number(height as f64), compression]
+            );
+            let input: id = msg_send![class!(AVAssetWriterInput),
+                assetWriterInputWithMediaType: AVMediaTypeVideo outputSettings: output_settings];
+            recorder.input = msg_send![input, retain];
+
+            // offline so frames are never dropped, write_frame waits for the encoder instead
+            let _: () = msg_send![input, setExpectsMediaDataInRealTime: cocoa::base::NO];
+
+            // raw bgra input
+            let format: id = msg_send![class!(NSNumber), numberWithUnsignedInt: K_CV_PIXEL_FORMAT_TYPE_32_BGRA];
+            let source_attributes = ns_dictionary(
+                &[kCVPixelBufferPixelFormatTypeKey, kCVPixelBufferWidthKey, kCVPixelBufferHeightKey],
+                &[format, ns_number(width as f64), ns_number(height as f64)]
+            );
+            let adaptor: id = msg_send![class!(AVAssetWriterInputPixelBufferAdaptor),
+                assetWriterInputPixelBufferAdaptorWithAssetWriterInput: input
+                sourcePixelBufferAttributes: source_attributes];
+            recorder.adaptor = msg_send![adaptor, retain];
+
+            let can_add: bool = msg_send![writer, canAddInput: input];
+            if !can_add {
+                return Err(recorder.writer_error());
+            }
+            let _: () = msg_send![writer, addInput: input];
+
+            let started: bool = msg_send![writer, startWriting];
+            if !started {
+                return Err(recorder.writer_error());
+            }
+            let _: () = msg_send![writer, startSessionAtSourceTime: kCMTimeZero];
+
+            Ok(recorder)
+        })
+    }
+
+    fn write_frame(&mut self, frame: &gfx::ReadBackData, time: f64, _duration: f64) -> result::Result<(), super::Error> {
+        let row_bytes = self.width as usize * 4;
+        if frame.row_pitch < row_bytes || frame.data.len() < frame.row_pitch * self.height as usize {
+            return Err(super::Error {
+                msg: "hotline_rs::av::avf: frame is smaller than the recorder".to_string()
+            });
+        }
+
+        if self.writer_status() != AV_ASSET_WRITER_STATUS_WRITING {
+            return Err(self.writer_error());
+        }
+
+        objc::rc::autoreleasepool(|| unsafe {
+            let pool: CFTypeRef = msg_send![self.adaptor, pixelBufferPool];
+            if pool.is_null() {
+                return Err(self.writer_error());
+            }
+
+            let mut pixel_buffer: CVPixelBufferRef = std::ptr::null();
+            let res = CVPixelBufferPoolCreatePixelBuffer(std::ptr::null(), pool, &mut pixel_buffer);
+            if res != 0 || pixel_buffer.is_null() {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::av::avf: failed to create pixel buffer ({})", res)
+                });
+            }
+
+            // crops the gpu row padding and any odd column / row
+            CVPixelBufferLockBaseAddress(pixel_buffer, 0);
+            let dst = CVPixelBufferGetBaseAddress(pixel_buffer) as *mut u8;
+            let dst_pitch = CVPixelBufferGetBytesPerRow(pixel_buffer);
+            for y in 0..self.height as usize {
+                std::ptr::copy_nonoverlapping(
+                    frame.data.as_ptr().add(y * frame.row_pitch),
+                    dst.add(y * dst_pitch),
+                    row_bytes
+                );
+            }
+            CVPixelBufferUnlockBaseAddress(pixel_buffer, 0);
+
+            // wait for the encoder to accept more frames
+            let timeout = std::time::Instant::now();
+            loop {
+                let ready: bool = msg_send![self.input, isReadyForMoreMediaData];
+                if ready || self.writer_status() != AV_ASSET_WRITER_STATUS_WRITING || timeout.elapsed().as_secs() >= 2 {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_micros(500));
+            }
+
+            let appended: bool = msg_send![self.adaptor,
+                appendPixelBuffer: pixel_buffer withPresentationTime: CMTimeMakeWithSeconds(time, 1_000_000)];
+            CFRelease(pixel_buffer);
+            if !appended {
+                return Err(self.writer_error());
+            }
+            Ok(())
+        })
+    }
+
+    fn get_size(&self) -> os::Size<u32> {
+        os::Size {
+            x: self.width,
+            y: self.height
+        }
+    }
+
+    fn finish(mut self) -> result::Result<(), super::Error> {
+        self.finalise()
+    }
+}
+
+impl Drop for VideoRecorder {
+    fn drop(&mut self) {
+        let _ = self.finalise();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::av::VideoRecorder as _;
+
+    /// Encodes a moving gradient to target/test_output/video_recorder.mp4. Rows are padded like gpu read backs and the
+    /// height is odd, which the recorder crops
+    #[test]
+    fn video_recorder() -> result::Result<(), crate::Error> {
+        let (width, height, row_pitch) = (320, 241, 1536);
+        let output_dir = "target/test_output";
+        std::fs::create_dir_all(output_dir).unwrap();
+        let filepath = format!("{}/video_recorder.mp4", output_dir);
+
+        let mut recorder = VideoRecorder::create(&filepath, width, height, 60)?;
+        assert_eq!((recorder.get_size().x, recorder.get_size().y), (320, 240));
+
+        for frame in 0..60 {
+            // bgrx: red ramps across, green ramps down, blue pulses over time, padding is white
+            let mut data = vec![255u8; row_pitch * height as usize];
+            for y in 0..height as usize {
+                for x in 0..width as usize {
+                    let i = y * row_pitch + x * 4;
+                    data[i] = (frame * 4) as u8;
+                    data[i + 1] = (y * 255 / height as usize) as u8;
+                    data[i + 2] = (x * 255 / width as usize) as u8;
+                }
+            }
+            let data: &'static [u8] = Box::leak(data.into_boxed_slice());
+            recorder.write_frame(&gfx::ReadBackData {
+                data,
+                format: gfx::Format::BGRX8n,
+                size: data.len(),
+                row_pitch,
+                slice_pitch: data.len()
+            }, frame as f64 / 60.0, 1.0 / 60.0)?;
+        }
+        recorder.finish()?;
+
+        assert!(std::fs::metadata(&filepath).unwrap().len() > 0);
+        Ok(())
     }
 }
