@@ -692,7 +692,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         }
         else {
             self.cmd_buf.begin_event(0xff1fb6c4, "imgui_foreground");
-            self.imgui.render_foreground(&mut self.device, &mut self.cmd_buf, &image_heaps);
+            self.imgui.render_foreground(
+                &mut self.app, &mut self.main_window, &mut self.device, &mut self.cmd_buf, &image_heaps);
             self.cmd_buf.end_event();
         }
 

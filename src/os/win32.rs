@@ -702,7 +702,14 @@ impl super::App for App {
     }
 
     fn is_sys_key_down(&self, key: super::SysKey) -> bool {
-        self.proc_data.sys_key_down[key as usize]
+        // modifiers read the live key state, so they register even when imgui or another window has keyboard focus
+        let vk = match key {
+            super::SysKey::Shift => VK_SHIFT,
+            super::SysKey::Ctrl => VK_CONTROL,
+            super::SysKey::Alt => VK_MENU,
+            _ => return self.proc_data.sys_key_down[key as usize],
+        };
+        unsafe { (GetAsyncKeyState(vk.0 as i32) as u16 & 0x8000) != 0 }
     }
 
     fn get_keys_pressed(&self) -> [bool; 256] {

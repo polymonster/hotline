@@ -138,23 +138,20 @@ fn update_camera_orbit(
     let mut scroll_speed = 100.0;
     let control_speed = 0.1;
 
-    if enable_keyboard {
-        // modifiers
-        if app.is_sys_key_down(os::SysKey::Shift) {
-            // speed boost
-            scroll_speed *= boost_speed;
-        }
-        else if app.is_sys_key_down(os::SysKey::Ctrl) {
-            // fine control
-            scroll_speed *= control_speed;
-        }
+    // shift boost is keyboard gated (it also drag pans), ctrl fine zoom reads the raw key state so it works even
+    // when an imgui text field has keyboard focus
+    if enable_keyboard && app.is_sys_key_down(os::SysKey::Shift) {
+        scroll_speed *= boost_speed;
+    }
+    else if app.is_sys_key_down(os::SysKey::Ctrl) {
+        scroll_speed *= control_speed;
     }
 
     if enable_mouse {
         if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
             let right = view_proj.get_row(0).xyz();
             let up = view_proj.get_row(1).xyz();
-            camera.focus += up * -drag.y;
+            camera.focus += up * drag.y;
             camera.focus += right * -drag.x;
         }
         else {
@@ -197,23 +194,20 @@ fn update_camera_editor(
     let mut scroll_speed = 100.0;
     let control_speed = 0.1;
 
-    if enable_keyboard {
-        // modifiers
-        if app.is_sys_key_down(os::SysKey::Shift) {
-            // speed boost
-            scroll_speed *= boost_speed;
-        }
-        else if app.is_sys_key_down(os::SysKey::Ctrl) {
-            // fine control
-            scroll_speed *= control_speed;
-        }
+    // shift boost is keyboard gated (it also drag pans), ctrl fine zoom reads the raw key state so it works even
+    // when an imgui text field has keyboard focus
+    if enable_keyboard && app.is_sys_key_down(os::SysKey::Shift) {
+        scroll_speed *= boost_speed;
+    }
+    else if app.is_sys_key_down(os::SysKey::Ctrl) {
+        scroll_speed *= control_speed;
     }
 
     if enable_mouse {
         if app.is_sys_key_down(os::SysKey::Shift) && enable_keyboard && buttons[os::MouseButton::Left as usize] {
             let right = view_proj.get_row(0).xyz();
             let up = view_proj.get_row(1).xyz();
-            camera.focus += up * -drag.y;
+            camera.focus += up * drag.y;
             camera.focus += right * -drag.x;
         }
         else {

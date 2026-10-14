@@ -71,7 +71,8 @@ pub struct ImGui<D: Device, A: App> {
     _font_texture: D::Texture,
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
-    last_cursor: os::Cursor
+    last_cursor: os::Cursor,
+    global_context: u64
 }
 
 #[derive(Clone)]
@@ -593,7 +594,13 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             let io = &mut *igGetIO();
 
             io.ConfigFlags |= ImGuiConfigFlags_DockingEnable as i32;
-            // io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            // multi-viewport is only wired up on the win32 backend, enabling it on macos leaves imgui windows in a
+            // single os window. it also keeps imgui screen coords in global desktop space so mouse picking
+            // (get_mouse_pos) lines up across monitors
+            #[cfg(target_os = "windows")]
+            {
+                io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+            }
 
             // construct path for ini to be along side the exe
             let exe_path = std::env::current_exe().ok().unwrap();
@@ -774,7 +781,8 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 _font_texture: font_tex,
                 pipeline,
                 buffers,
-                last_cursor: os::Cursor::None
+                last_cursor: os::Cursor::None,
+                global_context: igGetCurrentContext() as u64
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -1038,7 +1046,6 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
         image_heaps: &Vec<&D::Heap>,
     ) {
         unsafe {
-            let io = &mut *igGetIO();
             igRender();
 
             render_draw_data::<D>(
@@ -1050,7 +1057,15 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 &self.pipeline,
             )
             .unwrap();
+        }
+        self.update_platform_windows(app, main_window, device, image_heaps);
+    }
 
+    /// With multi-viewports enabled imgui requires the platform windows to be updated after every frame, this
+    /// creates, moves and renders the os windows of imgui windows dragged outside of the main window
+    fn update_platform_windows(&mut self, app: &mut A, main_window: &mut A::Window, device: &mut D, image_heaps: &Vec<&D::Heap>) {
+        unsafe {
+            let io = &mut *igGetIO();
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
                 // gotta pack the refs into a pointer and into io.UserData
                 let mut ud = UserData {
@@ -1087,7 +1102,14 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
 
     /// Ends the frame rendering only the main viewport's foreground draw list (`draw_text`, `draw_rect` etc), no
     /// windows. Use in place of `render` when the ui is hidden but huds drawn over the main view should still show
-    pub fn render_foreground(&mut self, device: &mut D, cmd: &mut D::CmdBuf, image_heaps: &Vec<&D::Heap>) {
+    pub fn render_foreground(
+        &mut self,
+        app: &mut A,
+        main_window: &mut A::Window,
+        device: &mut D,
+        cmd: &mut D::CmdBuf,
+        image_heaps: &Vec<&D::Heap>
+    ) {
         unsafe {
             igRender();
             let viewport = &*igGetMainViewport();
@@ -1105,6 +1127,7 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             };
             render_draw_data::<D>(&draw_data, device, cmd, image_heaps, &mut self.buffers, &self.pipeline).unwrap();
         }
+        self.update_platform_windows(app, main_window, device, image_heaps);
     }
 
     /// This is the native `ImGui` demo window which showcases all features present in `ImGui`
@@ -1201,6 +1224,43 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 igEnd();
             }
         }
+    }
+
+    /// Makes the global `ImGuiContext` current, required when calling imgui from inside a plugin dll or lib
+    pub fn set_global_context(&mut self) {
+        unsafe {
+            igSetCurrentContext(self.global_context as *mut ImGuiContext);
+        }
+    }
+
+    /// Position the next window at an absolute screen coordinate before calling `begin`
+    pub fn set_next_window_pos(&mut self, x: f32, y: f32) {
+        unsafe {
+            igSetNextWindowPos(ImVec2 { x, y }, 0, IMVEC2_ZERO);
+        }
+    }
+
+    /// Edit a string via keyboard input, `buf_size` is the max capacity including the null terminator
+    pub fn input_text(&mut self, label: &str, s: &mut String, buf_size: usize) -> bool {
+        let null_label = CString::new(label).unwrap();
+        let mut buf = vec![0u8; buf_size];
+        let copy_len = s.len().min(buf_size - 1);
+        buf[..copy_len].copy_from_slice(&s.as_bytes()[..copy_len]);
+        let changed = unsafe {
+            igInputText(
+                null_label.as_ptr() as *const i8,
+                buf.as_mut_ptr() as *mut i8,
+                buf_size,
+                0,
+                None,
+                std::ptr::null_mut(),
+            )
+        };
+        if changed {
+            let len = buf.iter().position(|&b| b == 0).unwrap_or(buf_size);
+            *s = String::from_utf8_lossy(&buf[..len]).into_owned();
+        }
+        changed
     }
 
     /// Get the current imgui context so it can be passed to other plugins and libs, to be used woth `set_current_context`
