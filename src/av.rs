@@ -5,6 +5,10 @@ pub mod null;
 #[cfg(target_os = "windows")]
 pub mod wmf;
 
+/// Implements this interface for AVFoundation with Metal
+#[cfg(target_os = "macos")]
+pub mod avf;
+
 use std::any::Any;
 use crate::gfx;
 use crate::os;

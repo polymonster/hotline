@@ -2180,6 +2180,13 @@ impl super::Texture<Device> for Texture {
     }
 }
 
+impl Texture {
+    /// Underlying metal texture, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_metal_texture(&self) -> &metal::Texture {
+        &self.metal_texture
+    }
+}
+
 #[derive(Clone)]
 pub struct Sampler {
     mtl_sampler: metal::SamplerState
@@ -2428,6 +2435,16 @@ pub struct RaytracingTLAS {
 }
 
 impl Device {
+    /// Underlying metal device, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_metal_device(&self) -> &metal::Device {
+        &self.metal_device
+    }
+
+    /// Underlying metal command queue, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_command_queue(&self) -> &metal::CommandQueue {
+        &self.command_queue
+    }
+
     /// Largest texture sample count <= `requested` that this device supports (always >= 1).
     /// Apple GPUs commonly cap at 4x, so an 8x request is clamped down rather than asserting.
     fn supported_sample_count(&self, requested: u32) -> u32 {

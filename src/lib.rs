@@ -252,6 +252,7 @@ pub mod prelude {
         // platform specific
         gfx_platform,
         os_platform,
+        av_platform,
 
         // traits
         gfx::{Device, SwapChain, CmdBuf, Texture, RenderPass, Pipeline, Buffer},
@@ -277,7 +278,7 @@ pub use os::macos as os_platform;
 #[cfg(target_os = "macos")]
 pub use gfx::mtl as gfx_platform;
 
-/// This is a hardcoded compile time selection of os backend for macos as  null
+/// This is a hardcoded compile time selection of av backend for macos as avf
 #[cfg(target_os = "macos")]
-pub use av::null as av_platform;
+pub use av::avf as av_platform;
 

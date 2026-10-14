@@ -597,8 +597,44 @@ impl super::App for App {
 
     /// Opens a native open file dialog window, exts are provided to filer selections. ie vec![".txt", ".png"]
     fn open_file_dialog(flags: super::OpenFileDialogFlags, exts: Vec<&str>) -> Result<Vec<String>, super::Error> {
-        panic!();
-        Ok(vec![])
+        use cocoa::base::{nil, YES, NO};
+        use cocoa::foundation::{NSString, NSUInteger};
+        use objc::{class, msg_send, sel, sel_impl};
+
+        objc::rc::autoreleasepool(|| unsafe {
+            let panel: cocoa_id = msg_send![class!(NSOpenPanel), openPanel];
+            let folders = flags.contains(super::OpenFileDialogFlags::FOLDERS);
+            let _: () = msg_send![panel, setCanChooseDirectories: if folders { YES } else { NO }];
+            let _: () = msg_send![panel, setCanChooseFiles: if folders { NO } else { YES }];
+            let multi = flags.contains(super::OpenFileDialogFlags::MULTI_SELECT);
+            let _: () = msg_send![panel, setAllowsMultipleSelection: if multi { YES } else { NO }];
+
+            // extensions are passed as ".ext", NSOpenPanel expects "ext"
+            if !exts.is_empty() {
+                let types: cocoa_id = msg_send![class!(NSMutableArray), array];
+                for ext in &exts {
+                    let ns_ext = NSString::alloc(nil).init_str(ext.trim_start_matches('.'));
+                    let _: () = msg_send![types, addObject: ns_ext];
+                    let _: () = msg_send![ns_ext, release];
+                }
+                let _: () = msg_send![panel, setAllowedFileTypes: types];
+            }
+
+            // NSModalResponseOK
+            let response: isize = msg_send![panel, runModal];
+            let mut files = Vec::new();
+            if response == 1 {
+                let urls: cocoa_id = msg_send![panel, URLs];
+                let count: NSUInteger = msg_send![urls, count];
+                for i in 0..count {
+                    let url: cocoa_id = msg_send![urls, objectAtIndex: i];
+                    let path: cocoa_id = msg_send![url, path];
+                    let utf8: *const std::os::raw::c_char = msg_send![path, UTF8String];
+                    files.push(std::ffi::CStr::from_ptr(utf8).to_string_lossy().into_owned());
+                }
+            }
+            Ok(files)
+        })
     }
 
     /// Returns the wndow rectangle for the console window associated with the current app
