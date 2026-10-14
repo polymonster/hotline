@@ -1871,6 +1871,10 @@ unsafe extern "C" fn platform_create_window<D: Device, A: App>(vp: *mut ImGuiVie
 }
 
 unsafe extern "C" fn platform_destroy_window<D: Device, A: App>(vp: *mut ImGuiViewport) {
+    // the main viewport's data is released in `ImGui::drop` before `igDestroyPlatformWindows` calls this for it
+    if (*vp).PlatformUserData.is_null() {
+        return;
+    }
     let vd = get_viewport_data::<D, A>(vp);
     let vp_ref = &mut *vp;
 
