@@ -503,6 +503,20 @@ fn to_mtl_pixel_format(format: super::Format) -> metal::MTLPixelFormat {
     }
 }
 
+/// Bytes per pixel of uncompressed colour formats that can be read back
+fn metal_pixel_format_size(format: metal::MTLPixelFormat) -> Option<u64> {
+    use metal::MTLPixelFormat as F;
+    match format {
+        F::R8Unorm | F::R8Snorm | F::R8Uint | F::R8Sint => Some(1),
+        F::R16Float | F::R16Unorm | F::R16Uint | F::R16Sint | F::RG8Unorm | F::RG8Uint => Some(2),
+        F::RGBA8Unorm | F::RGBA8Unorm_sRGB | F::BGRA8Unorm | F::BGRA8Unorm_sRGB | F::RGBA8Uint | F::RGBA8Sint |
+        F::RGB10A2Unorm | F::RG11B10Float | F::R32Float | F::R32Uint | F::R32Sint | F::RG16Float | F::RG16Uint => Some(4),
+        F::RGBA16Float | F::RGBA16Unorm | F::RGBA16Uint | F::RG32Float | F::RG32Uint => Some(8),
+        F::RGBA32Float | F::RGBA32Uint | F::RGBA32Sint => Some(16),
+        _ => None
+    }
+}
+
 fn to_mtl_data_type(resource_type: super::ResourceType) -> metal::MTLDataType {
     match resource_type {
         super::ResourceType::StructuredBuffer |
@@ -1827,20 +1841,66 @@ impl super::CmdBuf<Device> for CmdBuf {
     }
 
     fn read_back_backbuffer(&mut self, swap_chain: &SwapChain) -> result::Result<ReadBackRequest, super::Error> {
-        Ok(ReadBackRequest {
-
-        })
+        Ok(ReadBackRequest::default())
     }
 
     fn read_back_texture(
         &mut self,
         _swap_chain: &SwapChain,
-        _texture: &Texture,
+        texture: &Texture,
         _state: super::ResourceState,
-        _buffer: &Buffer
+        buffer: &Buffer
     ) -> result::Result<ReadBackRequest, super::Error> {
-        Err(super::Error {
-            msg: "hotline_rs::gfx::mtl: read_back_texture is not implemented".to_string()
+        objc::rc::autoreleasepool(|| {
+            assert!(self.render_encoder.is_none(),
+                "hotline_rs::gfx::mtl read_back_texture cannot be called inside a render pass");
+
+            // close any open compute encoder - Metal forbids two live encoders on one cmd buffer
+            if let Some(enc) = self.compute_encoder.take() {
+                enc.end_encoding();
+            }
+
+            // msaa textures can't be copied to buffers, read the resolved copy instead
+            let src = texture.resolved_texture.as_ref().unwrap_or(&texture.metal_texture);
+            let (width, height) = (src.width(), src.height());
+
+            // match d3d12 with 256 byte aligned rows
+            let block_size = metal_pixel_format_size(src.pixel_format()).ok_or(super::Error {
+                msg: format!("hotline_rs::gfx::mtl: read_back_texture unsupported format {:?}", src.pixel_format())
+            })?;
+            let row_pitch = super::align_pow2(width * block_size, 256);
+            let total_bytes = row_pitch * height;
+            if total_bytes > buffer.metal_buffer.length() {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::gfx::mtl: read_back_texture buffer is too small, needs {} bytes", total_bytes)
+                });
+            }
+
+            let cmd = self.cmd.as_ref().expect("hotline_rs::gfx::mtl expected call to CmdBuf::reset before read_back_texture");
+            let blit = cmd.new_blit_command_encoder();
+            blit.copy_from_texture_to_buffer(
+                src,
+                0,
+                0,
+                metal::MTLOrigin { x: 0, y: 0, z: 0 },
+                metal::MTLSize { width, height, depth: 1 },
+                &buffer.metal_buffer,
+                0,
+                row_pitch,
+                total_bytes,
+                metal::MTLBlitOption::empty()
+            );
+            // read back buffers are managed, make the gpu writes visible to the cpu
+            blit.synchronize_resource(&buffer.metal_buffer);
+            blit.end_encoding();
+
+            Ok(ReadBackRequest {
+                cmd: Some(cmd.to_owned()),
+                buffer: Some(buffer.metal_buffer.clone()),
+                size: total_bytes as usize,
+                row_pitch: row_pitch as usize,
+                slice_pitch: total_bytes as usize
+            })
         })
     }
 
@@ -2180,26 +2240,51 @@ impl super::Texture<Device> for Texture {
     }
 }
 
+impl Texture {
+    /// Underlying metal texture, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_metal_texture(&self) -> &metal::Texture {
+        &self.metal_texture
+    }
+}
+
 #[derive(Clone)]
 pub struct Sampler {
     mtl_sampler: metal::SamplerState
 }
 
+#[derive(Default)]
 pub struct ReadBackRequest {
-
+    /// Command buffer the copy was encoded into, complete once it has finished on the gpu
+    cmd: Option<metal::CommandBuffer>,
+    buffer: Option<metal::Buffer>,
+    size: usize,
+    row_pitch: usize,
+    slice_pitch: usize
 }
 
 impl super::ReadBackRequest<Device> for ReadBackRequest {
     fn is_complete(&self, swap_chain: &SwapChain) -> bool {
-        false
+        self.cmd.as_ref().is_some_and(|cmd| cmd.status() == metal::MTLCommandBufferStatus::Completed)
     }
 
     fn map(&self, info: &MapInfo) -> result::Result<ReadBackData, super::Error> {
-        Err(super::Error {
-            msg: format!(
-                "not implemented",
-            ),
-        })
+        if let Some(buffer) = &self.buffer {
+            let data = unsafe {
+                std::slice::from_raw_parts(buffer.contents() as *const u8, self.size)
+            };
+            Ok(ReadBackData {
+                data,
+                format: super::Format::Unknown,
+                size: self.size,
+                row_pitch: self.row_pitch,
+                slice_pitch: self.slice_pitch
+            })
+        }
+        else {
+            Err(super::Error {
+                msg: "hotline_rs::gfx::mtl: read back request has no buffer".to_string()
+            })
+        }
     }
 
     fn unmap(&self) {
@@ -2428,6 +2513,16 @@ pub struct RaytracingTLAS {
 }
 
 impl Device {
+    /// Underlying metal device, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_metal_device(&self) -> &metal::Device {
+        &self.metal_device
+    }
+
+    /// Underlying metal command queue, for interop with other apple frameworks (ie. av::avf)
+    pub(crate) fn get_command_queue(&self) -> &metal::CommandQueue {
+        &self.command_queue
+    }
+
     /// Largest texture sample count <= `requested` that this device supports (always >= 1).
     /// Apple GPUs commonly cap at 4x, so an 8x request is clamped down rather than asserting.
     fn supported_sample_count(&self, requested: u32) -> u32 {
