@@ -334,3 +334,162 @@ impl super::VideoPlayer<d3d12::Device> for VideoPlayer {
         &self.texture
     }
 }
+
+/// H.264 .mp4 recorder using the media foundation sink writer, which inserts the BGRX to NV12 colour conversion and a
+/// hardware encoder when available
+pub struct VideoRecorder {
+    writer: Option<IMFSinkWriter>,
+    stream: u32,
+    width: u32,
+    height: u32
+}
+
+/// Media foundation times are in 100ns units
+fn to_mf_time(seconds: f64) -> i64 {
+    (seconds * 10_000_000.0) as i64
+}
+
+impl super::VideoRecorder for VideoRecorder {
+    fn create(filepath: &str, width: u32, height: u32, fps: u32) -> result::Result<VideoRecorder, super::Error> {
+        let (width, height) = (width & !1, height & !1);
+        unsafe {
+            // the sink writer needs com, this fails harmlessly when the thread is already initialised
+            let _ = windows::Win32::System::Com::CoInitializeEx(None, windows::Win32::System::Com::COINIT_MULTITHREADED);
+            MFStartup(MF_SDK_VERSION << 16 | MF_API_VERSION, 0)?;
+
+            let mut attributes : Option<IMFAttributes> = None;
+            MFCreateAttributes(&mut attributes, 1)?;
+            let attributes = attributes.unwrap();
+            attributes.SetUINT32(&MF_READWRITE_ENABLE_HARDWARE_TRANSFORMS, 1)?;
+            let writer = MFCreateSinkWriterFromURL(&HSTRING::from(filepath), None, &attributes)?;
+
+            let frame_size = (width as u64) << 32 | height as u64;
+            let frame_rate = (fps as u64) << 32 | 1;
+            let set_video_type = |subtype: &GUID| -> result::Result<IMFMediaType, windows::core::Error> {
+                let media_type = MFCreateMediaType()?;
+                media_type.SetGUID(&MF_MT_MAJOR_TYPE, &MFMediaType_Video)?;
+                media_type.SetGUID(&MF_MT_SUBTYPE, subtype)?;
+                media_type.SetUINT32(&MF_MT_INTERLACE_MODE, MFVideoInterlace_Progressive.0 as u32)?;
+                media_type.SetUINT64(&MF_MT_FRAME_SIZE, frame_size)?;
+                media_type.SetUINT64(&MF_MT_FRAME_RATE, frame_rate)?;
+                media_type.SetUINT64(&MF_MT_PIXEL_ASPECT_RATIO, 1 << 32 | 1)?;
+                Ok(media_type)
+            };
+
+            // encoded output, roughly 0.1 bits per pixel per frame
+            let output = set_video_type(&MFVideoFormat_H264)?;
+            output.SetUINT32(&MF_MT_AVG_BITRATE, (width as f64 * height as f64 * fps as f64 * 0.1) as u32)?;
+            let stream = writer.AddStream(&output)?;
+
+            // raw input, a positive stride is top down rows
+            let input = set_video_type(&MFVideoFormat_RGB32)?;
+            input.SetUINT32(&MF_MT_DEFAULT_STRIDE, width * 4)?;
+            writer.SetInputMediaType(stream, &input, None)?;
+
+            writer.BeginWriting()?;
+            Ok(VideoRecorder {
+                writer: Some(writer),
+                stream,
+                width,
+                height
+            })
+        }
+    }
+
+    fn write_frame(&mut self, frame: &gfx::ReadBackData, time: f64, duration: f64) -> result::Result<(), super::Error> {
+        let row_bytes = self.width * 4;
+        if frame.row_pitch < row_bytes as usize || frame.data.len() < frame.row_pitch * self.height as usize {
+            return Err(super::Error {
+                msg: "hotline_rs::av::wmf: frame is smaller than the recorder".to_string()
+            });
+        }
+        unsafe {
+            let size = row_bytes * self.height;
+            let buffer = MFCreateMemoryBuffer(size)?;
+            let mut dst = std::ptr::null_mut();
+            buffer.Lock(&mut dst, None, None)?;
+            // crops the gpu row padding and any odd column / row
+            let copied = MFCopyImage(dst, row_bytes as i32, frame.data.as_ptr(), frame.row_pitch as i32, row_bytes, self.height);
+            buffer.Unlock()?;
+            copied?;
+            buffer.SetCurrentLength(size)?;
+
+            let sample = MFCreateSample()?;
+            sample.AddBuffer(&buffer)?;
+            sample.SetSampleTime(to_mf_time(time))?;
+            sample.SetSampleDuration(to_mf_time(duration))?;
+            self.writer.as_ref().unwrap().WriteSample(self.stream, &sample)?;
+        }
+        Ok(())
+    }
+
+    fn get_size(&self) -> os::Size<u32> {
+        os::Size {
+            x: self.width,
+            y: self.height
+        }
+    }
+
+    fn finish(mut self) -> result::Result<(), super::Error> {
+        if let Some(writer) = self.writer.take() {
+            unsafe {
+                writer.Finalize()?;
+            }
+        }
+        Ok(())
+    }
+}
+
+impl Drop for VideoRecorder {
+    fn drop(&mut self) {
+        if let Some(writer) = self.writer.take() {
+            unsafe {
+                let _ = writer.Finalize();
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::av::VideoRecorder as _;
+
+    /// Encodes a moving gradient to target/test_output/video_recorder.mp4. Rows are padded like gpu read backs and the
+    /// height is odd, which the recorder crops
+    #[test]
+    fn video_recorder() -> result::Result<(), crate::Error> {
+        let (width, height, row_pitch) = (320, 241, 1536);
+        let output_dir = "target/test_output";
+        std::fs::create_dir_all(output_dir).unwrap();
+        let filepath = format!("{}/video_recorder.mp4", output_dir);
+
+        let mut recorder = VideoRecorder::create(&filepath, width, height, 60)?;
+        assert_eq!((recorder.get_size().x, recorder.get_size().y), (320, 240));
+
+        for frame in 0..60 {
+            // bgrx: red ramps across, green ramps down, blue pulses over time, padding is white
+            let mut data = vec![255u8; row_pitch * height as usize];
+            for y in 0..height as usize {
+                for x in 0..width as usize {
+                    let i = y * row_pitch + x * 4;
+                    data[i] = (frame * 4) as u8;
+                    data[i + 1] = (y * 255 / height as usize) as u8;
+                    data[i + 2] = (x * 255 / width as usize) as u8;
+                }
+            }
+            let data: &'static [u8] = Box::leak(data.into_boxed_slice());
+            recorder.write_frame(&gfx::ReadBackData {
+                data,
+                format: gfx::Format::BGRX8n,
+                size: data.len(),
+                row_pitch,
+                slice_pitch: data.len()
+            }, frame as f64 / 60.0, 1.0 / 60.0)?;
+        }
+        recorder.finish()?;
+
+        assert!(std::fs::metadata(&filepath).unwrap().len() > 0);
+        Ok(())
+    }
+}

@@ -35,3 +35,15 @@ pub trait VideoPlayer<D: gfx::Device>: 'static + Sized + Any {
     /// Return the dimensions of the video
     fn get_size(&self) -> os::Size<u32>;
 }
+
+/// Encodes frames read back from the gpu into a video file with a platform specific hardware accelerated backend
+pub trait VideoRecorder: 'static + Sized {
+    /// Creates a video file at `filepath` (.mp4), odd `width` or `height` is rounded down to even for the encoder
+    fn create(filepath: &str, width: u32, height: u32, fps: u32) -> Result<Self, Error>;
+    /// Writes a BGRX8 frame of at least the recorder's size, `time` and `duration` are in seconds
+    fn write_frame(&mut self, frame: &gfx::ReadBackData, time: f64, duration: f64) -> Result<(), Error>;
+    /// Returns the encoded dimensions
+    fn get_size(&self) -> os::Size<u32>;
+    /// Flushes the encoder and closes the file, dropping a recorder without finishing also finishes it
+    fn finish(self) -> Result<(), Error>;
+}

@@ -4789,6 +4789,69 @@ impl super::CmdBuf<Device> for CmdBuf {
         }
     }
 
+    fn read_back_texture(
+        &mut self,
+        swap_chain: &SwapChain,
+        texture: &Texture,
+        state: super::ResourceState,
+        buffer: &Buffer
+    ) -> result::Result<ReadBackRequest, super::Error> {
+        let bb = self.bb_index;
+        // msaa textures can't be copied to buffers, read the resolved copy instead
+        let resource = texture.resolved_resource.as_ref().or(texture.resource.as_ref()).unwrap();
+        let readback = buffer.resource.as_ref().unwrap();
+        unsafe {
+            // 256 byte aligned row pitch footprint of mip 0
+            let desc = resource.GetDesc();
+            let mut device: Option<ID3D12Device> = None;
+            resource.GetDevice(&mut device)?;
+            let mut footprint = D3D12_PLACED_SUBRESOURCE_FOOTPRINT::default();
+            let mut total_bytes = 0;
+            device.unwrap().GetCopyableFootprints(&desc, 0, 1, 0, Some(&mut footprint), None, None, Some(&mut total_bytes));
+            // the last row isn't padded in total_bytes, request the full pitch so rows = slice_pitch / row_pitch
+            let total_bytes = (footprint.Footprint.RowPitch * footprint.Footprint.Height) as u64;
+            if total_bytes > readback.GetDesc().Width {
+                return Err(super::Error {
+                    msg: format!("hotline_rs::gfx::d3d12: read_back_texture buffer is too small, needs {} bytes", total_bytes)
+                });
+            }
+
+            let barrier = transition_barrier(resource, to_d3d12_resource_state(state), D3D12_RESOURCE_STATE_COPY_SOURCE);
+            self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+            self.in_flight_barriers[bb].push(barrier);
+
+            let src = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: std::mem::transmute_copy(resource),
+                Type: D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    SubresourceIndex: 0,
+                },
+            };
+
+            let dst = D3D12_TEXTURE_COPY_LOCATION {
+                pResource: std::mem::transmute_copy(readback),
+                Type: D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT,
+                Anonymous: D3D12_TEXTURE_COPY_LOCATION_0 {
+                    PlacedFootprint: footprint,
+                },
+            };
+
+            self.command_list[bb].CopyTextureRegion(&dst, 0, 0, 0, &src, None);
+
+            let barrier = transition_barrier(resource, D3D12_RESOURCE_STATE_COPY_SOURCE, to_d3d12_resource_state(state));
+            self.command_list[bb].ResourceBarrier(&[barrier.clone()]);
+            self.in_flight_barriers[bb].push(barrier);
+
+            Ok(ReadBackRequest {
+                resource: Some(readback.clone()),
+                fence_value: swap_chain.frame_index as u64,
+                size: (footprint.Footprint.RowPitch * footprint.Footprint.Height) as usize,
+                row_pitch: footprint.Footprint.RowPitch as usize,
+                slice_pitch: (footprint.Footprint.RowPitch * footprint.Footprint.Height) as usize,
+            })
+        }
+    }
+
     fn resolve_texture_subresource(&mut self, texture: &Texture, subresource: u32) -> result::Result<(), super::Error> {
         unsafe {
             if let Some(resolve) = &texture.resolved_resource {

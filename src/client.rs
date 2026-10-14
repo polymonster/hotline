@@ -9,6 +9,7 @@ use crate::primitives;
 use crate::plugin;
 use crate::reloader;
 use crate::image;
+use crate::av::VideoRecorder;
 
 use gfx::{SwapChain, CmdBuf, Texture, RenderPass, Heap};
 
@@ -131,6 +132,47 @@ impl Default for HotlineInfo {
     }
 }
 
+/// An in progress video recording of the `main_colour` target. Each frame copies into the read back buffer for the
+/// current back buffer, the frame copied there `num_buffers` frames ago has completed and is written to the video
+struct Recording<D: gfx::Device> {
+    recorder: crate::av_platform::VideoRecorder,
+    filepath: String,
+    size: (u64, u64),
+    buffers: Vec<D::Buffer>,
+    /// Read back request per buffer and the frame's video time in seconds
+    pending: Vec<Option<(D::ReadBackRequest, f64)>>,
+    frame: usize,
+    start: SystemTime,
+    /// Fixed timestep at the start of the recording, frames are spaced by it instead of wall clock time
+    step: Option<f64>
+}
+
+impl<D: gfx::Device> Recording<D> {
+    fn frame_duration(&self) -> f64 {
+        self.step.unwrap_or(1.0 / 60.0)
+    }
+
+    /// Video time of the next frame in seconds
+    fn time(&self) -> f64 {
+        match self.step {
+            Some(step) => self.frame as f64 * step,
+            None => self.start.elapsed().map_or(0.0, |d| d.as_secs_f64())
+        }
+    }
+
+    /// Writes a completed read back to the video
+    fn write(&mut self, request: D::ReadBackRequest, time: f64) -> Result<(), super::Error> {
+        let data = request.map(&gfx::MapInfo {
+            subresource: 0,
+            read_start: 0,
+            read_end: usize::MAX
+        })?;
+        let result = self.recorder.write_frame(&data, time, self.frame_duration());
+        request.unmap();
+        result
+    }
+}
+
 /// Hotline client data members
 #[repr(C)]
 pub struct Client<D: gfx::Device, A: os::App> {
@@ -150,7 +192,8 @@ pub struct Client<D: gfx::Device, A: os::App> {
     delta_history: VecDeque<f32>,
     instance_name: String,
     status_bar_height: f32,
-    fullscreen: bool
+    fullscreen: bool,
+    recording: Option<Recording<D>>
 }
 
 /// Serialisable plugin
@@ -321,7 +364,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             delta_history: VecDeque::new(),
             instance_name: info.name,
             status_bar_height: STATUS_BAR_HEIGHT,
-            fullscreen: info.fullscreen
+            fullscreen: info.fullscreen,
+            recording: None
         };
 
         // automatically load plugins from prev session
@@ -391,6 +435,13 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             && self.app.is_sys_key_down(os::SysKey::Ctrl)
             && self.app.is_sys_key_down(os::SysKey::Shift) {
             self.fullscreen = !self.fullscreen;
+        }
+
+        // toggle video recording with ctrl+shift+r
+        if self.app.is_key_pressed('r')
+            && self.app.is_sys_key_down(os::SysKey::Ctrl)
+            && self.app.is_sys_key_down(os::SysKey::Shift) {
+            self.toggle_recording();
         }
 
         // start imgui new frame, the ui still runs in fullscreen so plugins can make imgui calls but it is not drawn
@@ -471,9 +522,114 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     }
 
     /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
+    /// Returns true while the main view is being recorded to video
+    pub fn is_recording(&self) -> bool {
+        self.recording.is_some()
+    }
+
+    /// Starts recording the main view to `target/recordings`, or stops and finishes the current recording
+    pub fn toggle_recording(&mut self) {
+        let result = if self.recording.is_some() {
+            self.stop_recording()
+        }
+        else {
+            self.start_recording()
+        };
+        if let Err(err) = result {
+            println!("hotline_rs::client: recording error: {}", err.msg);
+            self.recording = None;
+        }
+    }
+
+    fn start_recording(&mut self) -> Result<(), super::Error> {
+        let size = self.pmfx.get_texture_2d_size("main_colour").ok_or(super::Error {
+            msg: "main_colour target does not exist".to_string()
+        })?;
+
+        let output_dir = "target/recordings";
+        std::fs::create_dir_all(output_dir)?;
+        let secs = SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+        let filepath = format!("{}/{}_{}.mp4", output_dir, self.instance_name, secs);
+
+        let step = self.time.fixed_delta.map(|step| step as f64);
+        let fps = step.map_or(60, |step| maths_rs::round(1.0 / step) as u32);
+        let recorder = crate::av_platform::VideoRecorder::create(&filepath, size.0 as u32, size.1 as u32, fps)?;
+
+        // rows of a texture read back are 256 byte aligned
+        let buffer_size = gfx::align_pow2(size.0 * 4, 256) * size.1;
+        let num_buffers = self.swap_chain.get_num_buffers() as usize;
+        let buffers = (0..num_buffers)
+            .map(|_| self.device.create_read_back_buffer(buffer_size as usize))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        println!("hotline_rs::client: recording to {}", filepath);
+        self.recording = Some(Recording {
+            recorder,
+            filepath,
+            size,
+            buffers,
+            pending: (0..num_buffers).map(|_| None).collect(),
+            frame: 0,
+            start: SystemTime::now(),
+            step
+        });
+        Ok(())
+    }
+
+    fn stop_recording(&mut self) -> Result<(), super::Error> {
+        if let Some(mut recording) = self.recording.take() {
+            // write the frames still in flight in the order they were recorded
+            self.swap_chain.wait_for_last_frame();
+            let mut pending = recording.pending.iter_mut().filter_map(|p| p.take()).collect::<Vec<_>>();
+            pending.sort_by(|a, b| a.1.total_cmp(&b.1));
+            for (request, time) in pending {
+                recording.write(request, time)?;
+            }
+            let filepath = recording.filepath.to_string();
+            recording.recorder.finish()?;
+            println!("hotline_rs::client: finished recording {}", filepath);
+        }
+        Ok(())
+    }
+
+    /// Writes the frame that was copied `num_buffers` frames ago to the video and copies `main_colour` for this frame
+    fn record_frame(&mut self) -> Result<(), super::Error> {
+        // a resized dock changes the target size, which the video can't follow
+        let size = self.pmfx.get_texture_2d_size("main_colour");
+        if self.recording.as_ref().is_some_and(|recording| Some(recording.size) != size) {
+            return self.stop_recording();
+        }
+
+        if let Some(recording) = &mut self.recording {
+            let bb = self.swap_chain.get_backbuffer_index() as usize;
+            if let Some((request, time)) = recording.pending[bb].take() {
+                if request.is_complete(&self.swap_chain) {
+                    recording.write(request, time)?;
+                }
+                else {
+                    println!("hotline_rs::client: recording dropped a frame that was still in flight");
+                }
+            }
+
+            let time = recording.time();
+            let texture = self.pmfx.get_texture("main_colour").unwrap();
+            let request = self.cmd_buf.read_back_texture(
+                &self.swap_chain, texture, gfx::ResourceState::ShaderResource, &recording.buffers[bb])?;
+            recording.pending[bb] = Some((request, time));
+            recording.frame += 1;
+        }
+        Ok(())
+    }
+
     pub fn present(&mut self, blit_view_name: &str) {
         // execute pmfx command buffers first
         self.pmfx.execute(&mut self.device);
+
+        // record the main view before any ui is drawn
+        if let Err(err) = self.record_frame() {
+            println!("hotline_rs::client: recording error: {}", err.msg);
+            self.recording = None;
+        }
 
         // main pass
         self.cmd_buf.transition_barrier(&gfx::TransitionBarrier {
@@ -767,6 +923,15 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 if self.imgui.menu_item("Fullscreen (Ctrl+Shift+F)") {
                     self.fullscreen = true;
                 }
+                let record_text = if self.is_recording() {
+                    "Stop Recording (Ctrl+Shift+R)"
+                }
+                else {
+                    "Record Video (Ctrl+Shift+R)"
+                };
+                if self.imgui.menu_item(record_text) {
+                    self.toggle_recording();
+                }
                 self.imgui.end_menu();
             }
 
@@ -834,6 +999,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 fps, cpu_ms, gpu_ms
             ));
             self.imgui.same_line();
+
+            // recording indicator
+            if let Some(recording) = &self.recording {
+                self.imgui.colour_text(&format!("| {} REC {:.1}s", font_awesome::strs::CIRCLE, recording.time()), vec4f(1.0, 0.0, 0.0, 1.0));
+                self.imgui.same_line();
+            }
 
             // hot reloading (plugins)
             let mut hot_name = String::from("");
@@ -1092,6 +1263,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // save out values for next time
         self.save_user_config();
         self.imgui.save_ini_settings();
+        if self.is_recording() {
+            self.toggle_recording();
+        }
         self.swap_chain.wait_for_last_frame();
 
         // unloads plugins, dropping all gpu resources

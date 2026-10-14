@@ -288,6 +288,16 @@ impl super::CmdBuf<Device> for CmdBuf {
         unimplemented!()
     }
 
+    fn read_back_texture(
+        &mut self,
+        swap_chain: &SwapChain,
+        texture: &Texture,
+        state: super::ResourceState,
+        buffer: &Buffer
+    ) -> Result<ReadBackRequest, Error> {
+        unimplemented!()
+    }
+
     fn copy_buffer_region(
         &mut self,
         dst_buffer: &Buffer,

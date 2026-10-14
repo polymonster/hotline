@@ -52,3 +52,25 @@ impl<D> super::VideoPlayer<D> for VideoPlayer<D> where D: crate::gfx::Device {
         unimplemented!()
     }
 }
+
+pub struct VideoRecorder;
+
+impl super::VideoRecorder for VideoRecorder {
+    fn create(filepath: &str, width: u32, height: u32, fps: u32) -> Result<Self, Error> {
+        Err(Error {
+            msg: "hotline_rs::av::null: video recording is not supported on this platform".to_string()
+        })
+    }
+
+    fn write_frame(&mut self, frame: &crate::gfx::ReadBackData, time: f64, duration: f64) -> Result<(), Error> {
+        unimplemented!()
+    }
+
+    fn get_size(&self) -> Size<u32> {
+        unimplemented!()
+    }
+
+    fn finish(self) -> Result<(), Error> {
+        unimplemented!()
+    }
+}

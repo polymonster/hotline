@@ -1763,6 +1763,17 @@ pub trait CmdBuf<D: Device>: Send + Sync + Clone {
     fn generate_mip_maps(&mut self, texture: &D::Texture, device: &D, heap: &D::Heap) -> Result<(), Error>;
     /// Read back the swapchains contents to CPU
     fn read_back_backbuffer(&mut self, swap_chain: &D::SwapChain) -> Result<D::ReadBackRequest, Error>;
+    /// Copy mip 0 of a 2D `texture` in `state` into `buffer` (created with `Device::create_read_back_buffer`) to read
+    /// on the CPU once the request is complete. Rows are aligned to 256 bytes, so `buffer` must be at least
+    /// `align_pow2(width * block_size, 256) * height` bytes, `ReadBackData::row_pitch` holds the aligned pitch.
+    /// For msaa textures the resolved copy is read back, which must already be resolved and in `state`
+    fn read_back_texture(
+        &mut self,
+        swap_chain: &D::SwapChain,
+        texture: &D::Texture,
+        state: ResourceState,
+        buffer: &D::Buffer
+    ) -> Result<D::ReadBackRequest, Error>;
     /// Copy from one buffer to another with offsets
     fn copy_buffer_region(
         &mut self,

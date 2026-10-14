@@ -228,7 +228,7 @@ pub mod prelude {
         imdraw::ImDraw,
         client::{Client, HotlineInfo, PluginInfo},
         plugin::{Plugin},
-        av::{VideoPlayer},
+        av::{VideoPlayer, VideoRecorder},
 
         // macros
         hotline_plugin
@@ -262,7 +262,7 @@ pub mod prelude {
         imdraw::ImDraw,
         client::{Client, HotlineInfo, PluginInfo},
         plugin::{Plugin},
-        av::{VideoPlayer},
+        av::{VideoPlayer, VideoRecorder},
 
         // macros
         hotline_plugin

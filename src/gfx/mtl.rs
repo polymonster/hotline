@@ -1832,6 +1832,18 @@ impl super::CmdBuf<Device> for CmdBuf {
         })
     }
 
+    fn read_back_texture(
+        &mut self,
+        _swap_chain: &SwapChain,
+        _texture: &Texture,
+        _state: super::ResourceState,
+        _buffer: &Buffer
+    ) -> result::Result<ReadBackRequest, super::Error> {
+        Err(super::Error {
+            msg: "hotline_rs::gfx::mtl: read_back_texture is not implemented".to_string()
+        })
+    }
+
     fn resolve_texture_subresource(&mut self, texture: &Texture, _subresource: u32) -> result::Result<(), super::Error> {
         // Record the resolve as deferred barrier work; Device::execute replays it into a fresh
         // command buffer each frame (a committed Metal command buffer can't be re-submitted).
