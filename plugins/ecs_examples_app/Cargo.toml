@@ -1,0 +1,9 @@
+[package]
+name = "ecs_examples_app"
+version = "0.1.0"
+edition = "2021"
+
+# ecs_examples linked statically into a standalone binary, no plugin dll and no hot reloading
+[dependencies]
+hotline-rs.workspace = true
+ecs_examples = { path = "../ecs_examples" }

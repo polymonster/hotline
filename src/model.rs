@@ -5,6 +5,11 @@
 /// `Model::create` then uploads submeshes into `pmfx::Mesh` vertex / index buffers and images into textures, and
 /// packs materials into `PbrMaterialData` with bindless srv indices ready for a structured buffer
 ///
+/// Skinned models also get skins (joint nodes and inverse bind matrices) and a `SkinVertex` per vertex, joints and
+/// weights in a second vertex stream so unskinned meshes keep their layout. Animations sample keyframes into the node
+/// transforms (`ModelAnimation::sample` and `blend`), then `update_local_matrices`, `update_world_matrices` and
+/// `ModelSkins::write_joint_matrices` give the matrices to skin with. Skinning itself happens in the shader
+///
 
 use crate::gfx;
 use crate::pmfx;
@@ -64,6 +69,8 @@ pub struct ModelNodes {
     pub submesh_first: Vec<u32>,
     /// Number of submeshes drawn by this node, 0 for nodes with no mesh
     pub submesh_count: Vec<u32>,
+    /// Index into `ModelData::skins` the node's submeshes are skinned with, `NONE` when they aren't
+    pub skin: Vec<u32>,
 }
 
 impl ModelNodes {
@@ -114,6 +121,8 @@ pub struct ModelSubmeshes {
     pub material: Vec<u32>,
     pub aabb_min: Vec<Vec3f>,
     pub aabb_max: Vec<Vec3f>,
+    /// Joints and weights per vertex for skinned submeshes, a second vertex stream next to `vertices`
+    pub skin: Vec<Option<Vec<SkinVertex>>>,
 }
 
 impl ModelSubmeshes {
@@ -124,6 +133,160 @@ impl ModelSubmeshes {
     pub fn is_empty(&self) -> bool {
         self.vertices.is_empty()
     }
+}
+
+/// Joint influences of a vertex, the second vertex stream of a skinned submesh. `joints` index into its skin's joints
+/// (not nodes), up to four with `weights` summing to one
+#[repr(C)]
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SkinVertex {
+    pub joints: [u16; 4],
+    pub weights: [f32; 4],
+}
+
+/// Vertex formats of `SkinVertex`, for input layouts
+pub const SKIN_JOINTS_FORMAT: gfx::Format = gfx::Format::RGBA16u;
+pub const SKIN_WEIGHTS_FORMAT: gfx::Format = gfx::Format::RGBA32f;
+
+/// Skins: for each, the node of every joint and the matrix taking model space into that joint's space at bind time
+#[derive(Clone, Default)]
+pub struct ModelSkins {
+    pub name: Vec<String>,
+    pub joints: Vec<Vec<u32>>,
+    pub inverse_bind: Vec<Vec<Mat34f>>,
+}
+
+impl ModelSkins {
+    pub fn len(&self) -> usize {
+        self.joints.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.joints.is_empty()
+    }
+
+    /// Clears `out` and fills it with a matrix per joint of `skin`, the joint's world matrix in `nodes` times its
+    /// inverse bind matrix. Skinned vertices are transformed by these blended by their weights, which puts them in
+    /// model space (the skinned node's own transform doesn't apply, as glTF specifies)
+    pub fn write_joint_matrices(&self, skin: usize, nodes: &ModelNodes, out: &mut Vec<Mat34f>) {
+        out.clear();
+        out.extend(self.joints[skin].iter().zip(&self.inverse_bind[skin])
+            .map(|(joint, inverse_bind)| nodes.world_matrix[*joint as usize] * *inverse_bind));
+    }
+}
+
+/// How keyframes are interpolated, as glTF defines
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Interpolation {
+    Step,
+    Linear,
+    /// Hermite spline, each key holds an in tangent, its value and an out tangent
+    CubicSpline,
+}
+
+/// The node property an animation channel drives
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum AnimationPath {
+    Translation,
+    Rotation,
+    Scale,
+}
+
+/// Keyframes for one property of one node. `values` are xyz for translation and scale, xyzw quaternions for
+/// rotation, and with `Interpolation::CubicSpline` three per key: in tangent, value, out tangent
+#[derive(Clone, Debug)]
+pub struct AnimationChannel {
+    pub node: u32,
+    pub path: AnimationPath,
+    pub interpolation: Interpolation,
+    pub times: Vec<f32>,
+    pub values: Vec<Vec4f>,
+}
+
+impl AnimationChannel {
+    /// The value at `time`, held at the first and last keys outside their range
+    pub fn sample(&self, time: f32) -> Vec4f {
+        let cubic = self.interpolation == Interpolation::CubicSpline;
+        let value = |key: usize| if cubic { self.values[key * 3 + 1] } else { self.values[key] };
+        let last = self.times.len() - 1;
+        let next = self.times.partition_point(|t| *t <= time);
+        if next == 0 {
+            return value(0);
+        }
+        if next > last {
+            return value(last);
+        }
+        let key = next - 1;
+        let dt = self.times[next] - self.times[key];
+        let s = if dt > 0.0 { (time - self.times[key]) / dt } else { 0.0 };
+        let rotation = self.path == AnimationPath::Rotation;
+        match self.interpolation {
+            Interpolation::Step => value(key),
+            Interpolation::Linear => {
+                if rotation {
+                    let q = slerp(to_quat(value(key)), to_quat(value(next)), s);
+                    let q = normalize(q);
+                    vec4f(q.x, q.y, q.z, q.w)
+                }
+                else {
+                    lerp(value(key), value(next), s)
+                }
+            }
+            Interpolation::CubicSpline => {
+                let (s2, s3) = (s * s, s * s * s);
+                let v = value(key) * (2.0 * s3 - 3.0 * s2 + 1.0)
+                    + self.values[key * 3 + 2] * ((s3 - 2.0 * s2 + s) * dt)
+                    + value(next) * (-2.0 * s3 + 3.0 * s2)
+                    + self.values[next * 3] * ((s3 - s2) * dt);
+                if rotation { normalize(v) } else { v }
+            }
+        }
+    }
+}
+
+/// A named animation, its channels drive node transforms over `duration` seconds
+#[derive(Clone, Debug, Default)]
+pub struct ModelAnimation {
+    pub name: String,
+    pub duration: f32,
+    pub channels: Vec<AnimationChannel>,
+}
+
+impl ModelAnimation {
+    /// `time` wrapped into the animation's length, for looping
+    pub fn wrap(&self, time: f32) -> f32 {
+        if self.duration > 0.0 { time.rem_euclid(self.duration) } else { 0.0 }
+    }
+
+    /// Writes the animation's pose at `time` into the translation, rotation and scale of the nodes it drives
+    pub fn sample(&self, time: f32, nodes: &mut ModelNodes) {
+        self.blend(time, 1.0, nodes);
+    }
+
+    /// Moves the nodes it drives `weight` of the way from their current pose to the animation's pose at `time`, to
+    /// crossfade or layer animations: sample one, then blend the next over it
+    pub fn blend(&self, time: f32, weight: f32, nodes: &mut ModelNodes) {
+        for channel in &self.channels {
+            let n = channel.node as usize;
+            let v = channel.sample(time);
+            match channel.path {
+                AnimationPath::Translation => nodes.translation[n] = lerp(nodes.translation[n], v.xyz(), weight),
+                AnimationPath::Scale => nodes.scale[n] = lerp(nodes.scale[n], v.xyz(), weight),
+                AnimationPath::Rotation => {
+                    nodes.rotation[n] = if weight >= 1.0 {
+                        to_quat(v)
+                    }
+                    else {
+                        normalize(slerp(nodes.rotation[n], to_quat(v), weight))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn to_quat(v: Vec4f) -> Quatf {
+    quatf(v.x, v.y, v.z, v.w)
 }
 
 /// Pbr metallic roughness materials. Texture slots index into `ModelData::images`, `NONE` when absent so only the
@@ -175,6 +338,15 @@ pub struct ModelData {
     pub submeshes: ModelSubmeshes,
     pub materials: ModelMaterials,
     pub images: Vec<ImageSource>,
+    pub skins: ModelSkins,
+    pub animations: Vec<ModelAnimation>,
+}
+
+impl ModelData {
+    /// Index of the animation called `name`
+    pub fn find_animation(&self, name: &str) -> Option<usize> {
+        self.animations.iter().position(|a| a.name == name)
+    }
 }
 
 /// Loads a `.glb` or a `.gltf` with external `.bin` and image files. Base64 data uris are not supported
@@ -271,6 +443,12 @@ pub fn load_gltf_from_memory(bytes: &[u8], base_dir: &Path, info: &GltfLoadInfo)
                 None => vec![Vec2f::zero(); positions.len()]
             };
             let tangents: Option<Vec<[f32; 4]>> = reader.read_tangents().map(|t| t.collect());
+            let skin = match (reader.read_joints(0), reader.read_weights(0)) {
+                (Some(joints), Some(weights)) => Some(joints.into_u16().zip(weights.into_f32())
+                    .map(|(joints, weights)| SkinVertex { joints, weights })
+                    .collect::<Vec<_>>()),
+                _ => None
+            };
 
             let mut vertices: Vec<Vertex3D> = (0..positions.len()).map(|i| {
                 let normal = normals[i];
@@ -312,6 +490,7 @@ pub fn load_gltf_from_memory(bytes: &[u8], base_dir: &Path, info: &GltfLoadInfo)
             model.submeshes.material.push(primitive.material().index().map_or(NONE, |i| i as u32));
             model.submeshes.aabb_min.push(aabb_min);
             model.submeshes.aabb_max.push(aabb_max);
+            model.submeshes.skin.push(skin);
         }
         mesh_ranges.push((first, model.submeshes.len() as u32 - first));
     }
@@ -321,8 +500,11 @@ pub fn load_gltf_from_memory(bytes: &[u8], base_dir: &Path, info: &GltfLoadInfo)
         msg: "hotline_rs::model:: gltf has no scenes".to_string()
     })?;
     let mut queue: VecDeque<(gltf::Node, u32)> = scene.nodes().map(|node| (node, NONE)).collect();
+    // glTF node index to ours, `NONE` for nodes outside the scene
+    let mut node_index = vec![NONE; document.nodes().count()];
     while let Some((node, parent)) = queue.pop_front() {
         let index = model.nodes.len() as u32;
+        node_index[node.index()] = index;
         let (t, r, s) = node.transform().decomposed();
         let (translation, rotation) = if info.left_handed {
             // mirror in z: S * M * S with S = diag(1, 1, -1)
@@ -343,13 +525,100 @@ pub fn load_gltf_from_memory(bytes: &[u8], base_dir: &Path, info: &GltfLoadInfo)
         nodes.world_matrix.push(Mat34f::identity());
         nodes.submesh_first.push(submesh_first);
         nodes.submesh_count.push(submesh_count);
+        nodes.skin.push(node.skin().map_or(NONE, |skin| skin.index() as u32));
 
         queue.extend(node.children().map(|child| (child, index)));
     }
     model.nodes.update_local_matrices();
     model.nodes.update_world_matrices();
 
+    // skins, joints as our node indices
+    for skin in document.skins() {
+        let joints: Vec<u32> = skin.joints().map(|joint| node_index[joint.index()]).collect();
+        if joints.contains(&NONE) {
+            return Err(Error {
+                msg: format!("hotline_rs::model:: skin {} has joints outside the scene", skin.name().unwrap_or(""))
+            });
+        }
+        let reader = skin.reader(|buffer| buffers.get(buffer.index()).map(|b| b.as_slice()));
+        let inverse_bind = match reader.read_inverse_bind_matrices() {
+            Some(matrices) => matrices.map(|m| {
+                let m = mat34_from_columns(m);
+                if info.left_handed { mirror_z(m) } else { m }
+            }).collect(),
+            None => vec![Mat34f::identity(); joints.len()]
+        };
+        model.skins.name.push(skin.name().unwrap_or("").to_string());
+        model.skins.joints.push(joints);
+        model.skins.inverse_bind.push(inverse_bind);
+    }
+
+    // animations, morph target weights aren't supported and are skipped
+    for animation in document.animations() {
+        let mut channels = Vec::new();
+        for channel in animation.channels() {
+            let node = node_index[channel.target().node().index()];
+            if node == NONE {
+                continue;
+            }
+            let reader = channel.reader(|buffer| buffers.get(buffer.index()).map(|b| b.as_slice()));
+            let Some(times) = reader.read_inputs() else { continue };
+            let times: Vec<f32> = times.collect();
+            let lh = info.left_handed;
+            let (path, values): (AnimationPath, Vec<Vec4f>) = match reader.read_outputs() {
+                Some(gltf::animation::util::ReadOutputs::Translations(t)) => (AnimationPath::Translation,
+                    t.map(|t| if lh { vec4f(t[0], t[1], -t[2], 0.0) } else { vec4f(t[0], t[1], t[2], 0.0) }).collect()),
+                Some(gltf::animation::util::ReadOutputs::Rotations(r)) => (AnimationPath::Rotation,
+                    r.into_f32().map(|r| if lh { vec4f(-r[0], -r[1], r[2], r[3]) } else { v4(r) }).collect()),
+                Some(gltf::animation::util::ReadOutputs::Scales(s)) => (AnimationPath::Scale,
+                    s.map(|s| vec4f(s[0], s[1], s[2], 0.0)).collect()),
+                _ => continue
+            };
+            let interpolation = match channel.sampler().interpolation() {
+                gltf::animation::Interpolation::Step => Interpolation::Step,
+                gltf::animation::Interpolation::Linear => Interpolation::Linear,
+                gltf::animation::Interpolation::CubicSpline => Interpolation::CubicSpline,
+            };
+            let per_key = if interpolation == Interpolation::CubicSpline { 3 } else { 1 };
+            if times.is_empty() || values.len() != times.len() * per_key {
+                continue;
+            }
+            channels.push(AnimationChannel { node, path, interpolation, times, values });
+        }
+        let duration = channels.iter().filter_map(|c| c.times.last().copied()).fold(0.0, f32::max);
+        model.animations.push(ModelAnimation {
+            name: animation.name().unwrap_or("").to_string(),
+            duration,
+            channels
+        });
+    }
+
     Ok(model)
+}
+
+/// A glTF column major matrix as a `Mat34f`, the bottom row is dropped
+fn mat34_from_columns(m: [[f32; 4]; 4]) -> Mat34f {
+    let mut out = Mat34f::identity();
+    for row in 0..3 {
+        out.set_row(row as u32, vec4f(m[0][row], m[1][row], m[2][row], m[3][row]));
+    }
+    out
+}
+
+/// `m` mirrored in z, S * M * S with S = diag(1, 1, -1): the z row and column change sign except where they cross
+fn mirror_z(m: Mat34f) -> Mat34f {
+    let mut out = m;
+    for row in 0..3u32 {
+        let mut r = m.get_row(row);
+        if row == 2 {
+            r = vec4f(-r.x, -r.y, r.z, -r.w);
+        }
+        else {
+            r.z = -r.z;
+        }
+        out.set_row(row, r);
+    }
+    out
 }
 
 fn v2(a: [f32; 2]) -> Vec2f {
@@ -502,6 +771,11 @@ pub struct Model<D: gfx::Device> {
     pub textures: Vec<D::Texture>,
     /// One per material in `ModelData::materials`, followed by the glTF default material
     pub materials: Vec<PbrMaterialData>,
+    /// The `SkinVertex` stream per submesh, `None` for submeshes that aren't skinned. Bind it as a second vertex
+    /// buffer next to the mesh's
+    pub skin_vbs: Vec<Option<D::Buffer>>,
+    pub skins: ModelSkins,
+    pub animations: Vec<ModelAnimation>,
 }
 
 impl<D: gfx::Device> Model<D> {
@@ -511,6 +785,16 @@ impl<D: gfx::Device> Model<D> {
         let meshes = (0..data.submeshes.len())
             .map(|i| primitives::try_create_mesh_3d(device, &data.submeshes.vertices[i], &data.submeshes.indices[i]))
             .collect::<Result<Vec<_>, _>>()?;
+        let skin_vbs = data.submeshes.skin.iter().map(|skin| skin.as_ref().map(|skin| {
+            device.create_buffer(&gfx::BufferInfo {
+                usage: gfx::BufferUsage::VERTEX,
+                cpu_access: gfx::CpuAccessFlags::NONE,
+                num_elements: skin.len(),
+                format: gfx::Format::Unknown,
+                stride: std::mem::size_of::<SkinVertex>(),
+                initial_state: gfx::ResourceState::VertexConstantBuffer
+            }, Some(skin.as_slice()))
+        }).transpose()).collect::<Result<Vec<_>, _>>()?;
 
         let mut textures = Vec::new();
         for (i, source) in data.images.iter().enumerate() {
@@ -579,6 +863,9 @@ impl<D: gfx::Device> Model<D> {
             submesh_material,
             textures,
             materials,
+            skin_vbs,
+            skins: data.skins.clone(),
+            animations: data.animations.clone(),
         })
     }
 }
@@ -684,5 +971,169 @@ mod tests {
         assert_eq!(model.submeshes.material[0], NONE);
         assert!(approx(model.submeshes.aabb_min[0], vec3f(0.0, 0.0, -1.0)));
         assert!(approx(model.submeshes.aabb_max[0], vec3f(1.0, 1.0, 0.0)));
+        assert!(model.submeshes.skin[0].is_none());
+    }
+
+    /// A triangle skinned to two joints, j0 at y = 1 with j1 2 along z under it, and two animations: "move" turns j0
+    /// 90 degrees about y and moves j1 from z = 2 to 4 (linear), and doubles j1's scale halfway (step). "spline"
+    /// moves j0 along x from 0 to 1 on a cubic spline with flat tangents
+    fn skinned_glb() -> Vec<u8> {
+        let json = r#"{
+            "asset": {"version": "2.0"},
+            "scene": 0,
+            "scenes": [{"nodes": [0, 1]}],
+            "nodes": [
+                {"name": "skinned", "mesh": 0, "skin": 0},
+                {"name": "j0", "children": [2], "translation": [0, 1, 0]},
+                {"name": "j1", "translation": [0, 0, 2]}
+            ],
+            "meshes": [{"primitives": [{"attributes": {"POSITION": 0, "JOINTS_0": 2, "WEIGHTS_0": 3}, "indices": 1}]}],
+            "skins": [{"name": "rig", "joints": [1, 2], "inverseBindMatrices": 4}],
+            "animations": [
+                {"name": "move", "channels": [
+                    {"sampler": 0, "target": {"node": 1, "path": "rotation"}},
+                    {"sampler": 1, "target": {"node": 2, "path": "translation"}},
+                    {"sampler": 2, "target": {"node": 2, "path": "scale"}}
+                ], "samplers": [
+                    {"input": 5, "output": 6, "interpolation": "LINEAR"},
+                    {"input": 5, "output": 7, "interpolation": "LINEAR"},
+                    {"input": 5, "output": 8, "interpolation": "STEP"}
+                ]},
+                {"name": "spline", "channels": [
+                    {"sampler": 0, "target": {"node": 1, "path": "translation"}}
+                ], "samplers": [
+                    {"input": 5, "output": 9, "interpolation": "CUBICSPLINE"}
+                ]}
+            ],
+            "buffers": [{"byteLength": 456}],
+            "bufferViews": [
+                {"buffer": 0, "byteOffset": 0, "byteLength": 36},
+                {"buffer": 0, "byteOffset": 36, "byteLength": 6},
+                {"buffer": 0, "byteOffset": 44, "byteLength": 24},
+                {"buffer": 0, "byteOffset": 68, "byteLength": 48},
+                {"buffer": 0, "byteOffset": 116, "byteLength": 128},
+                {"buffer": 0, "byteOffset": 244, "byteLength": 8},
+                {"buffer": 0, "byteOffset": 252, "byteLength": 32},
+                {"buffer": 0, "byteOffset": 284, "byteLength": 24},
+                {"buffer": 0, "byteOffset": 308, "byteLength": 24},
+                {"buffer": 0, "byteOffset": 332, "byteLength": 72}
+            ],
+            "accessors": [
+                {"bufferView": 0, "componentType": 5126, "count": 3, "type": "VEC3", "min": [0, 0, 0], "max": [1, 1, 1]},
+                {"bufferView": 1, "componentType": 5123, "count": 3, "type": "SCALAR"},
+                {"bufferView": 2, "componentType": 5123, "count": 3, "type": "VEC4"},
+                {"bufferView": 3, "componentType": 5126, "count": 3, "type": "VEC4"},
+                {"bufferView": 4, "componentType": 5126, "count": 2, "type": "MAT4"},
+                {"bufferView": 5, "componentType": 5126, "count": 2, "type": "SCALAR", "min": [0], "max": [1]},
+                {"bufferView": 6, "componentType": 5126, "count": 2, "type": "VEC4"},
+                {"bufferView": 7, "componentType": 5126, "count": 2, "type": "VEC3"},
+                {"bufferView": 8, "componentType": 5126, "count": 2, "type": "VEC3"},
+                {"bufferView": 9, "componentType": 5126, "count": 6, "type": "VEC3"}
+            ]
+        }"#;
+        let mut bin = Vec::new();
+        let floats = |bin: &mut Vec<u8>, values: &[f32]| values.iter().for_each(|f| bin.extend_from_slice(&f.to_le_bytes()));
+        floats(&mut bin, &[0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        for i in [0u16, 1, 2, 0] {
+            bin.extend_from_slice(&i.to_le_bytes());
+        }
+        // joints: the first vertex all j0, the others half and half
+        for j in [0u16, 0, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0] {
+            bin.extend_from_slice(&j.to_le_bytes());
+        }
+        floats(&mut bin, &[1.0, 0.0, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0, 0.5, 0.5, 0.0, 0.0]);
+        // inverse bind matrices, column major: the inverse of each joint's world translation
+        floats(&mut bin, &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, 0.0, 1.0]);
+        floats(&mut bin, &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, -1.0, -2.0, 1.0]);
+        floats(&mut bin, &[0.0, 1.0]);
+        floats(&mut bin, &[0.0, 0.0, 0.0, 1.0, 0.0, std::f32::consts::FRAC_1_SQRT_2, 0.0, std::f32::consts::FRAC_1_SQRT_2]);
+        floats(&mut bin, &[0.0, 0.0, 2.0, 0.0, 0.0, 4.0]);
+        floats(&mut bin, &[1.0, 1.0, 1.0, 2.0, 2.0, 2.0]);
+        // in tangent, value, out tangent per key
+        floats(&mut bin, &[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0]);
+        assert_eq!(bin.len(), 404);
+        bin.resize(456, 0);
+        make_glb(json, &bin)
+    }
+
+    fn load_skinned(left_handed: bool) -> ModelData {
+        load_gltf_from_memory(&skinned_glb(), Path::new(""), &GltfLoadInfo { left_handed }).unwrap()
+    }
+
+    fn world_position(nodes: &mut ModelNodes, name: &str) -> Vec3f {
+        nodes.update_local_matrices();
+        nodes.update_world_matrices();
+        nodes.world_matrix[nodes.find(name).unwrap()] * Vec3f::zero()
+    }
+
+    #[test]
+    fn skins_load_with_their_vertex_stream() {
+        let model = load_skinned(true);
+        let (j0, j1) = (model.nodes.find("j0").unwrap() as u32, model.nodes.find("j1").unwrap() as u32);
+        assert_eq!(model.skins.joints, vec![vec![j0, j1]]);
+        assert_eq!(model.skins.name, vec!["rig"]);
+        assert_eq!(model.nodes.skin[model.nodes.find("skinned").unwrap()], 0);
+        assert_eq!(model.nodes.skin[j0 as usize], NONE);
+        let skin = model.submeshes.skin[0].as_ref().unwrap();
+        assert_eq!(skin.len(), 3);
+        assert_eq!(skin[1], SkinVertex { joints: [0, 1, 0, 0], weights: [0.5, 0.5, 0.0, 0.0] });
+    }
+
+    #[test]
+    fn joint_matrices_are_identity_in_the_bind_pose() {
+        for left_handed in [true, false] {
+            let model = load_skinned(left_handed);
+            let mut matrices = Vec::new();
+            model.skins.write_joint_matrices(0, &model.nodes, &mut matrices);
+            assert_eq!(matrices.len(), 2);
+            for m in matrices {
+                let p = vec3f(0.3, -0.7, 1.9);
+                assert!(approx(m * p, p), "left handed {left_handed}");
+            }
+        }
+    }
+
+    #[test]
+    fn animations_sample_and_mirror() {
+        let model = load_skinned(true);
+        let anim = &model.animations[model.find_animation("move").unwrap()];
+        assert_eq!(anim.duration, 1.0);
+        let mut nodes = model.nodes.clone();
+        // halfway: j1 3 along z (mirrored to -z), turned 45 degrees about y with j0. glTF's turn takes +z towards +x
+        // which the mirror keeps, so j1 is at (3 sin 45, 1, 3 cos 45) mirrored
+        anim.sample(0.5, &mut nodes);
+        let j1 = nodes.find("j1").unwrap();
+        assert!(approx(nodes.translation[j1], vec3f(0.0, 0.0, -3.0)));
+        let d = 3.0 * std::f32::consts::FRAC_1_SQRT_2;
+        assert!(approx(world_position(&mut nodes, "j1"), vec3f(d, 1.0, -d)));
+        // step holds the first key until the second
+        assert!(approx(nodes.scale[j1], Vec3f::one()));
+        // the end and past it, held
+        anim.sample(4.0, &mut nodes);
+        assert!(approx(world_position(&mut nodes, "j1"), vec3f(4.0, 1.0, 0.0)));
+        assert!(approx(nodes.scale[j1], vec3f(2.0, 2.0, 2.0)));
+
+        let rh = load_skinned(false);
+        let mut rh_nodes = rh.nodes.clone();
+        rh.animations[0].sample(0.5, &mut rh_nodes);
+        assert!(approx(world_position(&mut rh_nodes, "j1"), vec3f(d, 1.0, d)));
+    }
+
+    #[test]
+    fn cubic_splines_and_blending() {
+        let model = load_skinned(true);
+        let spline = &model.animations[model.find_animation("spline").unwrap()];
+        let mut nodes = model.nodes.clone();
+        let j0 = nodes.find("j0").unwrap();
+        // flat tangents ease in and out, the hermite basis is 0.5 halfway and 0.15625 at a quarter
+        spline.sample(0.5, &mut nodes);
+        assert!(approx(nodes.translation[j0], vec3f(0.5, 0.0, 0.0)));
+        spline.sample(0.25, &mut nodes);
+        assert!(approx(nodes.translation[j0], vec3f(0.15625, 0.0, 0.0)));
+        // blending a quarter of the way from the bind pose to the end
+        let mut nodes = model.nodes.clone();
+        spline.blend(1.0, 0.25, &mut nodes);
+        assert!(approx(nodes.translation[j0], vec3f(0.25, 0.75, 0.0)));
+        assert_eq!(spline.wrap(1.25), 0.25);
     }
 }

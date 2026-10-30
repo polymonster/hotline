@@ -19,16 +19,63 @@ Checkout a live [demo](https://www.youtube.com/watch?v=8a_qcqmpZlg)!.
 - [os](#os) - Operating system API; window, input, etc.
 - [gfx](#gfx) - Concise low level graphics API.
 - [pmfx](#pmfx) - High level, data driven, ergonomic graphics API.
-- [av](#av) - Hardware accelerated av decoding.
+- [av](#av) - Hardware accelerated video decoding and encoding.
 - [imgui](#imgui) - Full featured dear ImGui implementation with viewports and docking.
 - [ecs](#ecs) - Entity component system using `bevy_ecs`.
-- [Client](#using-the-client) - Live reloading coding environment client application.
-- [Standalone Library](##using-as-a-library) - Use as a standalone library and integrate into your own applications.
+- [model](#model) - glTF 2.0 loading into data oriented nodes, submeshes and pbr materials.
+- [Client](#using-the-client) - Live reloading coding environment client application, with one key video capture.
+- [Standalone Apps](#standalone-apps) - Link the same plugin code statically into a distributable binary, no hot reload.
+- [Standalone Library](#using-as-a-library) - Use as a standalone library and integrate into your own applications.
 - [Examples](#Examples) - A focus on modern rendering examples (gpu-driven, multi-threaded, bindless).
 
 ## Supported Platforms
 
 Windows with Direct3D12 is the first fully supported platform, macOS with metal is available in a branch and should be complete soon.
+
+## Repository Layout
+
+```text
+hotline/
+├── src/                    hotline-rs library
+│   ├── os, gfx, av         platform apis with backends: win32 / macos, d3d12 / mtl, wmf / avf, plus null stubs
+│   ├── pmfx.rs             data driven render pipelines, views, render graphs and textures
+│   ├── imgui.rs            dear imgui backend with docking and multi-viewports
+│   ├── model.rs            gltf loading
+│   ├── client.rs           the client: window, plugins, session config, video recording
+│   ├── plugin.rs           Plugin trait, hotline_plugin!, PluginLib and the link time symbol table
+│   └── reloader.rs         file watching and rebuild / reload
+├── client/                 the live coding client binary
+├── plugins/
+│   ├── ecs/                bevy_ecs host: demos, schedules, cameras, debug draw
+│   ├── export_macros/      #[export_update_fn], #[export_render_fn], #[export_compute_fn]
+│   ├── ecs_examples/       the example demos, a plugin dll and an rlib
+│   ├── ecs_examples_app/   ecs_examples linked statically into a standalone binary
+│   └── empty/              minimal Plugin trait example
+├── shaders/                hlsl + pmfx / jsn pipeline, view and render graph configs
+├── examples/               standalone examples using the library apis directly
+├── tests/                  gpu tests, including booting each ecs demo
+└── hotline-data/           submodule: textures, models, fonts, prebuilt tools (pmfx, texturec)
+```
+
+Data is built into `target/data` (shaders, textures, models) and the client's session is saved to `target/user_config.json`.
+
+## Architecture
+
+A hotline game or tool is a **plugin**, a crate whose functions the client finds by name:
+
+- `hotline_plugin!` exports the `Plugin` trait entry points (`create`, `setup`, `update`, `ui`, `unload`).
+- `ecs` plugins host the ecs inside themselves with `ecs::hotline_ecs_plugin!()`, and export systems with `#[export_update_fn]` / `#[export_render_fn]` / `#[export_compute_fn]`, demos with `demos![..]`. The ecs host builds a schedule for the active demo by looking up the systems and render graph functions it names.
+
+The same plugin crate can be run two ways:
+
+| | Live coding | Standalone app |
+|---|---|---|
+| Built as | `cdylib`, loaded by `client` | `rlib`, linked into your binary |
+| Added with | `Client::add_plugin_lib` / `--plugin <dir>` | `Client::add_plugin_static("name")` |
+| Functions found by | symbol lookup in the dll | the link time `PLUGIN_SYMBOLS` table |
+| Hot reload | yes, source changes rebuild and reload the dll | no |
+
+Both are behind `plugin::PluginLib`, so the client and the ecs host don't know which kind a plugin is. Every macro above registers what it generates in the `PLUGIN_SYMBOLS` table (via [linkme](https://docs.rs/linkme)), tagged with its crate name. The exports still carry `#[no_mangle]` for the dll lookup, so for now a standalone binary links one plugin crate. Two would clash on names like `create`.
 
 ## Using the Client
 
@@ -63,10 +110,17 @@ cargo build -p ecs_examples
 cargo build --workspace
 
 // run the client
-cargo run client
+cargo run --bin client
 ```
 
 Any code changes made to the plugin libs will cause a rebuild and reload to happen with the client still running. You can also edit the [shaders](https://github.com/polymonster/hotline/tree/master/src/shaders) where `hlsl` files make up the shader code and `pmfx` files allow you to specify pipeline state objects in config files. Any changes detected to `pmfx` shaders will be rebuilt and all modified pipelines or views will be rebuilt.
+
+The session (window placement, loaded plugins, active demo, cameras) is saved to `target/user_config.json` and restored on the next run.
+
+### Client Controls
+
+- `Ctrl+Shift+F` toggles fullscreen, the main view is drawn straight to the window without the ui.
+- `Ctrl+Shift+R` starts and stops recording the main view to video, also in `View > Record Video`. Only the scene is recorded, not the ui. Videos are H.264 `.mp4` files written to `target/recordings/` relative to the working directory. With `Time > Fixed Timestep` on, frames are timed by the fixed step, so slow scenes still play back at the right speed.
 
 ### Building from Visual Studio Code
 
@@ -92,11 +146,14 @@ version = "0.1.0"
 edition = "2021"
 
 [lib]
-crate-type = ["cylib"]
+# cdylib for the live client, rlib to also link it into a standalone app
+crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 hotline-rs = { path = "../.." }
 ```
+
+The client passes its `Client` struct into the plugin, so a plugin must be built against the same hotline source and dependency versions as the client. Plugins in their own workspace can seed their `Cargo.lock` from hotline's to keep them in sync.
 
 You can provide your own plugin implementations using the [Plugin](https://docs.rs/hotline-rs/latest/hotline_rs/plugin/trait.Plugin.html) trait. A basic plugin can hook itself by implementing a few functions:
 
@@ -107,32 +164,28 @@ impl Plugin<gfx_platform::Device, os_platform::App> for EmptyPlugin {
         }
     }
 
-    fn setup(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-        -> Client<gfx_platform::Device, os_platform::App> {
+    fn setup(&mut self, client: &mut Client<gfx_platform::Device, os_platform::App>) {
         println!("plugin setup");
-        client
     }
 
-    fn update(&mut self, client: client::Client<gfx_platform::Device, os_platform::App>)
+    // update takes and returns the client by value, so the ecs can move resources in and out of its world
+    fn update(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
         -> Client<gfx_platform::Device, os_platform::App> {
         println!("plugin update");
         client
     }
 
-    fn unload(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-        -> Client<gfx_platform::Device, os_platform::App> {
-        println!("plugin unload");
-        client
+    fn ui(&mut self, client: &mut Client<gfx_platform::Device, os_platform::App>) {
+        println!("plugin ui");
     }
 
-    fn ui(&mut self, client: Client<gfx_platform::Device, os_platform::App>)
-    -> Client<gfx_platform::Device, os_platform::App> {
-        println!("plugin ui");
-        client
+    fn unload(&mut self, client: &mut Client<gfx_platform::Device, os_platform::App>) {
+        println!("plugin unload");
     }
 }
 
-// the macro instantiates the plugin with a c-abi so it can be loaded dynamically.
+// the macro exports the plugin entry points with a c-abi so they can be loaded from the dll, and registers them in
+// the `PLUGIN_SYMBOLS` table for when the plugin is linked statically
 hotline_plugin![EmptyPlugin];
 ```
 
@@ -140,18 +193,24 @@ hotline_plugin![EmptyPlugin];
 
 There is a core entity component system plugin which builds on top of [bevy_ecs](https://docs.rs/bevy_ecs/latest/bevy_ecs/). It allows you to supply your own systems and build schedules dynamically. It is possible to load and find new `ecs` systems in different dynamic libraries. You can register and instantiate `demos` which are collections of `setup`, `update` and `render` systems.
 
+An ecs plugin hosts the ecs inside itself, so it is compiled together with the systems it runs. Add this once in the plugin's `lib.rs`:
+
+```rust
+ecs::hotline_ecs_plugin!();
+```
+
 #### Registering Demos
 
-Systems can be imported dynamically from different plugins, in order to do so they need to be hooked into a function which can be located dynamically by the `ecs` plugin. You can implement a function called `get_demos_<lib_name>`, which returns a list of available demos inside a `plugin` named `<lib_name>`.
+The ecs host finds a plugin's demos by calling a function named `get_demos_<lib_name>`, which returns the demos inside the plugin named `<lib_name>`. `demos!` takes the names of the demo functions, wherever they are in the crate, and registers each one so it can also be found when the plugin is linked statically:
 
 ```rust
 /// Register demo names
 #[no_mangle]
 pub fn get_demos_ecs_examples() -> Vec<String> {
     demos![
-        "primitives",
-        "draw_indexed",
-        "draw_indexed_push_constants",
+        primitives,
+        draw_indexed,
+        draw_indexed_push_constants,
 
         // ..
     ]
@@ -354,6 +413,45 @@ fn update_user_config(&mut self) {
     client.serialise_plugin_data("ecs", &self.session_info);
 }
 ```
+
+## Standalone Apps
+
+To ship a plugin, link it statically into a binary instead of loading its dll in the client. The plugin code doesn't change. [plugins/ecs_examples_app](https://github.com/polymonster/hotline/tree/master/plugins/ecs_examples_app) is the ecs examples as a standalone app:
+
+```rust
+use hotline_rs::prelude::*;
+
+// link the plugin, its systems and demos register themselves into `PLUGIN_SYMBOLS`
+use ecs_examples as _;
+
+fn main() -> Result<(), hotline_rs::Error> {
+    let mut ctx : Client<gfx_platform::Device, os_platform::App> = Client::create(HotlineInfo {
+        name: "ecs_examples_app".to_string(),
+        load_session_plugins: false,
+        // its own session, so it doesn't change the dev client's active demo and camera
+        user_config_path: Some("ecs_examples_app_user_config.json".to_string()),
+        ..Default::default()
+    })?;
+
+    ctx.add_plugin_static("ecs_examples");
+
+    if let Some(demo) = client::arg_values("demo").pop() {
+        ctx.set_active_demo(&demo);
+    }
+
+    ctx.run()
+}
+```
+
+The plugin crate needs `rlib` in its `crate-type`, and the app depends on it as a normal crate:
+
+```text
+cargo run -p ecs_examples_app -- --demo bindless_material_ibl
+```
+
+Static plugins aren't watched or rebuilt, and they aren't saved to the user config. `HotlineInfo::user_config_path` gives each app its own session file, resolved relative to `target/` when relative, so apps sharing a target directory don't overwrite each other's settings.
+
+For iOS the same plugin crate is planned to build as a `staticlib`, with an `extern "C"` entry point for the Xcode app to call that does what `main` does above.
 
 ## Using as a library
 
@@ -687,6 +785,40 @@ while app.run() {
 }
 ```
 
+Frames can also be encoded to a video file with a `VideoRecorder`, on Windows this is an H.264 `.mp4` through the media foundation sink writer with a hardware encoder. Frames are BGRX8 rows read back from the gpu with `CmdBuf::read_back_texture`, see `Client::toggle_recording` for a full pipelined example.
+
+```rust
+// odd sizes are rounded down to even for the encoder
+let mut recorder = av_platform::VideoRecorder::create("capture.mp4", width, height, 60)?;
+
+// each frame, once a read back request has completed
+let data = request.map(&gfx::MapInfo { subresource: 0, read_start: 0, read_end: usize::MAX })?;
+recorder.write_frame(&data, time_seconds, 1.0 / 60.0)?;
+request.unmap();
+
+// flush the encoder and close the file
+recorder.finish()?;
+```
+
+### model
+
+The [model](https://docs.rs/hotline-rs/latest/hotline_rs/model/index.html) module loads glTF 2.0 (`.glb`, or `.gltf` with external files) into plain structure of arrays data. That data has no gpu dependency: a node hierarchy sorted parents first, submeshes of `Vertex3D`, and pbr metallic roughness materials. `Model::create` then uploads it into mesh buffers and bindless textures, and packs the materials into `PbrMaterialData` ready for a structured buffer.
+
+```rust
+let data = model::load_gltf("models/ABeautifulGame.glb", &model::GltfLoadInfo::default())?;
+let model = model::Model::create(&mut device, &data, Some(&mut pmfx.shader_heap))?;
+
+// draw each node's submeshes with its world matrix
+for node in 0..model.nodes.len() {
+    let first = model.nodes.submesh_first[node] as usize;
+    for submesh in first..first + model.nodes.submesh_count[node] as usize {
+        let mesh = &model.meshes[submesh];
+        let material = model.submesh_material[submesh];
+        // .. push model.nodes.world_matrix[node] and material, draw mesh
+    }
+}
+```
+
 ### imgui
 
 Dear ImGui support with docking and viewports (multiple windows) through the [imgui](https://docs.rs/hotline-rs/latest/hotline_rs/imgui/index.html) module. The widget API is not fully complete in safe Rust. I have been adding these on a case by case basis as I need them.
@@ -803,7 +935,14 @@ More advanced examples are implemented using the `ecs` and `plugin` system. You 
 hotline-data\pmbuild win32-debug -all -run
 ```
 
-The source code can be located in this [directory](https://github.com/polymonster/hotline/tree/master/plugins/ecs_examples/src) and the shaders / pmfx configs are located in the hotline-data [repository](https://github.com/polymonster/hotline-data/tree/master/src/shaders).
+To boot straight into one demo, live in the client or as the standalone app:
+
+```text
+cargo run --bin client -- --demo gltf_model
+cargo run -p ecs_examples_app -- --demo gltf_model
+```
+
+The source code can be located in this [directory](https://github.com/polymonster/hotline/tree/master/plugins/ecs_examples/src) and the shaders / pmfx configs are located in [shaders](https://github.com/polymonster/hotline/tree/master/shaders). Textures and models are in the hotline-data [repository](https://github.com/polymonster/hotline-data/tree/master/src).
 
 ### Draw
 
@@ -972,6 +1111,10 @@ Raytracing pipeline with reflection and refraction.
 <img src="https://raw.githubusercontent.com/polymonster/polymonster.github.io/master/images/hotline/ecs_examples/raytraced_shadows.png" width="100%"/>
 
 Inline raytracing shadows with mixed raster and raytracing workload. Raster pipeline for direct illumination and inline raytraced shadow from the pixel shader.
+
+### glTF Model
+
+Loads the Khronos "A Beautiful Game" chess set with the `model` module: a node hierarchy, 15 submeshes and 15 pbr materials with 33 embedded textures. Each submesh is an entity drawn with its node's world matrix and a material index into a structured buffer of `PbrMaterialData`, lit with image based lighting. The model is CC-BY 4.0, see `hotline-data/src/models/readme.md` for attribution.
 
 ## Tests
 

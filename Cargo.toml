@@ -5,6 +5,7 @@ members = [
     "plugins/empty",
     "plugins/ecs",
     "plugins/ecs_examples",
+    "plugins/ecs_examples_app",
     "plugins/export_macros",
 ]
 
@@ -44,6 +45,7 @@ libloading = "0.7.4"
 ddsfile = "0.5.1"
 ttf-parser = "0.25.1"
 gltf = { version = "1.4.1", default-features = false, features = ["names", "utils"] }
+linkme = "0.3.37"
 
 [build-dependencies]
 htwv = { path = "hotline-data/htwv" }

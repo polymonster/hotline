@@ -280,20 +280,30 @@ macro_rules! system_func {
     }
 }
 
-/// You can use this macro to make the exporting of demo names for ecs plugins mor ergonomic, 
-/// it will make a `Vec<String>` from a list of `&str`.
+/// Makes the `Vec<String>` of demo names for `get_demos_<lib>` from the names of the `#[no_mangle]` demo functions,
+/// and registers each function so it is found when the plugin is linked statically.
 /// demos![
-///     "primitives,
-///     "draw_indexed"
-///     "draw_indexed_instance"
+///     primitives,
+///     draw_indexed,
+///     draw_indexed_instance
 /// ]
 #[macro_export]
 macro_rules! demos {
-    ($($entry:expr),*) => {   
+    ($($entry:ident),* $(,)?) => {{
+        $(
+            const _: () = {
+                // binds to the `#[no_mangle]` demo function, which can live in any module of the plugin
+                extern "Rust" {
+                    fn $entry(client: &mut hotline_rs::client::Client<hotline_rs::gfx_platform::Device, hotline_rs::os_platform::App>)
+                        -> $crate::ScheduleInfo;
+                }
+                hotline_rs::plugin_symbol!(stringify!($entry), $entry);
+            };
+        )*
         vec![
-            $($entry.to_string(),)+
+            $(stringify!($entry).to_string(),)*
         ]
-    }
+    }}
 }
 
 /// You can use this macro to make the exporting of systems names for ecs plugins more ergonomic, 

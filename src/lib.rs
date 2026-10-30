@@ -35,6 +35,9 @@ pub mod client;
 /// Trait's and macros to assist the creation of plugins in other dynamically loaded libraries
 pub mod plugin;
 
+/// Link time registration of plugin symbols, re-exported so plugin macros can use it without a dependency
+pub use linkme;
+
 /// Module to aid data / code file watching, rebuilding and reloading
 pub mod reloader;
 

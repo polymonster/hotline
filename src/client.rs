@@ -54,7 +54,11 @@ pub struct HotlineInfo {
     /// cleared, so only plugins added with `add_plugin_lib` are loaded and saved
     pub load_session_plugins: bool,
     /// Start in fullscreen mode, where the main view is drawn straight to the window without the imgui ui
-    pub fullscreen: bool
+    pub fullscreen: bool,
+    /// File the user config is loaded from and saved to, relative paths are from the `target` directory. Use a
+    /// separate file per app so apps sharing a target directory don't overwrite each other's sessions. `None` uses
+    /// `target/user_config.json`
+    pub user_config_path: Option<String>
 }
 
 /// Time structure to pass around to plugins and systems
@@ -127,7 +131,8 @@ impl Default for HotlineInfo {
             depth_stencil_heap_size: 64,
             user_config: None,
             load_session_plugins: true,
-            fullscreen: false
+            fullscreen: false,
+            user_config_path: None
         }
     }
 }
@@ -187,13 +192,15 @@ pub struct Client<D: gfx::Device, A: os::App> {
     pub unit_quad_mesh: pmfx::Mesh<D>,
     pub user_config: UserConfig,
     pub time: Time,
-    pub libs: HashMap<String, hot_lib_reloader::LibReloader>,
+    pub libs: HashMap<String, plugin::PluginLib>,
     plugins: Vec<PluginCollection>,
     delta_history: VecDeque<f32>,
     instance_name: String,
     status_bar_height: f32,
     fullscreen: bool,
-    recording: Option<Recording<D>>
+    recording: Option<Recording<D>>,
+    /// Where `user_config` is saved, see `HotlineInfo::user_config_path`
+    user_config_path: String
 }
 
 /// Serialisable plugin
@@ -224,19 +231,41 @@ enum PluginState {
 /// Container data describing a plugin
 struct PluginCollection {
     name: String,
-    reloader: reloader::Reloader,
+    /// Watches and rebuilds the source of dynamic plugins, `None` for plugins linked statically
+    reloader: Option<reloader::Reloader>,
     instance: PluginInstance,
     state: PluginState
+}
+
+/// Values passed on the command line as `--<name> <value>`, the arg can be passed multiple times
+pub fn arg_values(name: &str) -> Vec<String> {
+    let flag = format!("--{}", name);
+    let mut values = Vec::new();
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == flag {
+            if let Some(value) = args.next() {
+                values.push(value);
+            }
+            else {
+                println!("hotline_rs::client:: {} expects a value", flag);
+            }
+        }
+    }
+    values
 }
 
 /// Hotline `Client` implementation
 impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx::Pipeline {
     /// Create a hotline context consisting of core resources
     pub fn create(info: HotlineInfo) -> Result<Self, super::Error> {
-        // read user config or get defaults
-        let user_config_path = super::get_data_path("../user_config.json");
+        // read user config or get defaults, the file is joined after resolving the directory as it may not exist yet
+        let user_config_path = PathBuf::from(super::get_data_path(".."))
+            .join(info.user_config_path.as_deref().unwrap_or("user_config.json"))
+            .to_string_lossy()
+            .to_string();
         let saved_user_config = if std::path::Path::new(&user_config_path).exists() {
-            let user_data = std::fs::read(user_config_path)?;
+            let user_data = std::fs::read(&user_config_path)?;
             serde_json::from_slice(&user_data).unwrap()
         }
         else {
@@ -358,6 +387,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             imgui,
             unit_quad_mesh,
             user_config: user_config.clone(),
+            user_config_path,
             plugins: Vec::new(),
             libs: HashMap::new(),
             time: Time::new(),
@@ -444,7 +474,10 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.toggle_recording();
         }
 
-        // start imgui new frame, the ui still runs in fullscreen so plugins can make imgui calls but it is not drawn
+        // start imgui new frame. Fullscreen is the app as it ships: the imgui ui is hidden, it gets no input and has no
+        // os windows of its own, so nothing in it can react to the game's input. It still runs so plugins can make
+        // imgui calls, only the foreground draw list over the main view is drawn
+        self.imgui.set_ui_hidden(self.fullscreen);
         self.imgui.new_frame(&mut self.app, &mut self.main_window, &mut self.device);
         if !self.fullscreen {
             self.imgui.add_main_dock(self.status_bar_height);
@@ -457,6 +490,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 !self.imgui.want_capture_mouse() || dock_input);
         }
         else {
+            self.imgui.keep_main_dock_alive();
             self.app.set_input_enabled(true, true);
         }
 
@@ -479,9 +513,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
     /// internal function to manage tracking user config values and changes, writes to disk if change are detected
     fn save_user_config(&mut self) {
         let user_config_file_text = serde_json::to_string_pretty(&self.user_config).unwrap();
-        let user_config_path = super::get_data_path("../user_config.json");
-        std::fs::File::create(&user_config_path).unwrap();
-        std::fs::write(&user_config_path, user_config_file_text).unwrap();
+        std::fs::write(&self.user_config_path, user_config_file_text).unwrap();
     }
 
     /// Intenral function to save both the `user_config.json` and `imgui.ini` to a disk location, for saving re-usable presets
@@ -521,7 +553,6 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         }
     }
 
-    /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
     /// Returns true while the main view is being recorded to video
     pub fn is_recording(&self) -> bool {
         self.recording.is_some()
@@ -621,6 +652,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         Ok(())
     }
 
+    /// Render and display a pmfx target 'blit_view_name' to the main window, draw imgui and swap buffers
     pub fn present(&mut self, blit_view_name: &str) {
         // execute pmfx command buffers first
         self.pmfx.execute(&mut self.device);
@@ -819,7 +851,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         }
 
         println!("hotline_rs::client:: loading plugin: {}/{}", lib_path, name);
-        let lib = hot_lib_reloader::LibReloader::new(&lib_path, name, None).unwrap();
+        let lib = plugin::PluginLib::Dynamic(hot_lib_reloader::LibReloader::new(&lib_path, name, None).unwrap());
         unsafe {
             // create instance if it is a Plugin trait
             let create = lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes());
@@ -837,7 +869,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             self.plugins.push( PluginCollection {
                 name: name.to_string(),
                 instance,
-                reloader: Reloader::create(Box::new(plugin)),
+                reloader: Some(Reloader::create(Box::new(plugin))),
                 state: PluginState::Setup
             });
             self.libs.insert(name.to_string(), lib);
@@ -861,6 +893,47 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 plugin_info.remove(name);
             }
             plugin_info.insert(name.to_string(), PluginInfo { path });
+        }
+    }
+
+    /// Adds a plugin crate which is linked statically into the binary instead of loaded from a dynamic lib. Its
+    /// functions are found with `PluginLib::from_static`, it can't be hot reloaded and isn't saved to the user config
+    pub fn add_plugin_static(&mut self, name: &str) {
+        if self.libs.contains_key(name) {
+            println!("hotline_rs::client:: plugin already loaded: {}", name);
+            return;
+        }
+        let lib = plugin::PluginLib::from_static(name);
+        if let plugin::PluginLib::Static(symbols) = &lib {
+            println!("hotline_rs::client:: linked plugin: {} ({} symbols)", name, symbols.len());
+        }
+        unsafe {
+            let instance = match lib.get_symbol::<unsafe extern "C" fn() -> *mut core::ffi::c_void>("create".as_bytes()) {
+                Ok(create) => create(),
+                Err(_) => std::ptr::null_mut()
+            };
+            self.plugins.push(PluginCollection {
+                name: name.to_string(),
+                instance,
+                reloader: None,
+                state: PluginState::Setup
+            });
+        }
+        self.libs.insert(name.to_string(), lib);
+    }
+
+    /// Set the active demo in the "ecs" plugin data, restoring the demo's saved camera like selecting it in the ecs ui
+    pub fn set_active_demo(&mut self, demo: &str) {
+        let plugin_data = self.user_config.plugin_data.get_or_insert_with(Default::default);
+        let ecs = plugin_data.entry("ecs".to_string()).or_insert_with(|| serde_json::json!({}));
+        if let Some(ecs) = ecs.as_object_mut() {
+            if ecs.get("active_demo").and_then(|d| d.as_str()) != Some(demo) {
+                let camera = ["demo_cameras", "default_cameras"].iter()
+                    .find_map(|cameras| ecs.get(*cameras).and_then(|c| c.get(demo)).cloned())
+                    .unwrap_or(serde_json::Value::Null);
+                ecs.insert("main_camera".to_string(), camera);
+                ecs.insert("active_demo".to_string(), serde_json::Value::String(demo.to_string()));
+            }
         }
     }
 
@@ -1011,7 +1084,7 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
             let mut hot_name = String::from("");
             let mut col = vec4f(1.0, 1.0, 1.0, 1.0);
             for plugin in &self.plugins {
-                if plugin.reloader.is_hot() {
+                if plugin.reloader.as_ref().is_some_and(|r| r.is_hot()) {
                     if !hot_name.is_empty() {
                         hot_name += " | "
                     }
@@ -1056,7 +1129,8 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
         // check for reloads
         let mut reload = false;
         for plugin in &mut plugins {
-            if plugin.reloader.check_for_reload() == reloader::ReloadState::Available || plugin.state == PluginState::Reload {
+            let available = plugin.reloader.as_mut().is_some_and(|r| r.check_for_reload() == reloader::ReloadState::Available);
+            if available || plugin.state == PluginState::Reload {
                     self.swap_chain.wait_for_last_frame();
                     reload = true;
                     plugin.state = PluginState::Reload;
@@ -1125,7 +1199,9 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
                 }
 
                 // signal it's ok to continue
-                plugin.reloader.complete_reload();
+                if let Some(reloader) = &mut plugin.reloader {
+                    reloader.complete_reload();
+                }
 
                 // create a new instance of the plugin
                 unsafe {
@@ -1231,8 +1307,12 @@ impl<D, A> Client<D, A> where D: gfx::Device, A: os::App, D::RenderPipeline: gfx
 
             self.new_frame()?;
 
-            self.core_ui();
-            self.pmfx.show_ui(&mut self.imgui, true);
+            // the client's own ui is for development, fullscreen leaves it out. Plugins still make their ui calls,
+            // game huds drawn to the foreground draw list show in fullscreen
+            if !self.fullscreen {
+                self.core_ui();
+                self.pmfx.show_ui(&mut self.imgui, true);
+            }
 
             self = self.update_plugins();
 

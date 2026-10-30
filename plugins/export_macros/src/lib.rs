@@ -105,6 +105,11 @@ fn parse_fn(item: &TokenStream) -> FunctionParsed {
     }
 }
 
+/// registers the generated `export_<name>` function, so it is found when the plugin is linked statically
+fn emit_plugin_symbol(name: &str) -> TokenStream {
+    format!("hotline_rs::plugin_symbol!(\"export_{0}\", export_{0});", name).parse().unwrap()
+}
+
 fn emit_update_order(attr: TokenStream, default_set: &str) -> String {
     if attr.to_string().contains("in_set") {
         attr.to_string()
@@ -141,6 +146,7 @@ pub fn export_update_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut output = TokenStream::from(expanded);
     output.extend(export_tokens);
+    output.extend(emit_plugin_symbol(&parsed.name));
     output
 }
 
@@ -208,6 +214,7 @@ pub fn export_render_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut output = TokenStream::from(expanded);
     output.extend(export_tokens);
+    output.extend(emit_plugin_symbol(&parsed.name));
     output
 }
 
@@ -269,5 +276,6 @@ pub fn export_compute_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
     let mut output = TokenStream::from(expanded);
     output.extend(export_tokens);
+    output.extend(emit_plugin_symbol(&parsed.name));
     output
 }

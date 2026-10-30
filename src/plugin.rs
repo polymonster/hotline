@@ -21,6 +21,76 @@ pub struct PluginReloadResponder {
     pub src_path: String
 }
 
+/// A plugin function registered at link time with `plugin_symbol!`, `lib` is the crate it was registered from
+pub struct PluginSymbol {
+    pub lib: &'static str,
+    pub name: &'static str,
+    pub ptr: *const ()
+}
+
+// registered pointers are to functions, which are immutable and live for the whole program
+unsafe impl Sync for PluginSymbol {}
+
+/// Every symbol registered with `plugin_symbol!` in the plugin crates linked into this binary or dynamic lib
+#[linkme::distributed_slice]
+pub static PLUGIN_SYMBOLS: [PluginSymbol];
+
+/// Registers the function `$func` as `$name` for the calling crate, so it can be found when the crate is linked
+/// statically with `PluginLib::from_static` in place of loading its dynamic lib
+#[macro_export]
+macro_rules! plugin_symbol {
+    ($name:expr, $func:expr) => {
+        const _: () = {
+            #[$crate::linkme::distributed_slice($crate::plugin::PLUGIN_SYMBOLS)]
+            #[linkme(crate = $crate::linkme)]
+            static SYMBOL: $crate::plugin::PluginSymbol = $crate::plugin::PluginSymbol {
+                lib: env!("CARGO_CRATE_NAME"),
+                name: $name,
+                ptr: $func as *const ()
+            };
+        };
+    }
+}
+
+/// Where a plugin's functions are found: a hot reloadable dynamic lib or a crate linked statically into the binary
+pub enum PluginLib {
+    Dynamic(hot_lib_reloader::LibReloader),
+    Static(std::collections::HashMap<&'static str, &'static PluginSymbol>)
+}
+
+impl PluginLib {
+    /// Collects the symbols registered by the statically linked crate `lib`
+    pub fn from_static(lib: &str) -> Self {
+        PluginLib::Static(PLUGIN_SYMBOLS.iter().filter(|s| s.lib == lib).map(|s| (s.name, s)).collect())
+    }
+
+    /// Returns the function `name` as `T`, which must be the function pointer type it was exported with
+    pub unsafe fn get_symbol<T: Copy>(&self, name: &[u8]) -> Result<T, super::Error> {
+        match self {
+            PluginLib::Dynamic(lib) => lib.get_symbol::<T>(name).map(|symbol| *symbol).map_err(|err| super::Error {
+                msg: err.to_string()
+            }),
+            PluginLib::Static(symbols) => {
+                assert_eq!(std::mem::size_of::<T>(), std::mem::size_of::<*const ()>());
+                let name = std::str::from_utf8(name).unwrap_or("");
+                symbols.get(name).map(|s| std::mem::transmute_copy::<*const (), T>(&s.ptr)).ok_or(super::Error {
+                    msg: format!("hotline_rs::plugin: symbol {} not found", name)
+                })
+            }
+        }
+    }
+
+    /// Reloads a dynamic lib if it changed, returns true when the lib is ready. Static libs never change
+    pub fn update(&mut self) -> Result<bool, super::Error> {
+        match self {
+            PluginLib::Dynamic(lib) => lib.update().map_err(|err| super::Error {
+                msg: err.to_string()
+            }),
+            PluginLib::Static(_) => Ok(true)
+        }
+    }
+}
+
 /// Public trait for defining a plugin in a another library implement this trait and instantiate it with `hotline_plugin!`
 pub trait Plugin<D: gfx::Device, A: os::App> {
     /// Create a new instance of the plugin
@@ -239,6 +309,13 @@ macro_rules! hotline_plugin {
                 plugin.ui(&mut (*client));
             }
         }
+
+        // register the entry points for when the plugin is linked statically
+        $crate::plugin_symbol!("create", create);
+        $crate::plugin_symbol!("update", update);
+        $crate::plugin_symbol!("setup", setup);
+        $crate::plugin_symbol!("unload", unload);
+        $crate::plugin_symbol!("ui", ui);
     }
 }
 

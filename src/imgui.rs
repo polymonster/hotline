@@ -72,7 +72,11 @@ pub struct ImGui<D: Device, A: App> {
     pipeline: D::RenderPipeline,
     buffers: Vec<RenderBuffers<D>>,
     last_cursor: os::Cursor,
-    global_context: u64
+    global_context: u64,
+    /// The ui is hidden (fullscreen): no input reaches imgui and there are no platform windows, see `set_ui_hidden`
+    ui_hidden: bool,
+    /// Multi-viewports were enabled at creation, they're switched off while the ui is hidden
+    viewports_supported: bool
 }
 
 #[derive(Clone)]
@@ -782,7 +786,9 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 pipeline,
                 buffers,
                 last_cursor: os::Cursor::None,
-                global_context: igGetCurrentContext() as u64
+                global_context: igGetCurrentContext() as u64,
+                ui_hidden: false,
+                viewports_supported: (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0
             };
 
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
@@ -820,6 +826,38 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
     }
 
     /// Call this each frame before you want to start making `imgui.` UI calls
+    /// Hide or show the whole imgui ui, call before `new_frame`. While hidden (fullscreen, the game as it ships) imgui
+    /// gets no mouse or keyboard input, so windows which are still submitted but not drawn can't be clicked, hovered
+    /// or navigated to with the keyboard, and multi-viewports are off so windows undocked into their own os windows
+    /// are merged back and their os windows destroyed. They come back when the ui is shown again. Only the main
+    /// viewport's foreground draw list is drawn, see `render_foreground`
+    pub fn set_ui_hidden(&mut self, hidden: bool) {
+        if hidden == self.ui_hidden {
+            return;
+        }
+        self.ui_hidden = hidden;
+        unsafe {
+            let io = &mut *igGetIO();
+            if self.viewports_supported {
+                if hidden {
+                    io.ConfigFlags &= !(ImGuiConfigFlags_ViewportsEnable as i32);
+                }
+                else {
+                    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable as i32;
+                }
+            }
+            // drop keyboard focus so nothing is left active from before
+            if hidden && !igGetCurrentContext().is_null() {
+                igSetWindowFocusNil();
+            }
+        }
+    }
+
+    /// Whether the ui is hidden, see `set_ui_hidden`
+    pub fn is_ui_hidden(&self) -> bool {
+        self.ui_hidden
+    }
+
     pub fn new_frame(
         &mut self,
         app: &mut A,
@@ -877,27 +915,40 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
                 }
             }
 
-            // update mouse
-            io.MouseWheel = app.get_mouse_wheel();
-            io.MouseWheelH = app.get_mouse_hwheel();
-            io.MouseDown = app.get_mouse_buttons();
-
-            // update char inputs
-            let utf16 = app.get_utf16_input();
-            for u in utf16 {
-                ImGuiIO_AddInputCharacterUTF16(io, u);
+            // update mouse and keyboard, a hidden ui gets none so it can't react to the game's input
+            if self.ui_hidden {
+                io.MousePos = ImVec2 { x: -f32::MAX, y: -f32::MAX };
+                io.MouseHoveredViewport = 0;
+                io.MouseWheel = 0.0;
+                io.MouseWheelH = 0.0;
+                io.MouseDown = [false; 5];
+                io.KeysDown = [false; 512];
+                io.KeyCtrl = false;
+                io.KeyShift = false;
+                io.KeyAlt = false;
             }
+            else {
+                io.MouseWheel = app.get_mouse_wheel();
+                io.MouseWheelH = app.get_mouse_hwheel();
+                io.MouseDown = app.get_mouse_buttons();
 
-            // update keyboard
-            let keys_down = app.get_keys_down();
-            std::ptr::copy_nonoverlapping(
-                &keys_down as *const bool,
-                &mut io.KeysDown as *mut bool,
-                256,
-            );
-            io.KeyCtrl = app.is_sys_key_down(os::SysKey::Ctrl);
-            io.KeyShift = app.is_sys_key_down(os::SysKey::Shift);
-            io.KeyAlt = app.is_sys_key_down(os::SysKey::Alt);
+                // update char inputs
+                let utf16 = app.get_utf16_input();
+                for u in utf16 {
+                    ImGuiIO_AddInputCharacterUTF16(io, u);
+                }
+
+                // update keyboard
+                let keys_down = app.get_keys_down();
+                std::ptr::copy_nonoverlapping(
+                    &keys_down as *const bool,
+                    &mut io.KeysDown as *mut bool,
+                    256,
+                );
+                io.KeyCtrl = app.is_sys_key_down(os::SysKey::Ctrl);
+                io.KeyShift = app.is_sys_key_down(os::SysKey::Shift);
+                io.KeyAlt = app.is_sys_key_down(os::SysKey::Alt);
+            }
 
             // update mouse cursor
 
@@ -916,6 +967,16 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
             igNewFrame();
 
             io.UserData = std::ptr::null_mut();
+        }
+    }
+
+    /// Keeps the main window's dockspace alive without drawing it, while the ui is hidden. Without it windows docked
+    /// into the main window would be undocked, and left floating when the ui is shown again
+    pub fn keep_main_dock_alive(&mut self) {
+        unsafe {
+            let dockspace_name = "main_window_dockspace\0".as_ptr() as *const i8;
+            let id = igGetIDStr(dockspace_name);
+            igDockSpace(id, IMVEC2_ZERO, ImGuiDockNodeFlags_KeepAliveOnly as i32, std::ptr::null_mut());
         }
     }
 
@@ -1062,26 +1123,27 @@ impl<D, A> ImGui<D, A> where D: Device, A: App, D::RenderPipeline: gfx::Pipeline
     }
 
     /// With multi-viewports enabled imgui requires the platform windows to be updated after every frame, this
-    /// creates, moves and renders the os windows of imgui windows dragged outside of the main window
+    /// creates, moves and renders the os windows of imgui windows dragged outside of the main window. It's called
+    /// every frame, even while multi-viewports are off (the ui is hidden), imgui asserts it ran when they're turned on
     fn update_platform_windows(&mut self, app: &mut A, main_window: &mut A::Window, device: &mut D, image_heaps: &Vec<&D::Heap>) {
         unsafe {
             let io = &mut *igGetIO();
+            // gotta pack the refs into a pointer and into io.UserData
+            let mut ud = UserData {
+                device,
+                app,
+                main_window,
+                pipeline: &self.pipeline,
+                image_heaps
+            };
+            io.UserData = (&mut ud as *mut UserData<D, A>) as _;
+
+            igUpdatePlatformWindows();
             if (io.ConfigFlags & ImGuiConfigFlags_ViewportsEnable as i32) != 0 {
-                // gotta pack the refs into a pointer and into io.UserData
-                let mut ud = UserData {
-                    device,
-                    app,
-                    main_window,
-                    pipeline: &self.pipeline,
-                    image_heaps
-                };
-                io.UserData = (&mut ud as *mut UserData<D, A>) as _;
-
-                igUpdatePlatformWindows();
                 igRenderPlatformWindowsDefault(std::ptr::null_mut(), std::ptr::null_mut());
-
-                io.UserData = std::ptr::null_mut();
             }
+
+            io.UserData = std::ptr::null_mut();
         }
     }
 
